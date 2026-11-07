@@ -185,6 +185,39 @@ export const AppMovilPage: React.FC = () => {
   });
   const [cargandoViaje, setCargandoViaje] = useState(false);
 
+  // Despacho Activo a Planta / Receptoría (TB_CONTROL_COMPANIAS, ej. #20566 hacia COLONA)
+  const [despachoActivo, setDespachoActivo] = useState<DespachoCompaniaDto | null>(() => {
+    try {
+      const saved = localStorage.getItem('movil_despacho_activo');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [cargandoDespacho, setCargandoDespacho] = useState(false);
+
+  // Persistir despacho activo en LocalStorage
+  useEffect(() => {
+    if (despachoActivo) {
+      localStorage.setItem('movil_despacho_activo', JSON.stringify(despachoActivo));
+    } else {
+      localStorage.removeItem('movil_despacho_activo');
+    }
+  }, [despachoActivo]);
+
+  // Lista de Choferes disponibles para supervisión / simulación y logística
+  const [choferesLista, setChoferesLista] = useState<ChoferDto[]>([]);
+
+  // Chofer seleccionado para supervisar/auditar (cuando el usuario es Administrador/SuperAdmin)
+  const [choferSimuladoId, setChoferSimuladoId] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('movil_chofer_simulado_id');
+      return saved ? Number(saved) : 13; // 13 = Julio Atencio
+    } catch {
+      return 13;
+    }
+  });
+
   // Persistir viaje activo y paradas en LocalStorage
   useEffect(() => {
     if (viajeActivo) {
@@ -268,6 +301,14 @@ export const AppMovilPage: React.FC = () => {
     else setTabActiva('principal');
   };
 
+  // Chofer efectivo: si es Admin, usa el chofer seleccionado para auditar/supervisar; si no, usa el propio dispositivo
+  const choferEfectivoId = esAdminReal ? (choferSimuladoId || 13) : (dispositivo?.id || 13);
+  const choferEfectivoNombre = useMemo(() => {
+    if (!esAdminReal && dispositivo?.nombreCompleto) return dispositivo.nombreCompleto;
+    const encontrado = choferesLista.find((c) => c.id === choferSimuladoId || (c as any).usuarioId === choferSimuladoId);
+    return encontrado?.nombreCompleto || 'Julio Atencio';
+  }, [esAdminReal, choferSimuladoId, choferesLista, dispositivo]);
+
   // Estados para Módulo Chofer -> Incidentes
   const [misIncidentes, setMisIncidentes] = useState<MantenimientoCamionDto[]>([]);
   const [cargandoIncidentes, setCargandoIncidentes] = useState(false);
@@ -294,7 +335,6 @@ export const AppMovilPage: React.FC = () => {
   const [planificaciones, setPlanificaciones] = useState<PlanificacionRutaChoferDto[]>([]);
   const [cargandoPlanificaciones, setCargandoPlanificaciones] = useState(false);
   const [rutasLogisticas, setRutasLogisticas] = useState<RutaLogisticaDto[]>([]);
-  const [choferesLista, setChoferesLista] = useState<ChoferDto[]>([]);
   const [camionesLista, setCamionesLista] = useState<CamionDto[]>([]);
   const [fincasPromedio, setFincasPromedio] = useState<FincaPromedioDto[]>([]);
 
@@ -605,16 +645,25 @@ export const AppMovilPage: React.FC = () => {
     }
   }, [isOnline]);
 
-  // Si estamos en línea y hay conexión, refrescar lista de fincas, perfil, entregas y viaje activo
-  const dispChoferId = dispositivo?.id;
+  // Cargar catálogo de choferes para selector de administración si está online
   useEffect(() => {
-    if (dispChoferId && isOnline) {
+    if (isOnline) {
+      catalogosApi.getChoferes().then((ch) => {
+        if (Array.isArray(ch) && ch.length > 0) setChoferesLista(ch);
+      }).catch(() => {});
+    }
+  }, [isOnline]);
+
+  // Si estamos en línea y hay conexión, refrescar fincas, entregas, perfil, viaje activo y despacho activo
+  useEffect(() => {
+    if (isOnline) {
       cargarFincasServidor();
       cargarEntregasChofer();
       cargarPerfilServidor();
       cargarViajeActivo();
+      cargarDespachoActivo();
     }
-  }, [dispChoferId, isOnline]);
+  }, [choferEfectivoId, isOnline]);
 
   const cargarFincasServidor = async () => {
     try {
@@ -628,18 +677,19 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
-  const cargarViajeActivo = async () => {
-    if (!dispositivo?.id) return;
+  const cargarViajeActivo = async (idTarget?: number) => {
+    const idBusqueda = idTarget || choferEfectivoId;
+    if (!idBusqueda) return;
     setCargandoViaje(true);
     try {
-      // 1. Obtener viaje activo asignado al chofer (creado por él o asignado por supervisor/admin)
-      const v = await operacionesApi.getViajeActivo(dispositivo.id);
+      // 1. Obtener viaje activo asignado al chofer en TB_CONTROL_RUTAS
+      const v = await operacionesApi.getViajeActivo(idBusqueda);
       const est = String(v?.estado || '').trim().toUpperCase();
       const esCerrado = est === 'FINALIZADO' || est === 'CERRADO' || est === 'ENTREGADO' || est === 'CUADRADO' || (v?.procesoActualId || 1) >= 4;
 
       if (v && v.id && !esCerrado) {
         setViajeActivo(v);
-        // Si el ticket trae cisterna o placa específica, actualizar localmente solo si hay cambios reales
+        // Si el ticket trae cisterna o placa específica, actualizar localmente
         if (v.camionId || v.camionPlaca) {
           setDispositivo((prev) => {
             if (!prev) return null;
@@ -648,7 +698,7 @@ export const AppMovilPage: React.FC = () => {
               prev.placaCamion === (v.camionPlaca || prev.placaCamion) &&
               prev.capacidadTanqueLitros === (v.capacidadCamionLitros || prev.capacidadTanqueLitros)
             ) {
-              return prev; // Mismo objeto para evitar re-render loop
+              return prev;
             }
             const updated = {
               ...prev,
@@ -674,19 +724,49 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
-  const cargarEntregasChofer = async () => {
-    if (!dispositivo?.id) return;
+  const cargarDespachoActivo = async (idTarget?: number) => {
+    const idBusqueda = idTarget || choferEfectivoId;
+    if (!idBusqueda) return;
+    setCargandoDespacho(true);
+    try {
+      // 1. Consultar ticket activo de despacho en TB_CONTROL_COMPANIAS
+      let t = await operacionesApi.getTicketActivoDespachoChofer(idBusqueda);
+      if (!t || !t.id) {
+        // Fallback: buscar en la lista general de despachos por usuario o nombre
+        const all = await operacionesApi.getDespachosCompanias(undefined, undefined, undefined, undefined, idBusqueda);
+        const enVia = (all || []).find((d: any) => {
+          const uId = Number(d.usuarioId || d.choferId || d.conductorId);
+          const est = String(d.estado || '').toUpperCase();
+          const nombreD = (d.nombreConductor || d.choferNombre || '').toLowerCase();
+          const nombreTarget = (choferEfectivoNombre || dispositivo?.nombreCompleto || '').toLowerCase();
+          return (uId === idBusqueda || (nombreTarget && nombreD.length > 2 && nombreD.includes(nombreTarget))) &&
+            (est === 'EN VIA' || est === 'EN_TRANSITO' || est === 'PENDIENTE');
+        });
+        if (enVia) t = enVia;
+      }
+      setDespachoActivo(t && t.id ? t : null);
+    } catch (err) {
+      console.warn('No se pudo sincronizar el despacho activo con el servidor:', err);
+    } finally {
+      setCargandoDespacho(false);
+    }
+  };
+
+  const cargarEntregasChofer = async (idTarget?: number) => {
+    const idBusqueda = idTarget || choferEfectivoId;
+    if (!idBusqueda) return;
     setCargandoEntregas(true);
     try {
-      const allDespachos = await operacionesApi.getDespachosCompanias();
-      const misDespachos = (allDespachos || []).filter(
-        (d: any) =>
-          d.choferId === dispositivo.id ||
-          d.conductorId === dispositivo.id ||
-          d.usuarioId === dispositivo.id ||
-          (dispositivo.camionId && d.camionId === dispositivo.camionId) ||
-          (d.choferNombre && d.choferNombre.toLowerCase().includes((dispositivo.nombreCompleto || '').toLowerCase()))
-      );
+      const allDespachos = await operacionesApi.getDespachosCompanias(undefined, undefined, undefined, undefined, idBusqueda);
+      const misDespachos = (allDespachos || []).filter((d: any) => {
+        const uId = Number(d.usuarioId || d.choferId || d.conductorId);
+        const nombreD = (d.nombreConductor || d.choferNombre || '').toLowerCase();
+        const nombreTarget = (choferEfectivoNombre || dispositivo?.nombreCompleto || '').toLowerCase();
+        const coincideId = uId === idBusqueda;
+        const coincideNombre = nombreTarget && nombreD.length > 2 && nombreD.includes(nombreTarget);
+        const coincideCamion = Boolean(dispositivo?.camionId && d.camionId === dispositivo.camionId);
+        return coincideId || coincideNombre || coincideCamion;
+      });
       setEntregas(misDespachos);
     } catch (err) {
       console.warn('No se pudieron obtener entregas del servidor:', err);
@@ -2847,6 +2927,64 @@ export const AppMovilPage: React.FC = () => {
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Barra de Supervisión de Chofer (Sólo visible para Administrador / SuperAdmin) */}
+              {esAdminReal && (
+                <div
+                  style={{
+                    background: '#fef3c7',
+                    border: '1px solid #fde047',
+                    borderRadius: '16px',
+                    padding: '10px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    boxShadow: '0 2px 8px rgba(217, 119, 6, 0.08)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#92400e', fontWeight: 800 }}>
+                    <i className="fa-solid fa-user-gear text-amber-600"></i>
+                    <span>Supervisando Chofer:</span>
+                  </div>
+                  <select
+                    value={choferSimuladoId}
+                    onChange={(e) => {
+                      const nuevoId = Number(e.target.value);
+                      setChoferSimuladoId(nuevoId);
+                      localStorage.setItem('movil_chofer_simulado_id', String(nuevoId));
+                      cargarViajeActivo(nuevoId);
+                      cargarDespachoActivo(nuevoId);
+                      cargarEntregasChofer(nuevoId);
+                    }}
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #d97706',
+                      borderRadius: '8px',
+                      padding: '5px 10px',
+                      fontSize: '12.5px',
+                      fontWeight: 800,
+                      color: '#78350f',
+                      outline: 'none',
+                    }}
+                  >
+                    {choferesLista.length > 0 ? (
+                      choferesLista.map((ch) => (
+                        <option key={ch.id} value={ch.id}>
+                          {ch.nombreCompleto} (#{ch.id})
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value={13}>Julio Atencio (#13)</option>
+                        <option value={1}>JOSE Perez (#1)</option>
+                        <option value={2}>Manuel (#2)</option>
+                        <option value={4}>Alfredy (#4)</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              )}
+
               {/* Tarjeta de Bienvenida y Turno */}
               <div
                 style={{
@@ -2860,7 +2998,7 @@ export const AppMovilPage: React.FC = () => {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Turno de Recolección • {new Date().toLocaleDateString('es-VE', { weekday: 'short', day: 'numeric', month: 'short' })}
+                    Turno de Operación • {new Date().toLocaleDateString('es-VE', { weekday: 'short', day: 'numeric', month: 'short' })}
                   </div>
                   <span
                     style={{
@@ -2873,16 +3011,122 @@ export const AppMovilPage: React.FC = () => {
                       fontWeight: 800,
                     }}
                   >
-                    🚛 {dispositivo.placaCamion || 'Cisterna'}
+                    🚛 {dispositivo?.placaCamion || 'Cisterna'}
                   </span>
                 </div>
                 <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 4px 0', letterSpacing: '-0.3px' }}>
-                  ¡Hola, {dispositivo.nombreCompleto.split(' ')[0]}!
+                  ¡Hola, {choferEfectivoNombre.split(' ')[0]}!
                 </h2>
                 <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1' }}>
-                  {viajeActivo ? `Ticket #${viajeActivo.codigoTicket || viajeActivo.id} en curso` : 'Listo para iniciar recolección en ruta'}
+                  {despachoActivo
+                    ? `Despacho #${despachoActivo.id} en viaje a ${despachoActivo.nombreCompania || 'Planta'}`
+                    : viajeActivo
+                    ? `Ticket #${viajeActivo.codigoTicket || viajeActivo.id} en curso`
+                    : 'Listo para iniciar recolección en ruta'}
                 </p>
               </div>
+
+              {/* TARJETA DE TICKET ACTIVO DE DESPACHO / RECEPTORÍA (Ej. #20566) */}
+              {despachoActivo && (
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, #faf5ff 0%, #ffffff 100%)',
+                    borderRadius: '20px',
+                    padding: '16px 18px',
+                    border: '1.5px solid #c084fc',
+                    boxShadow: '0 6px 20px rgba(168, 85, 247, 0.12)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '16px', fontWeight: 900, color: '#6b21a8' }}>
+                        <i className="fa-solid fa-truck-fast mr-1 text-purple-600"></i> Despacho #{despachoActivo.id}
+                      </span>
+                      <span
+                        style={{
+                          background: '#f3e8ff',
+                          color: '#7e22ce',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid #d8b4fe',
+                        }}
+                      >
+                        ● {despachoActivo.estado || 'EN VÍA'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => cargarDespachoActivo()}
+                      disabled={cargandoDespacho}
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #d8b4fe',
+                        borderRadius: '8px',
+                        padding: '4px 8px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: '#7e22ce',
+                        cursor: 'pointer',
+                      }}
+                      title="Actualizar despacho"
+                    >
+                      <i className={`fa-solid fa-rotate ${cargandoDespacho ? 'fa-spin' : ''}`}></i>
+                    </button>
+                  </div>
+
+                  <div style={{ fontSize: '13px', color: '#1e293b', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <i className="fa-solid fa-building-wheat text-purple-600"></i>
+                      <strong>Destino: {despachoActivo.nombreCompania || despachoActivo.companiaNombre || 'Planta / Receptoría'}</strong>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#64748b' }}>
+                      Conductor: <strong>{despachoActivo.nombreConductor || choferEfectivoNombre}</strong> • Fecha: {despachoActivo.fecha ? despachoActivo.fecha.split('T')[0] : ''}
+                    </div>
+                  </div>
+
+                  {/* Estadísticas de Despacho */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                    <div style={{ background: '#f5f3ff', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #ddd6fe' }}>
+                      <span style={{ fontSize: '10px', color: '#6b21a8', fontWeight: 800, textTransform: 'uppercase' }}>Litros Despachados</span>
+                      <div style={{ fontSize: '16px', fontWeight: 900, color: '#7e22ce', marginTop: '2px' }}>
+                        {Number(despachoActivo.litrosDespachados || 0).toLocaleString()} L
+                      </div>
+                    </div>
+                    <div style={{ background: '#f8fafc', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Tipo Leche</span>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#334155', marginTop: '3px' }}>
+                        {despachoActivo.tipoLeche || 'VACA'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setTabActiva('entregas')}
+                    style={{
+                      width: '100%',
+                      background: 'linear-gradient(135deg, #7e22ce, #6b21a8)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '12px',
+                      padding: '11px',
+                      fontSize: '13px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: '0 4px 12px rgba(126, 34, 206, 0.25)',
+                    }}
+                  >
+                    <i className="fa-solid fa-eye"></i>
+                    <span>Ver Detalles en Entregas / Planta</span>
+                  </button>
+                </div>
+              )}
 
               {/* TARJETA DE TICKET / VIAJE ACTIVO ASIGNADO */}
               {viajeActivo ? (
@@ -2916,7 +3160,7 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                     <button
                       type="button"
-                      onClick={cargarViajeActivo}
+                      onClick={() => cargarViajeActivo()}
                       disabled={cargandoViaje}
                       style={{
                         background: '#f8fafc',
@@ -3017,7 +3261,7 @@ export const AppMovilPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              ) : (
+              ) : !despachoActivo ? (
                 <div
                   style={{
                     background: '#ffffff',
@@ -3075,7 +3319,7 @@ export const AppMovilPage: React.FC = () => {
                     <span>Iniciar Recorrido / Cargar Finca</span>
                   </button>
                 </div>
-              )}
+              ) : null}
 
               {/* Widget Capacidad Cisterna (Dashboard Nivel de Tanque) */}
               <div
@@ -3945,7 +4189,16 @@ export const AppMovilPage: React.FC = () => {
         {/* ===================================================================
             PESTAÑA 3: ENTREGAS (RECEPTORÍAS / SALIDAS ASIGNADAS AL CHOFER)
            =================================================================== */}
-        {tabActiva === 'entregas' && (
+        {tabActiva === 'entregas' && (() => {
+          const listaEntregasEfectiva = (() => {
+            const list = [...entregas];
+            if (despachoActivo && !list.some((d: any) => d.id === despachoActivo.id)) {
+              list.unshift(despachoActivo);
+            }
+            return list;
+          })();
+
+          return (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <div>
@@ -3953,12 +4206,15 @@ export const AppMovilPage: React.FC = () => {
                   Mis Entregas y Despachos
                 </h3>
                 <p style={{ fontSize: '11.5px', color: '#64748b', margin: '2px 0 0 0' }}>
-                  Viajes asignados a receptoría o planta
+                  Viajes asignados a receptoría o planta ({choferEfectivoNombre})
                 </p>
               </div>
               <button
                 type="button"
-                onClick={cargarEntregasChofer}
+                onClick={() => {
+                  cargarEntregasChofer();
+                  cargarDespachoActivo();
+                }}
                 disabled={cargandoEntregas || !isOnline}
                 style={{
                   background: '#ffffff',
@@ -3981,7 +4237,7 @@ export const AppMovilPage: React.FC = () => {
                 <i className="fa-solid fa-spinner fa-spin text-2xl mb-2 text-purple-600"></i>
                 <div style={{ fontSize: '12.5px', fontWeight: 700 }}>Cargando tus despachos...</div>
               </div>
-            ) : entregas.length === 0 ? (
+            ) : listaEntregasEfectiva.length === 0 ? (
               <div
                 style={{
                   background: '#ffffff',
@@ -4002,7 +4258,7 @@ export const AppMovilPage: React.FC = () => {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {entregas.map((d: any) => {
+                {listaEntregasEfectiva.map((d: any) => {
                   const desp = Number(d.litrosDespachados || 0);
                   const rec = Number(d.litrosRecibidosCompania || d.litrosConfirmados || 0);
                   const merma = rec > 0 ? rec - desp : 0;
@@ -4066,7 +4322,8 @@ export const AppMovilPage: React.FC = () => {
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* ===================================================================
             PESTAÑA 4: REPORTES (SOLO NÚMEROS 1, 2, 3, 4 Y 7)

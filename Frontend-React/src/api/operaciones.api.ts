@@ -247,6 +247,11 @@ export const operacionesApi = {
     return res.data;
   },
 
+  modificarFincasTicket: async (ticketId: number, fincaIds: number[]): Promise<{ message: string }> => {
+    const res = await apiClient.post(`/rutas-logistica/ticket/${ticketId}/modificar-fincas`, fincaIds);
+    return res.data;
+  },
+
   getFincasPromedios15Dias: async (rutaId?: number): Promise<FincaPromedioDto[]> => {
     try {
       const params: Record<string, any> = {};
@@ -259,13 +264,25 @@ export const operacionesApi = {
   },
 
   // CONTROL COMPAÑÍAS / RECEPTORÍA
-  getDespachosCompanias: async (fecha?: string, companiaId?: number, fechaInicio?: string, fechaFin?: string): Promise<DespachoCompaniaDto[]> => {
+  getTicketActivoDespachoChofer: async (choferId?: number): Promise<DespachoCompaniaDto | null> => {
+    try {
+      const res = await apiClient.get<DespachoCompaniaDto>('/control-companias/chofer-activo', {
+        params: choferId ? { choferId } : undefined,
+      });
+      return res.data || null;
+    } catch {
+      return null;
+    }
+  },
+
+  getDespachosCompanias: async (fecha?: string, companiaId?: number, fechaInicio?: string, fechaFin?: string, usuarioId?: number): Promise<DespachoCompaniaDto[]> => {
     const params: Record<string, any> = {};
 
     if (fecha) params.fecha = fecha;
     if (companiaId) params.companiaId = companiaId;
     if (fechaInicio) params.fechaInicio = fechaInicio;
     if (fechaFin) params.fechaFin = fechaFin;
+    if (usuarioId) params.usuarioId = usuarioId;
     const res = await apiClient.get<DespachoCompaniaDto[]>('/control-companias', { params });
     return Array.isArray(res.data) ? res.data : [];
   },

@@ -94,8 +94,9 @@ namespace Transporte.API.Controllers
         public async Task<IActionResult> ObtenerTicketActivoChofer([FromQuery] int? choferId = null)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            var rol = User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER";
-            int idBusqueda = (rol == "ADMIN" && choferId.HasValue && choferId.Value > 0) ? choferId.Value : userId;
+            var rol = (User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER").ToUpper();
+            bool esAdmin = rol.Contains("ADMIN") || rol == "SUPERADMIN" || rol == "SUPERVISOR";
+            int idBusqueda = (esAdmin && choferId.HasValue && choferId.Value > 0) ? choferId.Value : userId;
 
             var ticket = await _controlCompaniasRepository.ObtenerTicketActivoChoferAsync(idBusqueda);
             return Ok(ticket);

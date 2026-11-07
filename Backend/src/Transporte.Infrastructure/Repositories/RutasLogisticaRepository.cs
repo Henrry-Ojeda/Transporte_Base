@@ -22,6 +22,7 @@ namespace Transporte.Infrastructure.Repositories
         Task<IEnumerable<PlanificacionRutaChoferDto>> ObtenerPlanificacionesPorFechaAsync(DateTime fecha);
         Task<int> GuardarPlanificacionChoferAsync(GuardarPlanificacionRutaChoferDto dto, int usuarioId);
         Task<bool> EliminarPlanificacionChoferAsync(int id);
+        Task<bool> ModificarFincasTicketAsync(long controlRutaId, List<int> fincaIds, int usuarioId);
         Task<IEnumerable<FincaPromedioDto>> ObtenerFincasConPromedio15DiasAsync(int? rutaId = null);
     }
 
@@ -426,6 +427,7 @@ namespace Transporte.Infrastructure.Repositories
             }
 
             // 2. Guardar o actualizar la Planificación ligada al Ticket
+            int planId;
             if (dto.Id.HasValue && dto.Id.Value > 0)
             {
                 var sqlUpdate = @"
@@ -462,7 +464,7 @@ namespace Transporte.Infrastructure.Repositories
                     ticketIdEfectivo,
                     usuarioId
                 });
-                return dto.Id.Value;
+                planId = dto.Id.Value;
             }
             else
             {
@@ -472,7 +474,7 @@ namespace Transporte.Infrastructure.Repositories
                     VALUES
                     (@Fecha, @CamionId, @ConductorId, @RutaLogisticaId, @RutasIds, @FincasIds, @TotalFincas, @LitrosEstimados, @CapacidadCamionLitros, @PorcentajeOcupacion, @Observacion, @ticketIdEfectivo, 1, GETDATE(), @usuarioId);
                     SELECT CAST(SCOPE_IDENTITY() AS INT);";
-                return await connection.ExecuteScalarAsync<int>(sqlInsert, new
+                planId = await connection.ExecuteScalarAsync<int>(sqlInsert, new
                 {
                     Fecha = dto.Fecha.Date,
                     dto.CamionId,
@@ -489,6 +491,153 @@ namespace Transporte.Infrastructure.Repositories
                     usuarioId
                 });
             }
+
+            // 3. Sincronización UNIFICADA con TB_RUTAS_RECOLECCION (Regla de Blindaje de Leche)
+            try
+            {
+                var paradasExistentes = (await connection.QueryAsync<(long Id, int FincaId, int? Litros)>(@"
+                    SELECT Id, FincaId, Litros 
+                    FROM TB_RUTAS_RECOLECCION 
+                    WHERE ControlRutaId = @ticketIdEfectivo", new { ticketIdEfectivo })).ToList();
+
+                var fincasSeleccionadas = dto.FincasIds.Distinct().ToList();
+
+                // Regla de Blindaje:
+                // - Finca con Litros > 0: NUNCA se borra ni se desasigna (queda protegida en el ticket).
+                // - Finca con Litros == 0: Si el admin la quitó de la planificación, se remueve limpiamente.
+                foreach (var parada in paradasExistentes)
+                {
+                    if ((parada.Litros ?? 0) > 0)
+                    {
+                        if (!fincasSeleccionadas.Contains(parada.FincaId))
+                        {
+                            fincasSeleccionadas.Add(parada.FincaId);
+                        }
+                    }
+                    else
+                    {
+                        if (!fincasSeleccionadas.Contains(parada.FincaId))
+                        {
+                            await connection.ExecuteAsync(@"
+                                DELETE FROM TB_RUTAS_RECOLECCION 
+                                WHERE Id = @Id AND (Litros = 0 OR Litros IS NULL)",
+                                new { parada.Id });
+                        }
+                    }
+                }
+
+                // Insertar paradas planificadas pendientes (Litros = 0) que aún no existen en el ticket
+                var fincasExistentesIds = paradasExistentes.Select(p => p.FincaId).ToHashSet();
+                var cicloIdEfectivo = await connection.ExecuteScalarAsync<int?>(
+                    "SELECT CicloId FROM TB_CONTROL_RUTAS WHERE Id = @ticketIdEfectivo", new { ticketIdEfectivo }) ?? 1;
+
+                foreach (var fId in fincasSeleccionadas)
+                {
+                    if (!fincasExistentesIds.Contains(fId))
+                    {
+                        var sqlInsertParada = @"
+                            INSERT INTO TB_RUTAS_RECOLECCION
+                            (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, ControlRutaId, TipoLeche, CreatedAt, CreatedBy)
+                            VALUES
+                            (@cicloIdEfectivo, @Fecha, @FincaId, @ConductorId, 0, 0, @ticketIdEfectivo, 'VACA', GETDATE(), @usuarioId)";
+                        await connection.ExecuteAsync(sqlInsertParada, new
+                        {
+                            cicloIdEfectivo,
+                            Fecha = dto.Fecha.Date,
+                            FincaId = fId,
+                            ConductorId = dto.ConductorId,
+                            ticketIdEfectivo,
+                            usuarioId
+                        });
+                    }
+                }
+
+                // Si alguna finca blindada fue preservada, reflejar la lista final en TB_PLANIFICACION_RUTAS_CHOFERES
+                if (fincasSeleccionadas.Count != totalFincas)
+                {
+                    var fincasFinalesStr = string.Join(",", fincasSeleccionadas);
+                    await connection.ExecuteAsync(@"
+                        UPDATE TB_PLANIFICACION_RUTAS_CHOFERES
+                        SET FincasIds = @fincasFinalesStr,
+                            TotalFincas = @totalFincas
+                        WHERE Id = @planId",
+                        new { fincasFinalesStr, totalFincas = fincasSeleccionadas.Count, planId });
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[RutasLogisticaRepository] Error sincronizando paradas: {ex.Message}");
+            }
+
+            return planId;
+        }
+
+        public async Task<bool> ModificarFincasTicketAsync(long controlRutaId, List<int> fincaIds, int usuarioId)
+        {
+            using var connection = CreateConnection();
+            var ticket = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                "SELECT Id, Fecha, UsuarioId, CicloId FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId", new { controlRutaId });
+            if (ticket == null) return false;
+
+            var paradasExistentes = (await connection.QueryAsync<(long Id, int FincaId, int? Litros)>(@"
+                SELECT Id, FincaId, Litros 
+                FROM TB_RUTAS_RECOLECCION 
+                WHERE ControlRutaId = @controlRutaId", new { controlRutaId })).ToList();
+
+            var fincasSeleccionadas = fincaIds.Distinct().ToList();
+
+            // Blindaje de paradas recolectadas
+            foreach (var p in paradasExistentes)
+            {
+                if ((p.Litros ?? 0) > 0)
+                {
+                    if (!fincasSeleccionadas.Contains(p.FincaId))
+                    {
+                        fincasSeleccionadas.Add(p.FincaId);
+                    }
+                }
+                else
+                {
+                    if (!fincasSeleccionadas.Contains(p.FincaId))
+                    {
+                        await connection.ExecuteAsync(@"
+                            DELETE FROM TB_RUTAS_RECOLECCION 
+                            WHERE Id = @Id AND (Litros = 0 OR Litros IS NULL)",
+                            new { p.Id });
+                    }
+                }
+            }
+
+            var fincasExistentesIds = paradasExistentes.Select(p => p.FincaId).ToHashSet();
+            int cicloId = ticket.CicloId ?? 1;
+            DateTime fecha = ticket.Fecha ?? DateTime.Today;
+            int conductorId = ticket.UsuarioId ?? 1;
+
+            foreach (var fId in fincasSeleccionadas)
+            {
+                if (!fincasExistentesIds.Contains(fId))
+                {
+                    await connection.ExecuteAsync(@"
+                        INSERT INTO TB_RUTAS_RECOLECCION
+                        (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, ControlRutaId, TipoLeche, CreatedAt, CreatedBy)
+                        VALUES
+                        (@cicloId, @fecha, @fId, @conductorId, 0, 0, @controlRutaId, 'VACA', GETDATE(), @usuarioId)",
+                        new { cicloId, fecha, fId, conductorId, controlRutaId, usuarioId });
+                }
+            }
+
+            // Sincronizar planificación si existe
+            var fincasStr = string.Join(",", fincasSeleccionadas);
+            await connection.ExecuteAsync(@"
+                UPDATE TB_PLANIFICACION_RUTAS_CHOFERES
+                SET FincasIds = @fincasStr,
+                    TotalFincas = @totalFincas,
+                    ModifiedAt = GETDATE(),
+                    ModifiedBy = @usuarioId
+                WHERE ControlRutaId = @controlRutaId",
+                new { fincasStr, totalFincas = fincasSeleccionadas.Count, usuarioId, controlRutaId });
+
+            return true;
         }
 
         public async Task<bool> EliminarPlanificacionChoferAsync(int id)

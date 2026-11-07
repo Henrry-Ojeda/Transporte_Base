@@ -162,6 +162,22 @@ namespace Transporte.API.Controllers
             }
         }
 
+        [HttpPost("ticket/{ticketId:long}/modificar-fincas")]
+        public async Task<IActionResult> ModificarFincasTicket([FromRoute] long ticketId, [FromBody] List<int> fincaIds)
+        {
+            var userId = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? uid : 1;
+            try
+            {
+                var ok = await _rutasLogisticaRepository.ModificarFincasTicketAsync(ticketId, fincaIds ?? new List<int>(), userId);
+                if (!ok) return NotFound(new { message = "Ticket no encontrado." });
+                return Ok(new { message = "Fincas del ticket actualizadas exitosamente (se aplicó regla de blindaje para fincas con leche recogida)." });
+            }
+            catch (System.Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpGet("fincas-promedios-15dias")]
         public async Task<IActionResult> ObtenerFincasPromedios([FromQuery] int? rutaId)
         {

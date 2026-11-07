@@ -84,7 +84,7 @@ const REPORTES_CHOFER = [
   { value: 'MANTENIMIENTO', label: '8. MANTENIMIENTO & TALLER (Flota e Incidentes)', icon: 'fa-wrench' },
 ];
 
-export const APP_VERSION = 'v2.9.0';
+export const APP_VERSION = 'v2.10.0';
 
 export const AppMovilPage: React.FC = () => {
   // Navegación de Pestañas Móviles
@@ -2774,19 +2774,19 @@ export const AppMovilPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Barra de Cambio Rápido de Módulo para SuperAdmin / Admin */}
-        {esAdminReal && (
-          <div
-            style={{
-              marginTop: '10px',
-              paddingTop: '8px',
-              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '6px',
-            }}
-          >
+        {/* Barra de Cambio Rápido de Módulo (Chofer / Admin / Taller / Receptoría) */}
+        <div
+          style={{
+            marginTop: '10px',
+            paddingTop: '8px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '6px',
+            overflowX: 'auto',
+          }}
+        >
             <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '5px' }}>
               <i className="fa-solid fa-layer-group text-sky-400"></i>
               <span>VISTA:</span>
@@ -2874,7 +2874,6 @@ export const AppMovilPage: React.FC = () => {
               </button>
             </div>
           </div>
-        )}
       </header>
 
       {/* Barra de Instalación si no es PWA */}

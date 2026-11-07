@@ -373,29 +373,68 @@ namespace Transporte.Infrastructure.Repositories
                 }
             }
 
-            var sqlInsert = @"
-                INSERT INTO TB_RUTAS_RECOLECCION 
-                (CicloId, FincaId, UsuarioId, Fecha, Litros, EsAcida, TipoLeche, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy)
-                VALUES 
-                (@cicloId, @fincaId, @conductorId, @fecha, @litros, @esAcida, @tipoLeche, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @ticketId, GETDATE(), @conductorId);
-                SELECT CAST(SCOPE_IDENTITY() as int);";
+            int nuevaRutaId;
+            var paradaPendienteId = await connection.ExecuteScalarAsync<int?>(@"
+                SELECT TOP 1 Id FROM TB_RUTAS_RECOLECCION 
+                WHERE ControlRutaId = @ticketId AND FincaId = @fincaId AND (Litros = 0 OR Litros IS NULL)
+                ORDER BY Id ASC", new { ticketId, fincaId = dto.FincaId });
 
-            var nuevaRutaId = await connection.ExecuteScalarAsync<int>(sqlInsert, new
+            if (paradaPendienteId.HasValue)
             {
-                cicloId,
-                fincaId = dto.FincaId,
-                conductorId = choferEfectivo,
-                fecha = fechaRuta,
-                litros = dto.Litros,
-                esAcida = dto.EsAcida,
-                tipoLeche = tipoLecheEfectivo,
-                precioAplicado,
-                tasaActual,
-                uuidLocal = dto.UuidLocal ?? Guid.NewGuid().ToString(),
-                observacion = dto.Observacion,
-                fotoComprobante = dto.FotoComprobante,
-                ticketId
-            });
+                var sqlUpdate = @"
+                    UPDATE TB_RUTAS_RECOLECCION
+                    SET Litros = @litros,
+                        EsAcida = @esAcida,
+                        TipoLeche = @tipoLeche,
+                        PrecioLitroUSDAplicado = @precioAplicado,
+                        TasaDolarBsAplicada = @tasaActual,
+                        UuidLocal = @uuidLocal,
+                        Observacion = @observacion,
+                        FotoComprobante = @fotoComprobante,
+                        ModifiedAt = GETDATE(),
+                        ModifiedBy = @conductorId
+                    WHERE Id = @paradaPendienteId";
+                await connection.ExecuteAsync(sqlUpdate, new
+                {
+                    litros = dto.Litros,
+                    esAcida = dto.EsAcida,
+                    tipoLeche = tipoLecheEfectivo,
+                    precioAplicado,
+                    tasaActual,
+                    uuidLocal = dto.UuidLocal ?? Guid.NewGuid().ToString(),
+                    observacion = dto.Observacion,
+                    fotoComprobante = dto.FotoComprobante,
+                    conductorId = choferEfectivo,
+                    paradaPendienteId = paradaPendienteId.Value
+                });
+                nuevaRutaId = paradaPendienteId.Value;
+            }
+            else
+            {
+                var sqlInsert = @"
+                    INSERT INTO TB_RUTAS_RECOLECCION 
+                    (CicloId, FincaId, UsuarioId, Fecha, Litros, EsAcida, TipoLeche, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy)
+                    VALUES 
+                    (@cicloId, @fincaId, @conductorId, @fecha, @litros, @esAcida, @tipoLeche, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @ticketId, GETDATE(), @conductorId);
+                    SELECT CAST(SCOPE_IDENTITY() as int);";
+
+                nuevaRutaId = await connection.ExecuteScalarAsync<int>(sqlInsert, new
+                {
+                    cicloId,
+                    fincaId = dto.FincaId,
+                    conductorId = choferEfectivo,
+                    fecha = fechaRuta,
+                    litros = dto.Litros,
+                    esAcida = dto.EsAcida,
+                    tipoLeche = tipoLecheEfectivo,
+                    precioAplicado,
+                    tasaActual,
+                    uuidLocal = dto.UuidLocal ?? Guid.NewGuid().ToString(),
+                    observacion = dto.Observacion,
+                    fotoComprobante = dto.FotoComprobante,
+                    ticketId
+                });
+            }
 
             if (ticketId.HasValue)
             {
@@ -8916,30 +8955,70 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             string tipoLecheEfectivo = string.IsNullOrWhiteSpace(dto.TipoLeche) ? "VACA" : dto.TipoLeche.ToUpper();
             bool esDiferidoEfectivo = dto.EsDiferido;
 
-            var sqlInsertRuta = @"
-                INSERT INTO TB_RUTAS_RECOLECCION
-                (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy)
-                VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, GETDATE(), @usuarioId);
-                SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
+            // Unificación: Si la finca ya fue pre-asignada en la planificación con Litros = 0, se actualiza esa parada
+            var paradaPendienteId = await connection.ExecuteScalarAsync<long?>(@"
+                SELECT TOP 1 Id FROM TB_RUTAS_RECOLECCION 
+                WHERE ControlRutaId = @controlRutaId AND FincaId = @fincaId AND (Litros = 0 OR Litros IS NULL)
+                ORDER BY Id ASC", new { controlRutaId = dto.ControlRutaId, fincaId = dto.FincaId });
 
-            var nuevaRutaId = await connection.ExecuteScalarAsync<long>(sqlInsertRuta, new
+            long nuevaRutaId;
+            if (paradaPendienteId.HasValue)
             {
-                cicloId = (int?)viaje.CicloId,
-                fecha = fechaEfectiva,
-                fincaId = dto.FincaId,
-                choferId = (int)viaje.UsuarioId,
-                litros = dto.Litros,
-                esAcida = dto.EsAcida,
-                tipoLeche = tipoLecheEfectivo,
-                esDiferido = esDiferidoEfectivo,
-                precioAplicado,
-                tasaActual,
-                uuidLocal = Guid.NewGuid().ToString(),
-                observacion = dto.Observacion,
-                fotoComprobante = dto.FotoComprobante,
-                controlRutaId = dto.ControlRutaId,
-                usuarioId
-            });
+                var sqlUpdateRuta = @"
+                    UPDATE TB_RUTAS_RECOLECCION
+                    SET Litros = @litros,
+                        EsAcida = @esAcida,
+                        TipoLeche = @tipoLeche,
+                        EsDiferido = @esDiferido,
+                        PrecioLitroUSDAplicado = @precioAplicado,
+                        TasaDolarBsAplicada = @tasaActual,
+                        Observacion = @observacion,
+                        FotoComprobante = @fotoComprobante,
+                        ModifiedAt = GETDATE(),
+                        ModifiedBy = @usuarioId
+                    WHERE Id = @paradaPendienteId";
+                await connection.ExecuteAsync(sqlUpdateRuta, new
+                {
+                    litros = dto.Litros,
+                    esAcida = dto.EsAcida,
+                    tipoLeche = tipoLecheEfectivo,
+                    esDiferido = esDiferidoEfectivo,
+                    precioAplicado,
+                    tasaActual,
+                    observacion = dto.Observacion,
+                    fotoComprobante = dto.FotoComprobante,
+                    usuarioId,
+                    paradaPendienteId = paradaPendienteId.Value
+                });
+                nuevaRutaId = paradaPendienteId.Value;
+            }
+            else
+            {
+                var sqlInsertRuta = @"
+                    INSERT INTO TB_RUTAS_RECOLECCION
+                    (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy)
+                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, GETDATE(), @usuarioId);
+                    SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
+
+                nuevaRutaId = await connection.ExecuteScalarAsync<long>(sqlInsertRuta, new
+                {
+                    cicloId = (int?)viaje.CicloId,
+                    fecha = fechaEfectiva,
+                    fincaId = dto.FincaId,
+                    choferId = (int)viaje.UsuarioId,
+                    litros = dto.Litros,
+                    esAcida = dto.EsAcida,
+                    tipoLeche = tipoLecheEfectivo,
+                    esDiferido = esDiferidoEfectivo,
+                    precioAplicado,
+                    tasaActual,
+                    uuidLocal = Guid.NewGuid().ToString(),
+                    observacion = dto.Observacion,
+                    fotoComprobante = dto.FotoComprobante,
+                    controlRutaId = dto.ControlRutaId,
+                    usuarioId
+                });
+            }
 
             // Actualizar total litros finca en el viaje
             await connection.ExecuteAsync(@"

@@ -271,7 +271,7 @@ namespace Transporte.Infrastructure.Repositories
                     var fincasRecSql = @"
                         SELECT DISTINCT FincaId 
                         FROM TB_RUTAS_RECOLECCION 
-                        WHERE ControlRutaId = @TicketId AND FincaId IS NOT NULL";
+                        WHERE ControlRutaId = @TicketId AND FincaId IS NOT NULL AND Litros > 0";
                     var recIds = await connection.QueryAsync<int>(fincasRecSql, new { TicketId = (long)ticketInfo.Id });
                     item.FincasRecolectadasIds = recIds.ToList();
                 }
@@ -324,7 +324,7 @@ namespace Transporte.Infrastructure.Repositories
                     var fincasRecSql = @"
                         SELECT DISTINCT FincaId 
                         FROM TB_RUTAS_RECOLECCION 
-                        WHERE ControlRutaId = @TicketId AND FincaId IS NOT NULL";
+                        WHERE ControlRutaId = @TicketId AND FincaId IS NOT NULL AND Litros > 0";
                     var recIds = (await connection.QueryAsync<int>(fincasRecSql, new { TicketId = tId })).ToList();
 
                     int capacidadCamion = (int)tk.CapacidadCamionLitros;
@@ -643,6 +643,23 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<bool> EliminarPlanificacionChoferAsync(int id)
         {
             using var connection = CreateConnection();
+            var plan = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                "SELECT ControlRutaId FROM TB_PLANIFICACION_RUTAS_CHOFERES WHERE Id = @id", new { id });
+            if (plan != null && plan.ControlRutaId != null)
+            {
+                long crId = (long)plan.ControlRutaId;
+                var totalLeche = await connection.ExecuteScalarAsync<int?>(
+                    "SELECT SUM(Litros) FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @crId AND Litros > 0", new { crId }) ?? 0;
+                if (totalLeche > 0)
+                {
+                    throw new InvalidOperationException($"No se puede eliminar la planificación porque el ticket #{crId} ya tiene {totalLeche:N0} litros de leche recolectados en ruta.");
+                }
+
+                // Si todas las paradas eran 0 litros, limpiar paradas vacías y el ticket abierto
+                await connection.ExecuteAsync("DELETE FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @crId AND (Litros = 0 OR Litros IS NULL)", new { crId });
+                await connection.ExecuteAsync("DELETE FROM TB_CONTROL_RUTAS WHERE Id = @crId AND Estado = 'ABIERTO' AND (TotalLitrosFinca = 0 OR TotalLitrosFinca IS NULL)", new { crId });
+            }
+
             var rows = await connection.ExecuteAsync("DELETE FROM TB_PLANIFICACION_RUTAS_CHOFERES WHERE Id = @id", new { id });
             return rows > 0;
         }

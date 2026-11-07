@@ -1597,6 +1597,7 @@ namespace Transporte.Core.DTOs
         public DateTime? FechaSalida { get; set; }
         public DateTime? FechaEntrega { get; set; }
         public long? ControlRutaId { get; set; }
+        public string? FotoReciboUrl { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 
@@ -1628,6 +1629,7 @@ namespace Transporte.Core.DTOs
         public string? TipoLeche { get; set; }
         public string? Observacion { get; set; }
         public string? Observaciones { get; set; }
+        public string? FotoReciboUrl { get; set; }
         public List<DesgloseEntregaCompaniaDto>? Desgloses { get; set; }
     }
 
@@ -1641,6 +1643,7 @@ namespace Transporte.Core.DTOs
         public string? TipoLeche { get; set; }
         public string? Estado { get; set; }
         public string? Observacion { get; set; }
+        public string? FotoReciboUrl { get; set; }
     }
 
     public class DestinoEnvioRutaDto

@@ -10726,6 +10726,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     cc.FechaSalida,
                     cc.FechaEntrega,
                     cc.ControlRutaId,
+                    cc.FotoReciboUrl,
                     cc.CreatedAt
                 FROM TB_CONTROL_COMPANIAS cc
                 LEFT JOIN TB_USUARIOS u ON cc.UsuarioId = u.Id
@@ -10792,6 +10793,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     cc.FechaSalida,
                     cc.FechaEntrega,
                     cc.ControlRutaId,
+                    cc.FotoReciboUrl,
                     cc.CreatedAt
                 FROM TB_CONTROL_COMPANIAS cc
                 LEFT JOIN TB_USUARIOS u ON cc.UsuarioId = u.Id
@@ -10822,6 +10824,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     cc.Observacion,
                     cc.FechaSalida,
                     cc.FechaEntrega,
+                    cc.FotoReciboUrl,
                     cc.CreatedAt
                 FROM TB_CONTROL_COMPANIAS cc
                 LEFT JOIN TB_USUARIOS u ON cc.UsuarioId = u.Id
@@ -10978,10 +10981,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         TipoLeche = @tipoPrimer,
                         FechaEntrega = GETDATE(),
                         Observacion = @obsFinal,
+                        FotoReciboUrl = ISNULL(@fotoReciboUrl, FotoReciboUrl),
                         ModifiedAt = GETDATE(),
                         ModifiedBy = @modificadoPor
                     WHERE Id = @id",
-                    new { companiaId = primer.CompaniaId > 0 ? primer.CompaniaId : control.CompaniaId, litrosDespacho = primer.LitrosRecibidos, recibidos = primer.LitrosRecibidos, tipoPrimer, obsFinal = obsFinal0, modificadoPor, id });
+                    new { companiaId = primer.CompaniaId > 0 ? primer.CompaniaId : control.CompaniaId, litrosDespacho = primer.LitrosRecibidos, recibidos = primer.LitrosRecibidos, tipoPrimer, obsFinal = obsFinal0, fotoReciboUrl = dto.FotoReciboUrl, modificadoPor, id });
 
                 // Registrar primera entrada en TB_ENTREGAS_COMPANIA
                 if (cicloId.HasValue && cicloId.Value > 0)
@@ -11086,10 +11090,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     TipoLeche = @tipoFinal,
                     FechaEntrega = GETDATE(),
                     Observacion = @obsFinal,
+                    FotoReciboUrl = ISNULL(@fotoReciboUrl, FotoReciboUrl),
                     ModifiedAt = GETDATE(),
                     ModifiedBy = @modificadoPor
                 WHERE Id = @id",
-                new { targetComp, recibidos, diferencia, porcentaje, tipoFinal, obsFinal, modificadoPor, id });
+                new { targetComp, recibidos, diferencia, porcentaje, tipoFinal, obsFinal, fotoReciboUrl = dto.FotoReciboUrl, modificadoPor, id });
 
             // Registrar / actualizar automáticamente en TB_ENTREGAS_COMPANIA para liquidaciones si existe un ciclo válido
             if (rows > 0 && cicloId.HasValue && cicloId.Value > 0)
@@ -11239,10 +11244,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     Estado = @estado,
                     TipoLeche = @tipoLeche,
                     Observacion = @observacion,
+                    FotoReciboUrl = ISNULL(@fotoReciboUrl, FotoReciboUrl),
                     ModifiedAt = GETDATE(),
                     ModifiedBy = @modificadoPor
                 WHERE Id = @id",
-                new { fecha, choferId, companiaId, despachados, recibidos, diferencia, porcentaje, estado, tipoLeche, observacion, modificadoPor, id });
+                new { fecha, choferId, companiaId, despachados, recibidos, diferencia, porcentaje, estado, tipoLeche, observacion, fotoReciboUrl = dto.FotoReciboUrl, modificadoPor, id });
 
             // Sincronizar SIEMPRE la fecha y datos en TB_ENTREGAS_COMPANIA si existe entrega vinculada
             if (rows > 0)

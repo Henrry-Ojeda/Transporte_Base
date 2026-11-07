@@ -323,7 +323,7 @@ export const operacionesApi = {
     return res.data;
   },
 
-  validarEntregaCompania: async (id: number, dto: { litrosConfirmados?: number; litrosRecibidosCompania?: number; observaciones?: string; observacion?: string; tipoLeche?: string }): Promise<{ success: boolean; message: string }> => {
+  validarEntregaCompania: async (id: number, dto: { litrosConfirmados?: number; litrosRecibidosCompania?: number; observaciones?: string; observacion?: string; tipoLeche?: string; fotoReciboUrl?: string }): Promise<{ success: boolean; message: string }> => {
     const lts = Number(dto.litrosRecibidosCompania ?? dto.litrosConfirmados ?? 0);
     const obs = dto.observaciones ?? dto.observacion ?? '';
     const res = await apiClient.post(`/controlcompanias/${id}/validar-entrega`, {
@@ -332,6 +332,7 @@ export const operacionesApi = {
       observacion: obs,
       observaciones: obs,
       tipoLeche: dto.tipoLeche,
+      fotoReciboUrl: dto.fotoReciboUrl,
     });
     return res.data;
   },

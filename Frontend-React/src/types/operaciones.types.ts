@@ -112,6 +112,7 @@ export interface DespachoCompaniaDto {
   observaciones?: string;
   observacion?: string;
   controlRutaId?: number;
+  fotoReciboUrl?: string;
   createdAt?: string;
 }
 

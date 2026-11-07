@@ -36,6 +36,7 @@ export const ReceptoriaPage: React.FC = () => {
   // Modales
   const [modalNuevoDespacho, setModalNuevoDespacho] = useState<boolean>(false);
   const [modalConfirmar, setModalConfirmar] = useState<boolean>(false);
+  const [modalVerFotoRecibo, setModalVerFotoRecibo] = useState<string | null>(null);
   const [despachoSeleccionado, setDespachoSeleccionado] = useState<DespachoCompaniaDto | null>(null);
   const [litrosConfirmadosInput, setLitrosConfirmadosInput] = useState<number>(0);
   const [obsConfirmacionInput, setObsConfirmacionInput] = useState<string>('');
@@ -532,6 +533,19 @@ export const ReceptoriaPage: React.FC = () => {
     });
   }, [despachosCompanias]);
 
+  // Bandeja 2.1: Salidas confirmadas y finalizadas
+  const salidasFinalizadas = useMemo(() => {
+    return despachosCompanias.filter((d) => {
+      const estadoNorm = (d.estado || '').toUpperCase().trim();
+      return (
+        estadoNorm === 'FINALIZADO' ||
+        estadoNorm === 'CERRADO' ||
+        estadoNorm === 'DESPACHO' ||
+        Number(d.litrosRecibidosCompania || d.litrosConfirmados || 0) > 0
+      );
+    });
+  }, [despachosCompanias]);
+
   return (
     <section id="tab-receptoria" className="tab-content" style={{ display: 'block' }}>
       {/* CABECERA VISTA */}
@@ -940,7 +954,7 @@ export const ReceptoriaPage: React.FC = () => {
                                 gap: '4px',
                               }}
                             >
-                              <i className="fa-solid fa-clock-rotate-left"></i> POR VERIFICACIÓN
+                              <i className="fa-solid fa-clock-rotate-left"></i> ESPERANDO CHOFER
                             </span>
                           </div>
                         </div>
@@ -961,16 +975,36 @@ export const ReceptoriaPage: React.FC = () => {
                           <span>Destino: <strong style={{ color: '#1e293b' }}>{nombreComp}</strong></span>
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#faf5ff', border: '1px solid #e9d5ff', padding: '8px 10px', borderRadius: '6px', margin: '10px 0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#faf5ff', border: '1px solid #e9d5ff', padding: '8px 10px', borderRadius: '6px', margin: '8px 0' }}>
                           <span style={{ fontSize: '12px', color: '#7e22ce', fontWeight: 600 }}>Litros Salida:</span>
                           <strong style={{ fontFamily: 'monospace', fontSize: '16px', color: '#9333ea', fontWeight: 800 }}>{despachados.toLocaleString()} Lts</strong>
+                        </div>
+
+                        {/* Aviso Operativo de Confirmación por Chofer */}
+                        <div
+                          style={{
+                            background: '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            borderRadius: '8px',
+                            padding: '6px 8px',
+                            fontSize: '11px',
+                            color: '#1e40af',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            marginBottom: '10px',
+                          }}
+                        >
+                          <i className="fa-solid fa-mobile-screen-button text-blue-600"></i>
+                          <span>El chofer confirma litros y foto del recibo desde la App Móvil.</span>
                         </div>
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         <button
                           type="button"
-                          className="btn btn-sm btn-primary"
+                          className="btn btn-sm"
                           onClick={() => {
                             setDespachoSeleccionado(d);
                             setLitrosConfirmadosInput(Number(d.litrosDespachados || (d as any).LitrosDespachados || 0));
@@ -979,21 +1013,22 @@ export const ReceptoriaPage: React.FC = () => {
                           }}
                           style={{
                             width: '100%',
-                            fontWeight: 800,
-                            background: 'linear-gradient(135deg, #10b981, #059669)',
-                            border: 'none',
-                            padding: '8px',
+                            fontWeight: 700,
+                            fontSize: '11.5px',
+                            background: '#f8fafc',
+                            border: '1px solid #cbd5e1',
+                            color: '#334155',
+                            padding: '7px',
                             borderRadius: '6px',
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '6px',
-                            boxShadow: '0 2px 6px rgba(16,185,129,0.25)',
-                            color: '#fff',
                             cursor: 'pointer',
                           }}
+                          title="Validar manualmente en caso de contingencia"
                         >
-                          <i className="fa-solid fa-clipboard-check"></i> Validar Entrega en Quesera
+                          <i className="fa-solid fa-clipboard-check text-emerald-600"></i> Validar Manualmente (Soporte Admin)
                         </button>
 
                         {d.controlRutaId && (
@@ -1025,6 +1060,103 @@ export const ReceptoriaPage: React.FC = () => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* SECCIÓN 2.1: SALIDAS FINALIZADAS / CON RECIBO SUBIDO POR EL CHOFER */}
+            {salidasFinalizadas.length > 0 && (
+              <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1.5px dashed #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h4 style={{ fontSize: '14px', fontWeight: 800, color: '#166534', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <i className="fa-solid fa-circle-check text-emerald-600"></i> Salidas Finalizadas y Conciliadas en Planta ({salidasFinalizadas.length})
+                  </h4>
+                  <span className="badge" style={{ background: '#dcfce7', color: '#15803d', fontWeight: 800, border: '1px solid #bbf7d0' }}>
+                    Confirmadas por Chofer / Báscula
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
+                  {salidasFinalizadas.map((f) => {
+                    const desp = Number(f.litrosDespachados || 0);
+                    const rec = Number(f.litrosRecibidosCompania || f.litrosConfirmados || 0);
+                    const dif = rec - desp;
+                    const compObj = companias.find((c) => c.id === f.companiaId);
+                    const camionObj = camiones.find((c) => c.id === f.camionId);
+
+                    return (
+                      <div
+                        key={`finalizada-${f.id}`}
+                        style={{
+                          background: '#ffffff',
+                          border: '1px solid #bbf7d0',
+                          borderLeft: '4px solid #10b981',
+                          borderRadius: '10px',
+                          padding: '12px 14px',
+                          boxShadow: '0 1px 4px rgba(0,0,0,0.03)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <strong style={{ color: '#0f172a', fontSize: '13.5px' }}>
+                            Ticket #{f.id} • {f.nombreCompania || f.companiaNombre || compObj?.nombre || 'Planta'}
+                          </strong>
+                          <span className="badge" style={{ background: '#ecfdf5', color: '#047857', fontWeight: 800, fontSize: '10.5px' }}>
+                            FINALIZADO
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
+                          <i className="fa-solid fa-user-tie mr-1 text-slate-500"></i>
+                          <strong>{f.nombreConductor || 'Chofer'}</strong> • {f.camionPlaca || camionObj?.placa || 'Cisterna'}
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', background: '#f8fafc', padding: '8px', borderRadius: '8px', marginBottom: '8px' }}>
+                          <div>
+                            <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Despacho:</span>
+                            <strong style={{ fontSize: '13px', color: '#0369a1' }}>{desp.toLocaleString()} L</strong>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Recibido:</span>
+                            <strong style={{ fontSize: '13px', color: '#15803d' }}>{rec.toLocaleString()} L</strong>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Merma:</span>
+                            <strong style={{ fontSize: '13px', color: dif < 0 ? '#dc2626' : '#15803d' }}>
+                              {dif !== 0 ? (dif > 0 ? `+${dif.toLocaleString()} L` : `${dif.toLocaleString()} L`) : '0 L'}
+                            </strong>
+                          </div>
+                        </div>
+
+                        {f.fotoReciboUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setModalVerFotoRecibo(f.fotoReciboUrl!)}
+                            style={{
+                              width: '100%',
+                              background: '#f0fdf4',
+                              border: '1.5px solid #86efac',
+                              color: '#15803d',
+                              borderRadius: '8px',
+                              padding: '7px 10px',
+                              fontSize: '12px',
+                              fontWeight: 800,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <i className="fa-solid fa-camera"></i> Ver Foto del Recibo de Báscula
+                          </button>
+                        ) : (
+                          <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '4px' }}>
+                            Sin comprobante fotográfico adjunto
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -1665,6 +1797,21 @@ export const ReceptoriaPage: React.FC = () => {
                       {/* 8. ACCIONES */}
                       <td style={{ textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'middle', width: '110px', minWidth: '110px', paddingLeft: '8px' }}>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                          {(() => {
+                            const foto = (e as any).fotoReciboUrl || despachosCompanias.find((d: any) => d.id === meta.ctrlCompId || (meta.ticketId && d.controlRutaId === meta.ticketId))?.fotoReciboUrl;
+                            if (!foto) return null;
+                            return (
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                onClick={() => setModalVerFotoRecibo(foto)}
+                                title="Ver comprobante / recibo de báscula"
+                                style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px', color: '#16a34a', borderColor: '#86efac', background: '#f0fdf4', cursor: 'pointer' }}
+                              >
+                                <i className="fa-solid fa-camera" style={{ fontSize: '11.5px' }}></i>
+                              </button>
+                            );
+                          })()}
                           <button
                             type="button"
                             className="btn btn-sm btn-outline"
@@ -2541,6 +2688,79 @@ export const ReceptoriaPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VISUALIZADOR DE RECIBO / COMPROBANTE SUBIDO POR EL CHOFER */}
+      {modalVerFotoRecibo && (
+        <div
+          onClick={() => setModalVerFotoRecibo(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            background: 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#ffffff',
+              borderRadius: '16px',
+              maxWidth: '650px',
+              width: '100%',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)',
+              display: 'flex',
+              flexDirection: 'column',
+              maxHeight: '90vh',
+            }}
+          >
+            <div
+              style={{
+                padding: '14px 20px',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: '#0f172a',
+                color: '#ffffff',
+              }}
+            >
+              <strong style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <i className="fa-solid fa-camera text-emerald-400"></i> Comprobante / Recibo de Báscula del Chofer
+              </strong>
+              <button
+                type="button"
+                onClick={() => setModalVerFotoRecibo(null)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            <div style={{ padding: '12px', background: '#020617', display: 'flex', justifyContent: 'center', overflowY: 'auto' }}>
+              <img
+                src={modalVerFotoRecibo}
+                alt="Recibo Chofer"
+                style={{ maxWidth: '100%', maxHeight: '72vh', objectFit: 'contain', borderRadius: '8px' }}
+              />
+            </div>
+            <div style={{ padding: '12px 20px', background: '#f8fafc', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setModalVerFotoRecibo(null)}
+                style={{ height: '36px', padding: '0 16px', fontWeight: 700 }}
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

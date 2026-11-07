@@ -523,6 +523,58 @@ export const AppMovilPage: React.FC = () => {
     e.target.value = '';
   };
 
+  // Estados y Funciones para Confirmación de Despacho / Entrega en Planta (Chofer)
+  const [modalConfirmarDespachoChofer, setModalConfirmarDespachoChofer] = useState<DespachoCompaniaDto | null>(null);
+  const [formConfirmacionDespacho, setFormConfirmacionDespacho] = useState({
+    litrosRecibidos: '' as string | number,
+    observacion: '',
+    fotoReciboUrl: '',
+  });
+  const [guardandoConfirmacionDespacho, setGuardandoConfirmacionDespacho] = useState(false);
+  const inputFotoReciboDespachoRef = useRef<HTMLInputElement | null>(null);
+
+  const handleSubirFotoReciboDespacho = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await comprimirImagenMovil(file);
+      setFormConfirmacionDespacho((prev) => ({ ...prev, fotoReciboUrl: base64 }));
+      toast.success('Foto del comprobante/recibo capturada');
+    } catch {
+      toast.error('No se pudo procesar la foto del recibo');
+    }
+    e.target.value = '';
+  };
+
+  const handleConfirmarEntregaChofer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalConfirmarDespachoChofer) return;
+    const litrosNum = Number(formConfirmacionDespacho.litrosRecibidos);
+    if (!litrosNum || litrosNum <= 0) {
+      toast.error('Por favor ingresa los litros reales recibidos en planta');
+      return;
+    }
+    setGuardandoConfirmacionDespacho(true);
+    try {
+      const res = await operacionesApi.validarEntregaCompania(modalConfirmarDespachoChofer.id, {
+        litrosConfirmados: litrosNum,
+        litrosRecibidosCompania: litrosNum,
+        observacion: formConfirmacionDespacho.observacion || 'Confirmado por chofer desde App Móvil',
+        observaciones: formConfirmacionDespacho.observacion || 'Confirmado por chofer desde App Móvil',
+        fotoReciboUrl: formConfirmacionDespacho.fotoReciboUrl || undefined,
+      });
+      toast.success(res.message || '¡Entrega confirmada y recibo enviado exitosamente!');
+      setModalConfirmarDespachoChofer(null);
+      setFormConfirmacionDespacho({ litrosRecibidos: '', observacion: '', fotoReciboUrl: '' });
+      await cargarEntregasChofer();
+      await cargarDespachoActivo();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al confirmar la entrega en planta');
+    } finally {
+      setGuardandoConfirmacionDespacho(false);
+    }
+  };
+
   // Estado de Sincronización
   const [sincronizando, setSincronizando] = useState(false);
 
@@ -3226,29 +3278,61 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setTabActiva('entregas')}
-                    style={{
-                      width: '100%',
-                      background: 'linear-gradient(135deg, #7e22ce, #6b21a8)',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '12px',
-                      padding: '11px',
-                      fontSize: '13px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      boxShadow: '0 4px 12px rgba(126, 34, 206, 0.25)',
-                    }}
-                  >
-                    <i className="fa-solid fa-eye"></i>
-                    <span>Ver Detalles en Entregas / Planta</span>
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalConfirmarDespachoChofer(despachoActivo);
+                        setFormConfirmacionDespacho({
+                          litrosRecibidos: despachoActivo.litrosDespachados || '',
+                          observacion: '',
+                          fotoReciboUrl: despachoActivo.fotoReciboUrl || '',
+                        });
+                      }}
+                      style={{
+                        width: '100%',
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '12px',
+                        padding: '11px',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                      }}
+                    >
+                      <i className="fa-solid fa-clipboard-check"></i>
+                      <span>Confirmar Entrega en Planta & Subir Recibo</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTabActiva('entregas')}
+                      style={{
+                        width: '100%',
+                        background: '#ffffff',
+                        color: '#7e22ce',
+                        border: '1px solid #d8b4fe',
+                        borderRadius: '12px',
+                        padding: '9px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <i className="fa-solid fa-list-check"></i>
+                      <span>Ir a Bandeja de Entregas</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -4440,11 +4524,448 @@ export const AppMovilPage: React.FC = () => {
                           Merma: {merma > 0 ? `+${merma.toLocaleString()} L` : `${merma.toLocaleString()} L`}
                         </div>
                       )}
+
+                      {/* Botones de Acción de Entrega (Chofer) */}
+                      {est !== 'FINALIZADO' && est !== 'CERRADO' ? (
+                        <div style={{ marginTop: '12px' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalConfirmarDespachoChofer(d);
+                              setFormConfirmacionDespacho({
+                                litrosRecibidos: d.litrosDespachados || '',
+                                observacion: '',
+                                fotoReciboUrl: d.fotoReciboUrl || '',
+                              });
+                            }}
+                            style={{
+                              width: '100%',
+                              background: 'linear-gradient(135deg, #10b981, #059669)',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: '12px',
+                              padding: '11px 16px',
+                              fontWeight: 800,
+                              fontSize: '13px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                              boxShadow: '0 3px 10px rgba(16,185,129,0.25)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <i className="fa-solid fa-clipboard-check"></i>
+                            Confirmar Entrega en Planta & Subir Recibo
+                          </button>
+                        </div>
+                      ) : (
+                        d.fotoReciboUrl && (
+                          <div style={{ marginTop: '10px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setFotoReciboVerModal(d.fotoReciboUrl)}
+                              style={{
+                                width: '100%',
+                                background: '#f5f3ff',
+                                color: '#7e22ce',
+                                border: '1px solid #d8b4fe',
+                                borderRadius: '10px',
+                                padding: '8px 12px',
+                                fontWeight: 700,
+                                fontSize: '12px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <i className="fa-solid fa-camera"></i> Ver Recibo de Báscula / Planta
+                            </button>
+                          </div>
+                        )
+                      )}
                     </div>
                   );
                 })}
               </div>
             )}
+
+            {/* MODAL MÓVIL: CHOFER CONFIRMA LITROS Y SUBE FOTO DE RECIBO */}
+            {modalConfirmarDespachoChofer && (() => {
+              const desp = Number(modalConfirmarDespachoChofer.litrosDespachados || 0);
+              const rec = Number(formConfirmacionDespacho.litrosRecibidos || 0);
+              const dif = rec > 0 ? rec - desp : 0;
+              const pct = desp > 0 && rec > 0 ? ((Math.abs(dif) / desp) * 100).toFixed(2) : '0.00';
+
+              return (
+                <div
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 9999,
+                    background: 'rgba(15, 23, 42, 0.75)',
+                    backdropFilter: 'blur(4px)',
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      width: '100%',
+                      maxWidth: '480px',
+                      borderTopLeftRadius: '24px',
+                      borderTopRightRadius: '24px',
+                      maxHeight: '92vh',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      boxShadow: '0 -10px 25px rgba(0,0,0,0.2)',
+                      animation: 'slideUp 0.25s ease-out',
+                    }}
+                  >
+                    {/* Header */}
+                    <div
+                      style={{
+                        padding: '16px 20px',
+                        borderBottom: '1px solid #e2e8f0',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        background: 'linear-gradient(135deg, #059669, #10b981)',
+                        borderTopLeftRadius: '24px',
+                        borderTopRightRadius: '24px',
+                        color: '#ffffff',
+                      }}
+                    >
+                      <div>
+                        <h3 style={{ fontSize: '16px', fontWeight: 800, margin: 0 }}>
+                          Confirmar Entrega en Planta
+                        </h3>
+                        <p style={{ fontSize: '11.5px', margin: '2px 0 0 0', opacity: 0.9 }}>
+                          Ticket #{modalConfirmarDespachoChofer.id} • {modalConfirmarDespachoChofer.nombreCompania || 'Planta Destino'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setModalConfirmarDespachoChofer(null)}
+                        style={{
+                          background: 'rgba(255,255,255,0.2)',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '32px',
+                          height: '32px',
+                          color: '#ffffff',
+                          fontSize: '16px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
+
+                    {/* Form Body */}
+                    <form
+                      onSubmit={handleConfirmarEntregaChofer}
+                      style={{
+                        padding: '20px',
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '14px',
+                      }}
+                    >
+                      {/* Resumen Salida */}
+                      <div
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '14px',
+                          padding: '12px 14px',
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: '10px',
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 600 }}>
+                            Litros Despachados:
+                          </span>
+                          <strong style={{ fontSize: '16px', color: '#0369a1', fontFamily: 'monospace' }}>
+                            {desp.toLocaleString()} L
+                          </strong>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 600 }}>
+                            Destino:
+                          </span>
+                          <strong style={{ fontSize: '13px', color: '#1e293b' }}>
+                            {modalConfirmarDespachoChofer.nombreCompania || 'Receptoría'}
+                          </strong>
+                        </div>
+                      </div>
+
+                      {/* Input Litros Recibidos */}
+                      <div>
+                        <label style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+                          Litros Recibidos en Planta / Báscula *
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          step="any"
+                          placeholder="Ej: 5000"
+                          value={formConfirmacionDespacho.litrosRecibidos}
+                          onChange={(e) =>
+                            setFormConfirmacionDespacho((prev) => ({
+                              ...prev,
+                              litrosRecibidos: e.target.value,
+                            }))
+                          }
+                          style={{
+                            width: '100%',
+                            height: '46px',
+                            fontSize: '18px',
+                            fontWeight: 800,
+                            color: '#047857',
+                            background: '#f0fdf4',
+                            border: '2px solid #86efac',
+                            borderRadius: '12px',
+                            padding: '0 14px',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+
+                      {/* Indicador de Merma / Diferencia en Tiempo Real */}
+                      {rec > 0 && (
+                        <div
+                          style={{
+                            background: dif === 0 ? '#f0fdf4' : dif < 0 ? '#fef2f2' : '#eff6ff',
+                            border: `1.5px solid ${dif === 0 ? '#86efac' : dif < 0 ? '#fca5a5' : '#93c5fd'}`,
+                            borderRadius: '12px',
+                            padding: '10px 14px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <div>
+                            <span style={{ fontSize: '11px', color: '#64748b', display: 'block', fontWeight: 600 }}>
+                              Diferencia / Merma:
+                            </span>
+                            <strong
+                              style={{
+                                fontSize: '14px',
+                                color: dif === 0 ? '#15803d' : dif < 0 ? '#dc2626' : '#1d4ed8',
+                              }}
+                            >
+                              {dif === 0 ? 'Sin Merma (Exacto)' : dif < 0 ? `${dif.toLocaleString()} L` : `+${dif.toLocaleString()} L`}
+                            </strong>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: '12px',
+                              fontWeight: 800,
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              background: dif === 0 ? '#dcfce7' : dif < 0 ? '#fee2e2' : '#dbeafe',
+                              color: dif === 0 ? '#15803d' : dif < 0 ? '#dc2626' : '#1d4ed8',
+                            }}
+                          >
+                            {pct}% Merma
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Subir / Tomar Foto del Recibo de Planta */}
+                      <div>
+                        <label style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+                          Foto del Recibo / Ticket de Báscula
+                        </label>
+                        <input
+                          ref={inputFotoReciboDespachoRef}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          style={{ display: 'none' }}
+                          onChange={handleSubirFotoReciboDespacho}
+                        />
+
+                        {formConfirmacionDespacho.fotoReciboUrl ? (
+                          <div
+                            style={{
+                              border: '2px solid #86efac',
+                              borderRadius: '12px',
+                              padding: '10px',
+                              background: '#f0fdf4',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '12px',
+                            }}
+                          >
+                            <img
+                              src={formConfirmacionDespacho.fotoReciboUrl}
+                              alt="Recibo"
+                              style={{
+                                width: '60px',
+                                height: '60px',
+                                objectFit: 'cover',
+                                borderRadius: '8px',
+                                border: '1px solid #cbd5e1',
+                              }}
+                            />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#15803d' }}>
+                                <i className="fa-solid fa-circle-check mr-1"></i> Foto de recibo cargada
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b' }}>Listo para enviar</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button
+                                type="button"
+                                onClick={() => inputFotoReciboDespachoRef.current?.click()}
+                                style={{
+                                  background: '#ffffff',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '8px',
+                                  padding: '6px 10px',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Cambiar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setFormConfirmacionDespacho((prev) => ({ ...prev, fotoReciboUrl: '' }))}
+                                style={{
+                                  background: '#fee2e2',
+                                  border: '1px solid #fca5a5',
+                                  borderRadius: '8px',
+                                  padding: '6px 10px',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  color: '#dc2626',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Quitar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => inputFotoReciboDespachoRef.current?.click()}
+                            style={{
+                              width: '100%',
+                              background: '#f8fafc',
+                              border: '2px dashed #94a3b8',
+                              borderRadius: '12px',
+                              padding: '16px',
+                              color: '#475569',
+                              fontWeight: 700,
+                              fontSize: '13px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <i className="fa-solid fa-camera text-2xl text-emerald-600"></i>
+                            <span>Tomar Foto del Recibo de Báscula</span>
+                            <small style={{ fontSize: '11px', color: '#94a3b8' }}>o seleccionar desde la galería</small>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Observaciones */}
+                      <div>
+                        <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                          Observaciones / Comentarios (Opcional)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ej: Recibido por Ing. Pérez en silo 3..."
+                          value={formConfirmacionDespacho.observacion}
+                          onChange={(e) =>
+                            setFormConfirmacionDespacho((prev) => ({ ...prev, observacion: e.target.value }))
+                          }
+                          style={{
+                            width: '100%',
+                            height: '40px',
+                            borderRadius: '10px',
+                            border: '1px solid #cbd5e1',
+                            padding: '0 12px',
+                            fontSize: '13px',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+
+                      {/* Botones de Acción */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px', marginTop: '10px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setModalConfirmarDespachoChofer(null)}
+                          disabled={guardandoConfirmacionDespacho}
+                          style={{
+                            background: '#f1f5f9',
+                            color: '#475569',
+                            border: 'none',
+                            borderRadius: '12px',
+                            height: '46px',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={guardandoConfirmacionDespacho}
+                          style={{
+                            background: 'linear-gradient(135deg, #059669, #10b981)',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '12px',
+                            height: '46px',
+                            fontWeight: 800,
+                            fontSize: '13px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
+                            cursor: guardandoConfirmacionDespacho ? 'not-allowed' : 'pointer',
+                            opacity: guardandoConfirmacionDespacho ? 0.7 : 1,
+                          }}
+                        >
+                          {guardandoConfirmacionDespacho ? (
+                            <>
+                              <i className="fa-solid fa-spinner fa-spin"></i> Guardando...
+                            </>
+                          ) : (
+                            <>
+                              <i className="fa-solid fa-circle-check"></i> Finalizar y Confirmar
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
           );
         })()}

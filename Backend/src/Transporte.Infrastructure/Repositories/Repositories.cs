@@ -8881,6 +8881,27 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 observacion = observacionFinal, usuarioId
             });
 
+            // Si se especificaron fincas personalizadas/modificadas, sincronizar paradas con Litros = 0
+            if (nuevoId > 0 && dto.FincaIds != null && dto.FincaIds.Any())
+            {
+                foreach (var fId in dto.FincaIds.Distinct())
+                {
+                    try
+                    {
+                        var sqlParada = @"
+                            IF NOT EXISTS (SELECT 1 FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @nuevoId AND FincaId = @fId)
+                            BEGIN
+                                INSERT INTO TB_RUTAS_RECOLECCION
+                                (ControlRutaId, FincaId, Litros, EsAcida, TipoLeche, Fecha, CreatedAt, Observacion)
+                                VALUES
+                                (@nuevoId, @fId, 0, 0, 'VACA', @fecha, GETDATE(), 'Asignada en inicio de ruta [ORIGEN_PLANIFICACION]');
+                            END";
+                        await connection.ExecuteAsync(sqlParada, new { nuevoId, fId, fecha });
+                    }
+                    catch { /* Tolerante */ }
+                }
+            }
+
             // Notificación automática al chofer de asignación de ruta
             if (nuevoId > 0 && conductorEfectivo > 0)
             {

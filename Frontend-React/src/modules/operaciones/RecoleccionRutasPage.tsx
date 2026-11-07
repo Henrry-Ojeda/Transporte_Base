@@ -237,7 +237,7 @@ export const RecoleccionRutasPage: React.FC = () => {
   const [modalTraspaso, setModalTraspaso] = useState(false);
   const [modalCerrarViaje, setModalCerrarViaje] = useState(false);
 
-  // Formulario Iniciar Viaje (con Selección Múltiple de Rutas y Validación de Capacidad)
+  // Formulario Iniciar Viaje (con Selección Múltiple de Rutas, Personalización de Fincas y Validación de Capacidad)
   const [formIniciar, setFormIniciar] = useState({
     fecha: fechaFiltro || hoyStr,
     camionId: 0,
@@ -249,12 +249,20 @@ export const RecoleccionRutasPage: React.FC = () => {
     observaciones: '',
   });
 
+  // Fincas seleccionadas específicamente para el viaje a iniciar (permite modificar la logística antes de arrancar)
+  const [fincasSeleccionadasIniciar, setFincasSeleccionadasIniciar] = useState<number[]>([]);
+  const [busquedaFincaIniciar, setBusquedaFincaIniciar] = useState('');
+  const [mostrarTodasLasFincasIniciar, setMostrarTodasLasFincasIniciar] = useState(false);
+
   const abrirModalIniciarViaje = () => {
     setFormIniciar((prev) => ({
       ...prev,
       fecha: fechaFiltro || hoyStr,
       choferId: user?.id && rol === 'CHOFER' ? user.id : prev.choferId,
     }));
+    setFincasSeleccionadasIniciar([]);
+    setBusquedaFincaIniciar('');
+    setMostrarTodasLasFincasIniciar(false);
     setModalIniciarViaje(true);
   };
 
@@ -549,22 +557,32 @@ export const RecoleccionRutasPage: React.FC = () => {
   // MUTATIONS
   // =========================================================================
   const iniciarMutation = useMutation({
-    mutationFn: (dto: typeof formIniciar) => {
+    mutationFn: async (dto: typeof formIniciar) => {
       const payload: any = {
         fecha: dto.fecha,
         camionId: dto.camionId,
         choferId: dto.choferId,
         rutaLogisticaId: dto.rutasLogisticasIds.length > 0 ? dto.rutasLogisticasIds[0] : (dto.rutaLogisticaId || undefined),
         rutasLogisticasIds: dto.rutasLogisticasIds,
+        fincaIds: fincasSeleccionadasIniciar.length > 0 ? fincasSeleccionadasIniciar : undefined,
         odometroInicialKm: dto.odometroInicialKm ? Number(dto.odometroInicialKm) : undefined,
         observacion: dto.observaciones,
       };
-      return operacionesApi.iniciarViaje(payload);
+      const res = await operacionesApi.iniciarViaje(payload);
+      if (res?.id && fincasSeleccionadasIniciar.length > 0) {
+        try {
+          await operacionesApi.modificarFincasTicket(res.id, fincasSeleccionadasIniciar);
+        } catch (e) {
+          console.warn('Sincronización complementaria de fincas:', e);
+        }
+      }
+      return res;
     },
     onSuccess: (data) => {
       toast.success(data.message || 'Viaje iniciado exitosamente');
       queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
       setModalIniciarViaje(false);
+      setFincasSeleccionadasIniciar([]);
       setFormIniciar({
         fecha: fechaFiltro || hoyStr,
         camionId: 0,
@@ -1367,13 +1385,21 @@ export const RecoleccionRutasPage: React.FC = () => {
     return { totalViajes, activosEnRuta, totalRecogido, totalDespachado };
   }, [viajes, despachos]);
 
-  // Validación y cálculo dinámico de capacidad en Iniciar Viaje (±15% configurable)
+  // Validación y cálculo dinámico de capacidad en Iniciar Viaje (con Fincas personalizadas y tolerancia ±15%)
   const calculoCapacidadModal = useMemo(() => {
     const rIds = formIniciar.rutasLogisticasIds;
     const camion = camiones.find((c) => c.id === formIniciar.camionId);
     const capacidad = camion?.capacidadLitros || 0;
 
-    if (rIds.length === 0) {
+    // Fincas activas: si hay fincas seleccionadas explícitas, usamos esas; si no y hay rutas, usamos las de las rutas
+    let fincasActivas: any[] = [];
+    if (fincasSeleccionadasIniciar.length > 0) {
+      fincasActivas = fincas.filter((f) => fincasSeleccionadasIniciar.includes(f.id));
+    } else if (rIds.length > 0) {
+      fincasActivas = fincas.filter((f) => f.rutaId && rIds.includes(f.rutaId));
+    }
+
+    if (fincasActivas.length === 0 && rIds.length === 0) {
       return {
         rutasSeleccionadas: [],
         fincasDeRutas: [],
@@ -1381,20 +1407,22 @@ export const RecoleccionRutasPage: React.FC = () => {
         capacidad,
         diferencia: 0,
         porcentajeDesviacion: 0,
+        porcentajeLlenado: 0,
         estado: 'MODO_LIBRE',
       };
     }
 
-    const fincasDeRutas = fincas.filter((f) => f.rutaId && rIds.includes(f.rutaId));
-    const litrosEstimados = fincasDeRutas.reduce((acc, f) => acc + getPromedioFinca(f.id, f), 0);
+    const litrosEstimados = fincasActivas.reduce((acc, f) => acc + getPromedioFinca(f.id, f), 0);
 
     let diferencia = 0;
     let porcentajeDesviacion = 0;
+    let porcentajeLlenado = 0;
     let estado: 'OPTIMO' | 'EXCESO' | 'BAJO' = 'OPTIMO';
 
     if (capacidad > 0) {
       diferencia = litrosEstimados - capacidad;
       porcentajeDesviacion = ((litrosEstimados - capacidad) / capacidad) * 100;
+      porcentajeLlenado = Math.min(Math.round((litrosEstimados / capacidad) * 100), 200);
       const tol = Number(formIniciar.toleranciaPorcentaje) || 15;
       if (porcentajeDesviacion > tol) {
         estado = 'EXCESO';
@@ -1407,14 +1435,32 @@ export const RecoleccionRutasPage: React.FC = () => {
 
     return {
       rutasSeleccionadas: rutasLogistica.filter((r) => rIds.includes(r.id)),
-      fincasDeRutas,
+      fincasDeRutas: fincasActivas,
       litrosEstimados,
       capacidad,
       diferencia,
       porcentajeDesviacion,
+      porcentajeLlenado,
       estado,
     };
-  }, [formIniciar.rutasLogisticasIds, formIniciar.camionId, formIniciar.toleranciaPorcentaje, fincas, camiones, rutasLogistica, mapaPromediosFincas]);
+  }, [formIniciar.rutasLogisticasIds, fincasSeleccionadasIniciar, formIniciar.camionId, formIniciar.toleranciaPorcentaje, fincas, camiones, rutasLogistica, mapaPromediosFincas]);
+
+  // Lista de fincas relevantes para el modal de Iniciar Viaje (para modificar la logística antes de iniciar)
+  const fincasModalIniciarDisponibles = useMemo(() => {
+    const rIds = formIniciar.rutasLogisticasIds;
+    let base = fincas;
+    if (!mostrarTodasLasFincasIniciar && rIds.length > 0) {
+      base = fincas.filter((f) => f.rutaId && rIds.includes(f.rutaId));
+    }
+    if (!busquedaFincaIniciar.trim()) return base;
+    const q = busquedaFincaIniciar.toLowerCase().trim();
+    return base.filter((f) => {
+      const nom = String(f.nombre || '').toLowerCase();
+      const prod = String((f as any).productorNombre || (f as any).propietarioNombre || '').toLowerCase();
+      const cod = String((f as any).codigo || f.id || '').toLowerCase();
+      return nom.includes(q) || prod.includes(q) || cod.includes(q);
+    });
+  }, [fincas, formIniciar.rutasLogisticasIds, mostrarTodasLasFincasIniciar, busquedaFincaIniciar]);
 
   // TOGGLE DE ACORDEÓN EN TARJETAS
   const toggleAcordeonFincas = (ticketId: number) => {
@@ -3724,22 +3770,87 @@ export const RecoleccionRutasPage: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 2: INICIAR NUEVO VIAJE (MULTISELECCIÓN DE RUTAS & VALIDACIÓN ±15%)  */}
+      {/* MODAL 2: INICIAR NUEVO VIAJE (MULTISELECCIÓN, PERSONALIZACIÓN DE FINCAS Y CAPACIDAD) */}
       {/* ========================================================================= */}
       {modalIniciarViaje && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', padding: '16px' }}>
-          <div className="content-card" style={{ width: '100%', maxWidth: '580px', maxHeight: '92vh', overflowY: 'auto', padding: '24px', borderRadius: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '14px', marginBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
-              <div>
-                <h3 style={{ fontSize: '17px', fontWeight: 800, margin: 0, color: '#0f172a' }}>
-                  <i className="fa-solid fa-play" style={{ color: '#10b981', marginRight: '8px' }}></i>
-                  Iniciar Nuevo Viaje de Recolección
-                </h3>
-                <span style={{ fontSize: '12px', color: '#64748b' }}>
-                  Asigna cisterna, chofer y las rutas planificadas para auditar la capacidad del tanque.
-                </span>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.72)', backdropFilter: 'blur(5px)', padding: '16px' }}>
+          <div
+            className="content-card"
+            style={{
+              width: '100%',
+              maxWidth: '820px',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: 0,
+              borderRadius: '20px',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+              background: '#ffffff',
+            }}
+          >
+            {/* ENCABEZADO MODAL PREMIUM */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '20px 24px',
+                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                borderBottom: '1px solid #334155',
+                borderRadius: '19px 19px 0 0',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ffffff',
+                    fontSize: '20px',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+                  }}
+                >
+                  <i className="fa-solid fa-truck-droplet"></i>
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#ffffff', letterSpacing: '-0.02em' }}>
+                      Iniciar Nuevo Viaje de Recolección
+                    </h3>
+                    <span style={{ fontSize: '10.5px', fontWeight: 700, padding: '2px 8px', borderRadius: '9999px', background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.35)' }}>
+                      Logística V2
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginTop: '2px' }}>
+                    Asigna cisterna, conductor y personaliza las paradas de las fincas para auditar la capacidad en vivo.
+                  </span>
+                </div>
               </div>
-              <button type="button" onClick={() => setModalIniciarViaje(false)} style={{ background: 'none', border: 'none', fontSize: '18px', color: '#94a3b8', cursor: 'pointer' }}>
+              <button
+                type="button"
+                onClick={() => setModalIniciarViaje(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '18px',
+                  color: '#cbd5e1',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)')}
+              >
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
@@ -3757,55 +3868,133 @@ export const RecoleccionRutasPage: React.FC = () => {
                 }
                 iniciarMutation.mutate(formIniciar);
               }}
+              style={{ padding: '22px 24px' }}
             >
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontWeight: 700 }}>Fecha Operativa *</label>
-                  <input
-                    type="date"
-                    value={formIniciar.fecha}
-                    onChange={(e) => setFormIniciar({ ...formIniciar, fecha: e.target.value })}
-                    className="form-input"
-                    required
-                  />
+              {/* SECCIÓN 1: RECURSOS ASIGNADOS (FECHA, CHOFER, CAMIÓN) */}
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '14px',
+                  padding: '16px',
+                  marginBottom: '18px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <i className="fa-solid fa-id-card-clip" style={{ color: '#2563eb', fontSize: '14px' }}></i>
+                  <strong style={{ fontSize: '13px', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    1. Asignación de Recursos Principales
+                  </strong>
                 </div>
 
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontWeight: 700 }}>Chofer Responsable *</label>
-                  <ChoferSelect
-                    value={formIniciar.choferId}
-                    onChange={(id) => setFormIniciar({ ...formIniciar, choferId: id })}
-                    required
-                  />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: '#334155' }}>
+                      <i className="fa-regular fa-calendar" style={{ marginRight: '5px', color: '#64748b' }}></i>
+                      Fecha Operativa *
+                    </label>
+                    <input
+                      type="date"
+                      value={formIniciar.fecha}
+                      onChange={(e) => setFormIniciar({ ...formIniciar, fecha: e.target.value })}
+                      className="form-input"
+                      required
+                      style={{ height: '38px', borderRadius: '8px' }}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: '#334155' }}>
+                      <i className="fa-solid fa-user-tie" style={{ marginRight: '5px', color: '#64748b' }}></i>
+                      Chofer Responsable *
+                    </label>
+                    <ChoferSelect
+                      value={formIniciar.choferId}
+                      onChange={(id) => setFormIniciar({ ...formIniciar, choferId: id })}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: '#334155', margin: 0 }}>
+                        <i className="fa-solid fa-truck" style={{ marginRight: '5px', color: '#64748b' }}></i>
+                        Camión / Cisterna *
+                      </label>
+                      {calculoCapacidadModal.capacidad > 0 && (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', background: '#e0f2fe', padding: '1px 6px', borderRadius: '6px' }}>
+                          Cap: {calculoCapacidadModal.capacidad.toLocaleString()} L
+                        </span>
+                      )}
+                    </div>
+                    <CamionSelect
+                      value={formIniciar.camionId}
+                      onChange={(id) => setFormIniciar({ ...formIniciar, camionId: id })}
+                      required
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="form-group" style={{ marginBottom: '16px' }}>
-                <label className="form-label" style={{ fontWeight: 700 }}>Camión / Cisterna *</label>
-                <CamionSelect
-                  value={formIniciar.camionId}
-                  onChange={(id) => setFormIniciar({ ...formIniciar, camionId: id })}
-                  required
-                />
-              </div>
-
-              {/* ============================================================= */}
-              {/* SELECTOR MÚLTIPLE DE RUTAS LOGÍSTICAS (INTERACTIVO 1:1)       */}
-              {/* ============================================================= */}
-              <div className="form-group" style={{ marginBottom: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <label className="form-label" style={{ fontWeight: 800, margin: 0, color: '#0f172a' }}>
-                    <i className="fa-solid fa-route" style={{ color: '#2563eb', marginRight: '6px' }}></i>
-                    Ruta(s) Logística(s) Asignada(s)
-                  </label>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
-                    {formIniciar.rutasLogisticasIds.length === 0 ? 'Modo Libre activo' : `${formIniciar.rutasLogisticasIds.length} seleccionada(s)`}
-                  </span>
+              {/* SECCIÓN 2: SELECTOR DE RUTA(S) LOGÍSTICA(S) */}
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '14px',
+                  padding: '16px',
+                  marginBottom: '18px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <i className="fa-solid fa-route" style={{ color: '#0284c7', fontSize: '14px' }}></i>
+                    <strong style={{ fontSize: '13px', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      2. Ruta(s) Logística(s) Planificada(s)
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11.5px', fontWeight: 600, color: formIniciar.rutasLogisticasIds.length > 0 ? '#1d4ed8' : '#64748b', background: formIniciar.rutasLogisticasIds.length > 0 ? '#dbeafe' : '#e2e8f0', padding: '2px 8px', borderRadius: '9999px' }}>
+                      {formIniciar.rutasLogisticasIds.length === 0 ? 'Modo Libre activo' : `${formIniciar.rutasLogisticasIds.length} ruta(s) vinculada(s)`}
+                    </span>
+                    {formIniciar.rutasLogisticasIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormIniciar((prev) => ({ ...prev, rutasLogisticasIds: [], rutaLogisticaId: 0 }));
+                          setFincasSeleccionadasIniciar([]);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          fontSize: '11px',
+                          color: '#dc2626',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          padding: '2px 6px',
+                        }}
+                      >
+                        <i className="fa-solid fa-rotate-left"></i> Limpiar
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '10px', background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '9px', maxHeight: '140px', overflowY: 'auto' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '8px',
+                    padding: '8px',
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '10px',
+                    maxHeight: '120px',
+                    overflowY: 'auto',
+                  }}
+                >
                   {rutasLogistica.length === 0 ? (
-                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>No hay rutas registradas en el catálogo.</span>
+                    <span style={{ fontSize: '12px', color: '#94a3b8', padding: '6px' }}>No hay rutas registradas en el catálogo.</span>
                   ) : (
                     rutasLogistica.map((r: any) => {
                       const isChecked = formIniciar.rutasLogisticasIds.includes(r.id);
@@ -3817,11 +4006,22 @@ export const RecoleccionRutasPage: React.FC = () => {
                           key={r.id}
                           type="button"
                           onClick={() => {
+                            const fincasDeEstaRuta = fincas.filter((f) => f.rutaId === r.id).map((f) => f.id);
                             setFormIniciar((prev) => {
                               const exists = prev.rutasLogisticasIds.includes(r.id);
                               const newIds = exists
                                 ? prev.rutasLogisticasIds.filter((id) => id !== r.id)
                                 : [...prev.rutasLogisticasIds, r.id];
+
+                              // Sincronizar fincas seleccionadas en vivo
+                              setFincasSeleccionadasIniciar((fPrev) => {
+                                if (exists) {
+                                  return fPrev.filter((fid) => !fincasDeEstaRuta.includes(fid));
+                                } else {
+                                  return Array.from(new Set([...fPrev, ...fincasDeEstaRuta]));
+                                }
+                              });
+
                               return {
                                 ...prev,
                                 rutasLogisticasIds: newIds,
@@ -3830,50 +4030,220 @@ export const RecoleccionRutasPage: React.FC = () => {
                             });
                           }}
                           style={{
-                            border: isChecked ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
-                            background: isChecked ? '#eff6ff' : '#ffffff',
-                            color: isChecked ? '#1d4ed8' : '#475569',
+                            border: isChecked ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
+                            background: isChecked ? '#eff6ff' : '#f8fafc',
+                            color: isChecked ? '#1d4ed8' : '#334155',
                             fontWeight: isChecked ? 800 : 600,
                             padding: '6px 12px',
-                            borderRadius: '7px',
+                            borderRadius: '8px',
                             fontSize: '12px',
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '6px',
+                            gap: '7px',
                             transition: 'all 0.15s ease',
+                            boxShadow: isChecked ? '0 2px 4px rgba(37, 99, 235, 0.15)' : 'none',
                           }}
                         >
-                          <i className={`fa-${isChecked ? 'solid fa-check-circle' : 'regular fa-circle'}`} style={{ color: isChecked ? '#2563eb' : '#94a3b8' }}></i>
-                          {r.nombre}
-                          <span style={{ fontSize: '10.5px', opacity: 0.8 }}>
-                            (~{ltsEstimadosEsta.toLocaleString()} L)
+                          <i className={`fa-${isChecked ? 'solid fa-circle-check' : 'regular fa-circle'}`} style={{ color: isChecked ? '#2563eb' : '#94a3b8' }}></i>
+                          <span>{r.nombre}</span>
+                          <span style={{ fontSize: '10.5px', color: isChecked ? '#1e40af' : '#64748b', background: isChecked ? '#dbeafe' : '#f1f5f9', padding: '1px 5px', borderRadius: '4px' }}>
+                            ~{ltsEstimadosEsta.toLocaleString()} L
                           </span>
                         </button>
                       );
                     })
                   )}
                 </div>
-                {formIniciar.rutasLogisticasIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setFormIniciar({ ...formIniciar, rutasLogisticasIds: [], rutaLogisticaId: 0 })}
-                    style={{ background: 'none', border: 'none', padding: '4px 0', fontSize: '11px', color: '#dc2626', fontWeight: 700, cursor: 'pointer', marginTop: '4px' }}
-                  >
-                    <i className="fa-solid fa-xmark"></i> Desmarcar todas (Operar en Modo Libre)
-                  </button>
-                )}
               </div>
 
-              {/* ============================================================= */}
-              {/* EVALUACIÓN DE CAPACIDAD DEL TANQUE VS PROMEDIO SEMANAL (±15%) */}
-              {/* ============================================================= */}
-              {calculoCapacidadModal.capacidad > 0 && formIniciar.rutasLogisticasIds.length > 0 && (
+              {/* SECCIÓN 3: 🌾 LOGÍSTICA DE FINCAS (MODIFICACIÓN Y PERSONALIZACIÓN ANTES DE INICIAR) */}
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: '1.5px solid #bfdbfe',
+                  borderRadius: '14px',
+                  padding: '16px',
+                  marginBottom: '18px',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.05)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <i className="fa-solid fa-wheat-awn" style={{ color: '#059669', fontSize: '15px' }}></i>
+                    <div>
+                      <strong style={{ fontSize: '13.5px', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        3. Personalización de Fincas (Logística del Viaje)
+                      </strong>
+                      <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>
+                        Puedes marcar o desmarcar fincas si hoy no ordeñan o si añadirás paradas extra fuera de ruta.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#059669', background: '#ecfdf5', padding: '3px 10px', borderRadius: '9999px', border: '1px solid #a7f3d0' }}>
+                      <i className="fa-solid fa-check" style={{ marginRight: '4px' }}></i>
+                      {fincasSeleccionadasIniciar.length} fincas seleccionadas
+                    </span>
+                  </div>
+                </div>
+
+                {/* BARRA DE HERRAMIENTAS: BUSCADOR Y ACCIONES RÁPIDAS */}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '10px' }}>
+                  <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+                    <i className="fa-solid fa-magnifying-glass" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '12px' }}></i>
+                    <input
+                      type="text"
+                      placeholder="Buscar finca, productor o código..."
+                      value={busquedaFincaIniciar}
+                      onChange={(e) => setBusquedaFincaIniciar(e.target.value)}
+                      className="form-input"
+                      style={{ paddingLeft: '30px', height: '34px', fontSize: '12px', borderRadius: '8px' }}
+                    />
+                    {busquedaFincaIniciar && (
+                      <button
+                        type="button"
+                        onClick={() => setBusquedaFincaIniciar('')}
+                        style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '12px' }}
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idsVisibles = fincasModalIniciarDisponibles.map((f) => f.id);
+                      setFincasSeleccionadasIniciar((prev) => Array.from(new Set([...prev, ...idsVisibles])));
+                    }}
+                    className="btn btn-outline"
+                    style={{ fontSize: '11.5px', fontWeight: 700, padding: '6px 10px', height: '34px', borderRadius: '8px', color: '#0284c7', borderColor: '#bae6fd' }}
+                  >
+                    <i className="fa-solid fa-check-double" style={{ marginRight: '4px' }}></i> Marcar Visibles
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFincasSeleccionadasIniciar([])}
+                    className="btn btn-outline"
+                    style={{ fontSize: '11.5px', fontWeight: 700, padding: '6px 10px', height: '34px', borderRadius: '8px', color: '#dc2626', borderColor: '#fecaca' }}
+                  >
+                    <i className="fa-solid fa-trash-can" style={{ marginRight: '4px' }}></i> Desmarcar Todo
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMostrarTodasLasFincasIniciar(!mostrarTodasLasFincasIniciar)}
+                    className="btn btn-outline"
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      padding: '6px 10px',
+                      height: '34px',
+                      borderRadius: '8px',
+                      background: mostrarTodasLasFincasIniciar ? '#eff6ff' : '#ffffff',
+                      color: mostrarTodasLasFincasIniciar ? '#1d4ed8' : '#475569',
+                      borderColor: mostrarTodasLasFincasIniciar ? '#93c5fd' : '#cbd5e1',
+                    }}
+                    title="Alternar entre ver solo las fincas de la ruta o explorar todo el catálogo del sistema"
+                  >
+                    <i className={`fa-solid ${mostrarTodasLasFincasIniciar ? 'fa-filter-circle-xmark' : 'fa-list-check'}`} style={{ marginRight: '4px' }}></i>
+                    {mostrarTodasLasFincasIniciar ? 'Solo Fincas de Ruta' : 'Ver Todo el Catálogo'}
+                  </button>
+                </div>
+
+                {/* LISTADO INTERACTIVO DE FINCAS EN GRID */}
                 <div
                   style={{
-                    marginBottom: '16px',
-                    padding: '12px 14px',
+                    maxHeight: '230px',
+                    overflowY: 'auto',
+                    border: '1px solid #e2e8f0',
                     borderRadius: '10px',
+                    padding: '8px',
+                    background: '#f8fafc',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                    gap: '8px',
+                  }}
+                >
+                  {fincasModalIniciarDisponibles.length === 0 ? (
+                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '24px 16px', color: '#64748b' }}>
+                      <i className="fa-solid fa-triangle-exclamation" style={{ fontSize: '24px', color: '#cbd5e1', marginBottom: '8px', display: 'block' }}></i>
+                      <p style={{ margin: 0, fontSize: '12.5px', fontWeight: 600 }}>
+                        {formIniciar.rutasLogisticasIds.length === 0 && !mostrarTodasLasFincasIniciar
+                          ? 'Selecciona una ruta arriba o haz clic en "Ver Todo el Catálogo" para elegir fincas.'
+                          : 'No se encontraron fincas con ese criterio de búsqueda.'}
+                      </p>
+                    </div>
+                  ) : (
+                    fincasModalIniciarDisponibles.map((f: any) => {
+                      const isSelected = fincasSeleccionadasIniciar.includes(f.id);
+                      const promLts = getPromedioFinca(f.id, f);
+                      const rutaAsociada = rutasLogistica.find((r) => r.id === f.rutaId);
+
+                      return (
+                        <div
+                          key={f.id}
+                          onClick={() => {
+                            setFincasSeleccionadasIniciar((prev) =>
+                              isSelected ? prev.filter((id) => id !== f.id) : [...prev, f.id]
+                            );
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: isSelected ? '1.5px solid #10b981' : '1px solid #e2e8f0',
+                            background: isSelected ? '#f0fdf4' : '#ffffff',
+                            cursor: 'pointer',
+                            transition: 'all 0.12s ease',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}} // Manejado por el onClick del contenedor
+                            style={{ width: '16px', height: '16px', accentColor: '#10b981', cursor: 'pointer' }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '12.5px', fontWeight: isSelected ? 800 : 700, color: isSelected ? '#065f46' : '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {f.nombre}
+                              </span>
+                              <span style={{ fontSize: '11px', fontWeight: 800, color: isSelected ? '#059669' : '#0284c7', background: isSelected ? '#d1fae5' : '#e0f2fe', padding: '1px 5px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                                ~{promLts.toLocaleString()} L
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '10.5px', color: '#64748b' }}>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {f.productorNombre || f.propietarioNombre || 'Productor S/N'}
+                              </span>
+                              {rutaAsociada && (
+                                <span style={{ fontSize: '10px', color: '#475569', background: '#f1f5f9', padding: '0 4px', borderRadius: '3px' }}>
+                                  {rutaAsociada.nombre}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* SECCIÓN 4: AUDITORÍA DE CAPACIDAD EN TIEMPO REAL (±15% CONFIGURABLE) */}
+              {calculoCapacidadModal.capacidad > 0 && (
+                <div
+                  style={{
+                    marginBottom: '18px',
+                    padding: '14px 16px',
+                    borderRadius: '12px',
                     border: calculoCapacidadModal.estado === 'EXCESO'
                       ? '1.5px solid #f59e0b'
                       : calculoCapacidadModal.estado === 'BAJO'
@@ -3886,14 +4256,19 @@ export const RecoleccionRutasPage: React.FC = () => {
                       : '#f0fdf4',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <strong style={{ fontSize: '12.5px', color: calculoCapacidadModal.estado === 'EXCESO' ? '#b45309' : calculoCapacidadModal.estado === 'BAJO' ? '#1e40af' : '#15803d' }}>
-                      {calculoCapacidadModal.estado === 'EXCESO' ? '⚠️ Alerta de Capacidad de Tanque' : calculoCapacidadModal.estado === 'BAJO' ? 'ℹ️ Capacidad Subutilizada' : '✅ Capacidad Óptima'}
-                    </strong>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <strong style={{ fontSize: '13px', color: calculoCapacidadModal.estado === 'EXCESO' ? '#b45309' : calculoCapacidadModal.estado === 'BAJO' ? '#1e40af' : '#15803d' }}>
+                        {calculoCapacidadModal.estado === 'EXCESO' ? '⚠️ Sobrecarga Estimada de Cisterna' : calculoCapacidadModal.estado === 'BAJO' ? 'ℹ️ Capacidad Subutilizada' : '✅ Capacidad Óptima del Tanque'}
+                      </strong>
+                      <span style={{ fontSize: '11px', fontWeight: 800, padding: '2px 7px', borderRadius: '6px', background: '#ffffff', border: '1px solid #cbd5e1' }}>
+                        {calculoCapacidadModal.porcentajeLlenado}% de carga nominal
+                      </span>
+                    </div>
 
-                    {/* Selector de Tolerancia configurable */}
+                    {/* Selector de Tolerancia */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#64748b' }}>
-                      <span>Tolerancia:</span>
+                      <span>Tolerancia auditoría:</span>
                       {[10, 15, 20].map((tol) => (
                         <button
                           key={tol}
@@ -3904,8 +4279,8 @@ export const RecoleccionRutasPage: React.FC = () => {
                             background: formIniciar.toleranciaPorcentaje === tol ? '#2563eb' : '#ffffff',
                             color: formIniciar.toleranciaPorcentaje === tol ? '#ffffff' : '#64748b',
                             fontWeight: 700,
-                            padding: '1px 5px',
-                            borderRadius: '4px',
+                            padding: '2px 6px',
+                            borderRadius: '5px',
                             cursor: 'pointer',
                             fontSize: '10.5px',
                           }}
@@ -3916,57 +4291,109 @@ export const RecoleccionRutasPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <p style={{ margin: '0 0 6px 0', fontSize: '12px', color: '#334155', lineHeight: 1.4 }}>
-                    Las rutas seleccionadas suman <strong>{calculoCapacidadModal.fincasDeRutas.length} fincas</strong> con un promedio semanal estimado de{' '}
-                    <strong>~{calculoCapacidadModal.litrosEstimados.toLocaleString()} Lts</strong> contra una capacidad de cisterna de{' '}
-                    <strong>{calculoCapacidadModal.capacidad.toLocaleString()} Lts</strong> ({calculoCapacidadModal.porcentajeDesviacion > 0 ? `+${calculoCapacidadModal.porcentajeDesviacion.toFixed(1)}%` : `${calculoCapacidadModal.porcentajeDesviacion.toFixed(1)}%`}).
-                  </p>
+                  {/* BARRA DE PROGRESO DE LLENADO VISUAL */}
+                  <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '9999px', overflow: 'hidden', marginBottom: '8px' }}>
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${Math.min(calculoCapacidadModal.porcentajeLlenado, 100)}%`,
+                        background: calculoCapacidadModal.estado === 'EXCESO' ? '#f59e0b' : calculoCapacidadModal.estado === 'BAJO' ? '#3b82f6' : '#10b981',
+                        borderRadius: '9999px',
+                        transition: 'width 0.3s ease',
+                      }}
+                    ></div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', fontSize: '12px', color: '#334155' }}>
+                    <span>
+                      Cisterna: <strong>{calculoCapacidadModal.capacidad.toLocaleString()} Lts</strong> nominales.
+                    </span>
+                    <span>
+                      Fincas asignadas ({calculoCapacidadModal.fincasDeRutas.length}): <strong>~{calculoCapacidadModal.litrosEstimados.toLocaleString()} Lts</strong> estimados.
+                    </span>
+                    <span>
+                      Margen: <strong>{calculoCapacidadModal.diferencia > 0 ? `+${calculoCapacidadModal.diferencia.toLocaleString()} L` : `${calculoCapacidadModal.diferencia.toLocaleString()} L`} ({calculoCapacidadModal.porcentajeDesviacion > 0 ? `+${calculoCapacidadModal.porcentajeDesviacion.toFixed(1)}%` : `${calculoCapacidadModal.porcentajeDesviacion.toFixed(1)}%`})</strong>
+                    </span>
+                  </div>
 
                   {calculoCapacidadModal.estado === 'EXCESO' && (
-                    <span style={{ fontSize: '11px', color: '#b45309', display: 'block', fontWeight: 700 }}>
-                      ⚠️ El volumen promedio supera la capacidad del tanque, pero puedes iniciar el viaje de todas formas si la producción esperada de hoy ha bajado por la temporada.
+                    <span style={{ fontSize: '11px', color: '#b45309', display: 'block', fontWeight: 600, marginTop: '6px' }}>
+                      ⚠️ El promedio estimado supera el tanque. Si hoy la producción real es menor o el clima afectó el ordeño, puedes continuar el viaje normalmente.
                     </span>
                   )}
                 </div>
               )}
 
-              {formIniciar.rutasLogisticasIds.length === 0 && (
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px', fontSize: '12px', color: '#64748b' }}>
-                  <i className="fa-solid fa-compass" style={{ color: '#0284c7', marginRight: '6px' }}></i>
-                  <strong>Operación sin Ruta Logística (Modo Libre):</strong> El chofer o supervisor agregará las fincas y paradas recolectadas directamente durante la jornada.
-                </div>
-              )}
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+              {/* SECCIÓN 5: ODÓMETRO Y OBSERVACIONES */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '18px' }}>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Odómetro Inicial (Km)</label>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: '#334155' }}>
+                    <i className="fa-solid fa-gauge-high" style={{ marginRight: '5px', color: '#64748b' }}></i>
+                    Odómetro Inicial (Km)
+                  </label>
                   <input
                     type="number"
                     value={formIniciar.odometroInicialKm}
                     onChange={(e) => setFormIniciar({ ...formIniciar, odometroInicialKm: e.target.value })}
                     className="form-input"
                     placeholder="Ej: 145000"
+                    style={{ height: '38px', borderRadius: '8px' }}
                   />
                 </div>
 
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Observaciones</label>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: '#334155' }}>
+                    <i className="fa-regular fa-comment-dots" style={{ marginRight: '5px', color: '#64748b' }}></i>
+                    Observaciones
+                  </label>
                   <input
                     type="text"
                     value={formIniciar.observaciones}
                     onChange={(e) => setFormIniciar({ ...formIniciar, observaciones: e.target.value })}
                     className="form-input"
-                    placeholder="Notas o turno..."
+                    placeholder="Notas de despacho, turno o instrucciones para el chofer..."
+                    style={{ height: '38px', borderRadius: '8px' }}
                   />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
-                <button type="button" onClick={() => setModalIniciarViaje(false)} className="btn btn-outline">
+              {/* FOOTER ACCIONES */}
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', alignItems: 'center', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalIniciarViaje(false)}
+                  className="btn btn-outline"
+                  style={{ fontWeight: 700, padding: '10px 20px', borderRadius: '10px' }}
+                >
                   Cancelar
                 </button>
-                <button type="submit" disabled={iniciarMutation.isPending} className="btn btn-primary" style={{ fontWeight: 800, background: '#10b981' }}>
-                  {iniciarMutation.isPending ? 'Iniciando...' : 'Iniciar Viaje'}
+                <button
+                  type="submit"
+                  disabled={iniciarMutation.isPending}
+                  className="btn btn-primary"
+                  style={{
+                    fontWeight: 800,
+                    fontSize: '13.5px',
+                    padding: '10px 24px',
+                    borderRadius: '10px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    border: 'none',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: iniciarMutation.isPending ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {iniciarMutation.isPending ? (
+                    <>
+                      <i className="fa-solid fa-spinner fa-spin"></i> Iniciando Viaje...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fa-solid fa-circle-play"></i> Iniciar Viaje {fincasSeleccionadasIniciar.length > 0 ? `(${fincasSeleccionadasIniciar.length} fincas)` : ''}
+                    </>
+                  )}
                 </button>
               </div>
             </form>

@@ -1516,6 +1516,7 @@ namespace Transporte.Core.DTOs
         public int? CamionId { get; set; }
         public int? RutaLogisticaId { get; set; } // Ruta asignada (Zona Sur, etc.)
         public List<int>? RutasLogisticasIds { get; set; } // Múltiples rutas combinadas
+        public List<int>? FincaIds { get; set; } // Fincas personalizadas / modificadas para la ruta
         public decimal? OdometroInicialKm { get; set; }
         public string? Observacion { get; set; }
         public string? Observaciones { get => Observacion; set => Observacion = value; }

@@ -12,7 +12,8 @@ import { SearchableSelect, type SelectOption } from '@/components/common/Searcha
 import Swal from 'sweetalert2';
 import { confirmDialog } from '@/lib/sweetalert';
 import { useAuthStore } from '@/stores/authStore';
-import type { ControlRutaDto, FincaDto, CamionDto, CompaniaDto, DespachoCompaniaDto } from '@/types';
+import type { ControlRutaDto, FincaDto, CamionDto, CompaniaDto, DespachoCompaniaDto, PlanificacionRutaChoferDto } from '@/types';
+import { PlanificacionRutasChoferesPage } from './PlanificacionRutasChoferesPage';
 
 interface RutaDetalleFinca {
   id: number;
@@ -54,13 +55,17 @@ export const RecoleccionRutasPage: React.FC = () => {
     return `${y}-${m}-${day}`;
   })();
 
-  // 2 Vistas Principales:
-  // 1) 'viajes': Control de Rutas & Camiones (Fusión de Mis Tickets y Camiones en Ruta)
-  // 2) 'fincas': Detalle por Fincas (Historial / Buscador de solo lectura)
-  // Parámetros de URL para redirecciones desde notificaciones (fecha y ticket)
+  // 3 Vistas Principales (Unificación Planificación + Recolección):
+  // 1) 'planificacion': Planificación Diaria de Flota (Promedio 15 Días, asignación y generación de tickets)
+  // 2) 'viajes': Control de Rutas & Camiones en Ruta / Tickets
+  // 3) 'fincas': Detalle por Fincas (Historial / Buscador)
   const [searchParams] = useSearchParams();
 
-  const [modoVista, setModoVista] = useState<'viajes' | 'fincas'>('viajes');
+  const [modoVista, setModoVista] = useState<'planificacion' | 'viajes' | 'fincas'>(() => {
+    const qVista = new URLSearchParams(window.location.search).get('vista');
+    if (qVista === 'viajes' || qVista === 'fincas' || qVista === 'planificacion') return qVista;
+    return 'viajes'; // Iniciar en viajes para ver tickets de inmediato o alternar a planificacion
+  });
   const [fechaFiltro, setFechaFiltro] = useState<string>(() => {
     const qFecha = new URLSearchParams(window.location.search).get('fecha');
     return qFecha || hoyStr;
@@ -322,6 +327,51 @@ export const RecoleccionRutasPage: React.FC = () => {
     queryKey: ['rutas-viajes-hoy', fechaFiltro],
     queryFn: () => operacionesApi.getControles(fechaFiltro),
     refetchInterval: 3500,
+  });
+
+  // Planificaciones de Rutas-choferes sincronizadas
+  const { data: planificaciones = [], refetch: refetchPlanificaciones } = useQuery<PlanificacionRutaChoferDto[]>({
+    queryKey: ['planificaciones-choferes', fechaFiltro],
+    queryFn: () => operacionesApi.getPlanificacionesChoferes(fechaFiltro),
+    refetchInterval: 5000,
+  });
+
+  // Modal Modificar Fincas de la Ruta en Caliente (Regla de Blindaje)
+  const [modalModificarFincasTicket, setModalModificarFincasTicket] = useState(false);
+  const [ticketParaModificarFincas, setTicketParaModificarFincas] = useState<ControlRutaDto | null>(null);
+  const [fincasSeleccionadasTicket, setFincasSeleccionadasTicket] = useState<number[]>([]);
+  const [fincasBloqueadasTicket, setFincasBloqueadasTicket] = useState<number[]>([]);
+  const [busquedaFincaModalTicket, setBusquedaFincaModalTicket] = useState('');
+
+  const abrirModalModificarFincasTicket = (ticket: ControlRutaDto) => {
+    setTicketParaModificarFincas(ticket);
+    const paradas = fincasTicketsMap[ticket.id] || [];
+    // Fincas que ya tienen leche recolectada (> 0 L) quedan blindadas
+    const bloqueadas = paradas
+      .filter((p: any) => Number(p.litros || p.Litros || 0) > 0)
+      .map((p: any) => Number(p.fincaId || p.FincaId));
+    const todasEnTicket = paradas.map((p: any) => Number(p.fincaId || p.FincaId));
+    setFincasBloqueadasTicket(bloqueadas);
+    setFincasSeleccionadasTicket(Array.from(new Set(todasEnTicket)));
+    setBusquedaFincaModalTicket('');
+    setModalModificarFincasTicket(true);
+  };
+
+  const modificarFincasTicketMutation = useMutation({
+    mutationFn: ({ ticketId, fincaIds }: { ticketId: number; fincaIds: number[] }) =>
+      operacionesApi.modificarFincasTicket(ticketId, fincaIds),
+    onSuccess: (res) => {
+      toast.success(res.message || 'Fincas de la ruta actualizadas exitosamente');
+      queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['planificaciones-choferes'] });
+      if (ticketParaModificarFincas?.id) {
+        cargarFincasTicket(ticketParaModificarFincas.id);
+      }
+      setModalModificarFincasTicket(false);
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Error al modificar las fincas de la ruta');
+    },
   });
 
   // Precargar y actualizar paradas reales para todos los viajes visibles (detecta nuevas fincas al instante)
@@ -1785,21 +1835,44 @@ export const RecoleccionRutasPage: React.FC = () => {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={abrirModalIniciarViaje}
+            onClick={() => setModoVista('planificacion')}
             style={{
               fontWeight: 800,
               fontSize: '13px',
               padding: '9px 18px',
               borderRadius: '9px',
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
               border: 'none',
-              boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
+              boxShadow: '0 4px 12px rgba(37,99,235,0.3)',
               display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
+              color: '#ffffff',
+              cursor: 'pointer',
             }}
           >
-            <i className="fa-solid fa-plus-circle"></i> Iniciar Nuevo Viaje / Ticket
+            <i className="fa-solid fa-calendar-check"></i> Planificar Flota (15 Días)
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={abrirModalIniciarViaje}
+            style={{
+              fontWeight: 700,
+              fontSize: '12.5px',
+              padding: '8px 14px',
+              borderRadius: '9px',
+              background: '#ffffff',
+              border: '1.5px solid #cbd5e1',
+              color: '#334155',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+            }}
+            title="Iniciar ticket rápido de recolección sin planificación previa"
+          >
+            <i className="fa-solid fa-bolt" style={{ color: '#f59e0b' }}></i> Viaje Rápido
           </button>
         </div>
       </div>
@@ -1878,6 +1951,49 @@ export const RecoleccionRutasPage: React.FC = () => {
             <button
               type="button"
               className="btn btn-sm"
+              onClick={() => setModoVista('planificacion')}
+              style={{
+                minHeight: '38px',
+                height: 'auto',
+                padding: '6px 14px',
+                borderRadius: '7px',
+                border: 'none',
+                fontSize: '12px',
+                fontWeight: modoVista === 'planificacion' ? 800 : 600,
+                background: modoVista === 'planificacion' ? '#ffffff' : 'transparent',
+                color: modoVista === 'planificacion' ? '#2563eb' : '#64748b',
+                boxShadow: modoVista === 'planificacion' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                textAlign: 'center',
+              }}
+            >
+              <i className="fa-solid fa-calendar-check" style={{ color: modoVista === 'planificacion' ? '#2563eb' : '#64748b', flexShrink: 0 }}></i>
+              <span>
+                <span className="hidden sm:inline">1. </span>Planificación Flota
+              </span>
+              <span
+                className="badge"
+                style={{
+                  background: modoVista === 'planificacion' ? '#eff6ff' : '#e2e8f0',
+                  color: modoVista === 'planificacion' ? '#1d4ed8' : '#475569',
+                  fontSize: '11px',
+                  padding: '2px 7px',
+                  borderRadius: '10px',
+                  fontWeight: 800,
+                  flexShrink: 0,
+                }}
+              >
+                {planificaciones.length > 0 ? `${planificaciones.length} Cisternas` : '15 Días'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-sm"
               onClick={() => setModoVista('viajes')}
               style={{
                 minHeight: '38px',
@@ -1900,7 +2016,7 @@ export const RecoleccionRutasPage: React.FC = () => {
             >
               <i className="fa-solid fa-truck-moving" style={{ color: modoVista === 'viajes' ? '#2563eb' : '#64748b', flexShrink: 0 }}></i>
               <span>
-                <span className="hidden sm:inline">Control </span>Rutas & Camiones
+                <span className="hidden sm:inline">2. </span>Control Rutas & Camiones
               </span>
               <span
                 className="badge"
@@ -1943,7 +2059,7 @@ export const RecoleccionRutasPage: React.FC = () => {
             >
               <i className="fa-solid fa-list-check" style={{ color: modoVista === 'fincas' ? '#2563eb' : '#64748b', flexShrink: 0 }}></i>
               <span>
-                Detalle Fincas<span className="hidden md:inline"> (Historial)</span>
+                <span className="hidden sm:inline">3. </span>Detalle Fincas<span className="hidden md:inline"> (Historial)</span>
               </span>
               <span
                 className="badge"
@@ -1980,7 +2096,20 @@ export const RecoleccionRutasPage: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* VISTA 1: CONTROL DE RUTAS & CAMIONES (FUSIÓN MIS TICKETS + CAMIONES RUTA) */}
+      {/* VISTA 1: PLANIFICACIÓN DIARIA DE FLOTA (UNIFICACIÓN 15 DÍAS)              */}
+      {/* ========================================================================= */}
+      {modoVista === 'planificacion' && (
+        <div style={{ marginBottom: '24px' }}>
+          <PlanificacionRutasChoferesPage
+            fechaInicial={fechaFiltro}
+            onFechaChange={(f) => setFechaFiltro(f)}
+            esIntegrado={true}
+          />
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* VISTA 2: CONTROL DE RUTAS & CAMIONES (FUSIÓN MIS TICKETS + CAMIONES RUTA) */}
       {/* ========================================================================= */}
       {modoVista === 'viajes' && (
         <div style={{ marginBottom: '24px' }}>
@@ -2250,6 +2379,12 @@ export const RecoleccionRutasPage: React.FC = () => {
                 const esAbierto = !esFinalizado && (item.estado === 'ABIERTO' || item.procesoActualId === 1);
                 const esMiTicket = item.usuarioId === user?.id || item.conductorId === user?.id;
                 const tieneRutaLogistica = Boolean((item.rutaLogisticaId && item.rutaLogisticaId > 0) || item.rutaLogisticaNombre || item.rutaNombre);
+                const planCorrespondiente = planificaciones.find(
+                  (p) =>
+                    p.controlRutaId === item.id ||
+                    (p.camionId === item.camionId &&
+                      (p.conductorId === item.conductorId || (item as any).choferId === p.conductorId))
+                );
 
                 const fincasTicket = esRuta
                   ? (Array.isArray(fincasTicketsMap[item.id])
@@ -2344,6 +2479,26 @@ export const RecoleccionRutasPage: React.FC = () => {
                                 <i className="fa-solid fa-bolt"></i> ¡NUEVA FINCA!
                               </span>
                             )}
+                            {planCorrespondiente && (
+                              <span
+                                className="badge"
+                                style={{
+                                  background: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  border: '1px solid #bfdbfe',
+                                  fontWeight: 800,
+                                  fontSize: '10px',
+                                  padding: '2px 7px',
+                                  borderRadius: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                                title="Ruta creada y enlazada automáticamente desde la Planificación de Flota (15 Días)"
+                              >
+                                <i className="fa-solid fa-clipboard-check text-blue-600"></i> RUTA PLANIFICADA (15D)
+                              </span>
+                            )}
                           </div>
                           {puedeEditarTicket && (
                             <button
@@ -2384,6 +2539,34 @@ export const RecoleccionRutasPage: React.FC = () => {
                             <div style={{ fontSize: '12px', color: '#7e22ce', marginTop: '2px', fontWeight: 700 }}>
                               <i className="fa-solid fa-building-wheat" style={{ marginRight: '4px' }}></i>
                               Destino: {item.nombreCompania}
+                            </div>
+                          )}
+                          {esRuta && !esFinalizado && esAdminOSup && (
+                            <div style={{ marginTop: '7px' }}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  abrirModalModificarFincasTicket(item);
+                                }}
+                                className="btn btn-xs"
+                                style={{
+                                  background: '#faf5ff',
+                                  color: '#7e22ce',
+                                  border: '1px solid #d8b4fe',
+                                  fontWeight: 800,
+                                  fontSize: '11px',
+                                  padding: '3px 9px',
+                                  borderRadius: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  cursor: 'pointer',
+                                }}
+                                title="Modificar asignación de fincas de esta ruta en caliente (con regla de blindaje)"
+                              >
+                                <i className="fa-solid fa-pen-to-square"></i> Modificar Fincas de la Ruta
+                              </button>
                             </div>
                           )}
                         </div>
@@ -2829,11 +3012,50 @@ export const RecoleccionRutasPage: React.FC = () => {
                                         <i className="fa-solid fa-receipt"></i> Recibo
                                       </button>
                                     )}
-                                    <span style={{ fontWeight: 800, color: '#2563eb', fontSize: '13px' }}>
-                                      {fLitros.toLocaleString()} L
-                                    </span>
+                                    {fLitros === 0 ? (
+                                      <span
+                                        className="badge"
+                                        style={{
+                                          background: '#fffbeb',
+                                          color: '#b45309',
+                                          border: '1px solid #fde68a',
+                                          fontWeight: 800,
+                                          fontSize: '11px',
+                                          padding: '2px 8px',
+                                          borderRadius: '6px',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                        }}
+                                        title="Parada planificada pendiente por recolectar"
+                                      >
+                                        ⏳ Pendiente (0 L)
+                                      </span>
+                                    ) : (
+                                      <div style={{ textAlign: 'right' }}>
+                                        <span style={{ fontWeight: 800, color: '#16a34a', fontSize: '13px' }}>
+                                          {fLitros.toLocaleString()} L
+                                        </span>
+                                        <span
+                                          className="badge"
+                                          style={{
+                                            display: 'block',
+                                            background: '#ecfdf5',
+                                            color: '#047857',
+                                            border: '1px solid #a7f3d0',
+                                            fontWeight: 800,
+                                            fontSize: '9.5px',
+                                            padding: '1px 5px',
+                                            borderRadius: '4px',
+                                            marginTop: '1px',
+                                          }}
+                                        >
+                                          🥛 Recolectada
+                                        </span>
+                                      </div>
+                                    )}
 
-                                    {/* BOTONES DE EDICIÓN Y ELIMINACIÓN */}
+                                    {/* BOTONES DE EDICIÓN Y ELIMINACIÓN CON BLINDAJE */}
                                     {puedeEditarTicket && (
                                       <div style={{ display: 'flex', gap: '4px' }}>
                                         <button
@@ -2860,29 +3082,48 @@ export const RecoleccionRutasPage: React.FC = () => {
                                           <i className="fa-solid fa-pen-to-square"></i>
                                         </button>
 
-                                        {(esAdminOSup || !tieneRutaLogistica) && (
+                                        {fLitros > 0 ? (
                                           <button
                                             type="button"
-                                            onClick={async () => {
-                                              if (
-                                                await confirmDialog({
-                                                  title: '¿Quitar Finca del Viaje?',
-                                                  text: `¿Seguro que deseas remover la parada de "${fNombre}" (${fLitros.toLocaleString()} Lts) del ticket #${item.codigoTicket || item.id}?`,
-                                                  icon: 'warning',
-                                                  confirmButtonText: 'Sí, remover',
-                                                  danger: true,
-                                                })
-                                              ) {
-                                                setViajeActivo(item);
-                                                eliminarRecoleccionMutation.mutate(fId);
-                                              }
+                                            disabled
+                                            className="btn btn-xs"
+                                            style={{
+                                              padding: '3px 6px',
+                                              background: '#f8fafc',
+                                              color: '#94a3b8',
+                                              border: '1px solid #cbd5e1',
+                                              cursor: 'not-allowed',
+                                              opacity: 0.7,
                                             }}
-                                            className="btn btn-xs btn-outline"
-                                            style={{ padding: '3px 6px', borderColor: '#fecaca', color: '#dc2626' }}
-                                            title="Remover finca de este viaje"
+                                            title="Blindaje Activo: Leche ya recolectada en cisterna (> 0 L). No se puede eliminar del ticket."
                                           >
-                                            <i className="fa-solid fa-trash-can"></i>
+                                            <i className="fa-solid fa-lock" style={{ color: '#10b981' }}></i>
                                           </button>
+                                        ) : (
+                                          (esAdminOSup || !tieneRutaLogistica) && (
+                                            <button
+                                              type="button"
+                                              onClick={async () => {
+                                                if (
+                                                  await confirmDialog({
+                                                    title: '¿Remover Finca Pendiente?',
+                                                    text: `¿Seguro que deseas remover la parada vacía de "${fNombre}" (0 L) del ticket #${item.codigoTicket || item.id}?`,
+                                                    icon: 'warning',
+                                                    confirmButtonText: 'Sí, remover',
+                                                    danger: true,
+                                                  })
+                                                ) {
+                                                  setViajeActivo(item);
+                                                  eliminarRecoleccionMutation.mutate(fId);
+                                                }
+                                              }}
+                                              className="btn btn-xs btn-outline"
+                                              style={{ padding: '3px 6px', borderColor: '#fecaca', color: '#dc2626' }}
+                                              title="Remover finca pendiente (sin leche recogida aún)"
+                                            >
+                                              <i className="fa-solid fa-trash-can"></i>
+                                            </button>
+                                          )
                                         )}
                                       </div>
                                     )}
@@ -6194,6 +6435,293 @@ export const RecoleccionRutasPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: MODIFICAR FINCAS DE LA RUTA EN CALIENTE (REGLA DE BLINDAJE)        */}
+      {/* ========================================================================= */}
+      {modalModificarFincasTicket && ticketParaModificarFincas && (() => {
+        const paradasActuales = fincasTicketsMap[ticketParaModificarFincas.id] || [];
+
+        const fincasFiltradasModal = fincas.filter((f) => {
+          if (!busquedaFincaModalTicket.trim()) return true;
+          const q = busquedaFincaModalTicket.toLowerCase();
+          return (
+            (f.nombre && f.nombre.toLowerCase().includes(q)) ||
+            (f.codigo && f.codigo.toLowerCase().includes(q)) ||
+            (f.propietarioNombre && f.propietarioNombre.toLowerCase().includes(q))
+          );
+        });
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(5px)',
+              padding: '16px',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '620px',
+                background: '#ffffff',
+                borderRadius: '20px',
+                overflow: 'hidden',
+                boxShadow: '0 25px 60px -15px rgba(0,0,0,0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                maxHeight: '90vh',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '18px 22px',
+                  background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.2)',
+                        color: '#38bdf8',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        border: '1px solid rgba(56, 189, 248, 0.35)',
+                      }}
+                    >
+                      Ticket #{ticketParaModificarFincas.codigoTicket || ticketParaModificarFincas.id}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                      {ticketParaModificarFincas.camionPlaca} • {ticketParaModificarFincas.choferNombre || ticketParaModificarFincas.nombreConductor}
+                    </span>
+                  </div>
+                  <h3 style={{ fontSize: '16px', fontWeight: 800, margin: '4px 0 0 0', color: '#ffffff' }}>
+                    Modificar Fincas de la Ruta (En Caliente)
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalModificarFincasTicket(false)}
+                  style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '22px', cursor: 'pointer' }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Banner Informativo de Blindaje */}
+              <div
+                style={{
+                  padding: '12px 20px',
+                  background: '#f8fafc',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  fontSize: '12px',
+                }}
+              >
+                <i className="fa-solid fa-shield-halved text-emerald-600 text-lg"></i>
+                <div style={{ color: '#334155' }}>
+                  <strong>Regla de Blindaje activa:</strong> Fincas vacías (0 L) se pueden agregar o remover libremente. Fincas con leche ya cargada (&gt; 0 L) están protegidas y no se pueden retirar.
+                </div>
+              </div>
+
+              {/* Buscador */}
+              <div style={{ padding: '14px 20px 8px 20px' }}>
+                <div style={{ position: 'relative' }}>
+                  <i
+                    className="fa-solid fa-magnifying-glass"
+                    style={{ position: 'absolute', left: '12px', top: '12px', color: '#94a3b8', fontSize: '13px' }}
+                  ></i>
+                  <input
+                    type="text"
+                    value={busquedaFincaModalTicket}
+                    onChange={(e) => setBusquedaFincaModalTicket(e.target.value)}
+                    placeholder="Buscar finca por nombre, código o productor..."
+                    className="form-input"
+                    style={{ paddingLeft: '34px', height: '38px', borderRadius: '10px', fontSize: '13px', width: '100%' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '11.5px', color: '#64748b' }}>
+                  <span>
+                    Seleccionadas: <strong style={{ color: '#0f172a' }}>{fincasSeleccionadasTicket.length}</strong> fincas
+                  </span>
+                  <span>
+                    Blindadas: <strong style={{ color: '#059669' }}>{fincasBloqueadasTicket.length}</strong> con leche
+                  </span>
+                </div>
+              </div>
+
+              {/* Lista de Fincas para Selección */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 20px', maxHeight: '45vh' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {fincasFiltradasModal.map((f) => {
+                    const estaBloqueada = fincasBloqueadasTicket.includes(f.id);
+                    const estaSeleccionada = fincasSeleccionadasTicket.includes(f.id);
+
+                    const toggleFinca = () => {
+                      if (estaBloqueada) {
+                        toast.warning(`La finca "${f.nombre}" ya tiene leche cargada en el camión y no puede ser removida.`);
+                        return;
+                      }
+                      setFincasSeleccionadasTicket((prev) =>
+                        estaSeleccionada ? prev.filter((id) => id !== f.id) : [...prev, f.id]
+                      );
+                    };
+
+                    return (
+                      <div
+                        key={f.id}
+                        onClick={toggleFinca}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '10px 14px',
+                          borderRadius: '12px',
+                          border: estaBloqueada
+                            ? '1.5px solid #a7f3d0'
+                            : estaSeleccionada
+                            ? '1.5px solid #93c5fd'
+                            : '1px solid #e2e8f0',
+                          background: estaBloqueada
+                            ? '#f0fdf4'
+                            : estaSeleccionada
+                            ? '#eff6ff'
+                            : '#ffffff',
+                          cursor: estaBloqueada ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <input
+                            type="checkbox"
+                            checked={estaSeleccionada}
+                            disabled={estaBloqueada}
+                            onChange={() => {}}
+                            style={{ width: '16px', height: '16px', cursor: estaBloqueada ? 'not-allowed' : 'pointer' }}
+                          />
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
+                              {f.nombre} {f.codigo ? `(${f.codigo})` : ''}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>
+                              {f.propietarioNombre || 'Sin productor asignado'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          {estaBloqueada ? (
+                            <span
+                              style={{
+                                background: '#dcfce7',
+                                color: '#15803d',
+                                border: '1px solid #86efac',
+                                fontSize: '10.5px',
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <i className="fa-solid fa-lock"></i> Blindada (&gt;0 L)
+                            </span>
+                          ) : estaSeleccionada ? (
+                            <span
+                              style={{
+                                background: '#dbeafe',
+                                color: '#1d4ed8',
+                                fontSize: '10.5px',
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                              }}
+                            >
+                              ✓ En Ruta
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div
+                style={{
+                  padding: '14px 20px',
+                  background: '#f8fafc',
+                  borderTop: '1px solid #e2e8f0',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: '10px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setModalModificarFincasTicket(false)}
+                  className="btn btn-outline"
+                  style={{ borderRadius: '10px', padding: '8px 16px', fontSize: '12.5px', fontWeight: 700 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={modificarFincasTicketMutation.isPending}
+                  onClick={() => {
+                    modificarFincasTicketMutation.mutate({
+                      ticketId: ticketParaModificarFincas.id,
+                      fincaIds: fincasSeleccionadasTicket,
+                    });
+                  }}
+                  className="btn btn-primary"
+                  style={{
+                    borderRadius: '10px',
+                    padding: '8px 20px',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    border: 'none',
+                    color: '#ffffff',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  {modificarFincasTicketMutation.isPending ? (
+                    <>
+                      <i className="fa-solid fa-spinner fa-spin"></i> Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fa-solid fa-check"></i> Aplicar Cambios a la Ruta
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* MODAL VISUALIZADOR DE RECIBO DE FINCA */}
       {fotoReciboModal && (
         <div

@@ -35,14 +35,32 @@ import {
   Table as TableIcon,
 } from 'lucide-react';
 
-export const PlanificacionRutasChoferesPage: React.FC = () => {
+export interface PlanificacionRutasChoferesProps {
+  fechaInicial?: string;
+  onFechaChange?: (fecha: string) => void;
+  esIntegrado?: boolean;
+}
+
+export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferesProps> = ({
+  fechaInicial,
+  onFechaChange,
+  esIntegrado = false,
+}) => {
   const queryClient = useQueryClient();
 
-  // Fecha operativa (por defecto hoy en YYYY-MM-DD)
+  // Fecha operativa (por defecto hoy en YYYY-MM-DD o fecha inicial provista)
   const [fechaOperativa, setFechaOperativa] = useState<string>(() => {
+    if (fechaInicial) return fechaInicial;
     const d = new Date();
     return d.toISOString().split('T')[0];
   });
+
+  // Sincronizar con fecha externa si cambia
+  React.useEffect(() => {
+    if (fechaInicial && fechaInicial !== fechaOperativa) {
+      setFechaOperativa(fechaInicial);
+    }
+  }, [fechaInicial]);
 
   // Vista: 'tarjetas' | 'tabla'
   const [vistaModo, setVistaModo] = useState<'tarjetas' | 'tabla'>('tarjetas');
@@ -68,10 +86,13 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
     date.setDate(date.getDate() + dias);
     const nextStr = date.toISOString().split('T')[0];
     setFechaOperativa(nextStr);
+    onFechaChange?.(nextStr);
   };
 
   const irAHoy = () => {
-    setFechaOperativa(new Date().toISOString().split('T')[0]);
+    const hoy = new Date().toISOString().split('T')[0];
+    setFechaOperativa(hoy);
+    onFechaChange?.(hoy);
   };
 
   // Queries
@@ -493,7 +514,7 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
   ];
 
   return (
-    <div className="page-container p-4 md:p-6 space-y-6">
+    <div className={esIntegrado ? "space-y-6 pt-1" : "page-container p-4 md:p-6 space-y-6"}>
       {/* CABECERA SUPERIOR */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>

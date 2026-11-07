@@ -8,7 +8,18 @@ import { sistemaApi } from '@/api/sistema.api';
 import { mantenimientoApi } from '@/api/mantenimiento.api';
 import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.api';
 import { useAuthStore } from '@/stores/authStore';
-import type { FincaDto, DespachoCompaniaDto, ControlRutaDto, CamionDto, MantenimientoCamionDto } from '@/types';
+import type {
+  FincaDto,
+  DespachoCompaniaDto,
+  ControlRutaDto,
+  CamionDto,
+  MantenimientoCamionDto,
+  PlanificacionRutaChoferDto,
+  RutaLogisticaDto,
+  ChoferDto,
+  FincaPromedioDto,
+  GuardarPlanificacionRutaChoferDto,
+} from '@/types';
 
 interface DispositivoMovilData {
   token: string;
@@ -65,7 +76,7 @@ const REPORTES_CHOFER = [
   { value: 'RELACION_CHOFER', label: '7. RELACIÓN CHOFER (Liquidación de Viajes)', icon: 'fa-truck-arrow-right' },
 ];
 
-export const APP_VERSION = 'v2.7.0';
+export const APP_VERSION = 'v2.8.0';
 
 export const AppMovilPage: React.FC = () => {
   // Navegación de Pestañas Móviles
@@ -261,6 +272,53 @@ export const AppMovilPage: React.FC = () => {
   // Estados para Módulo Administrador
   const [viajesEnVivo, setViajesEnVivo] = useState<ControlRutaDto[]>([]);
   const [cargandoViajesEnVivo, setCargandoViajesEnVivo] = useState(false);
+
+  // Estados para Módulo Administrador - Logística Móvil
+  const [fechaLogistica, setFechaLogistica] = useState(hoyStr);
+  const [subTabLogistica, setSubTabLogistica] = useState<'asignaciones' | 'circuitos'>('asignaciones');
+  const [planificaciones, setPlanificaciones] = useState<PlanificacionRutaChoferDto[]>([]);
+  const [cargandoPlanificaciones, setCargandoPlanificaciones] = useState(false);
+  const [rutasLogisticas, setRutasLogisticas] = useState<RutaLogisticaDto[]>([]);
+  const [choferesLista, setChoferesLista] = useState<ChoferDto[]>([]);
+  const [camionesLista, setCamionesLista] = useState<CamionDto[]>([]);
+  const [fincasPromedio, setFincasPromedio] = useState<FincaPromedioDto[]>([]);
+
+  // Modales de Logística Móvil
+  const [modalPlanificar, setModalPlanificar] = useState<{
+    open: boolean;
+    esEdicion: boolean;
+    id?: number;
+    camionId: number;
+    conductorId: number;
+    rutaLogisticaId?: number;
+    fincasIds: number[];
+    observacion: string;
+  } | null>(null);
+  const [busquedaFincaPlanificar, setBusquedaFincaPlanificar] = useState('');
+
+  const [modalAgregarFincaRapida, setModalAgregarFincaRapida] = useState<{
+    open: boolean;
+    plan: PlanificacionRutaChoferDto;
+    fincaId: number;
+  } | null>(null);
+
+  const [modalCircuito, setModalCircuito] = useState<{
+    open: boolean;
+    esEdicion: boolean;
+    id?: number;
+    nombre: string;
+    codigo: string;
+    color: string;
+    descripcion: string;
+  } | null>(null);
+
+  const [modalAsignarFincasCircuito, setModalAsignarFincasCircuito] = useState<{
+    open: boolean;
+    rutaId: number;
+    rutaNombre: string;
+    fincasIds: number[];
+  } | null>(null);
+  const [busquedaFincasCircuito, setBusquedaFincasCircuito] = useState('');
 
   // Estados UI auxiliares para Taller y Admin
   const [busquedaFlota, setBusquedaFlota] = useState('');
@@ -683,12 +741,207 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
+  // Carga de datos para Logística Móvil
+  const cargarDatosLogisticaAdmin = async (fechaParam?: string) => {
+    const f = fechaParam || fechaLogistica || hoyStr;
+    setCargandoPlanificaciones(true);
+    try {
+      const [plans, rutas, chofs, cams, proms] = await Promise.all([
+        operacionesApi.getPlanificacionesChoferes(f),
+        operacionesApi.getRutasLogistica(),
+        catalogosApi.getChoferes(),
+        catalogosApi.getCamiones(false),
+        operacionesApi.getFincasPromedios15Dias(),
+      ]);
+      setPlanificaciones(Array.isArray(plans) ? plans : []);
+      setRutasLogisticas(Array.isArray(rutas) ? rutas : []);
+      setChoferesLista(Array.isArray(chofs) ? chofs : []);
+      setCamionesLista(Array.isArray(cams) ? cams : []);
+      setFincasPromedio(Array.isArray(proms) ? proms : []);
+    } catch (err) {
+      console.warn('Error al cargar datos de logística móvil:', err);
+    } finally {
+      setCargandoPlanificaciones(false);
+    }
+  };
+
+  const cambiarFechaLogistica = (deltaDias: number) => {
+    const d = new Date(fechaLogistica + 'T00:00:00');
+    d.setDate(d.getDate() + deltaDias);
+    const nueva = d.toISOString().split('T')[0];
+    setFechaLogistica(nueva);
+    cargarDatosLogisticaAdmin(nueva);
+  };
+
+  const getFincasIdsDePlan = (plan: PlanificacionRutaChoferDto): number[] => {
+    if (Array.isArray(plan.listaFincasIds) && plan.listaFincasIds.length > 0) {
+      return plan.listaFincasIds.map(Number);
+    }
+    if (typeof plan.fincasIds === 'string' && plan.fincasIds.trim()) {
+      return plan.fincasIds
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !isNaN(n) && n > 0);
+    }
+    return [];
+  };
+
+  const handleGuardarPlanificacionMovil = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalPlanificar) return;
+    if (!modalPlanificar.camionId) {
+      toast.error('Selecciona una cisterna / camión');
+      return;
+    }
+    if (!modalPlanificar.conductorId) {
+      toast.error('Selecciona un conductor');
+      return;
+    }
+    if (modalPlanificar.fincasIds.length === 0) {
+      toast.error('Selecciona al menos una finca para la ruta');
+      return;
+    }
+
+    const litrosEst = modalPlanificar.fincasIds.reduce((sum, fid) => {
+      const p = fincasPromedio.find((fp) => fp.fincaId === fid);
+      return sum + (p?.promedioLitros || 0);
+    }, 0);
+
+    try {
+      const dto: GuardarPlanificacionRutaChoferDto = {
+        id: modalPlanificar.esEdicion ? modalPlanificar.id : undefined,
+        fecha: fechaLogistica,
+        camionId: modalPlanificar.camionId,
+        conductorId: modalPlanificar.conductorId,
+        rutaLogisticaId: modalPlanificar.rutaLogisticaId || undefined,
+        fincasIds: modalPlanificar.fincasIds,
+        litrosEstimados: Math.round(litrosEst),
+        observacion: modalPlanificar.observacion.trim() || undefined,
+      };
+
+      const res = await operacionesApi.guardarPlanificacionChofer(dto);
+      toast.success(res.message || 'Planificación guardada exitosamente');
+      setModalPlanificar(null);
+      cargarDatosLogisticaAdmin(fechaLogistica);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al guardar planificación');
+    }
+  };
+
+  const handleEliminarPlanificacionMovil = async (planId: number) => {
+    if (!window.confirm('¿Seguro que deseas eliminar esta planificación de ruta?')) return;
+    try {
+      const res = await operacionesApi.eliminarPlanificacionChofer(planId);
+      toast.success(res.message || 'Planificación eliminada');
+      cargarDatosLogisticaAdmin(fechaLogistica);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al eliminar planificación');
+    }
+  };
+
+  const handleAgregarFincaRapidaMovil = async (plan: PlanificacionRutaChoferDto, fincaIdNueva: number) => {
+    if (!fincaIdNueva) return;
+    const currentIds = getFincasIdsDePlan(plan);
+    if (currentIds.includes(fincaIdNueva)) {
+      toast.info('Esta finca ya está asignada a esta ruta');
+      return;
+    }
+    const nuevosIds = [...currentIds, fincaIdNueva];
+    const litrosEst = nuevosIds.reduce((sum, fid) => {
+      const p = fincasPromedio.find((fp) => fp.fincaId === fid);
+      return sum + (p?.promedioLitros || 0);
+    }, 0);
+
+    try {
+      await operacionesApi.guardarPlanificacionChofer({
+        id: plan.id,
+        fecha: plan.fecha ? plan.fecha.split('T')[0] : fechaLogistica,
+        camionId: plan.camionId,
+        conductorId: plan.conductorId,
+        rutaLogisticaId: plan.rutaLogisticaId || undefined,
+        fincasIds: nuevosIds,
+        litrosEstimados: Math.round(litrosEst),
+        observacion: plan.observacion || undefined,
+      });
+
+      if (plan.controlRutaId) {
+        try {
+          await operacionesApi.agregarFincaViaje(plan.controlRutaId, {
+            fincaId: fincaIdNueva,
+            litrosLeche: 0,
+          });
+        } catch {}
+      }
+
+      toast.success('Finca añadida exitosamente a la ruta');
+      setModalAgregarFincaRapida(null);
+      cargarDatosLogisticaAdmin(fechaLogistica);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al agregar finca');
+    }
+  };
+
+  const handleGuardarCircuitoMovil = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalCircuito || !modalCircuito.nombre.trim()) {
+      toast.error('El nombre del circuito es obligatorio');
+      return;
+    }
+    try {
+      if (modalCircuito.esEdicion && modalCircuito.id) {
+        await operacionesApi.actualizarRutaLogistica(modalCircuito.id, {
+          nombre: modalCircuito.nombre.trim(),
+          descripcion: modalCircuito.descripcion.trim() || undefined,
+        });
+        toast.success('Circuito logístico actualizado');
+      } else {
+        await operacionesApi.crearRutaLogistica({
+          nombre: modalCircuito.nombre.trim(),
+          descripcion: modalCircuito.descripcion.trim() || undefined,
+        });
+        toast.success('Nuevo circuito logístico creado');
+      }
+      setModalCircuito(null);
+      cargarDatosLogisticaAdmin(fechaLogistica);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al guardar circuito');
+    }
+  };
+
+  const handleEliminarCircuitoMovil = async (circuitoId: number) => {
+    if (!window.confirm('¿Seguro que deseas eliminar este circuito logístico?')) return;
+    try {
+      await operacionesApi.eliminarRutaLogistica(circuitoId);
+      toast.success('Circuito eliminado');
+      cargarDatosLogisticaAdmin(fechaLogistica);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al eliminar circuito');
+    }
+  };
+
+  const handleGuardarFincasDeCircuitoMovil = async () => {
+    if (!modalAsignarFincasCircuito) return;
+    try {
+      await operacionesApi.asignarFincasARuta(
+        modalAsignarFincasCircuito.rutaId,
+        modalAsignarFincasCircuito.fincasIds
+      );
+      toast.success('Fincas asignadas al circuito correctamente');
+      setModalAsignarFincasCircuito(null);
+      cargarDatosLogisticaAdmin(fechaLogistica);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al asignar fincas al circuito');
+    }
+  };
+
   // Carga reactiva de datos al cambiar de pestaña o modo
   useEffect(() => {
     if (tabActiva === 'incidentes') {
       cargarMisIncidentesChofer();
     } else if (tabActiva === 'admin_envivo') {
       cargarDatosAdminEnVivo();
+    } else if (tabActiva === 'admin_logistica') {
+      cargarDatosLogisticaAdmin();
     } else if (tabActiva === 'taller_flota' || tabActiva === 'taller_mantenimiento') {
       cargarDatosTaller();
     }
@@ -4763,152 +5016,666 @@ export const AppMovilPage: React.FC = () => {
         )}
 
         {/* ===================================================================
-            PESTAÑA: ADMIN LOGÍSTICA (PLANIFICACIÓN DE RUTAS)
+            PESTAÑA: ADMIN LOGÍSTICA (GESTIÓN Y PLANIFICACIÓN DE RUTAS EN MÓVIL)
            =================================================================== */}
         {tabActiva === 'admin_logistica' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Cabecera Principal */}
             <div
               style={{
                 background: 'linear-gradient(135deg, #0369a1 0%, #0c4a6e 100%)',
                 borderRadius: '18px',
-                padding: '18px 20px',
+                padding: '16px 18px',
                 color: '#ffffff',
                 boxShadow: '0 8px 24px rgba(3, 105, 161, 0.25)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <span style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#bae6fd' }}>
-                    Coordinación Logística
+                  <span style={{ fontSize: '10.5px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#bae6fd' }}>
+                    Centro de Mando Logístico
                   </span>
-                  <h3 style={{ margin: '4px 0 0 0', fontSize: '18px', fontWeight: 900 }}>
-                    Planificación de Rutas
+                  <h3 style={{ margin: '2px 0 0 0', fontSize: '18px', fontWeight: 900 }}>
+                    Planificación & Circuitos
                   </h3>
                 </div>
-                <div
+                <button
+                  type="button"
+                  onClick={() => cargarDatosLogisticaAdmin(fechaLogistica)}
                   style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '12px',
                     background: 'rgba(255,255,255,0.15)',
+                    border: 'none',
+                    color: '#ffffff',
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '20px',
+                    fontSize: '15px',
                   }}
                 >
-                  <i className="fa-solid fa-route"></i>
+                  <i className={`fa-solid fa-rotate ${cargandoPlanificaciones ? 'fa-spin' : ''}`}></i>
+                </button>
+              </div>
+
+              {/* Selector de Fecha Operativa Rápido */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginTop: '12px',
+                  background: 'rgba(0,0,0,0.25)',
+                  padding: '5px 8px',
+                  borderRadius: '12px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => cambiarFechaLogistica(-1)}
+                  style={{
+                    background: 'rgba(255,255,255,0.12)',
+                    border: 'none',
+                    color: '#ffffff',
+                    borderRadius: '8px',
+                    width: '32px',
+                    height: '32px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <i className="fa-solid fa-chevron-left text-xs"></i>
+                </button>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <i className="fa-regular fa-calendar text-sky-300 text-sm"></i>
+                  <input
+                    type="date"
+                    value={fechaLogistica}
+                    onChange={(e) => {
+                      setFechaLogistica(e.target.value);
+                      cargarDatosLogisticaAdmin(e.target.value);
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      fontSize: '13px',
+                      outline: 'none',
+                      cursor: 'pointer',
+                    }}
+                  />
+                  {fechaLogistica === hoyStr && (
+                    <span style={{ fontSize: '9.5px', background: '#0284c7', color: '#ffffff', padding: '2px 6px', borderRadius: '6px', fontWeight: 900 }}>
+                      HOY
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {fechaLogistica !== hoyStr && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFechaLogistica(hoyStr);
+                        cargarDatosLogisticaAdmin(hoyStr);
+                      }}
+                      style={{
+                        background: '#0284c7',
+                        border: 'none',
+                        color: '#ffffff',
+                        borderRadius: '8px',
+                        padding: '4px 8px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Hoy
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => cambiarFechaLogistica(1)}
+                    style={{
+                      background: 'rgba(255,255,255,0.12)',
+                      border: 'none',
+                      color: '#ffffff',
+                      borderRadius: '8px',
+                      width: '32px',
+                      height: '32px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <i className="fa-solid fa-chevron-right text-xs"></i>
+                  </button>
                 </div>
               </div>
-              <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#e0f2fe', opacity: 0.95 }}>
-                Traza los circuitos, asigna camiones y gestiona paradas en tiempo real.
-              </p>
             </div>
 
-            {/* Tarjeta de Acceso a Planificador Completo */}
-            <div
-              style={{
-                background: '#ffffff',
-                borderRadius: '16px',
-                padding: '18px',
-                border: '1.5px solid #0284c7',
-                boxShadow: '0 4px 14px rgba(2, 132, 199, 0.08)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div
-                  style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '10px',
-                    background: '#e0f2fe',
-                    color: '#0284c7',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '18px',
-                  }}
-                >
-                  <i className="fa-solid fa-map-location-dot"></i>
-                </div>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
-                    Editor Visual de Planificación
-                  </div>
-                  <div style={{ fontSize: '11.5px', color: '#64748b' }}>
-                    Asigna fincas a los tickets de hoy o añade paradas en ruta
-                  </div>
-                </div>
-              </div>
-
-              <a
-                href="/planificacion-rutas"
+            {/* Selector de Sub-Vistas: Asignaciones vs Circuitos */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setSubTabLogistica('asignaciones')}
                 style={{
-                  background: 'linear-gradient(135deg, #0284c7, #2563eb)',
-                  color: '#ffffff',
-                  textAlign: 'center',
-                  padding: '12px',
+                  background: subTabLogistica === 'asignaciones' ? '#0284c7' : '#ffffff',
+                  color: subTabLogistica === 'asignaciones' ? '#ffffff' : '#475569',
+                  border: subTabLogistica === 'asignaciones' ? 'none' : '1px solid #cbd5e1',
                   borderRadius: '12px',
-                  fontSize: '13px',
-                  fontWeight: 900,
-                  textDecoration: 'none',
+                  padding: '10px 8px',
+                  fontSize: '12.5px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)',
+                  gap: '6px',
+                  boxShadow: subTabLogistica === 'asignaciones' ? '0 4px 12px rgba(2, 132, 199, 0.25)' : 'none',
+                  transition: 'all 0.2s',
                 }}
               >
-                <i className="fa-solid fa-up-right-from-square"></i>
-                Abrir Planificador de Rutas
-              </a>
+                <i className="fa-solid fa-truck"></i>
+                Asignaciones ({planificaciones.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubTabLogistica('circuitos')}
+                style={{
+                  background: subTabLogistica === 'circuitos' ? '#0284c7' : '#ffffff',
+                  color: subTabLogistica === 'circuitos' ? '#ffffff' : '#475569',
+                  border: subTabLogistica === 'circuitos' ? 'none' : '1px solid #cbd5e1',
+                  borderRadius: '12px',
+                  padding: '10px 8px',
+                  fontSize: '12.5px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: subTabLogistica === 'circuitos' ? '0 4px 12px rgba(2, 132, 199, 0.25)' : 'none',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <i className="fa-solid fa-route"></i>
+                Circuitos ({rutasLogisticas.length})
+              </button>
             </div>
 
-            {/* Rutas Activas del Día */}
-            <div>
-              <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
-                Tickets Planificados Hoy ({viajesEnVivo.length})
-              </h4>
-              {viajesEnVivo.map((v) => (
-                <div
-                  key={v.id}
+            {/* CONTENIDO 1: ASIGNACIONES DE LA JORNADA */}
+            {subTabLogistica === 'asignaciones' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Botón Principal: Planificar Camión / Ruta */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBusquedaFincaPlanificar('');
+                    setModalPlanificar({
+                      open: true,
+                      esEdicion: false,
+                      camionId: camionesLista.length > 0 ? camionesLista[0].id : 0,
+                      conductorId: choferesLista.length > 0 ? choferesLista[0].id : 0,
+                      rutaLogisticaId: undefined,
+                      fincasIds: [],
+                      observacion: '',
+                    });
+                  }}
                   style={{
-                    background: '#ffffff',
-                    borderRadius: '12px',
-                    padding: '12px 14px',
-                    border: '1px solid #e2e8f0',
-                    marginBottom: '8px',
+                    background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '14px',
+                    padding: '12px 16px',
+                    fontSize: '13.5px',
+                    fontWeight: 900,
+                    cursor: 'pointer',
                     display: 'flex',
-                    justifyContent: 'space-between',
                     alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)',
                   }}
                 >
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
-                      Ticket {v.codigoTicket || `#${v.id}`} • {v.nombreConductor || v.choferNombre || 'Chofer'}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>
-                      Cisterna: {v.camionPlaca} • {v.fincasDetalle?.length || (v as any).paradas?.length || (v as any).totalParadas || 0} fincas asignadas
-                    </div>
+                  <i className="fa-solid fa-plus-circle text-lg"></i>
+                  Planificar Nuevo Camión / Ruta
+                </button>
+
+                {/* Lista de Planificaciones */}
+                {cargandoPlanificaciones ? (
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                    <i className="fa-solid fa-spinner fa-spin mr-2"></i> Cargando planificaciones...
                   </div>
-                  <span
+                ) : planificaciones.length === 0 ? (
+                  <div
                     style={{
-                      background: '#eff6ff',
-                      color: '#2563eb',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                      padding: '4px 8px',
-                      borderRadius: '6px',
+                      background: '#ffffff',
+                      borderRadius: '16px',
+                      padding: '24px',
+                      textAlign: 'center',
+                      color: '#64748b',
+                      border: '1.5px dashed #cbd5e1',
                     }}
                   >
-                    {v.totalLitrosFinca || v.totalLitrosRecogidos || 0} L
-                  </span>
-                </div>
-              ))}
-            </div>
+                    <i className="fa-solid fa-clipboard-list text-slate-300" style={{ fontSize: '36px', marginBottom: '8px', display: 'block' }}></i>
+                    <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '14px' }}>Sin Asignaciones para esta fecha</div>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: '#64748b' }}>
+                      Toca el botón superior para asignar la primera cisterna y sus fincas.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {planificaciones.map((plan) => {
+                      const fincaIds = getFincasIdsDePlan(plan);
+                      const cantFincas = fincaIds.length;
+                      const cap = plan.capacidadCamionLitros || 6000;
+                      const ltsEst = plan.litrosEstimados || 0;
+                      const pct = Math.min(100, Math.round((ltsEst / cap) * 100));
+
+                      return (
+                        <div
+                          key={plan.id}
+                          style={{
+                            background: '#ffffff',
+                            borderRadius: '16px',
+                            padding: '16px',
+                            border: '1px solid #e2e8f0',
+                            boxShadow: '0 3px 10px rgba(0,0,0,0.03)',
+                          }}
+                        >
+                          {/* Cabecera de la tarjeta */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
+                                  🚛 {plan.camionPlaca || 'S/P'}
+                                </span>
+                                {plan.rutaLogisticaNombre && (
+                                  <span style={{ fontSize: '10.5px', background: '#eff6ff', color: '#2563eb', padding: '2px 7px', borderRadius: '6px', fontWeight: 800 }}>
+                                    {plan.rutaLogisticaNombre}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>
+                                <i className="fa-solid fa-user text-slate-400 mr-1"></i> {plan.conductorNombre || 'Chofer no asignado'}
+                              </div>
+                            </div>
+                            <span
+                              style={{
+                                background: plan.estadoTicket === 'FINALIZADO' ? '#dcfce7' : plan.controlRutaId ? '#e0f2fe' : '#fef3c7',
+                                color: plan.estadoTicket === 'FINALIZADO' ? '#16a34a' : plan.controlRutaId ? '#0284c7' : '#d97706',
+                                fontSize: '10.5px',
+                                fontWeight: 900,
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              {plan.estadoTicket || (plan.controlRutaId ? 'EN RUTA' : 'PLANIFICADO')}
+                            </span>
+                          </div>
+
+                          {/* Estadísticas de la asignación */}
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(3, 1fr)',
+                              gap: '6px',
+                              marginTop: '12px',
+                              background: '#f8fafc',
+                              padding: '8px 10px',
+                              borderRadius: '10px',
+                              textAlign: 'center',
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: 900, color: '#0284c7' }}>{cantFincas}</div>
+                              <div style={{ fontSize: '9.5px', color: '#64748b', fontWeight: 700 }}>FINCAS</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>{ltsEst.toLocaleString()} L</div>
+                              <div style={{ fontSize: '9.5px', color: '#64748b', fontWeight: 700 }}>ESTIMADO</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: 900, color: pct > 90 ? '#dc2626' : '#2563eb' }}>{pct}%</div>
+                              <div style={{ fontSize: '9.5px', color: '#64748b', fontWeight: 700 }}>OCUPACIÓN</div>
+                            </div>
+                          </div>
+
+                          {/* Barra de Progreso Ocupación */}
+                          <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', marginTop: '8px', overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                width: `${pct}%`,
+                                height: '100%',
+                                background: pct > 90 ? '#ef4444' : pct > 60 ? '#3b82f6' : '#10b981',
+                                borderRadius: '3px',
+                              }}
+                            />
+                          </div>
+
+                          {/* Lista resumida de fincas asignadas */}
+                          <div style={{ marginTop: '10px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                              Fincas en Circuito ({cantFincas}):
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '72px', overflowY: 'auto' }}>
+                              {fincaIds.slice(0, 8).map((fid) => {
+                                const fObj = fincas.find((item) => item.id === fid);
+                                return (
+                                  <span
+                                    key={fid}
+                                    style={{
+                                      background: '#f1f5f9',
+                                      color: '#334155',
+                                      fontSize: '10px',
+                                      fontWeight: 700,
+                                      padding: '2px 6px',
+                                      borderRadius: '6px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                    }}
+                                  >
+                                    <i className="fa-solid fa-cow text-sky-500" style={{ fontSize: '8px' }}></i>
+                                    {fObj?.nombre || `Finca #${fid}`}
+                                  </span>
+                                );
+                              })}
+                              {cantFincas > 8 && (
+                                <span style={{ fontSize: '10px', color: '#0284c7', fontWeight: 800, padding: '2px 4px' }}>
+                                  +{cantFincas - 8} más...
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Botonera de Acciones en Móvil */}
+                          <div style={{ display: 'flex', gap: '6px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBusquedaFincaPlanificar('');
+                                setModalPlanificar({
+                                  open: true,
+                                  esEdicion: true,
+                                  id: plan.id,
+                                  camionId: plan.camionId,
+                                  conductorId: plan.conductorId,
+                                  rutaLogisticaId: plan.rutaLogisticaId,
+                                  fincasIds: fincaIds,
+                                  observacion: plan.observacion || '',
+                                });
+                              }}
+                              style={{
+                                flex: 1,
+                                background: '#f0f9ff',
+                                color: '#0284c7',
+                                border: '1px solid #bae6fd',
+                                borderRadius: '10px',
+                                padding: '8px 4px',
+                                fontSize: '11.5px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <i className="fa-solid fa-pen-to-square"></i>
+                              Editar / Asignar
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setModalAgregarFincaRapida({
+                                  open: true,
+                                  plan,
+                                  fincaId: fincas.length > 0 ? fincas[0].id : 0,
+                                });
+                              }}
+                              style={{
+                                background: '#ecfdf5',
+                                color: '#059669',
+                                border: '1px solid #a7f3d0',
+                                borderRadius: '10px',
+                                padding: '8px 10px',
+                                fontSize: '11.5px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <i className="fa-solid fa-plus"></i>
+                              + Finca
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleEliminarPlanificacionMovil(plan.id)}
+                              style={{
+                                background: '#fef2f2',
+                                color: '#dc2626',
+                                border: '1px solid #fecaca',
+                                borderRadius: '10px',
+                                padding: '8px 10px',
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <i className="fa-solid fa-trash-can"></i>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CONTENIDO 2: RUTAS & CIRCUITOS MAESTROS */}
+            {subTabLogistica === 'circuitos' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalCircuito({
+                      open: true,
+                      esEdicion: false,
+                      nombre: '',
+                      codigo: '',
+                      color: '#2563eb',
+                      descripcion: '',
+                    });
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #0d9488, #0f766e)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '14px',
+                    padding: '12px 16px',
+                    fontSize: '13.5px',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(13, 148, 136, 0.35)',
+                  }}
+                >
+                  <i className="fa-solid fa-plus-circle text-lg"></i>
+                  Crear Nuevo Circuito Logístico
+                </button>
+
+                {rutasLogisticas.length === 0 ? (
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '16px',
+                      padding: '24px',
+                      textAlign: 'center',
+                      color: '#64748b',
+                      border: '1.5px dashed #cbd5e1',
+                    }}
+                  >
+                    <i className="fa-solid fa-route text-slate-300" style={{ fontSize: '36px', marginBottom: '8px', display: 'block' }}></i>
+                    No hay circuitos maestros creados.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {rutasLogisticas.map((ruta) => {
+                      const cantFincasCircuito = Array.isArray(ruta.fincas) ? ruta.fincas.length : ruta.totalFincas || 0;
+                      return (
+                        <div
+                          key={ruta.id}
+                          style={{
+                            background: '#ffffff',
+                            borderRadius: '16px',
+                            padding: '14px 16px',
+                            border: '1px solid #e2e8f0',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span
+                                  style={{
+                                    width: '10px',
+                                    height: '10px',
+                                    borderRadius: '50%',
+                                    background: '#2563eb',
+                                    display: 'inline-block',
+                                  }}
+                                ></span>
+                                <span style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a' }}>
+                                  {ruta.nombre}
+                                </span>
+                                {ruta.codigo && (
+                                  <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                                    {ruta.codigo}
+                                  </span>
+                                )}
+                              </div>
+                              {ruta.descripcion && (
+                                <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '2px' }}>
+                                  {ruta.descripcion}
+                                </div>
+                              )}
+                            </div>
+                            <span
+                              style={{
+                                background: '#f0fdf4',
+                                color: '#16a34a',
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              {cantFincasCircuito} Fincas
+                            </span>
+                          </div>
+
+                          {/* Acciones Circuito */}
+                          <div style={{ display: 'flex', gap: '6px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBusquedaFincasCircuito('');
+                                const fIds = Array.isArray(ruta.fincas) ? ruta.fincas.map((f) => f.fincaId) : [];
+                                setModalAsignarFincasCircuito({
+                                  open: true,
+                                  rutaId: ruta.id,
+                                  rutaNombre: ruta.nombre,
+                                  fincasIds: fIds,
+                                });
+                              }}
+                              style={{
+                                flex: 1,
+                                background: '#f0fdf4',
+                                color: '#16a34a',
+                                border: '1px solid #bbf7d0',
+                                borderRadius: '10px',
+                                padding: '8px',
+                                fontSize: '11.5px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <i className="fa-solid fa-cow"></i>
+                              Asignar Fincas
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setModalCircuito({
+                                  open: true,
+                                  esEdicion: true,
+                                  id: ruta.id,
+                                  nombre: ruta.nombre,
+                                  codigo: ruta.codigo || '',
+                                  color: '#2563eb',
+                                  descripcion: ruta.descripcion || '',
+                                });
+                              }}
+                              style={{
+                                background: '#f8fafc',
+                                color: '#475569',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '10px',
+                                padding: '8px 10px',
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <i className="fa-solid fa-pen"></i>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleEliminarCircuitoMovil(ruta.id)}
+                              style={{
+                                background: '#fef2f2',
+                                color: '#dc2626',
+                                border: '1px solid #fecaca',
+                                borderRadius: '10px',
+                                padding: '8px 10px',
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <i className="fa-solid fa-trash-can"></i>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -5951,6 +6718,898 @@ export const AppMovilPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PLANIFICAR / EDITAR RUTA CHOFER */}
+      {modalPlanificar?.open && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '540px',
+              background: '#ffffff',
+              borderTopLeftRadius: '24px',
+              borderTopRightRadius: '24px',
+              maxHeight: '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 -10px 40px rgba(0,0,0,0.25)',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Header del Modal */}
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: '#f8fafc',
+              }}
+            >
+              <div>
+                <span style={{ fontSize: '10.5px', fontWeight: 900, color: '#0284c7', textTransform: 'uppercase' }}>
+                  Fecha: {fechaLogistica}
+                </span>
+                <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
+                  {modalPlanificar.esEdicion ? 'Editar Asignación de Ruta' : 'Planificar Nuevo Camión / Ruta'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalPlanificar(null)}
+                style={{
+                  background: '#e2e8f0',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#475569',
+                  fontSize: '14px',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Cuerpo con Scroll */}
+            <form onSubmit={handleGuardarPlanificacionMovil} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
+              <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Selector de Camión */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    1. Cisterna / Camión *
+                  </label>
+                  <select
+                    value={modalPlanificar.camionId}
+                    onChange={(e) => setModalPlanificar((prev) => prev ? { ...prev, camionId: Number(e.target.value) } : null)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '13px',
+                      background: '#ffffff',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <option value={0}>-- Selecciona Camión --</option>
+                    {camionesLista.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.placa} • {c.marca} {c.modelo} ({c.capacidadLitros.toLocaleString()} L)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Selector de Chofer */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    2. Chofer / Conductor *
+                  </label>
+                  <select
+                    value={modalPlanificar.conductorId}
+                    onChange={(e) => setModalPlanificar((prev) => prev ? { ...prev, conductorId: Number(e.target.value) } : null)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '13px',
+                      background: '#ffffff',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <option value={0}>-- Selecciona Chofer --</option>
+                    {choferesLista.map((ch) => (
+                      <option key={ch.id} value={ch.id}>
+                        {ch.nombreCompleto} {ch.cedula ? `(C.I. ${ch.cedula})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Selector de Circuito Maestro (Opcional) */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>
+                      3. Circuito Base (Opcional)
+                    </label>
+                    {modalPlanificar.rutaLogisticaId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const rSel = rutasLogisticas.find((r) => r.id === modalPlanificar.rutaLogisticaId);
+                          if (rSel && Array.isArray(rSel.fincas)) {
+                            const ids = rSel.fincas.map((f) => f.fincaId);
+                            setModalPlanificar((prev) =>
+                              prev ? { ...prev, fincasIds: Array.from(new Set([...prev.fincasIds, ...ids])) } : null
+                            );
+                            toast.success(`Cargadas ${ids.length} fincas del circuito`);
+                          }
+                        }}
+                        style={{
+                          background: '#f0f9ff',
+                          color: '#0284c7',
+                          border: 'none',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          padding: '2px 6px',
+                          borderRadius: '6px',
+                        }}
+                      >
+                        ⚡ Cargar Fincas
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    value={modalPlanificar.rutaLogisticaId || 0}
+                    onChange={(e) => {
+                      const rId = Number(e.target.value) || undefined;
+                      setModalPlanificar((prev) => (prev ? { ...prev, rutaLogisticaId: rId } : null));
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '13px',
+                      background: '#ffffff',
+                    }}
+                  >
+                    <option value={0}>-- Sin circuito predeterminado --</option>
+                    {rutasLogisticas.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.nombre} {r.codigo ? `(${r.codigo})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Buscador & Selección de Fincas */}
+                <div style={{ marginTop: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>
+                      4. Fincas Asignadas ({modalPlanificar.fincasIds.length}) *
+                    </label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const visIds = fincas
+                            .filter(
+                              (f) =>
+                                !busquedaFincaPlanificar.trim() ||
+                                f.nombre.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()) ||
+                                (f.codigo && f.codigo.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()))
+                            )
+                            .map((f) => f.id);
+                          setModalPlanificar((prev) =>
+                            prev ? { ...prev, fincasIds: Array.from(new Set([...prev.fincasIds, ...visIds])) } : null
+                          );
+                        }}
+                        style={{
+                          background: '#eff6ff',
+                          color: '#2563eb',
+                          border: 'none',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          borderRadius: '6px',
+                          padding: '3px 8px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Visibles
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModalPlanificar((prev) => (prev ? { ...prev, fincasIds: [] } : null))}
+                        style={{
+                          background: '#fef2f2',
+                          color: '#dc2626',
+                          border: 'none',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          borderRadius: '6px',
+                          padding: '3px 8px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Limpiar
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Input Búsqueda */}
+                  <div style={{ position: 'relative', marginBottom: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="Buscar finca por nombre o código..."
+                      value={busquedaFincaPlanificar}
+                      onChange={(e) => setBusquedaFincaPlanificar(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px 9px 34px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #cbd5e1',
+                        fontSize: '12.5px',
+                        outline: 'none',
+                      }}
+                    />
+                    <i
+                      className="fa-solid fa-magnifying-glass"
+                      style={{ position: 'absolute', left: '11px', top: '11px', color: '#94a3b8', fontSize: '12px' }}
+                    ></i>
+                  </div>
+
+                  {/* Lista de Fincas con Checkboxes */}
+                  <div
+                    style={{
+                      maxHeight: '190px',
+                      overflowY: 'auto',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '12px',
+                      padding: '4px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      background: '#f8fafc',
+                    }}
+                  >
+                    {fincas
+                      .filter(
+                        (f) =>
+                          !busquedaFincaPlanificar.trim() ||
+                          f.nombre.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()) ||
+                          (f.codigo && f.codigo.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()))
+                      )
+                      .map((f) => {
+                        const seleccionada = modalPlanificar.fincasIds.includes(f.id);
+                        const promedio = fincasPromedio.find((p) => p.fincaId === f.id)?.promedioLitros;
+
+                        return (
+                          <div
+                            key={f.id}
+                            onClick={() => {
+                              setModalPlanificar((prev) => {
+                                if (!prev) return null;
+                                const exists = prev.fincasIds.includes(f.id);
+                                return {
+                                  ...prev,
+                                  fincasIds: exists
+                                    ? prev.fincasIds.filter((id) => id !== f.id)
+                                    : [...prev.fincasIds, f.id],
+                                };
+                              });
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              background: seleccionada ? '#eff6ff' : '#ffffff',
+                              border: seleccionada ? '1px solid #bfdbfe' : '1px solid #f1f5f9',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <input
+                                type="checkbox"
+                                checked={seleccionada}
+                                onChange={() => {}}
+                                style={{ width: '16px', height: '16px', accentColor: '#2563eb' }}
+                              />
+                              <div>
+                                <div style={{ fontSize: '12.5px', fontWeight: 800, color: seleccionada ? '#1e40af' : '#1e293b' }}>
+                                  {f.nombre}
+                                </div>
+                                <div style={{ fontSize: '10px', color: '#64748b' }}>
+                                  {f.codigo ? `${f.codigo} • ` : ''}{f.propietarioNombre || 'Productor'}
+                                </div>
+                              </div>
+                            </div>
+                            {promedio !== undefined && (
+                              <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#0284c7' }}>
+                                ~{Math.round(promedio)} L
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                {/* Observaciones */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                    Instrucciones / Observación (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Empezar por el sector norte, llevar envases..."
+                    value={modalPlanificar.observacion}
+                    onChange={(e) => setModalPlanificar((prev) => prev ? { ...prev, observacion: e.target.value } : null)}
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '12.5px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Barra Inferior Fija de Guardar */}
+              {(() => {
+                const camSel = camionesLista.find((c) => c.id === modalPlanificar.camionId);
+                const capLitros = camSel?.capacidadLitros || 6000;
+                const estTotal = modalPlanificar.fincasIds.reduce((acc, fid) => {
+                  const p = fincasPromedio.find((fp) => fp.fincaId === fid);
+                  return acc + (p?.promedioLitros || 0);
+                }, 0);
+                const ocupacion = Math.min(100, Math.round((estTotal / capLitros) * 100));
+
+                return (
+                  <div
+                    style={{
+                      padding: '12px 20px',
+                      background: '#ffffff',
+                      borderTop: '1px solid #e2e8f0',
+                      boxShadow: '0 -4px 12px rgba(0,0,0,0.05)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                        {modalPlanificar.fincasIds.length} fincas • ~{Math.round(estTotal).toLocaleString()} L
+                      </div>
+                      <div style={{ fontSize: '12px', fontWeight: 900, color: ocupacion > 90 ? '#dc2626' : '#0284c7' }}>
+                        {ocupacion}% de capacidad cisterna
+                      </div>
+                    </div>
+                    <button
+                      type="submit"
+                      style={{
+                        background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '12px',
+                        padding: '12px 20px',
+                        fontSize: '13px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)',
+                      }}
+                    >
+                      Guardar Asignación
+                    </button>
+                  </div>
+                );
+              })()}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RÁPIDO: AGREGAR FINCA A RUTA ACTIVA */}
+      {modalAgregarFincaRapida?.open && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '420px',
+              background: '#ffffff',
+              borderRadius: '20px',
+              padding: '20px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
+                + Agregar Finca a la Ruta
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalAgregarFincaRapida(null)}
+                style={{ background: 'none', border: 'none', fontSize: '18px', color: '#64748b', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#64748b' }}>
+              Camión: <strong>{modalAgregarFincaRapida.plan.camionPlaca}</strong> • Chofer: <strong>{modalAgregarFincaRapida.plan.conductorNombre}</strong>
+            </p>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                Selecciona la finca a incorporar:
+              </label>
+              <select
+                value={modalAgregarFincaRapida.fincaId}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setModalAgregarFincaRapida((prev) => (prev ? { ...prev, fincaId: val } : null));
+                }}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '13px',
+                  background: '#ffffff',
+                }}
+              >
+                {fincas.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nombre} ({f.propietarioNombre || 'Productor'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setModalAgregarFincaRapida(null)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#64748b',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAgregarFincaRapidaMovil(modalAgregarFincaRapida.plan, modalAgregarFincaRapida.fincaId)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: '#16a34a',
+                  color: '#ffffff',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                Añadir a la Ruta
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CREAR / EDITAR CIRCUITO LOGÍSTICO */}
+      {modalCircuito?.open && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '420px',
+              background: '#ffffff',
+              borderRadius: '20px',
+              padding: '20px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
+                {modalCircuito.esEdicion ? 'Editar Circuito Logístico' : 'Nuevo Circuito Logístico'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModalCircuito(null)}
+                style={{ background: 'none', border: 'none', fontSize: '18px', color: '#64748b', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarCircuitoMovil} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                  Nombre del Circuito / Ruta *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Ruta 1 - Sur, Circuito Carora..."
+                  value={modalCircuito.nombre}
+                  onChange={(e) => setModalCircuito((prev) => prev ? { ...prev, nombre: e.target.value } : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    fontSize: '13px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                  Código o Abreviatura
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: RUTA-01"
+                  value={modalCircuito.codigo}
+                  onChange={(e) => setModalCircuito((prev) => prev ? { ...prev, codigo: e.target.value } : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    fontSize: '13px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                  Descripción o Zonas
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Ej: Comprende fincas de la zona baja..."
+                  value={modalCircuito.descripcion}
+                  onChange={(e) => setModalCircuito((prev) => prev ? { ...prev, descripcion: e.target.value } : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    fontSize: '13px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalCircuito(null)}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: '10px',
+                    border: '1px solid #cbd5e1',
+                    background: '#f8fafc',
+                    color: '#64748b',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: '#0d9488',
+                    color: '#ffffff',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Guardar Circuito
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ASIGNAR FINCAS A CIRCUITO MAESTRO */}
+      {modalAsignarFincasCircuito?.open && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '540px',
+              background: '#ffffff',
+              borderTopLeftRadius: '24px',
+              borderTopRightRadius: '24px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 -10px 40px rgba(0,0,0,0.25)',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: '#f8fafc',
+              }}
+            >
+              <div>
+                <span style={{ fontSize: '10.5px', fontWeight: 900, color: '#16a34a', textTransform: 'uppercase' }}>
+                  Circuito Maestro
+                </span>
+                <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
+                  Fincas de: {modalAsignarFincasCircuito.rutaNombre}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalAsignarFincasCircuito(null)}
+                style={{
+                  background: '#e2e8f0',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#475569',
+                  fontSize: '14px',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="Buscar finca..."
+                  value={busquedaFincasCircuito}
+                  onChange={(e) => setBusquedaFincasCircuito(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px 9px 34px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    fontSize: '12.5px',
+                    outline: 'none',
+                  }}
+                />
+                <i
+                  className="fa-solid fa-magnifying-glass"
+                  style={{ position: 'absolute', left: '11px', top: '11px', color: '#94a3b8', fontSize: '12px' }}
+                ></i>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 800, color: '#64748b' }}>
+                <span>Seleccionadas: {modalAsignarFincasCircuito.fincasIds.length}</span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const visIds = fincas
+                        .filter(
+                          (f) =>
+                            !busquedaFincasCircuito.trim() ||
+                            f.nombre.toLowerCase().includes(busquedaFincasCircuito.toLowerCase())
+                        )
+                        .map((f) => f.id);
+                      setModalAsignarFincasCircuito((prev) =>
+                        prev ? { ...prev, fincasIds: Array.from(new Set([...prev.fincasIds, ...visIds])) } : null
+                      );
+                    }}
+                    style={{ background: '#f0fdf4', color: '#16a34a', border: 'none', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Marcar Visibles
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalAsignarFincasCircuito((prev) => (prev ? { ...prev, fincasIds: [] } : null))}
+                    style={{ background: '#fef2f2', color: '#dc2626', border: 'none', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Desmarcar
+                  </button>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  maxHeight: '340px',
+                  overflowY: 'auto',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '4px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                }}
+              >
+                {fincas
+                  .filter(
+                    (f) =>
+                      !busquedaFincasCircuito.trim() ||
+                      f.nombre.toLowerCase().includes(busquedaFincasCircuito.toLowerCase())
+                  )
+                  .map((f) => {
+                    const sel = modalAsignarFincasCircuito.fincasIds.includes(f.id);
+                    return (
+                      <div
+                        key={f.id}
+                        onClick={() => {
+                          setModalAsignarFincasCircuito((prev) => {
+                            if (!prev) return null;
+                            const exists = prev.fincasIds.includes(f.id);
+                            return {
+                              ...prev,
+                              fincasIds: exists
+                                ? prev.fincasIds.filter((id) => id !== f.id)
+                                : [...prev.fincasIds, f.id],
+                            };
+                          });
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          background: sel ? '#f0fdf4' : '#ffffff',
+                          border: sel ? '1px solid #bbf7d0' : '1px solid #f1f5f9',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <input
+                            type="checkbox"
+                            checked={sel}
+                            onChange={() => {}}
+                            style={{ width: '16px', height: '16px', accentColor: '#16a34a' }}
+                          />
+                          <div>
+                            <div style={{ fontSize: '12.5px', fontWeight: 800, color: sel ? '#166534' : '#1e293b' }}>
+                              {f.nombre}
+                            </div>
+                            <div style={{ fontSize: '10px', color: '#64748b' }}>
+                              {f.codigo ? `${f.codigo} • ` : ''}{f.propietarioNombre || 'Productor'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: '12px 20px',
+                borderTop: '1px solid #e2e8f0',
+                display: 'flex',
+                gap: '8px',
+                background: '#ffffff',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setModalAsignarFincasCircuito(null)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#64748b',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGuardarFincasDeCircuitoMovil}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: '#16a34a',
+                  color: '#ffffff',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                Guardar Asignación
+              </button>
+            </div>
           </div>
         </div>
       )}

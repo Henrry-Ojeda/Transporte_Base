@@ -6,6 +6,7 @@ import { catalogosApi } from '@/api/catalogos.api';
 import { operacionesApi } from '@/api/operaciones.api';
 import { sistemaApi } from '@/api/sistema.api';
 import { mantenimientoApi } from '@/api/mantenimiento.api';
+import { combustibleApi } from '@/api/combustible.api';
 import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.api';
 import { useAuthStore } from '@/stores/authStore';
 import type {
@@ -19,6 +20,8 @@ import type {
   ChoferDto,
   FincaPromedioDto,
   GuardarPlanificacionRutaChoferDto,
+  CompaniaDto,
+  CombustibleHistorialDto,
 } from '@/types';
 
 interface DispositivoMovilData {
@@ -59,14 +62,18 @@ type TabMovil =
   | 'recoleccion'
   | 'entregas'
   | 'incidentes'
+  | 'combustible'
   | 'reportes'
   | 'perfil'
   | 'admin_envivo'
   | 'admin_logistica'
   | 'taller_flota'
-  | 'taller_mantenimiento';
+  | 'taller_mantenimiento'
+  | 'receptoria_entrada'
+  | 'receptoria_salidas'
+  | 'receptoria_reporte';
 
-export type ModoMovil = 'CHOFER' | 'ADMIN' | 'TALLER';
+export type ModoMovil = 'CHOFER' | 'ADMIN' | 'TALLER' | 'RECEPTORIA';
 
 const REPORTES_CHOFER = [
   { value: 'DIARIOS', label: '1. DIARIOS (Recolección Diaria)', icon: 'fa-calendar-days' },
@@ -74,9 +81,10 @@ const REPORTES_CHOFER = [
   { value: 'FINCAS', label: '3. FINCAS (Detalle por Productor)', icon: 'fa-cow' },
   { value: 'CHOFERES', label: '4. CHOFERES (Resumen Operativo)', icon: 'fa-user-tie' },
   { value: 'RELACION_CHOFER', label: '7. RELACIÓN CHOFER (Liquidación de Viajes)', icon: 'fa-truck-arrow-right' },
+  { value: 'MANTENIMIENTO', label: '8. MANTENIMIENTO & TALLER (Flota e Incidentes)', icon: 'fa-wrench' },
 ];
 
-export const APP_VERSION = 'v2.8.0';
+export const APP_VERSION = 'v2.9.0';
 
 export const AppMovilPage: React.FC = () => {
   // Navegación de Pestañas Móviles
@@ -222,7 +230,7 @@ export const AppMovilPage: React.FC = () => {
   // Fecha de hoy por defecto
   const hoyStr = new Date().toISOString().split('T')[0];
 
-  // Detección de Rol y Modo Adaptativo (CHOFER | ADMIN | TALLER)
+  // Detección de Rol y Modo Adaptativo (CHOFER | ADMIN | TALLER | RECEPTORIA)
   const rolDispositivo = (dispositivo?.rol || authUser?.rol || '').toUpperCase();
   const esAdminReal =
     rolDispositivo.includes('ADMIN') ||
@@ -232,11 +240,17 @@ export const AppMovilPage: React.FC = () => {
     (authUser?.rol || '').toUpperCase().includes('ADMIN') ||
     (authUser?.rol || '').toUpperCase() === 'SUPERADMIN';
   const esTallerReal = rolDispositivo === 'TALLER' || rolDispositivo.includes('MECANICO');
+  const esReceptoriaReal =
+    rolDispositivo === 'RECEPTORIA' ||
+    rolDispositivo === 'RECEPTOR' ||
+    rolDispositivo.includes('RECEPT') ||
+    (authUser?.rol || '').toUpperCase().includes('RECEPT');
 
   const [modoActivo, setModoActivo] = useState<ModoMovil>(() => {
     try {
       const saved = localStorage.getItem('movil_modo_activo') as ModoMovil;
-      if (saved && ['CHOFER', 'ADMIN', 'TALLER'].includes(saved)) return saved;
+      if (saved && ['CHOFER', 'ADMIN', 'TALLER', 'RECEPTORIA'].includes(saved)) return saved;
+      if (esReceptoriaReal) return 'RECEPTORIA';
       if (esTallerReal) return 'TALLER';
       if (esAdminReal) return 'ADMIN';
       return 'CHOFER';
@@ -250,6 +264,7 @@ export const AppMovilPage: React.FC = () => {
     localStorage.setItem('movil_modo_activo', nuevoModo);
     if (nuevoModo === 'ADMIN') setTabActiva('admin_envivo');
     else if (nuevoModo === 'TALLER') setTabActiva('taller_flota');
+    else if (nuevoModo === 'RECEPTORIA') setTabActiva('receptoria_entrada');
     else setTabActiva('principal');
   };
 
@@ -325,6 +340,57 @@ export const AppMovilPage: React.FC = () => {
   const [filtroIncidenteTaller, setFiltroIncidenteTaller] = useState<string>('TODOS');
   const [modalReparacion, setModalReparacion] = useState<{ open: boolean; incidenteId: number; titulo: string } | null>(null);
   const [formReparacion, setFormReparacion] = useState({ solucion: '', costo: '' });
+
+  // ===================================================================
+  // Estados para Módulo Chofer -> Combustible
+  // ===================================================================
+  const [formCombustible, setFormCombustible] = useState({
+    litros: '' as number | string,
+    origen: 'BOMBA' as 'BOMBA' | 'MATERA',
+    odometroKm: '' as number | string,
+    fotoComprobante: '',
+    observaciones: '',
+    tipoCombustible: 'GASOIL',
+  });
+  const [guardandoCombustible, setGuardandoCombustible] = useState(false);
+  const [historialCombustible, setHistorialCombustible] = useState<CombustibleHistorialDto[]>([]);
+  const [cargandoCombustible, setCargandoCombustible] = useState(false);
+
+  // ===================================================================
+  // Estados para Módulo Receptoría Móvil
+  // ===================================================================
+  const [ticketsReceptoria, setTicketsReceptoria] = useState<ControlRutaDto[]>([]);
+  const [despachosSalidaReceptoria, setDespachosSalidaReceptoria] = useState<DespachoCompaniaDto[]>([]);
+  const [cargandoReceptoria, setCargandoReceptoria] = useState(false);
+  const [fechaReceptoria, setFechaReceptoria] = useState(hoyStr);
+  const [companiasReceptoria, setCompaniasReceptoria] = useState<CompaniaDto[]>([]);
+  const [busquedaReceptoria, setBusquedaReceptoria] = useState('');
+
+  // Modales de Receptoría
+  const [modalVerificarLitros, setModalVerificarLitros] = useState<{
+    open: boolean;
+    ticket: ControlRutaDto | null;
+    litrosRecibidos: number | string;
+    observacion: string;
+  } | null>(null);
+
+  const [modalDevolverTicket, setModalDevolverTicket] = useState<{
+    open: boolean;
+    ticketId: number;
+    motivo: string;
+  } | null>(null);
+
+  const [modalNuevoDespachoSalida, setModalNuevoDespachoSalida] = useState<{
+    open: boolean;
+    fecha: string;
+    camionId: number;
+    conductorId: number;
+    litrosDespachados: number | string;
+    companiaId: number;
+    tipoLeche: string;
+    numeroGuiaSADA: string;
+    observacion: string;
+  } | null>(null);
 
   // Estado para la pantalla de Vinculación
   const [codigoInput, setCodigoInput] = useState('');
@@ -934,18 +1000,179 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
+  // ===================================================================
+  // Funciones Módulo Chofer: Combustible
+  // ===================================================================
+  const cargarHistorialCombustible = async () => {
+    setCargandoCombustible(true);
+    try {
+      const camionIdParam = dispositivo?.camionId || undefined;
+      const hist = await combustibleApi.getHistorial('GASOIL', camionIdParam, 20);
+      setHistorialCombustible(Array.isArray(hist) ? hist : []);
+    } catch {
+      console.warn('No se pudo cargar historial de combustible.');
+    } finally {
+      setCargandoCombustible(false);
+    }
+  };
+
+  const handleRegistrarCargaCombustible = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const lts = Number(formCombustible.litros);
+    if (!lts || lts <= 0) {
+      toast.error('Ingresa una cantidad válida de litros');
+      return;
+    }
+    const camionIdFinal =
+      dispositivo?.camionId ||
+      (camionesLista.length > 0 ? camionesLista[0].id : camionesTaller.length > 0 ? camionesTaller[0].id : 0);
+    if (!camionIdFinal) {
+      toast.error('No se detectó un camión asignado');
+      return;
+    }
+    setGuardandoCombustible(true);
+    try {
+      const origenTexto = formCombustible.origen === 'MATERA' ? 'LA MATERA (Tanque Interno)' : 'BOMBA COMERCIAL';
+      const obsFinal = `[ORIGEN: ${origenTexto}] ${
+        formCombustible.observaciones ? '- ' + formCombustible.observaciones.trim() : ''
+      }${formCombustible.fotoComprobante ? ' [COMPROBANTE ADJUNTO]' : ''}`;
+
+      const res = await combustibleApi.registrarDespacho({
+        camionId: camionIdFinal,
+        tipoCombustible: formCombustible.tipoCombustible || 'GASOIL',
+        litros: lts,
+        odometroKm: formCombustible.odometroKm ? Number(formCombustible.odometroKm) : undefined,
+        fecha: hoyStr,
+        controlRutaId: viajeActivo?.id || undefined,
+        observaciones: obsFinal,
+      });
+
+      toast.success(res.message || 'Carga de combustible registrada exitosamente');
+      setFormCombustible({
+        litros: '',
+        origen: 'BOMBA',
+        odometroKm: '',
+        fotoComprobante: '',
+        observaciones: '',
+        tipoCombustible: 'GASOIL',
+      });
+      cargarHistorialCombustible();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al registrar carga de combustible');
+    } finally {
+      setGuardandoCombustible(false);
+    }
+  };
+
+  // ===================================================================
+  // Funciones Módulo Receptoría
+  // ===================================================================
+  const cargarDatosReceptoria = async (fechaParam?: string) => {
+    const f = fechaParam || fechaReceptoria || hoyStr;
+    setCargandoReceptoria(true);
+    try {
+      const [tickets, despachos, comps] = await Promise.all([
+        operacionesApi.getControles(f),
+        operacionesApi.getDespachosCompanias(f),
+        catalogosApi.getCompanias(true),
+      ]);
+      setTicketsReceptoria(Array.isArray(tickets) ? tickets : []);
+      setDespachosSalidaReceptoria(Array.isArray(despachos) ? despachos : []);
+      setCompaniasReceptoria(Array.isArray(comps) ? comps : []);
+    } catch {
+      console.warn('Error al cargar datos de receptoría móvil');
+    } finally {
+      setCargandoReceptoria(false);
+    }
+  };
+
+  const handleConfirmarVerificarLitros = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalVerificarLitros || !modalVerificarLitros.ticket) return;
+    const lts = Number(modalVerificarLitros.litrosRecibidos);
+    if (!lts || lts <= 0) {
+      toast.error('Ingresa los litros recibidos en tanque/báscula');
+      return;
+    }
+    try {
+      const ticketId = modalVerificarLitros.ticket.id;
+      const res = await operacionesApi.validarEntregaCompania(ticketId, {
+        litrosConfirmados: lts,
+        litrosRecibidosCompania: lts,
+        observaciones: modalVerificarLitros.observacion.trim(),
+      });
+      toast.success(res.message || 'Litros verificados y conciliados en Receptoría.');
+      setModalVerificarLitros(null);
+      cargarDatosReceptoria(fechaReceptoria);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al verificar litros');
+    }
+  };
+
+  const handleConfirmarDevolucionTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalDevolverTicket) return;
+    try {
+      const res = await operacionesApi.revertirProcesoViaje(modalDevolverTicket.ticketId, {
+        nuevoProcesoId: 1,
+        motivo: modalDevolverTicket.motivo.trim() || 'Devuelto desde receptoría para corregir fincas o litros.',
+      });
+      toast.success(res.message || 'Ticket devuelto al chofer');
+      setModalDevolverTicket(null);
+      cargarDatosReceptoria(fechaReceptoria);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al devolver ticket');
+    }
+  };
+
+  const handleCrearTicketSalidaReceptoria = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalNuevoDespachoSalida) return;
+    const lts = Number(modalNuevoDespachoSalida.litrosDespachados);
+    if (!modalNuevoDespachoSalida.camionId || !modalNuevoDespachoSalida.companiaId || !lts || lts <= 0) {
+      toast.error('Completa los campos obligatorios: Camión, Destino y Litros');
+      return;
+    }
+    try {
+      const res = await operacionesApi.crearDespachoCompania({
+        fecha: modalNuevoDespachoSalida.fecha,
+        camionId: modalNuevoDespachoSalida.camionId,
+        usuarioId: modalNuevoDespachoSalida.conductorId || undefined,
+        companiaId: modalNuevoDespachoSalida.companiaId,
+        litrosDespachados: lts,
+        tipoLeche: modalNuevoDespachoSalida.tipoLeche,
+        numeroGuiaSADA: modalNuevoDespachoSalida.numeroGuiaSADA.trim(),
+        observaciones: modalNuevoDespachoSalida.observacion.trim(),
+      });
+      toast.success(res.message || 'Ticket de salida a planta creado exitosamente');
+      setModalNuevoDespachoSalida(null);
+      cargarDatosReceptoria(fechaReceptoria);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al registrar salida de receptoría');
+    }
+  };
+
   // Carga reactiva de datos al cambiar de pestaña o modo
   useEffect(() => {
     if (tabActiva === 'incidentes') {
       cargarMisIncidentesChofer();
+    } else if (tabActiva === 'combustible') {
+      cargarHistorialCombustible();
     } else if (tabActiva === 'admin_envivo') {
       cargarDatosAdminEnVivo();
     } else if (tabActiva === 'admin_logistica') {
       cargarDatosLogisticaAdmin();
     } else if (tabActiva === 'taller_flota' || tabActiva === 'taller_mantenimiento') {
       cargarDatosTaller();
+    } else if (
+      tabActiva === 'receptoria_entrada' ||
+      tabActiva === 'receptoria_salidas' ||
+      tabActiva === 'receptoria_reporte' ||
+      modoActivo === 'RECEPTORIA'
+    ) {
+      cargarDatosReceptoria(fechaReceptoria);
     }
-  }, [tabActiva, modoActivo]);
+  }, [tabActiva, modoActivo, fechaReceptoria]);
 
   // Capturar evento PWA install
   useEffect(() => {
@@ -1460,6 +1687,36 @@ export const AppMovilPage: React.FC = () => {
 
   // Configuración dinámica de pestañas de navegación según modo activo
   const tabsNavegacion = useMemo(() => {
+    if (modoActivo === 'RECEPTORIA') {
+      const cantPendientesReceptoria = ticketsReceptoria.filter(
+        (t) => (t.estado || '').toUpperCase() === 'EN RECEPTORIA' || (t.estado || '').toUpperCase() === 'EN ESPERA'
+      ).length;
+      return [
+        {
+          key: 'receptoria_entrada' as TabMovil,
+          label: 'Entrada',
+          icon: 'fa-arrow-down-to-bracket',
+          color: '#4f46e5',
+          bg: '#eef2ff',
+          badge: cantPendientesReceptoria,
+        },
+        {
+          key: 'receptoria_salidas' as TabMovil,
+          label: 'Salidas',
+          icon: 'fa-arrow-up-from-bracket',
+          color: '#059669',
+          bg: '#ecfdf5',
+        },
+        {
+          key: 'receptoria_reporte' as TabMovil,
+          label: 'Historial',
+          icon: 'fa-clipboard-check',
+          color: '#7c3aed',
+          bg: '#f5f3ff',
+        },
+        { key: 'perfil' as TabMovil, label: 'Perfil', icon: 'fa-user-gear', color: '#0f172a', bg: '#f1f5f9' },
+      ];
+    }
     if (modoActivo === 'ADMIN') {
       return [
         { key: 'admin_envivo' as TabMovil, label: 'En Vivo', icon: 'fa-tower-broadcast', color: '#2563eb', bg: '#eff6ff' },
@@ -1489,14 +1746,6 @@ export const AppMovilPage: React.FC = () => {
     return [
       { key: 'principal' as TabMovil, label: 'Inicio', icon: 'fa-house', color: '#2563eb', bg: '#eff6ff' },
       {
-        key: 'recoleccion' as TabMovil,
-        label: 'Recolección',
-        icon: 'fa-faucet-drip',
-        color: '#10b981',
-        bg: '#ecfdf5',
-        badge: pendientesSync.length,
-      },
-      {
         key: 'entregas' as TabMovil,
         label: 'Entregas',
         icon: 'fa-warehouse',
@@ -1512,10 +1761,17 @@ export const AppMovilPage: React.FC = () => {
         bg: '#fffbeb',
         badge: cantMisAverias,
       },
+      {
+        key: 'combustible' as TabMovil,
+        label: 'Combustible',
+        icon: 'fa-gas-pump',
+        color: '#e11d48',
+        bg: '#fff1f2',
+      },
       { key: 'reportes' as TabMovil, label: 'Reportes', icon: 'fa-chart-pie', color: '#0284c7', bg: '#f0f9ff' },
       { key: 'perfil' as TabMovil, label: 'Perfil', icon: 'fa-user-gear', color: '#0f172a', bg: '#f1f5f9' },
     ];
-  }, [modoActivo, pendientesSync.length, entregas, misIncidentes, incidentesTaller]);
+  }, [modoActivo, pendientesSync.length, entregas, misIncidentes, incidentesTaller, ticketsReceptoria]);
 
   // Sumar litros rápidamente en el modal
   const sumarLitros = (cant: number) => {
@@ -2516,6 +2772,26 @@ export const AppMovilPage: React.FC = () => {
               >
                 <i className="fa-solid fa-wrench"></i> Taller
               </button>
+              <button
+                type="button"
+                onClick={() => cambiarModo('RECEPTORIA')}
+                style={{
+                  background: modoActivo === 'RECEPTORIA' ? '#4f46e5' : 'transparent',
+                  color: modoActivo === 'RECEPTORIA' ? '#ffffff' : '#94a3b8',
+                  border: 'none',
+                  borderRadius: '7px',
+                  padding: '4px 10px',
+                  fontSize: '11px',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  boxShadow: modoActivo === 'RECEPTORIA' ? '0 2px 6px rgba(79, 70, 229, 0.4)' : 'none',
+                }}
+              >
+                <i className="fa-solid fa-warehouse"></i> Recept
+              </button>
             </div>
           </div>
         )}
@@ -2863,6 +3139,184 @@ export const AppMovilPage: React.FC = () => {
                   <span>Total: <strong>{capacidad.toLocaleString()} L</strong></span>
                 </div>
               </div>
+
+              {/* SECCIÓN DIRECTA: FINCAS DE LA RUTA Y RECOLECCIÓN RÁPIDA */}
+              {viajeActivo && (
+                <div
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: '20px',
+                    padding: '16px 18px',
+                    border: '1px solid #e2e8f0',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.03)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                      <i className="fa-solid fa-cow text-sky-600"></i>
+                      <span>Fincas del Recorrido ({fincasDeMiRuta.length})</span>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 900,
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        background: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '#dcfce7' : '#eff6ff',
+                        color: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '#15803d' : '#1d4ed8',
+                        border: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '1px solid #86efac' : '1px solid #bfdbfe',
+                      }}
+                    >
+                      {recCount}/{fincasDeMiRuta.length} Hechas
+                    </span>
+                  </div>
+
+                  {/* Barra de progreso rápida */}
+                  <div style={{ width: '100%', height: '6px', background: '#f1f5f9', borderRadius: '999px', overflow: 'hidden', marginBottom: '12px' }}>
+                    <div
+                      style={{
+                        width: `${fincasDeMiRuta.length > 0 ? Math.round((recCount / fincasDeMiRuta.length) * 100) : 0}%`,
+                        height: '100%',
+                        background: 'linear-gradient(90deg, #3b82f6, #10b981)',
+                        transition: 'width 0.4s ease',
+                      }}
+                    />
+                  </div>
+
+                  {/* Lista de Fincas con Detalle y Botón de Cargar Litros */}
+                  {fincasDeMiRuta.length === 0 ? (
+                    <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '12px', background: '#f8fafc', borderRadius: '12px' }}>
+                      No hay fincas asignadas específicamente. Usa el botón superior <strong>+ Cargar Finca</strong> para registrar paradas libres.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {fincasDeMiRuta.map((f, idx) => (
+                        <div
+                          key={f.id}
+                          style={{
+                            background: f.recolectada ? '#f0fdf4' : '#ffffff',
+                            borderRadius: '12px',
+                            padding: '12px',
+                            border: f.recolectada ? '1.5px solid #86efac' : '1px solid #e2e8f0',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '10px',
+                          }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span
+                                style={{
+                                  width: '20px',
+                                  height: '20px',
+                                  borderRadius: '6px',
+                                  background: f.recolectada ? '#dcfce7' : '#f1f5f9',
+                                  color: f.recolectada ? '#15803d' : '#64748b',
+                                  fontSize: '11px',
+                                  fontWeight: 900,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                {idx + 1}
+                              </span>
+                              <span style={{ fontSize: '13px', fontWeight: 800, color: f.recolectada ? '#15803d' : '#0f172a' }}>
+                                {f.nombre}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', paddingLeft: '26px' }}>
+                              {f.codigo ? `${f.codigo} • ` : ''}
+                              {f.recolectada ? (
+                                <strong style={{ color: '#16a34a' }}>
+                                  ✓ Recolectada: {f.litrosRecolectados.toLocaleString()} L
+                                </strong>
+                              ) : (
+                                <span style={{ color: '#d97706', fontWeight: 700 }}>⏳ Pendiente por recoger</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            {f.recolectada ? (
+                              <button
+                                type="button"
+                                onClick={() => abrirCargaParaFinca(f)}
+                                style={{
+                                  background: '#ffffff',
+                                  border: '1px solid #86efac',
+                                  color: '#16a34a',
+                                  borderRadius: '8px',
+                                  padding: '6px 10px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <i className="fa-solid fa-pen mr-1"></i> Modificar
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => abrirCargaParaFinca(f)}
+                                style={{
+                                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  padding: '7px 12px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                <i className="fa-solid fa-faucet-drip"></i>
+                                <span>+ Cargar Litros</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Botón Finalizar Recolección si ya recolectó */}
+                  {viajeActivo && totalLitrosCargados > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toast.success('Recolección completada. Revisa tu entrega de leche en la pestaña Entregas.');
+                        setTabActiva('entregas');
+                      }}
+                      style={{
+                        width: '100%',
+                        marginTop: '14px',
+                        background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '12px',
+                        padding: '12px',
+                        fontSize: '13px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: '0 4px 14px rgba(79, 70, 229, 0.3)',
+                      }}
+                    >
+                      <i className="fa-solid fa-warehouse"></i>
+                      <span>Finalizar Recolección y Despachar a Receptoría</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Botones de Acceso Rápido (Cuadrícula 2x2) */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
@@ -3680,7 +4134,9 @@ export const AppMovilPage: React.FC = () => {
                     color: '#1d4ed8',
                   }}
                 >
-                  {REPORTES_CHOFER.map((r) => (
+                  {REPORTES_CHOFER.filter((r) =>
+                    modoActivo === 'CHOFER' ? r.value === 'DIARIOS' || r.value === 'RECEPTORIAS' : true
+                  ).map((r) => (
                     <option key={r.value} value={r.value}>
                       {r.label}
                     </option>
@@ -4296,6 +4752,54 @@ export const AppMovilPage: React.FC = () => {
                       </div>
                     </div>
                   </button>
+
+                  {/* Tarjeta Modo Receptoría */}
+                  <button
+                    type="button"
+                    onClick={() => cambiarModo('RECEPTORIA')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px 14px',
+                      borderRadius: '14px',
+                      border: modoActivo === 'RECEPTORIA' ? '2px solid #6366f1' : '1px solid rgba(255,255,255,0.1)',
+                      background: modoActivo === 'RECEPTORIA' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255,255,255,0.03)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '12px',
+                        background: modoActivo === 'RECEPTORIA' ? '#6366f1' : 'rgba(255,255,255,0.1)',
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '18px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="fa-solid fa-warehouse"></i>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#ffffff' }}>
+                          4. Módulo Receptoría
+                        </span>
+                        {modoActivo === 'RECEPTORIA' && (
+                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#a5b4fc' }}>✓ ACTIVO</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                        Entrada de leche de campo, verificación con merma y tickets de salida a plantas.
+                      </div>
+                    </div>
+                  </button>
                 </div>
               </div>
             )}
@@ -4827,6 +5331,930 @@ export const AppMovilPage: React.FC = () => {
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ===================================================================
+            PESTAÑA: CHOFER COMBUSTIBLE (CARGA Y DESPACHO DE COMBUSTIBLE)
+           =================================================================== */}
+        {tabActiva === 'combustible' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Header Combustible */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #be123c 0%, #881337 100%)',
+                borderRadius: '18px',
+                padding: '18px 20px',
+                color: '#ffffff',
+                boxShadow: '0 8px 25px rgba(190, 18, 60, 0.3)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#fecdd3', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <i className="fa-solid fa-gas-pump mr-1"></i> Control de Combustible
+                </div>
+                <span
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.18)',
+                    color: '#ffffff',
+                    padding: '2px 8px',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    fontWeight: 900,
+                  }}
+                >
+                  🚛 {dispositivo?.placaCamion || 'Cisterna Asignada'}
+                </span>
+              </div>
+              <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 4px 0' }}>
+                Registro de Combustible (Gasoil)
+              </h2>
+              <p style={{ margin: 0, fontSize: '12px', color: '#ffe4e6' }}>
+                Registra la recarga de tu camión desde Bomba comercial o patio interno La Matera.
+              </p>
+            </div>
+
+            {/* Formulario de Carga */}
+            <form
+              onSubmit={handleRegistrarCargaCombustible}
+              style={{
+                background: '#ffffff',
+                borderRadius: '18px',
+                padding: '18px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+              }}
+            >
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
+                Datos de la Recarga
+              </div>
+
+              {/* Selector de Origen: Bomba vs Matera */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
+                  Origen de la Carga *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setFormCombustible((prev) => ({ ...prev, origen: 'BOMBA' }))}
+                    style={{
+                      padding: '12px 10px',
+                      borderRadius: '12px',
+                      border: formCombustible.origen === 'BOMBA' ? '2px solid #e11d48' : '1px solid #cbd5e1',
+                      background: formCombustible.origen === 'BOMBA' ? '#fff1f2' : '#f8fafc',
+                      color: formCombustible.origen === 'BOMBA' ? '#be123c' : '#475569',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <i className="fa-solid fa-gas-pump text-base"></i>
+                    <span>Bomba Comercial</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormCombustible((prev) => ({ ...prev, origen: 'MATERA' }))}
+                    style={{
+                      padding: '12px 10px',
+                      borderRadius: '12px',
+                      border: formCombustible.origen === 'MATERA' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                      background: formCombustible.origen === 'MATERA' ? '#eff6ff' : '#f8fafc',
+                      color: formCombustible.origen === 'MATERA' ? '#1d4ed8' : '#475569',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <i className="fa-solid fa-warehouse text-base"></i>
+                    <span>La Matera (Patio)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Litros a Cargar con Botones Rápidos */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
+                  Litros Despachados *
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.5"
+                    required
+                    placeholder="Ej: 80"
+                    value={formCombustible.litros}
+                    onChange={(e) => setFormCombustible((prev) => ({ ...prev, litros: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '18px',
+                      fontWeight: 900,
+                      color: '#0f172a',
+                    }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      right: '14px',
+                      top: '13px',
+                      fontSize: '14px',
+                      fontWeight: 800,
+                      color: '#64748b',
+                    }}
+                  >
+                    Lts
+                  </span>
+                </div>
+
+                {/* Botones de incremento rápido */}
+                <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                  {[20, 50, 100, 150].map((inc) => (
+                    <button
+                      key={inc}
+                      type="button"
+                      onClick={() => {
+                        const cur = Number(formCombustible.litros) || 0;
+                        setFormCombustible((prev) => ({ ...prev, litros: cur + inc }));
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '6px 4px',
+                        background: '#f1f5f9',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        color: '#334155',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      +{inc} L
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Odómetro / Kilometraje Actual */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                  Kilometraje Odómetro (Km Actual)
+                </label>
+                <input
+                  type="number"
+                  placeholder="Ej: 145200"
+                  value={formCombustible.odometroKm}
+                  onChange={(e) => setFormCombustible((prev) => ({ ...prev, odometroKm: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    fontSize: '13.5px',
+                    fontWeight: 700,
+                  }}
+                />
+              </div>
+
+              {/* Foto Comprobante / Tablero */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                  Foto del Comprobante / Marcador de Bomba
+                </label>
+                {formCombustible.fotoComprobante ? (
+                  <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid #cbd5e1' }}>
+                    <img
+                      src={formCombustible.fotoComprobante}
+                      alt="Comprobante combustible"
+                      style={{ width: '100%', maxHeight: '160px', objectFit: 'cover' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setFormCombustible((prev) => ({ ...prev, fotoComprobante: '' }))}
+                      style={{
+                        position: 'absolute',
+                        top: '8px',
+                        right: '8px',
+                        background: 'rgba(239, 68, 68, 0.9)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '4px 8px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <i className="fa-solid fa-trash mr-1"></i> Quitar Foto
+                    </button>
+                  </div>
+                ) : (
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      padding: '12px',
+                      borderRadius: '12px',
+                      border: '1.5px dashed #cbd5e1',
+                      background: '#f8fafc',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: '#475569',
+                    }}
+                  >
+                    <i className="fa-solid fa-camera text-sky-600 text-lg"></i>
+                    <span>Tomar Foto / Subir Imagen</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (evt) => {
+                            setFormCombustible((prev) => ({ ...prev, fotoComprobante: String(evt.target?.result || '') }));
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+
+              {/* Observación / Notas */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                  Observaciones / Nro Factura / Estación
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Estación El Trigal, tanque lleno"
+                  value={formCombustible.observaciones}
+                  onChange={(e) => setFormCombustible((prev) => ({ ...prev, observaciones: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    fontSize: '12.5px',
+                  }}
+                />
+              </div>
+
+              {/* Botón Enviar */}
+              <button
+                type="submit"
+                disabled={guardandoCombustible}
+                style={{
+                  background: 'linear-gradient(135deg, #e11d48, #be123c)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '14px',
+                  padding: '13px',
+                  fontSize: '14px',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 14px rgba(225, 29, 72, 0.35)',
+                  marginTop: '4px',
+                }}
+              >
+                <i className="fa-solid fa-gas-pump"></i>
+                <span>{guardandoCombustible ? 'Guardando Carga...' : 'Registrar Despacho de Combustible'}</span>
+              </button>
+            </form>
+
+            {/* Historial Reciente de Cargas */}
+            <div
+              style={{
+                background: '#ffffff',
+                borderRadius: '18px',
+                padding: '16px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                  <i className="fa-solid fa-clock-rotate-left mr-2 text-rose-600"></i>
+                  Cargas Recientes
+                </h3>
+                <button
+                  type="button"
+                  onClick={cargarHistorialCombustible}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#0284c7',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <i className={`fa-solid fa-rotate ${cargandoCombustible ? 'fa-spin' : ''}`}></i>
+                </button>
+              </div>
+
+              {cargandoCombustible ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+                  <i className="fa-solid fa-spinner fa-spin mr-2"></i> Cargando historial...
+                </div>
+              ) : historialCombustible.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>
+                  No hay recargas de combustible registradas recientemente.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {historialCombustible.slice(0, 10).map((h, idx) => (
+                    <div
+                      key={h.id || idx}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '10px 12px',
+                        background: '#f8fafc',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
+                          ⛽ {h.litros || (h as any).Litros || 0} Lts Gasoil
+                        </div>
+                        <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '2px' }}>
+                          {h.fecha ? new Date(h.fecha).toLocaleDateString() : 'Hoy'}
+                          {h.odometroKm ? ` • ${h.odometroKm.toLocaleString()} Km` : ''}
+                        </div>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          padding: '2px 7px',
+                          borderRadius: '6px',
+                          background: '#f1f5f9',
+                          color: '#475569',
+                        }}
+                      >
+                        {(h.observaciones || '').includes('MATERA') ? 'LA MATERA' : 'BOMBA'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ===================================================================
+            PESTAÑA: RECEPTORÍA ENTRADA (TICKETS DE CHOFERES A RECEPTORÍA)
+           =================================================================== */}
+        {tabActiva === 'receptoria_entrada' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Header Entrada Receptoría */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #3730a3 0%, #1e1b4b 100%)',
+                borderRadius: '18px',
+                padding: '18px 20px',
+                color: '#ffffff',
+                boxShadow: '0 8px 25px rgba(55, 48, 163, 0.3)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span
+                  style={{
+                    background: 'rgba(99, 102, 241, 0.25)',
+                    color: '#c7d2fe',
+                    padding: '2px 8px',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    fontWeight: 900,
+                    border: '1px solid rgba(99, 102, 241, 0.4)',
+                  }}
+                >
+                  🏭 Receptoría de Planta
+                </span>
+                <input
+                  type="date"
+                  value={fechaReceptoria}
+                  onChange={(e) => {
+                    setFechaReceptoria(e.target.value);
+                    cargarDatosReceptoria(e.target.value);
+                  }}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.15)',
+                    border: '1px solid rgba(255, 255, 255, 0.25)',
+                    color: '#ffffff',
+                    borderRadius: '8px',
+                    padding: '3px 8px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                  }}
+                />
+              </div>
+              <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 4px 0' }}>
+                Entrada de Leche (Campo ➔ Receptoría)
+              </h2>
+              <p style={{ margin: 0, fontSize: '12px', color: '#e0e7ff' }}>
+                Verifica los litros de las cisternas que llegaron de ruta o devuélvelos si faltan paradas.
+              </p>
+            </div>
+
+            {/* Buscador de Tickets */}
+            <div style={{ position: 'relative' }}>
+              <input
+                type="text"
+                placeholder="Buscar por chofer, placa de camión o ticket..."
+                value={busquedaReceptoria}
+                onChange={(e) => setBusquedaReceptoria(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '11px 12px 11px 36px',
+                  borderRadius: '12px',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '13px',
+                  outline: 'none',
+                  background: '#ffffff',
+                }}
+              />
+              <i
+                className="fa-solid fa-magnifying-glass"
+                style={{ position: 'absolute', left: '12px', top: '13px', color: '#94a3b8', fontSize: '13px' }}
+              ></i>
+            </div>
+
+            {/* Lista de Tickets en Receptoría */}
+            {cargandoReceptoria ? (
+              <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                <i className="fa-solid fa-spinner fa-spin mr-2"></i> Cargando tickets en receptoría...
+              </div>
+            ) : (() => {
+              const ticketsFiltrados = ticketsReceptoria.filter((t) => {
+                if (!busquedaReceptoria.trim()) return true;
+                const term = busquedaReceptoria.toLowerCase();
+                const choferNom = String((t as any).conductorNombre || (t as any).choferNombre || '');
+                return (
+                  (t.codigoTicket && t.codigoTicket.toLowerCase().includes(term)) ||
+                  choferNom.toLowerCase().includes(term) ||
+                  (t.camionPlaca && t.camionPlaca.toLowerCase().includes(term)) ||
+                  (t.rutaLogisticaNombre && t.rutaLogisticaNombre.toLowerCase().includes(term))
+                );
+              });
+
+              if (ticketsFiltrados.length === 0) {
+                return (
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '16px',
+                      padding: '24px',
+                      textAlign: 'center',
+                      border: '1.5px dashed #cbd5e1',
+                      color: '#64748b',
+                    }}
+                  >
+                    <i className="fa-solid fa-warehouse text-slate-300" style={{ fontSize: '36px', marginBottom: '8px', display: 'block' }}></i>
+                    <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '14px' }}>Sin Tickets en Receptoría</div>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '11.5px' }}>
+                      No se encontraron cisternas enviadas a receptoría para la fecha seleccionada.
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {ticketsFiltrados.map((t) => {
+                    const ltsChofer = Number((t as any).totalLitrosFinca || (t as any).litrosCargadosTotal || 0);
+                    const ltsRecibidos = Number(t.totalLitrosReceptoria || t.litrosEntregadosCompania || 0);
+                    const merma = ltsRecibidos > 0 ? ltsRecibidos - ltsChofer : 0;
+                    const paradas = (t as any).paradas || [];
+                    const chofNom = (t as any).conductorNombre || (t as any).choferNombre || 'Chofer';
+
+                    return (
+                      <div
+                        key={t.id}
+                        style={{
+                          background: '#ffffff',
+                          borderRadius: '16px',
+                          padding: '16px',
+                          border: '1px solid #e2e8f0',
+                          boxShadow: '0 3px 10px rgba(0,0,0,0.03)',
+                        }}
+                      >
+                        {/* Cabecera del Ticket */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '15px', fontWeight: 900, color: '#1e1b4b' }}>
+                                🎫 Ticket #{t.codigoTicket || t.id}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  fontWeight: 800,
+                                  background: '#e0e7ff',
+                                  color: '#3730a3',
+                                  padding: '2px 6px',
+                                  borderRadius: '5px',
+                                }}
+                              >
+                                {t.estado || 'EN RECEPTORIA'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>
+                              <i className="fa-solid fa-user mr-1 text-slate-400"></i> {chofNom} • 🚛 {t.camionPlaca || 'S/P'}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '16px', fontWeight: 900, color: '#2563eb' }}>
+                              {ltsChofer.toLocaleString()} L
+                            </div>
+                            <div style={{ fontSize: '10.5px', color: '#64748b' }}>Campo Chofer</div>
+                          </div>
+                        </div>
+
+                        {/* Circuito y Paradas */}
+                        <div
+                          style={{
+                            background: '#f8fafc',
+                            padding: '8px 10px',
+                            borderRadius: '10px',
+                            fontSize: '11.5px',
+                            color: '#334155',
+                            marginBottom: '10px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                            <span>Ruta: {t.rutaLogisticaNombre || 'Modo Libre'}</span>
+                            <span>{paradas.length} Fincas Recolectadas</span>
+                          </div>
+                          {ltsRecibidos > 0 && (
+                            <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between' }}>
+                              <span style={{ color: '#15803d', fontWeight: 800 }}>Recibido: {ltsRecibidos.toLocaleString()} L</span>
+                              <span style={{ color: merma < 0 ? '#dc2626' : '#15803d', fontWeight: 800 }}>
+                                Merma: {merma > 0 ? `+${merma}` : merma} L
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Botones de Acción: Verificar Litros vs Devolver Ticket */}
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setModalVerificarLitros({
+                                open: true,
+                                ticket: t,
+                                litrosRecibidos: ltsRecibidos > 0 ? ltsRecibidos : ltsChofer,
+                                observacion: '',
+                              })
+                            }
+                            style={{
+                              flex: 1,
+                              background: '#eff6ff',
+                              color: '#1d4ed8',
+                              border: '1.5px solid #bfdbfe',
+                              borderRadius: '10px',
+                              padding: '9px 10px',
+                              fontSize: '12px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <i className="fa-solid fa-scale-balanced"></i>
+                            <span>Verificar Litros</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setModalDevolverTicket({
+                                open: true,
+                                ticketId: t.id,
+                                motivo: '',
+                              })
+                            }
+                            style={{
+                              background: '#fff1f2',
+                              color: '#e11d48',
+                              border: '1.5px solid #fecdd3',
+                              borderRadius: '10px',
+                              padding: '9px 12px',
+                              fontSize: '12px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                            }}
+                            title="Devolver ticket al chofer para corregir fincas o litros"
+                          >
+                            <i className="fa-solid fa-arrow-rotate-left"></i>
+                            <span>Devolver</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ===================================================================
+            PESTAÑA: RECEPTORÍA SALIDAS (DESPACHO A PLANTAS / QUESERAS)
+           =================================================================== */}
+        {tabActiva === 'receptoria_salidas' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Header Salidas Receptoría */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #065f46 0%, #022c22 100%)',
+                borderRadius: '18px',
+                padding: '18px 20px',
+                color: '#ffffff',
+                boxShadow: '0 8px 25px rgba(6, 95, 70, 0.3)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.25)',
+                    color: '#6ee7b7',
+                    padding: '2px 8px',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    fontWeight: 900,
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                  }}
+                >
+                  🚀 Salidas y Despachos
+                </span>
+                <span style={{ fontSize: '11px', color: '#a7f3d0', fontWeight: 700 }}>
+                  {fechaReceptoria}
+                </span>
+              </div>
+              <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 4px 0' }}>
+                Tickets de Salida (Receptoría ➔ Plantas)
+              </h2>
+              <p style={{ margin: 0, fontSize: '12px', color: '#d1fae5' }}>
+                Emisión de tickets de despacho a queseras con chofer, camión, litros y guía SADA.
+              </p>
+            </div>
+
+            {/* Botón Nuevo Ticket de Salida */}
+            <button
+              type="button"
+              onClick={() => {
+                setModalNuevoDespachoSalida({
+                  open: true,
+                  fecha: fechaReceptoria,
+                  camionId: camionesLista.length > 0 ? camionesLista[0].id : 0,
+                  conductorId: choferesLista.length > 0 ? choferesLista[0].id : 0,
+                  litrosDespachados: '',
+                  companiaId: companiasReceptoria.length > 0 ? companiasReceptoria[0].id : 0,
+                  tipoLeche: 'VACA',
+                  numeroGuiaSADA: '',
+                  observacion: '',
+                });
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #059669, #047857)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '14px',
+                padding: '13px',
+                fontSize: '14px',
+                fontWeight: 900,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 14px rgba(5, 150, 105, 0.35)',
+              }}
+            >
+              <i className="fa-solid fa-plus-circle text-lg"></i>
+              <span>+ Nuevo Ticket de Salida</span>
+            </button>
+
+            {/* Listado de Despachos de Salida */}
+            {cargandoReceptoria ? (
+              <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                <i className="fa-solid fa-spinner fa-spin mr-2"></i> Cargando salidas...
+              </div>
+            ) : despachosSalidaReceptoria.length === 0 ? (
+              <div
+                style={{
+                  background: '#ffffff',
+                  borderRadius: '16px',
+                  padding: '24px',
+                  textAlign: 'center',
+                  border: '1.5px dashed #cbd5e1',
+                  color: '#64748b',
+                }}
+              >
+                <i className="fa-solid fa-truck-arrow-right text-slate-300" style={{ fontSize: '36px', marginBottom: '8px', display: 'block' }}></i>
+                <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '14px' }}>Sin Salidas Registradas</div>
+                <p style={{ margin: '4px 0 0 0', fontSize: '11.5px' }}>
+                  Pulsa el botón superior para crear el primer ticket de salida a planta.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {despachosSalidaReceptoria.map((d) => (
+                  <div
+                    key={d.id}
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '14px',
+                      padding: '14px 16px',
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 900, color: '#065f46' }}>
+                          🏢 {d.companiaNombre || 'Compañía / Planta'}
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: '#475569', marginTop: '2px', fontWeight: 700 }}>
+                          🚛 {d.camionPlaca || 'S/P'} • {(d as any).conductorNombre || (d as any).choferNombre || (d as any).usuarioNombre || 'Chofer'}
+                        </div>
+                        {d.numeroGuiaSADA && (
+                          <div style={{ fontSize: '10.5px', color: '#0284c7', marginTop: '2px', fontWeight: 800 }}>
+                            Guía SADA: {d.numeroGuiaSADA}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '16px', fontWeight: 900, color: '#059669' }}>
+                          {Number(d.litrosDespachados || 0).toLocaleString()} L
+                        </div>
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            padding: '2px 6px',
+                            borderRadius: '5px',
+                            background: d.estado === 'RECIBIDO' ? '#dcfce7' : '#eff6ff',
+                            color: d.estado === 'RECIBIDO' ? '#15803d' : '#1d4ed8',
+                          }}
+                        >
+                          {d.estado || 'DESPACHADO'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===================================================================
+            PESTAÑA: RECEPTORÍA REPORTE / HISTORIAL
+           =================================================================== */}
+        {tabActiva === 'receptoria_reporte' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Header Historial Receptoría */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #581c87 0%, #3b0764 100%)',
+                borderRadius: '18px',
+                padding: '18px 20px',
+                color: '#ffffff',
+                boxShadow: '0 8px 25px rgba(88, 28, 135, 0.3)',
+              }}
+            >
+              <div style={{ fontSize: '11px', fontWeight: 800, color: '#e9d5ff', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                <i className="fa-solid fa-chart-column mr-1"></i> Balance Operativo Receptoría
+              </div>
+              <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 4px 0' }}>
+                Historial y Reportes de Receptoría
+              </h2>
+              <p style={{ margin: 0, fontSize: '12px', color: '#f3e8ff' }}>
+                Consolidado de litros entrados de campo vs litros despachados a plantas.
+              </p>
+            </div>
+
+            {/* KPIs Rápidos de Receptoría */}
+            {(() => {
+              const totalEntrado = ticketsReceptoria.reduce(
+                (sum, t) => sum + Number(t.totalLitrosReceptoria || t.totalLitrosFinca || 0),
+                0
+              );
+              const totalSalido = despachosSalidaReceptoria.reduce(
+                (sum, d) => sum + Number(d.litrosDespachados || 0),
+                0
+              );
+              const saldoLitros = totalEntrado - totalSalido;
+
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '14px',
+                      padding: '12px 10px',
+                      border: '1px solid #e2e8f0',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>ENTRADAS</div>
+                    <div style={{ fontSize: '15px', fontWeight: 900, color: '#3730a3', marginTop: '2px' }}>
+                      {Math.round(totalEntrado).toLocaleString()} L
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '14px',
+                      padding: '12px 10px',
+                      border: '1px solid #e2e8f0',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>SALIDAS</div>
+                    <div style={{ fontSize: '15px', fontWeight: 900, color: '#059669', marginTop: '2px' }}>
+                      {Math.round(totalSalido).toLocaleString()} L
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '14px',
+                      padding: '12px 10px',
+                      border: '1px solid #e2e8f0',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 800 }}>DIFERENCIA</div>
+                    <div style={{ fontSize: '15px', fontWeight: 900, color: saldoLitros >= 0 ? '#15803d' : '#dc2626', marginTop: '2px' }}>
+                      {Math.round(saldoLitros).toLocaleString()} L
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Lista Resumen de Movimientos */}
+            <div
+              style={{
+                background: '#ffffff',
+                borderRadius: '16px',
+                padding: '16px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+              }}
+            >
+              <h3 style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', margin: '0 0 10px 0' }}>
+                Movimientos de la Jornada
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '12px', color: '#475569' }}>
+                  • {ticketsReceptoria.length} cisterna(s) en proceso de entrada
+                </div>
+                <div style={{ fontSize: '12px', color: '#475569' }}>
+                  • {despachosSalidaReceptoria.length} ticket(s) de salida emitidos
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -6942,7 +8370,22 @@ export const AppMovilPage: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setModalPlanificar((prev) => (prev ? { ...prev, fincasIds: [] } : null))}
+                        onClick={() => {
+                          const planActual = planificaciones.find((p) => p.id === modalPlanificar.id);
+                          const controlAsociado = planActual?.controlRutaId
+                            ? viajesEnVivo.find((v) => v.id === planActual.controlRutaId)
+                            : viajesEnVivo.find((v) => v.camionId === modalPlanificar.camionId);
+                          const paradasConLeche = (controlAsociado as any)?.paradas || [];
+                          const fincasLlenasIds = modalPlanificar.esEdicion
+                            ? paradasConLeche
+                                .filter((p: any) => Number(p.litros || p.litrosCargados || 0) > 0)
+                                .map((p: any) => Number(p.fincaId || p.FincaId))
+                            : [];
+                          setModalPlanificar((prev) => (prev ? { ...prev, fincasIds: fincasLlenasIds } : null));
+                          if (fincasLlenasIds.length > 0) {
+                            toast.info(`Se mantuvieron ${fincasLlenasIds.length} fincas con leche ya recolectada.`);
+                          }
+                        }}
                         style={{
                           background: '#fef2f2',
                           color: '#dc2626',
@@ -6954,7 +8397,7 @@ export const AppMovilPage: React.FC = () => {
                           cursor: 'pointer',
                         }}
                       >
-                        Limpiar
+                        Limpiar Vacías
                       </button>
                     </div>
                   </div>
@@ -6995,67 +8438,128 @@ export const AppMovilPage: React.FC = () => {
                       background: '#f8fafc',
                     }}
                   >
-                    {fincas
-                      .filter(
-                        (f) =>
-                          !busquedaFincaPlanificar.trim() ||
-                          f.nombre.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()) ||
-                          (f.codigo && f.codigo.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()))
-                      )
-                      .map((f) => {
-                        const seleccionada = modalPlanificar.fincasIds.includes(f.id);
-                        const promedio = fincasPromedio.find((p) => p.fincaId === f.id)?.promedioLitros;
+                    {(() => {
+                      const planActual = planificaciones.find((p) => p.id === modalPlanificar.id);
+                      const controlAsociado = planActual?.controlRutaId
+                        ? viajesEnVivo.find((v) => v.id === planActual.controlRutaId)
+                        : viajesEnVivo.find((v) => v.camionId === modalPlanificar.camionId);
+                      const paradasConLeche = (controlAsociado as any)?.paradas || [];
 
-                        return (
-                          <div
-                            key={f.id}
-                            onClick={() => {
-                              setModalPlanificar((prev) => {
-                                if (!prev) return null;
-                                const exists = prev.fincasIds.includes(f.id);
-                                return {
-                                  ...prev,
-                                  fincasIds: exists
-                                    ? prev.fincasIds.filter((id) => id !== f.id)
-                                    : [...prev.fincasIds, f.id],
-                                };
-                              });
-                            }}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              padding: '8px 10px',
-                              borderRadius: '8px',
-                              background: seleccionada ? '#eff6ff' : '#ffffff',
-                              border: seleccionada ? '1px solid #bfdbfe' : '1px solid #f1f5f9',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <input
-                                type="checkbox"
-                                checked={seleccionada}
-                                onChange={() => {}}
-                                style={{ width: '16px', height: '16px', accentColor: '#2563eb' }}
-                              />
-                              <div>
-                                <div style={{ fontSize: '12.5px', fontWeight: 800, color: seleccionada ? '#1e40af' : '#1e293b' }}>
-                                  {f.nombre}
-                                </div>
-                                <div style={{ fontSize: '10px', color: '#64748b' }}>
-                                  {f.codigo ? `${f.codigo} • ` : ''}{f.propietarioNombre || 'Productor'}
+                      return fincas
+                        .filter(
+                          (f) =>
+                            !busquedaFincaPlanificar.trim() ||
+                            f.nombre.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()) ||
+                            (f.codigo && f.codigo.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()))
+                        )
+                        .map((f) => {
+                          const seleccionada = modalPlanificar.fincasIds.includes(f.id);
+                          const promedio = fincasPromedio.find((p) => p.fincaId === f.id)?.promedioLitros;
+
+                          // REGLA: Si la finca ya tiene leche recolectada (litros > 0), está LLENA y NO se puede desasignar ni cambiar
+                          const paradaReal = paradasConLeche.find(
+                            (p: any) =>
+                              (p.fincaId === f.id || p.FincaId === f.id) &&
+                              Number(p.litros || p.litrosCargados || 0) > 0
+                          );
+                          const estaLlena = Boolean(paradaReal && modalPlanificar.esEdicion);
+                          const ltsRecolectados = paradaReal
+                            ? Number((paradaReal as any).litros || (paradaReal as any).litrosCargados || 0)
+                            : 0;
+
+                          return (
+                            <div
+                              key={f.id}
+                              onClick={() => {
+                                if (estaLlena) {
+                                  toast.warning(
+                                    `La finca "${f.nombre}" ya tiene ${ltsRecolectados} L recolectados en ruta. No se puede modificar ni desasignar.`
+                                  );
+                                  return;
+                                }
+                                setModalPlanificar((prev) => {
+                                  if (!prev) return null;
+                                  const exists = prev.fincasIds.includes(f.id);
+                                  return {
+                                    ...prev,
+                                    fincasIds: exists
+                                      ? prev.fincasIds.filter((id) => id !== f.id)
+                                      : [...prev.fincasIds, f.id],
+                                  };
+                                });
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '8px 10px',
+                                borderRadius: '8px',
+                                background: estaLlena ? '#f0fdf4' : seleccionada ? '#eff6ff' : '#ffffff',
+                                border: estaLlena
+                                  ? '1.5px solid #86efac'
+                                  : seleccionada
+                                  ? '1px solid #bfdbfe'
+                                  : '1px solid #f1f5f9',
+                                cursor: estaLlena ? 'not-allowed' : 'pointer',
+                                opacity: estaLlena ? 0.92 : 1,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={seleccionada || estaLlena}
+                                  disabled={estaLlena}
+                                  onChange={() => {}}
+                                  style={{
+                                    width: '16px',
+                                    height: '16px',
+                                    accentColor: estaLlena ? '#16a34a' : '#2563eb',
+                                  }}
+                                />
+                                <div>
+                                  <div
+                                    style={{
+                                      fontSize: '12.5px',
+                                      fontWeight: 800,
+                                      color: estaLlena ? '#15803d' : seleccionada ? '#1e40af' : '#1e293b',
+                                    }}
+                                  >
+                                    {f.nombre}
+                                  </div>
+                                  <div style={{ fontSize: '10px', color: '#64748b' }}>
+                                    {f.codigo ? `${f.codigo} • ` : ''}
+                                    {f.propietarioNombre || 'Productor'}
+                                  </div>
                                 </div>
                               </div>
+                              {estaLlena ? (
+                                <span
+                                  style={{
+                                    fontSize: '9.5px',
+                                    fontWeight: 900,
+                                    background: '#dcfce7',
+                                    color: '#15803d',
+                                    padding: '2px 6px',
+                                    borderRadius: '5px',
+                                    border: '1px solid #bbf7d0',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                  }}
+                                  title="Finca con leche recogida en ruta: no modificable"
+                                >
+                                  <i className="fa-solid fa-lock text-green-600"></i>
+                                  <span>{ltsRecolectados} L Recogidos</span>
+                                </span>
+                              ) : promedio !== undefined ? (
+                                <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#0284c7' }}>
+                                  ~{Math.round(promedio)} L
+                                </span>
+                              ) : null}
                             </div>
-                            {promedio !== undefined && (
-                              <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#0284c7' }}>
-                                ~{Math.round(promedio)} L
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
+                          );
+                        });
+                    })()}
                   </div>
                 </div>
 
@@ -7894,6 +9398,586 @@ export const AppMovilPage: React.FC = () => {
                 style={{ width: '100%', maxHeight: '75vh', objectFit: 'contain', borderRadius: '8px' }}
               />
             </div>
+          </div>
+        </div>
+      )}
+      {/* ===================================================================
+          MODAL 1 RECEPTORÍA: VERIFICAR LITROS Y CONCILIAR
+         =================================================================== */}
+      {modalVerificarLitros?.open && modalVerificarLitros.ticket && (() => {
+        const ltsChofer = Number(
+          (modalVerificarLitros.ticket as any).totalLitrosFinca ||
+            (modalVerificarLitros.ticket as any).litrosCargadosTotal ||
+            0
+        );
+        const ltsRecibidosNum = Number(modalVerificarLitros.litrosRecibidos) || 0;
+        const merma = ltsRecibidosNum > 0 ? ltsRecibidosNum - ltsChofer : 0;
+        const nombreCond =
+          (modalVerificarLitros.ticket as any).conductorNombre ||
+          (modalVerificarLitros.ticket as any).choferNombre ||
+          'Chofer';
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(5px)',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '540px',
+                background: '#ffffff',
+                borderTopLeftRadius: '24px',
+                borderTopRightRadius: '24px',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 -10px 40px rgba(0,0,0,0.3)',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '16px 20px',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  background: 'linear-gradient(135deg, #3730a3, #1e1b4b)',
+                  color: '#ffffff',
+                  borderTopLeftRadius: '24px',
+                  borderTopRightRadius: '24px',
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '15.5px', fontWeight: 900 }}>
+                    ⚖️ Verificar Litros en Receptoría
+                  </h3>
+                  <div style={{ fontSize: '11.5px', color: '#c7d2fe', marginTop: '2px' }}>
+                    Ticket #{modalVerificarLitros.ticket.codigoTicket || modalVerificarLitros.ticket.id} • {nombreCond}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalVerificarLitros(null)}
+                  style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '20px', cursor: 'pointer' }}
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+
+              {/* Formulario */}
+              <form onSubmit={handleConfirmarVerificarLitros} style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Comparativo Visual */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>LITROS CHOFER (CAMPO)</div>
+                    <div style={{ fontSize: '18px', fontWeight: 900, color: '#2563eb', marginTop: '2px' }}>
+                      {ltsChofer.toLocaleString()} L
+                    </div>
+                  </div>
+                  <div style={{ background: '#eef2ff', padding: '12px', borderRadius: '12px', border: '1px solid #c7d2fe', textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: '#4338ca', fontWeight: 800 }}>MERMA / DIFERENCIA</div>
+                    <div
+                      style={{
+                        fontSize: '18px',
+                        fontWeight: 900,
+                        color: merma < 0 ? '#dc2626' : merma > 0 ? '#15803d' : '#4338ca',
+                        marginTop: '2px',
+                      }}
+                    >
+                      {merma > 0 ? `+${merma}` : merma} L
+                    </div>
+                  </div>
+                </div>
+
+                {/* Input Litros Recibidos */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    Litros Recibidos en Planta (Tanque / Báscula) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.5"
+                    required
+                    value={modalVerificarLitros.litrosRecibidos}
+                    onChange={(e) =>
+                      setModalVerificarLitros((prev) =>
+                        prev ? { ...prev, litrosRecibidos: e.target.value } : null
+                      )
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '2px solid #4f46e5',
+                      fontSize: '18px',
+                      fontWeight: 900,
+                      color: '#1e1b4b',
+                    }}
+                  />
+                </div>
+
+                {/* Observaciones */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                    Observaciones / Notas de Receptoría
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Pesaje conforme, acidez adecuada, merma normal de transporte"
+                    value={modalVerificarLitros.observacion}
+                    onChange={(e) =>
+                      setModalVerificarLitros((prev) =>
+                        prev ? { ...prev, observacion: e.target.value } : null
+                      )
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '13px',
+                    }}
+                  />
+                </div>
+
+                {/* Botones */}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setModalVerificarLitros(null)}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#475569',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    style={{
+                      flex: 2,
+                      padding: '12px',
+                      borderRadius: '12px',
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+                      color: '#ffffff',
+                      fontWeight: 900,
+                      fontSize: '13.5px',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
+                    }}
+                  >
+                    Confirmar y Conciliar
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ===================================================================
+          MODAL 2 RECEPTORÍA: DEVOLVER TICKET AL CHOFER
+         =================================================================== */}
+      {modalDevolverTicket?.open && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '440px',
+              background: '#ffffff',
+              borderRadius: '20px',
+              padding: '22px',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div
+                style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '12px',
+                  background: '#ffe4e6',
+                  color: '#e11d48',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '18px',
+                  flexShrink: 0,
+                }}
+              >
+                <i className="fa-solid fa-arrow-rotate-left"></i>
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15.5px', fontWeight: 900, color: '#0f172a' }}>
+                  ¿Devolver Ticket #{modalDevolverTicket.ticketId} al Chofer?
+                </h3>
+                <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#64748b' }}>
+                  El viaje volverá a estado ABIERTO para que el chofer pueda agregar fincas o corregir litros.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                Motivo de la Devolución *
+              </label>
+              <textarea
+                rows={3}
+                required
+                placeholder="Ej: Faltó registrar la finca Los Olivos o verificar litros de leche ácida..."
+                value={modalDevolverTicket.motivo}
+                onChange={(e) =>
+                  setModalDevolverTicket((prev) => (prev ? { ...prev, motivo: e.target.value } : null))
+                }
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '13px',
+                  fontFamily: 'inherit',
+                  resize: 'none',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setModalDevolverTicket(null)}
+                style={{
+                  flex: 1,
+                  padding: '11px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#475569',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarDevolucionTicket}
+                style={{
+                  flex: 1.5,
+                  padding: '11px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: '#e11d48',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                }}
+              >
+                Sí, Devolver al Chofer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================
+          MODAL 3 RECEPTORÍA: CREAR TICKET DE SALIDA A PLANTA
+         =================================================================== */}
+      {modalNuevoDespachoSalida?.open && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '540px',
+              background: '#ffffff',
+              borderTopLeftRadius: '24px',
+              borderTopRightRadius: '24px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 -10px 40px rgba(0,0,0,0.3)',
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: 'linear-gradient(135deg, #059669, #047857)',
+                color: '#ffffff',
+                borderTopLeftRadius: '24px',
+                borderTopRightRadius: '24px',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15.5px', fontWeight: 900 }}>
+                  🚀 Nuevo Ticket de Salida (Despacho a Planta)
+                </h3>
+                <div style={{ fontSize: '11.5px', color: '#a7f3d0', marginTop: '2px' }}>
+                  Emisión de ticket de despacho a quesera o empresa compradora
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalNuevoDespachoSalida(null)}
+                style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '20px', cursor: 'pointer' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Formulario */}
+            <form
+              onSubmit={handleCrearTicketSalidaReceptoria}
+              style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}
+            >
+              {/* Fecha */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Fecha de Despacho *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={modalNuevoDespachoSalida.fecha}
+                  onChange={(e) =>
+                    setModalNuevoDespachoSalida((prev) => (prev ? { ...prev, fecha: e.target.value } : null))
+                  }
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Destino / Compañía */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Destino (Empresa / Quesera Receptora) *
+                </label>
+                <select
+                  required
+                  value={modalNuevoDespachoSalida.companiaId}
+                  onChange={(e) =>
+                    setModalNuevoDespachoSalida((prev) =>
+                      prev ? { ...prev, companiaId: Number(e.target.value) } : null
+                    )
+                  }
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px', background: '#ffffff', fontWeight: 700 }}
+                >
+                  <option value={0}>-- Selecciona Empresa Destino --</option>
+                  {companiasReceptoria.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Cisterna / Camión */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Cisterna / Camión *
+                </label>
+                <select
+                  required
+                  value={modalNuevoDespachoSalida.camionId}
+                  onChange={(e) =>
+                    setModalNuevoDespachoSalida((prev) =>
+                      prev ? { ...prev, camionId: Number(e.target.value) } : null
+                    )
+                  }
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px', background: '#ffffff', fontWeight: 700 }}
+                >
+                  <option value={0}>-- Selecciona Camión --</option>
+                  {camionesLista.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.placa} • {c.marca} {c.modelo} ({c.capacidadLitros.toLocaleString()} L)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Chofer */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Chofer / Conductor
+                </label>
+                <select
+                  value={modalNuevoDespachoSalida.conductorId}
+                  onChange={(e) =>
+                    setModalNuevoDespachoSalida((prev) =>
+                      prev ? { ...prev, conductorId: Number(e.target.value) } : null
+                    )
+                  }
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px', background: '#ffffff', fontWeight: 700 }}
+                >
+                  <option value={0}>-- Selecciona Chofer --</option>
+                  {choferesLista.map((ch) => (
+                    <option key={ch.id} value={ch.id}>
+                      {ch.nombreCompleto}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Litros y Tipo de Leche */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Litros Despachados *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.5"
+                    required
+                    placeholder="Ej: 5000"
+                    value={modalNuevoDespachoSalida.litrosDespachados}
+                    onChange={(e) =>
+                      setModalNuevoDespachoSalida((prev) =>
+                        prev ? { ...prev, litrosDespachados: e.target.value } : null
+                      )
+                    }
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '14px', fontWeight: 800 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Tipo de Leche
+                  </label>
+                  <select
+                    value={modalNuevoDespachoSalida.tipoLeche}
+                    onChange={(e) =>
+                      setModalNuevoDespachoSalida((prev) =>
+                        prev ? { ...prev, tipoLeche: e.target.value } : null
+                      )
+                    }
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px', background: '#ffffff', fontWeight: 700 }}
+                  >
+                    <option value="VACA">🥛 Vaca</option>
+                    <option value="BUFALA">🐃 Búfala</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Nro Guía SADA */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Nro de Guía SADA (Opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: SADA-2026-9812"
+                  value={modalNuevoDespachoSalida.numeroGuiaSADA}
+                  onChange={(e) =>
+                    setModalNuevoDespachoSalida((prev) =>
+                      prev ? { ...prev, numeroGuiaSADA: e.target.value } : null
+                    )
+                  }
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Observación */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Observaciones / Notas
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Despacho para proceso de queso madurado"
+                  value={modalNuevoDespachoSalida.observacion}
+                  onChange={(e) =>
+                    setModalNuevoDespachoSalida((prev) =>
+                      prev ? { ...prev, observacion: e.target.value } : null
+                    )
+                  }
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Botones */}
+              <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalNuevoDespachoSalida(null)}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    borderRadius: '12px',
+                    border: '1px solid #cbd5e1',
+                    background: '#f8fafc',
+                    color: '#475569',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    flex: 2,
+                    padding: '12px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #059669, #047857)',
+                    color: '#ffffff',
+                    fontWeight: 900,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(5, 150, 105, 0.35)',
+                  }}
+                >
+                  Emitir Ticket de Salida
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

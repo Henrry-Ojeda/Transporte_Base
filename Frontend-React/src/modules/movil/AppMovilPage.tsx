@@ -263,36 +263,53 @@ export const AppMovilPage: React.FC = () => {
   // Fecha de hoy por defecto
   const hoyStr = new Date().toISOString().split('T')[0];
 
-  // Detección de Rol y Modo Adaptativo (CHOFER | ADMIN | TALLER | RECEPTORIA)
-  const rolDispositivo = (dispositivo?.rol || authUser?.rol || '').toUpperCase();
+  // Detección Estricta de Rol y Modo Adaptativo (CHOFER | ADMIN | TALLER | RECEPTORIA)
+  // El rol del dispositivo vinculado manda de forma prioritaria; si no existe dispositivo, se usa el de authUser.
+  const rolEfectivo = (dispositivo ? dispositivo.rol : authUser?.rol || '').trim().toUpperCase();
   const esAdminReal =
-    rolDispositivo.includes('ADMIN') ||
-    rolDispositivo === 'SUPERADMIN' ||
-    rolDispositivo === 'ADMINISTRADOR' ||
-    rolDispositivo === 'SUPERVISOR' ||
-    (authUser?.rol || '').toUpperCase().includes('ADMIN') ||
-    (authUser?.rol || '').toUpperCase() === 'SUPERADMIN';
-  const esTallerReal = rolDispositivo === 'TALLER' || rolDispositivo.includes('MECANICO');
-  const esReceptoriaReal =
-    rolDispositivo === 'RECEPTORIA' ||
-    rolDispositivo === 'RECEPTOR' ||
-    rolDispositivo.includes('RECEPT') ||
-    (authUser?.rol || '').toUpperCase().includes('RECEPT');
+    rolEfectivo === 'SUPERADMIN' ||
+    rolEfectivo === 'ADMINISTRADOR' ||
+    rolEfectivo === 'ADMIN' ||
+    rolEfectivo === 'SUPERVISOR' ||
+    rolEfectivo.includes('ADMIN');
+  const esTallerReal = !esAdminReal && (rolEfectivo === 'TALLER' || rolEfectivo.includes('MECANICO'));
+  const esReceptoriaReal = !esAdminReal && (rolEfectivo === 'RECEPTORIA' || rolEfectivo === 'RECEPTOR' || rolEfectivo.includes('RECEPT'));
+  const esChoferReal = !esAdminReal && !esTallerReal && !esReceptoriaReal;
 
   const [modoActivo, setModoActivo] = useState<ModoMovil>(() => {
-    try {
-      const saved = localStorage.getItem('movil_modo_activo') as ModoMovil;
-      if (saved && ['CHOFER', 'ADMIN', 'TALLER', 'RECEPTORIA'].includes(saved)) return saved;
-      if (esReceptoriaReal) return 'RECEPTORIA';
-      if (esTallerReal) return 'TALLER';
-      if (esAdminReal) return 'ADMIN';
-      return 'CHOFER';
-    } catch {
-      return 'CHOFER';
+    if (esAdminReal) {
+      try {
+        const saved = localStorage.getItem('movil_modo_activo') as ModoMovil;
+        if (saved && ['CHOFER', 'ADMIN', 'TALLER', 'RECEPTORIA'].includes(saved)) return saved;
+      } catch {}
+      return 'ADMIN';
     }
+    if (esTallerReal) return 'TALLER';
+    if (esReceptoriaReal) return 'RECEPTORIA';
+    return 'CHOFER';
   });
 
+  // Asegurar que si el rol activo no es admin, jamás quede atrapado en vistas administrativas
+  useEffect(() => {
+    if (!esAdminReal) {
+      localStorage.removeItem('movil_modo_activo');
+      if (esTallerReal) {
+        setModoActivo('TALLER');
+        setTabActiva('taller_flota');
+      } else if (esReceptoriaReal) {
+        setModoActivo('RECEPTORIA');
+        setTabActiva('receptoria_entrada');
+      } else {
+        setModoActivo('CHOFER');
+        setTabActiva('principal');
+      }
+    }
+  }, [rolEfectivo, esAdminReal, esTallerReal, esReceptoriaReal]);
+
   const cambiarModo = (nuevoModo: ModoMovil) => {
+    if (!esAdminReal && nuevoModo !== 'CHOFER' && nuevoModo !== (esTallerReal ? 'TALLER' : esReceptoriaReal ? 'RECEPTORIA' : 'CHOFER')) {
+      return;
+    }
     setModoActivo(nuevoModo);
     localStorage.setItem('movil_modo_activo', nuevoModo);
     if (nuevoModo === 'ADMIN') setTabActiva('admin_envivo');
@@ -1360,6 +1377,48 @@ export const AppMovilPage: React.FC = () => {
 
       setDispositivo(dispData);
       localStorage.setItem('movil_device_info', JSON.stringify(dispData));
+
+      // Sincronizar Zustand auth store
+      useAuthStore.setState({
+        token: res.token,
+        user: {
+          id: res.id,
+          username: res.username,
+          nombreCompleto: res.nombreCompleto,
+          rol: res.rol,
+          permisos: res.permisos || [],
+        },
+        isAuthenticated: true,
+      });
+
+      const rolRes = (res.rol || '').toUpperCase();
+      const isAdminRes =
+        rolRes === 'SUPERADMIN' ||
+        rolRes === 'ADMINISTRADOR' ||
+        rolRes === 'ADMIN' ||
+        rolRes === 'SUPERVISOR' ||
+        rolRes.includes('ADMIN');
+      const isTallerRes = !isAdminRes && (rolRes === 'TALLER' || rolRes.includes('MECANICO'));
+      const isRecepRes = !isAdminRes && (rolRes === 'RECEPTORIA' || rolRes === 'RECEPTOR' || rolRes.includes('RECEPT'));
+
+      if (isAdminRes) {
+        setModoActivo('ADMIN');
+        setTabActiva('admin_envivo');
+        localStorage.setItem('movil_modo_activo', 'ADMIN');
+      } else if (isTallerRes) {
+        setModoActivo('TALLER');
+        setTabActiva('taller_flota');
+        localStorage.removeItem('movil_modo_activo');
+      } else if (isRecepRes) {
+        setModoActivo('RECEPTORIA');
+        setTabActiva('receptoria_entrada');
+        localStorage.removeItem('movil_modo_activo');
+      } else {
+        setModoActivo('CHOFER');
+        setTabActiva('principal');
+        localStorage.removeItem('movil_modo_activo');
+      }
+
       toast.success(`¡Dispositivo Vinculado a ${nuevoNombreEmpresa}! Bienvenido ${res.nombreCompleto}`);
 
       try {
@@ -1452,6 +1511,48 @@ export const AppMovilPage: React.FC = () => {
 
       setDispositivo(dispData);
       localStorage.setItem('movil_device_info', JSON.stringify(dispData));
+
+      // Sincronizar Zustand auth store
+      useAuthStore.setState({
+        token: res.token,
+        user: {
+          id: res.id,
+          username: res.username,
+          nombreCompleto: res.nombreCompleto,
+          rol: res.rol,
+          permisos: res.permisos || [],
+        },
+        isAuthenticated: true,
+      });
+
+      const rolRes = (res.rol || '').toUpperCase();
+      const isAdminRes =
+        rolRes === 'SUPERADMIN' ||
+        rolRes === 'ADMINISTRADOR' ||
+        rolRes === 'ADMIN' ||
+        rolRes === 'SUPERVISOR' ||
+        rolRes.includes('ADMIN');
+      const isTallerRes = !isAdminRes && (rolRes === 'TALLER' || rolRes.includes('MECANICO'));
+      const isRecepRes = !isAdminRes && (rolRes === 'RECEPTORIA' || rolRes === 'RECEPTOR' || rolRes.includes('RECEPT'));
+
+      if (isAdminRes) {
+        setModoActivo('ADMIN');
+        setTabActiva('admin_envivo');
+        localStorage.setItem('movil_modo_activo', 'ADMIN');
+      } else if (isTallerRes) {
+        setModoActivo('TALLER');
+        setTabActiva('taller_flota');
+        localStorage.removeItem('movil_modo_activo');
+      } else if (isRecepRes) {
+        setModoActivo('RECEPTORIA');
+        setTabActiva('receptoria_entrada');
+        localStorage.removeItem('movil_modo_activo');
+      } else {
+        setModoActivo('CHOFER');
+        setTabActiva('principal');
+        localStorage.removeItem('movil_modo_activo');
+      }
+
       toast.success(`¡Bienvenido ${res.nombreCompleto}!`);
 
       // Descargar catálogo de fincas offline para este chofer
@@ -1477,14 +1578,25 @@ export const AppMovilPage: React.FC = () => {
       localStorage.removeItem('movil_device_info');
       localStorage.removeItem('movil_viaje_activo');
       localStorage.removeItem('movil_paradas_activo');
+      localStorage.removeItem('movil_modo_activo');
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem('token');
       localStorage.removeItem('auth-storage');
+
+      useAuthStore.setState({
+        token: null,
+        user: null,
+        isAuthenticated: false,
+        sessionExpiredMessage: null,
+      });
+
       setDispositivo(null);
       setViajeActivo(null);
       setParadasViajeActivo([]);
       setLoginUsername('');
       setLoginPassword('');
+      setModoActivo('CHOFER');
+      setTabActiva('principal');
       toast.info('Sesión cerrada.');
     }
   };
@@ -1499,11 +1611,20 @@ export const AppMovilPage: React.FC = () => {
       localStorage.removeItem('movil_device_info');
       localStorage.removeItem('movil_viaje_activo');
       localStorage.removeItem('movil_paradas_activo');
+      localStorage.removeItem('movil_modo_activo');
       localStorage.removeItem('movil_tenant_domain');
       localStorage.removeItem('movil_tenant_empresa');
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem('token');
       localStorage.removeItem('auth-storage');
+
+      useAuthStore.setState({
+        token: null,
+        user: null,
+        isAuthenticated: false,
+        sessionExpiredMessage: null,
+      });
+
       setTenantDomain('');
       setEmpresaGuardada('');
       setDispositivo(null);
@@ -1511,6 +1632,8 @@ export const AppMovilPage: React.FC = () => {
       setParadasViajeActivo([]);
       setModoLogin('codigo');
       setCodigoInput('');
+      setModoActivo('CHOFER');
+      setTabActiva('principal');
       toast.info('Dispositivo desvinculado. Ingresa el código de 6 dígitos de la nueva empresa.');
     }
   };
@@ -2774,19 +2897,20 @@ export const AppMovilPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Barra de Cambio Rápido de Módulo (Chofer / Admin / Taller / Receptoría) */}
-        <div
-          style={{
-            marginTop: '10px',
-            paddingTop: '8px',
-            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '6px',
-            overflowX: 'auto',
-          }}
-        >
+        {/* Barra de Cambio Rápido de Módulo (Chofer / Admin / Taller / Receptoría) - Exclusivo Administradores */}
+        {esAdminReal && (
+          <div
+            style={{
+              marginTop: '10px',
+              paddingTop: '8px',
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '6px',
+              overflowX: 'auto',
+            }}
+          >
             <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '5px' }}>
               <i className="fa-solid fa-layer-group text-sky-400"></i>
               <span>VISTA:</span>
@@ -2874,6 +2998,7 @@ export const AppMovilPage: React.FC = () => {
               </button>
             </div>
           </div>
+        )}
       </header>
 
       {/* Barra de Instalación si no es PWA */}

@@ -1777,6 +1777,16 @@ namespace Transporte.Infrastructure.Repositories
                 ORDER BY p.Nombre";
 
             var rows = await connection.QueryAsync<PropietarioDbRow>(sql);
+
+            // Obtener cuentas bancarias asociadas
+            var sqlCuentas = @"
+                SELECT c.Id, c.PropietarioId, c.BancoId, b.Nombre AS BancoNombre, b.Codigo AS BancoCodigo,
+                       c.NumeroCuenta, c.TipoCuenta, c.Titular, c.CedulaRIF, c.Telefono, c.EsPrincipal, c.Activo
+                FROM TB_PROPIETARIO_CUENTAS_BANCARIAS c
+                INNER JOIN TB_BANCOS b ON c.BancoId = b.Id
+                WHERE c.Activo = 1";
+            var todasCuentas = (await connection.QueryAsync<PropietarioCuentaBancariaDto>(sqlCuentas)).ToList();
+
             var list = new List<PropietarioDto>();
 
             foreach (var r in rows)
@@ -1784,6 +1794,19 @@ namespace Transporte.Infrastructure.Repositories
                 var fn = string.IsNullOrWhiteSpace(r.FincasNombres) 
                     ? new List<string>() 
                     : r.FincasNombres.Split(',').Select(x => x.Trim()).ToList();
+
+                var cuentasProp = todasCuentas.Where(c => c.PropietarioId == r.Id).ToList();
+                int? bId = r.BancoId;
+                string bNom = r.BancoNombre ?? "";
+                string? numCta = r.NumeroCuenta;
+
+                if (cuentasProp.Count > 0)
+                {
+                    var principal = cuentasProp.FirstOrDefault(c => c.EsPrincipal) ?? cuentasProp.First();
+                    bId = principal.BancoId;
+                    bNom = principal.BancoNombre ?? bNom;
+                    numCta = principal.NumeroCuenta;
+                }
 
                 list.Add(new PropietarioDto
                 {
@@ -1794,13 +1817,14 @@ namespace Transporte.Infrastructure.Repositories
                     CedulaRIF = r.CedulaRIF,
                     Telefono = r.Telefono,
                     Email = r.Email,
-                    BancoId = r.BancoId,
-                    BancoNombre = r.BancoNombre ?? "",
-                    NumeroCuenta = r.NumeroCuenta,
+                    BancoId = bId,
+                    BancoNombre = bNom,
+                    NumeroCuenta = numCta,
                     Observacion = r.Observacion,
                     Estado = r.Estado ?? "ACTIVO",
                     TotalFincas = r.TotalFincas,
-                    FincasNombres = fn
+                    FincasNombres = fn,
+                    Cuentas = cuentasProp
                 });
             }
 
@@ -1821,17 +1845,72 @@ namespace Transporte.Infrastructure.Repositories
 
             try
             {
+                int? bancoPrincipal = dto.BancoId;
+                string? cuentaPrincipal = dto.NumeroCuenta;
+
+                if (dto.Cuentas != null && dto.Cuentas.Any(c => c.BancoId > 0))
+                {
+                    var ctaP = dto.Cuentas.FirstOrDefault(c => c.EsPrincipal && c.BancoId > 0) 
+                               ?? dto.Cuentas.First(c => c.BancoId > 0);
+                    bancoPrincipal = ctaP.BancoId;
+                    cuentaPrincipal = ctaP.NumeroCuenta;
+                }
+
                 var sql = @"
                     INSERT INTO TB_PROPIETARIOS (
                         Nombre, CedulaRIF, Telefono, Email, BancoId, NumeroCuenta, Observacion, Estado, CreatedAt, CreatedBy
                     ) VALUES (
-                        @Nombre, @CedulaRIF, @Telefono, @Email, @BancoId, @NumeroCuenta, @Observacion, 'ACTIVO', GETDATE(), @usuarioId
+                        @Nombre, @CedulaRIF, @Telefono, @Email, @bancoPrincipal, @cuentaPrincipal, @Observacion, 'ACTIVO', GETDATE(), @usuarioId
                     );
                     SELECT CAST(SCOPE_IDENTITY() as int);";
 
                 int id = await connection.ExecuteScalarAsync<int>(sql, new {
-                    dto.Nombre, dto.CedulaRIF, dto.Telefono, dto.Email, dto.BancoId, dto.NumeroCuenta, dto.Observacion, usuarioId
+                    dto.Nombre, dto.CedulaRIF, dto.Telefono, dto.Email, bancoPrincipal, cuentaPrincipal, dto.Observacion, usuarioId
                 }, transaction);
+
+                // Insertar cuentas bancarias asociadas
+                if (dto.Cuentas != null && dto.Cuentas.Any(c => c.BancoId > 0))
+                {
+                    bool yaHayPrincipal = dto.Cuentas.Any(c => c.EsPrincipal && c.BancoId > 0);
+                    bool primera = true;
+                    foreach (var c in dto.Cuentas.Where(c => c.BancoId > 0))
+                    {
+                        bool esP = yaHayPrincipal ? c.EsPrincipal : primera;
+                        await connection.ExecuteAsync(@"
+                            INSERT INTO TB_PROPIETARIO_CUENTAS_BANCARIAS 
+                            (PropietarioId, BancoId, NumeroCuenta, TipoCuenta, Titular, CedulaRIF, Telefono, EsPrincipal, Activo, CreatedAt)
+                            VALUES 
+                            (@id, @BancoId, @NumeroCuenta, @TipoCuenta, @Titular, @CedulaRIF, @Telefono, @esP, 1, GETDATE())",
+                            new {
+                                id,
+                                c.BancoId,
+                                NumeroCuenta = c.NumeroCuenta ?? "",
+                                TipoCuenta = string.IsNullOrWhiteSpace(c.TipoCuenta) ? "CORRIENTE" : c.TipoCuenta,
+                                Titular = string.IsNullOrWhiteSpace(c.Titular) ? dto.Nombre : c.Titular,
+                                CedulaRIF = string.IsNullOrWhiteSpace(c.CedulaRIF) ? dto.CedulaRIF : c.CedulaRIF,
+                                Telefono = c.Telefono ?? dto.Telefono,
+                                esP
+                            }, transaction);
+                        primera = false;
+                    }
+                }
+                else if (bancoPrincipal.HasValue && bancoPrincipal.Value > 0)
+                {
+                    // Si se pasó solo BancoId y NumeroCuenta pero sin lista de Cuentas, insertar 1 cuenta principal
+                    await connection.ExecuteAsync(@"
+                        INSERT INTO TB_PROPIETARIO_CUENTAS_BANCARIAS 
+                        (PropietarioId, BancoId, NumeroCuenta, TipoCuenta, Titular, CedulaRIF, Telefono, EsPrincipal, Activo, CreatedAt)
+                        VALUES 
+                        (@id, @bancoPrincipal, @cuentaPrincipal, 'CORRIENTE', @Nombre, @CedulaRIF, @Telefono, 1, 1, GETDATE())",
+                        new {
+                            id,
+                            bancoPrincipal,
+                            cuentaPrincipal = cuentaPrincipal ?? "",
+                            dto.Nombre,
+                            dto.CedulaRIF,
+                            dto.Telefono
+                        }, transaction);
+                }
 
                 if (dto.FincaIds != null && dto.FincaIds.Any())
                 {
@@ -1840,10 +1919,10 @@ namespace Transporte.Infrastructure.Repositories
                         SET PropietarioId = @id, 
                             Propietario = @Nombre,
                             CedulaRIF = ISNULL(@CedulaRIF, CedulaRIF),
-                            BancoId = @BancoId,
-                            NumeroCuenta = @NumeroCuenta
+                            BancoId = @bancoPrincipal,
+                            NumeroCuenta = @cuentaPrincipal
                         WHERE Id IN @FincaIds";
-                    await connection.ExecuteAsync(sqlUpdFincas, new { id, dto.Nombre, dto.CedulaRIF, dto.BancoId, dto.NumeroCuenta, FincaIds = dto.FincaIds }, transaction);
+                    await connection.ExecuteAsync(sqlUpdFincas, new { id, dto.Nombre, dto.CedulaRIF, bancoPrincipal, cuentaPrincipal, FincaIds = dto.FincaIds }, transaction);
                 }
 
                 transaction.Commit();
@@ -1864,14 +1943,25 @@ namespace Transporte.Infrastructure.Repositories
 
             try
             {
+                int? bancoPrincipal = dto.BancoId;
+                string? cuentaPrincipal = dto.NumeroCuenta;
+
+                if (dto.Cuentas != null && dto.Cuentas.Any(c => c.BancoId > 0))
+                {
+                    var ctaP = dto.Cuentas.FirstOrDefault(c => c.EsPrincipal && c.BancoId > 0) 
+                               ?? dto.Cuentas.First(c => c.BancoId > 0);
+                    bancoPrincipal = ctaP.BancoId;
+                    cuentaPrincipal = ctaP.NumeroCuenta;
+                }
+
                 var sql = @"
                     UPDATE TB_PROPIETARIOS 
                     SET Nombre = @Nombre,
                         CedulaRIF = @CedulaRIF,
                         Telefono = @Telefono,
                         Email = @Email,
-                        BancoId = @BancoId,
-                        NumeroCuenta = @NumeroCuenta,
+                        BancoId = @bancoPrincipal,
+                        NumeroCuenta = @cuentaPrincipal,
                         Observacion = @Observacion,
                         Estado = ISNULL(@Estado, Estado),
                         ModifiedAt = GETDATE(),
@@ -1879,8 +1969,37 @@ namespace Transporte.Infrastructure.Repositories
                     WHERE Id = @id";
 
                 int r = await connection.ExecuteAsync(sql, new {
-                    id, dto.Nombre, dto.CedulaRIF, dto.Telefono, dto.Email, dto.BancoId, dto.NumeroCuenta, dto.Observacion, dto.Estado, usuarioId
+                    id, dto.Nombre, dto.CedulaRIF, dto.Telefono, dto.Email, bancoPrincipal, cuentaPrincipal, dto.Observacion, dto.Estado, usuarioId
                 }, transaction);
+
+                if (dto.Cuentas != null)
+                {
+                    // Reemplazar cuentas bancarias de este propietario
+                    await connection.ExecuteAsync("DELETE FROM TB_PROPIETARIO_CUENTAS_BANCARIAS WHERE PropietarioId = @id", new { id }, transaction);
+
+                    bool yaHayPrincipal = dto.Cuentas.Any(c => c.EsPrincipal && c.BancoId > 0);
+                    bool primera = true;
+                    foreach (var c in dto.Cuentas.Where(c => c.BancoId > 0))
+                    {
+                        bool esP = yaHayPrincipal ? c.EsPrincipal : primera;
+                        await connection.ExecuteAsync(@"
+                            INSERT INTO TB_PROPIETARIO_CUENTAS_BANCARIAS 
+                            (PropietarioId, BancoId, NumeroCuenta, TipoCuenta, Titular, CedulaRIF, Telefono, EsPrincipal, Activo, CreatedAt)
+                            VALUES 
+                            (@id, @BancoId, @NumeroCuenta, @TipoCuenta, @Titular, @CedulaRIF, @Telefono, @esP, 1, GETDATE())",
+                            new {
+                                id,
+                                c.BancoId,
+                                NumeroCuenta = c.NumeroCuenta ?? "",
+                                TipoCuenta = string.IsNullOrWhiteSpace(c.TipoCuenta) ? "CORRIENTE" : c.TipoCuenta,
+                                Titular = string.IsNullOrWhiteSpace(c.Titular) ? dto.Nombre : c.Titular,
+                                CedulaRIF = string.IsNullOrWhiteSpace(c.CedulaRIF) ? dto.CedulaRIF : c.CedulaRIF,
+                                Telefono = c.Telefono ?? dto.Telefono,
+                                esP
+                            }, transaction);
+                        primera = false;
+                    }
+                }
 
                 if (r > 0)
                 {
@@ -1895,10 +2014,10 @@ namespace Transporte.Infrastructure.Repositories
                                 SET PropietarioId = @id, 
                                     Propietario = @Nombre,
                                     CedulaRIF = ISNULL(@CedulaRIF, CedulaRIF),
-                                    BancoId = @BancoId,
-                                    NumeroCuenta = @NumeroCuenta
+                                    BancoId = @bancoPrincipal,
+                                    NumeroCuenta = @cuentaPrincipal
                                 WHERE Id IN @FincaIds", 
-                                new { id, dto.Nombre, dto.CedulaRIF, dto.BancoId, dto.NumeroCuenta, FincaIds = dto.FincaIds }, transaction);
+                                new { id, dto.Nombre, dto.CedulaRIF, bancoPrincipal, cuentaPrincipal, FincaIds = dto.FincaIds }, transaction);
                         }
                     }
                     else
@@ -1908,10 +2027,10 @@ namespace Transporte.Infrastructure.Repositories
                             UPDATE TB_FINCAS 
                             SET Propietario = @Nombre,
                                 CedulaRIF = ISNULL(@CedulaRIF, CedulaRIF),
-                                BancoId = @BancoId,
-                                NumeroCuenta = @NumeroCuenta
+                                BancoId = @bancoPrincipal,
+                                NumeroCuenta = @cuentaPrincipal
                             WHERE PropietarioId = @id", 
-                            new { id, dto.Nombre, dto.CedulaRIF, dto.BancoId, dto.NumeroCuenta }, transaction);
+                            new { id, dto.Nombre, dto.CedulaRIF, bancoPrincipal, cuentaPrincipal }, transaction);
                     }
                 }
 

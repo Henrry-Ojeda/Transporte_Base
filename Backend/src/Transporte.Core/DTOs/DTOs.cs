@@ -261,6 +261,22 @@ namespace Transporte.Core.DTOs
         public List<PreLiquidacionDto> Fincas { get; set; } = new();
     }
 
+    public class PropietarioCuentaBancariaDto
+    {
+        public int Id { get; set; }
+        public int PropietarioId { get; set; }
+        public int BancoId { get; set; }
+        public string? BancoNombre { get; set; }
+        public string? BancoCodigo { get; set; }
+        public string NumeroCuenta { get; set; } = string.Empty;
+        public string? TipoCuenta { get; set; } = "CORRIENTE";
+        public string? Titular { get; set; }
+        public string? CedulaRIF { get; set; }
+        public string? Telefono { get; set; }
+        public bool EsPrincipal { get; set; } = false;
+        public bool Activo { get; set; } = true;
+    }
+
     public class PropietarioDto
     {
         public int Id { get; set; }
@@ -277,6 +293,7 @@ namespace Transporte.Core.DTOs
         public bool Activo => Estado == "ACTIVO" || Estado == "1";
         public int TotalFincas { get; set; }
         public List<string> FincasNombres { get; set; } = new();
+        public List<PropietarioCuentaBancariaDto> Cuentas { get; set; } = new();
     }
 
     public class CrearPropietarioDto
@@ -289,6 +306,7 @@ namespace Transporte.Core.DTOs
         public string? NumeroCuenta { get; set; }
         public string? Observacion { get; set; }
         public List<int>? FincaIds { get; set; }
+        public List<PropietarioCuentaBancariaDto>? Cuentas { get; set; }
     }
 
     public class ActualizarPropietarioDto
@@ -302,6 +320,7 @@ namespace Transporte.Core.DTOs
         public string? Observacion { get; set; }
         public string? Estado { get; set; }
         public List<int>? FincaIds { get; set; }
+        public List<PropietarioCuentaBancariaDto>? Cuentas { get; set; }
     }
 
     public class AsignarFincasPropietarioDto

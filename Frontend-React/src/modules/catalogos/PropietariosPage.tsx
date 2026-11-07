@@ -5,7 +5,7 @@ import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
-import type { PropietarioDto, CrearPropietarioDto, BancoDto, FincaDto } from '@/types';
+import type { PropietarioDto, CrearPropietarioDto, PropietarioCuentaBancariaDto, BancoDto, FincaDto } from '@/types';
 
 const DEFAULT_BANCOS: BancoDto[] = [
   { id: 24, codigo: '0134', nombre: 'BANESCO', activo: true },
@@ -28,6 +28,18 @@ export const PropietariosPage: React.FC = () => {
   const [filtroFincasModal, setFiltroFincasModal] = useState('');
   const [modoEdicionId, setModoEdicionId] = useState<number | null>(null);
 
+  // Subformulario para agregar nueva cuenta bancaria dentro del modal
+  const [mostrarFormNuevaCuenta, setMostrarFormNuevaCuenta] = useState(false);
+  const [nuevaCuenta, setNuevaCuenta] = useState<Partial<PropietarioCuentaBancariaDto>>({
+    bancoId: 24,
+    numeroCuenta: '',
+    tipoCuenta: 'CORRIENTE',
+    titular: '',
+    cedulaRIF: '',
+    telefono: '',
+    esPrincipal: false,
+  });
+
   const initialForm: CrearPropietarioDto = {
     nombreCompleto: '',
     cedulaRif: '',
@@ -39,6 +51,7 @@ export const PropietariosPage: React.FC = () => {
     pagoMovilCedula: '',
     pagoMovilBancoId: undefined,
     activo: true,
+    cuentas: [],
   };
   const [form, setForm] = useState<CrearPropietarioDto>(initialForm);
 
@@ -74,12 +87,18 @@ export const PropietariosPage: React.FC = () => {
   // Mutaciones
   const guardarMutation = useMutation({
     mutationFn: (dto: CrearPropietarioDto) => {
-      const selectedBanco = bancosOptions.find((b) => Number(b.value) === Number(dto.bancoId));
+      const ctas = dto.cuentas || [];
+      const principal = ctas.find((c) => c.esPrincipal) || ctas[0];
+      const resolvedBancoId = principal?.bancoId || (dto.bancoId ? Number(dto.bancoId) : undefined);
+      const selectedBanco = bancosOptions.find((b) => Number(b.value) === Number(resolvedBancoId));
+      
       const payload: any = {
         ...dto,
-        bancoId: dto.bancoId ? Number(dto.bancoId) : undefined,
-        bancoNombre: selectedBanco ? selectedBanco.label.replace(/\s*\([^)]*\)/, '').trim() : '',
+        bancoId: resolvedBancoId,
+        bancoNombre: principal?.bancoNombre || (selectedBanco ? selectedBanco.label.replace(/\s*\([^)]*\)/, '').trim() : ''),
+        numeroCuenta: principal?.numeroCuenta || dto.numeroCuenta,
         fincaIds: fincasSeleccionadas,
+        cuentas: ctas,
       };
       return modoEdicionId
         ? catalogosApi.actualizarPropietario(modoEdicionId, payload)
@@ -127,6 +146,16 @@ export const PropietariosPage: React.FC = () => {
     setForm(initialForm);
     setFincasSeleccionadas([]);
     setFiltroFincasModal('');
+    setMostrarFormNuevaCuenta(false);
+    setNuevaCuenta({
+      bancoId: 24,
+      numeroCuenta: '',
+      tipoCuenta: 'CORRIENTE',
+      titular: '',
+      cedulaRIF: '',
+      telefono: '',
+      esPrincipal: true,
+    });
     setModalAbierto(true);
   };
 
@@ -143,6 +172,27 @@ export const PropietariosPage: React.FC = () => {
       resolvedBancoId = 24;
     }
     const parsedPmBancoId = item.pagoMovilBancoId ? Number(item.pagoMovilBancoId) : undefined;
+
+    let initialCuentas: PropietarioCuentaBancariaDto[] = [];
+    if (item.cuentas && item.cuentas.length > 0) {
+      initialCuentas = [...item.cuentas];
+    } else if (resolvedBancoId || item.numeroCuenta) {
+      const matchBanco = bancosOptions.find((b) => Number(b.value) === Number(resolvedBancoId));
+      initialCuentas = [
+        {
+          bancoId: resolvedBancoId || 24,
+          bancoNombre: item.bancoNombre || (matchBanco ? matchBanco.label.replace(/\s*\([^)]*\)/, '').trim() : 'BANESCO'),
+          numeroCuenta: item.numeroCuenta || '',
+          tipoCuenta: 'CORRIENTE',
+          titular: item.nombre || item.nombreCompleto || '',
+          cedulaRIF: item.cedulaRif || item.cedulaRIF || '',
+          telefono: item.pagoMovilTelefono || item.telefono || '',
+          esPrincipal: true,
+          activo: true,
+        },
+      ];
+    }
+
     setForm({
       nombreCompleto: item.nombreCompleto || item.nombre || '',
       cedulaRif: item.cedulaRif || item.cedulaRIF || '',
@@ -154,6 +204,18 @@ export const PropietariosPage: React.FC = () => {
       pagoMovilCedula: item.pagoMovilCedula || '',
       pagoMovilBancoId: parsedPmBancoId,
       activo: item.activo,
+      cuentas: initialCuentas,
+    });
+
+    setMostrarFormNuevaCuenta(false);
+    setNuevaCuenta({
+      bancoId: 24,
+      numeroCuenta: '',
+      tipoCuenta: 'CORRIENTE',
+      titular: item.nombre || item.nombreCompleto || '',
+      cedulaRIF: item.cedulaRif || item.cedulaRIF || '',
+      telefono: item.telefono || '',
+      esPrincipal: initialCuentas.length === 0,
     });
 
     const fincasDeProp = fincas
@@ -178,6 +240,96 @@ export const PropietariosPage: React.FC = () => {
     setModoEdicionId(null);
     setFincasSeleccionadas([]);
     setFiltroFincasModal('');
+    setMostrarFormNuevaCuenta(false);
+  };
+
+  // Gestión de Cuentas Bancarias
+  const handleAgregarCuenta = () => {
+    if (!nuevaCuenta.bancoId) {
+      toast.error('Seleccione un banco');
+      return;
+    }
+    if (!nuevaCuenta.numeroCuenta || nuevaCuenta.numeroCuenta.trim().length < 10) {
+      toast.error('Ingrese un número de cuenta válido (mínimo 10 dígitos, estándar 20)');
+      return;
+    }
+
+    const bancoSel = bancosOptions.find((b) => Number(b.value) === Number(nuevaCuenta.bancoId));
+    const currentCuentas = form.cuentas || [];
+    const esPrimera = currentCuentas.length === 0;
+    const esPrincipal = nuevaCuenta.esPrincipal || esPrimera;
+
+    const cuentaAAgregar: PropietarioCuentaBancariaDto = {
+      bancoId: Number(nuevaCuenta.bancoId),
+      bancoNombre: bancoSel ? bancoSel.label.replace(/\s*\([^)]*\)/, '').trim() : '',
+      numeroCuenta: nuevaCuenta.numeroCuenta.trim(),
+      tipoCuenta: nuevaCuenta.tipoCuenta || 'CORRIENTE',
+      titular: nuevaCuenta.titular || form.nombreCompleto,
+      cedulaRIF: nuevaCuenta.cedulaRIF || form.cedulaRif,
+      telefono: nuevaCuenta.telefono || form.telefono,
+      esPrincipal,
+      activo: true,
+    };
+
+    let updatedCuentas = currentCuentas.map((c) =>
+      esPrincipal ? { ...c, esPrincipal: false } : c
+    );
+    updatedCuentas.push(cuentaAAgregar);
+
+    // Sincronizar cuenta principal en form
+    const principal = updatedCuentas.find((c) => c.esPrincipal) || updatedCuentas[0];
+    setForm({
+      ...form,
+      cuentas: updatedCuentas,
+      bancoId: principal?.bancoId,
+      numeroCuenta: principal?.numeroCuenta,
+      pagoMovilTelefono: principal?.telefono || form.pagoMovilTelefono,
+    });
+
+    // Resetear subform
+    setNuevaCuenta({
+      bancoId: 24,
+      numeroCuenta: '',
+      tipoCuenta: 'CORRIENTE',
+      titular: form.nombreCompleto,
+      cedulaRIF: form.cedulaRif,
+      telefono: form.telefono,
+      esPrincipal: false,
+    });
+    setMostrarFormNuevaCuenta(false);
+    toast.success('Cuenta bancaria agregada');
+  };
+
+  const handleEliminarCuenta = (index: number) => {
+    const list = [...(form.cuentas || [])];
+    const removed = list.splice(index, 1)[0];
+    if (removed && removed.esPrincipal && list.length > 0) {
+      list[0].esPrincipal = true;
+    }
+    const principal = list.find((c) => c.esPrincipal) || list[0];
+    setForm({
+      ...form,
+      cuentas: list,
+      bancoId: principal?.bancoId,
+      numeroCuenta: principal?.numeroCuenta || '',
+    });
+    toast.info('Cuenta eliminada');
+  };
+
+  const handleMarcarPrincipal = (index: number) => {
+    const list = (form.cuentas || []).map((c, i) => ({
+      ...c,
+      esPrincipal: i === index,
+    }));
+    const principal = list[index];
+    setForm({
+      ...form,
+      cuentas: list,
+      bancoId: principal?.bancoId,
+      numeroCuenta: principal?.numeroCuenta || '',
+      pagoMovilTelefono: principal?.telefono || form.pagoMovilTelefono,
+    });
+    toast.success(`Cuenta de ${principal?.bancoNombre || 'Banco'} establecida como principal`);
   };
 
   const toggleFinca = (id: number) => {
@@ -249,19 +401,64 @@ export const PropietariosPage: React.FC = () => {
       header: 'DATOS BANCARIOS',
       cell: (row) => {
         if (!row) return null;
-        const bancoNom = row.bancoNombre || (Number(row.bancoId) === 24 ? 'BANESCO' : '');
+        const totalCuentas = row.cuentas && row.cuentas.length > 0 ? row.cuentas.length : (row.bancoId || row.numeroCuenta ? 1 : 0);
+        const ctaPrincipal = row.cuentas?.find((c) => c.esPrincipal) || row.cuentas?.[0];
+        const bancoNom = ctaPrincipal?.bancoNombre || row.bancoNombre || (Number(row.bancoId) === 24 ? 'BANESCO' : '');
+        const numCta = ctaPrincipal?.numeroCuenta || row.numeroCuenta;
+        const otrasCuentas = (row.cuentas || []).filter((c) => !c.esPrincipal && c !== ctaPrincipal);
+
         return (
           <div style={{ fontSize: '12px' }}>
-            {bancoNom || row.numeroCuenta ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'monospace', color: '#1e293b' }}>
-                <i className="fa-solid fa-building-columns" style={{ color: '#0284c7' }}></i>
-                <span>{bancoNom ? `${bancoNom}: ` : ''}{row.numeroCuenta || 'Sin cuenta registrada'}</span>
+            {bancoNom || numCta ? (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'monospace', color: '#1e293b' }}>
+                  <i className="fa-solid fa-building-columns" style={{ color: '#0284c7' }}></i>
+                  <span style={{ fontWeight: 600 }}>{bancoNom ? `${bancoNom}: ` : ''}{numCta || 'Sin número'}</span>
+                  {totalCuentas > 1 && (
+                    <span
+                      style={{
+                        background: '#dbeafe',
+                        color: '#1d4ed8',
+                        padding: '1px 6px',
+                        borderRadius: '10px',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        marginLeft: '4px',
+                      }}
+                      title={`${totalCuentas} cuentas registradas en total`}
+                    >
+                      +{totalCuentas - 1} cta{totalCuentas - 1 !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+
+                {/* Chips de cuentas secundarias */}
+                {otrasCuentas.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '3px' }}>
+                    {otrasCuentas.map((oc, i) => (
+                      <span
+                        key={i}
+                        style={{
+                          fontSize: '10.5px',
+                          color: '#475569',
+                          background: '#f1f5f9',
+                          border: '1px solid #e2e8f0',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {oc.bancoNombre ? `${oc.bancoNombre}: ` : ''}...{oc.numeroCuenta.slice(-4) || 's/n'}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Sin datos bancarios</span>
             )}
             {row.pagoMovilTelefono && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#059669', fontFamily: 'monospace', marginTop: '2px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#059669', fontFamily: 'monospace', marginTop: '3px' }}>
                 <i className="fa-solid fa-mobile-screen"></i>
                 <span>PM: {row.pagoMovilTelefono}</span>
               </div>
@@ -592,97 +789,497 @@ export const PropietariosPage: React.FC = () => {
                     />
                   </div>
 
-                  {/* BANCO RECEPTOR */}
-                  <div>
-                    <label
+                  {/* SECCIÓN CUENTAS BANCARIAS & MÉTODOS DE PAGO */}
+                  <div
+                    style={{
+                      gridColumn: 'span 2',
+                      background: '#f8fafc',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      marginTop: '4px',
+                    }}
+                  >
+                    <div
                       style={{
-                        fontSize: '12.5px',
-                        fontWeight: 700,
-                        color: '#1e293b',
-                        marginBottom: '6px',
                         display: 'flex',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
-                        gap: '6px',
+                        marginBottom: '12px',
+                        flexWrap: 'wrap',
+                        gap: '8px',
                       }}
                     >
-                      <i className="fa-solid fa-building-columns" style={{ color: '#2563eb' }}></i>
-                      Banco Receptor
-                    </label>
-                    <SearchableSelect
-                      options={bancosOptions}
-                      value={form.bancoId ? Number(form.bancoId) : undefined}
-                      onChange={(val) => setForm({ ...form, bancoId: val ? Number(val) : undefined })}
-                      placeholder="-- Seleccionar Banco --"
-                      searchPlaceholder="Buscar banco..."
-                    />
-                  </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span
+                            style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '8px',
+                              background: '#eff6ff',
+                              color: '#2563eb',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '13px',
+                            }}
+                          >
+                            <i className="fa-solid fa-credit-card"></i>
+                          </span>
+                          <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
+                            Cuentas Bancarias & Métodos de Pago
+                          </span>
+                          <span
+                            style={{
+                              background: (form.cuentas?.length || 0) > 0 ? '#dbeafe' : '#f1f5f9',
+                              color: (form.cuentas?.length || 0) > 0 ? '#1d4ed8' : '#64748b',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              padding: '2px 8px',
+                              borderRadius: '20px',
+                            }}
+                          >
+                            {form.cuentas?.length || 0} registrada{form.cuentas?.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                        <p style={{ margin: '3px 0 0 36px', fontSize: '11.5px', color: '#64748b' }}>
+                          Permite registrar múltiples cuentas (Banesco, Provincial, BDV, BNC, etc.) y pago móvil para liquidaciones de leche.
+                        </p>
+                      </div>
 
-                  {/* NÚMERO DE CUENTA (20 DÍGITOS) */}
-                  <div>
-                    <label
-                      style={{
-                        fontSize: '12.5px',
-                        fontWeight: 700,
-                        color: '#1e293b',
-                        marginBottom: '6px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <i className="fa-solid fa-money-check" style={{ color: '#2563eb' }}></i>
-                      Número de Cuenta (20 dígitos)
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={20}
-                      value={form.numeroCuenta}
-                      onChange={(e) => setForm({ ...form, numeroCuenta: e.target.value })}
-                      placeholder="01340000000000000000"
-                      style={{
-                        height: '40px',
-                        fontSize: '13px',
-                        fontFamily: 'monospace',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
-                        background: '#ffffff',
-                        width: '100%',
-                        padding: '0 12px',
-                      }}
-                    />
-                  </div>
+                      {!mostrarFormNuevaCuenta && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNuevaCuenta({
+                              bancoId: 24,
+                              numeroCuenta: '',
+                              tipoCuenta: 'CORRIENTE',
+                              titular: form.nombreCompleto || '',
+                              cedulaRIF: form.cedulaRif || '',
+                              telefono: form.telefono || '',
+                              esPrincipal: (form.cuentas || []).length === 0,
+                            });
+                            setMostrarFormNuevaCuenta(true);
+                          }}
+                          className="btn btn-sm"
+                          style={{
+                            background: '#2563eb',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            padding: '6px 14px',
+                            borderRadius: '8px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            border: 'none',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <i className="fa-solid fa-plus"></i>
+                          Agregar Nueva Cuenta
+                        </button>
+                      )}
+                    </div>
 
-                  {/* TELÉFONO PAGO MÓVIL */}
-                  <div>
-                    <label
-                      style={{
-                        fontSize: '12.5px',
-                        fontWeight: 700,
-                        color: '#1e293b',
-                        marginBottom: '6px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <i className="fa-solid fa-mobile-screen" style={{ color: '#10b981' }}></i>
-                      Teléfono Pago Móvil
-                    </label>
-                    <input
-                      type="text"
-                      value={form.pagoMovilTelefono}
-                      onChange={(e) => setForm({ ...form, pagoMovilTelefono: e.target.value })}
-                      placeholder="Ej: 0414-XXXXXXX"
-                      style={{
-                        height: '40px',
-                        fontSize: '13px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
-                        background: '#ffffff',
-                        width: '100%',
-                        padding: '0 12px',
-                      }}
-                    />
+                    {/* FORMULARIO DESPLEGABLE PARA AGREGAR NUEVA CUENTA */}
+                    {mostrarFormNuevaCuenta && (
+                      <div
+                        style={{
+                          background: '#ffffff',
+                          border: '2px solid #3b82f6',
+                          borderRadius: '10px',
+                          padding: '14px',
+                          marginBottom: '14px',
+                          boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.1)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '12px',
+                            borderBottom: '1px solid #f1f5f9',
+                            paddingBottom: '8px',
+                          }}
+                        >
+                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e40af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <i className="fa-solid fa-circle-plus"></i>
+                            Registrar Datos de Nueva Cuenta
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setMostrarFormNuevaCuenta(false)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#64748b',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                            }}
+                          >
+                            <i className="fa-solid fa-xmark"></i>
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                          {/* BANCO */}
+                          <div>
+                            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                              Banco Destino <span style={{ color: '#ef4444' }}>*</span>
+                            </label>
+                            <SearchableSelect
+                              options={bancosOptions}
+                              value={nuevaCuenta.bancoId ? Number(nuevaCuenta.bancoId) : undefined}
+                              onChange={(val) => {
+                                const bId = val ? Number(val) : 24;
+                                const bObj = DEFAULT_BANCOS.find((b) => b.id === bId);
+                                let ctaVal = nuevaCuenta.numeroCuenta || '';
+                                if (bObj && bObj.codigo && (!ctaVal || ctaVal.length <= 4)) {
+                                  ctaVal = bObj.codigo;
+                                }
+                                setNuevaCuenta({ ...nuevaCuenta, bancoId: bId, numeroCuenta: ctaVal });
+                              }}
+                              placeholder="-- Seleccionar Banco --"
+                              searchPlaceholder="Buscar banco..."
+                            />
+                          </div>
+
+                          {/* NÚMERO DE CUENTA */}
+                          <div>
+                            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                              Número de Cuenta (20 Dígitos) <span style={{ color: '#ef4444' }}>*</span>
+                            </label>
+                            <input
+                              type="text"
+                              maxLength={20}
+                              value={nuevaCuenta.numeroCuenta || ''}
+                              onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, numeroCuenta: e.target.value.replace(/\D/g, '') })}
+                              placeholder="01340000000000000000"
+                              style={{
+                                height: '38px',
+                                fontSize: '13px',
+                                fontFamily: 'monospace',
+                                border: '1.5px solid #cbd5e1',
+                                borderRadius: '6px',
+                                width: '100%',
+                                padding: '0 10px',
+                              }}
+                            />
+                          </div>
+
+                          {/* TIPO DE CUENTA */}
+                          <div>
+                            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                              Tipo de Cuenta
+                            </label>
+                            <select
+                              value={nuevaCuenta.tipoCuenta || 'CORRIENTE'}
+                              onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, tipoCuenta: e.target.value })}
+                              style={{
+                                height: '38px',
+                                fontSize: '12.5px',
+                                border: '1.5px solid #cbd5e1',
+                                borderRadius: '6px',
+                                width: '100%',
+                                padding: '0 10px',
+                                background: '#ffffff',
+                              }}
+                            >
+                              <option value="CORRIENTE">Cuenta Corriente</option>
+                              <option value="AHORRO">Cuenta de Ahorro</option>
+                              <option value="PAGO MOVIL">Solo Pago Móvil</option>
+                            </select>
+                          </div>
+
+                          {/* TITULAR */}
+                          <div>
+                            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                              Titular de la Cuenta
+                            </label>
+                            <input
+                              type="text"
+                              value={nuevaCuenta.titular || ''}
+                              onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, titular: e.target.value })}
+                              placeholder={form.nombreCompleto || 'Nombre y Apellido'}
+                              style={{
+                                height: '38px',
+                                fontSize: '12.5px',
+                                border: '1.5px solid #cbd5e1',
+                                borderRadius: '6px',
+                                width: '100%',
+                                padding: '0 10px',
+                              }}
+                            />
+                          </div>
+
+                          {/* CÉDULA / RIF */}
+                          <div>
+                            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                              Cédula / RIF Titular
+                            </label>
+                            <input
+                              type="text"
+                              value={nuevaCuenta.cedulaRIF || ''}
+                              onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, cedulaRIF: e.target.value })}
+                              placeholder={form.cedulaRif || 'V-00000000'}
+                              style={{
+                                height: '38px',
+                                fontSize: '12.5px',
+                                border: '1.5px solid #cbd5e1',
+                                borderRadius: '6px',
+                                width: '100%',
+                                padding: '0 10px',
+                              }}
+                            />
+                          </div>
+
+                          {/* TELÉFONO (PAGO MÓVIL) */}
+                          <div>
+                            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                              Teléfono (Pago Móvil / Notificación)
+                            </label>
+                            <input
+                              type="text"
+                              value={nuevaCuenta.telefono || ''}
+                              onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, telefono: e.target.value })}
+                              placeholder={form.telefono || '0414-0000000'}
+                              style={{
+                                height: '38px',
+                                fontSize: '12.5px',
+                                border: '1.5px solid #cbd5e1',
+                                borderRadius: '6px',
+                                width: '100%',
+                                padding: '0 10px',
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* CHECKBOX PRINCIPAL Y BOTONES */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginTop: '12px',
+                            paddingTop: '10px',
+                            borderTop: '1px solid #f1f5f9',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                          }}
+                        >
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12.5px', fontWeight: 700, color: '#1e293b' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!nuevaCuenta.esPrincipal}
+                              onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, esPrincipal: e.target.checked })}
+                              style={{ width: '16px', height: '16px', accentColor: '#2563eb' }}
+                            />
+                            ⭐ Establecer como Cuenta Principal para Liquidaciones
+                          </label>
+
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setMostrarFormNuevaCuenta(false)}
+                              className="btn btn-sm btn-outline"
+                              style={{ height: '34px', fontSize: '12px', padding: '0 12px' }}
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAgregarCuenta}
+                              className="btn btn-sm"
+                              style={{
+                                height: '34px',
+                                background: '#2563eb',
+                                color: '#ffffff',
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                padding: '0 16px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <i className="fa-solid fa-check"></i>
+                              Guardar Cuenta
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* LISTA DE CUENTAS REGISTRADAS */}
+                    {(!form.cuentas || form.cuentas.length === 0) ? (
+                      <div
+                        style={{
+                          textAlign: 'center',
+                          padding: '24px 16px',
+                          background: '#ffffff',
+                          borderRadius: '8px',
+                          border: '1.5px dashed #cbd5e1',
+                        }}
+                      >
+                        <i className="fa-solid fa-building-columns" style={{ fontSize: '24px', color: '#94a3b8', marginBottom: '8px' }}></i>
+                        <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#475569' }}>
+                          No hay cuentas bancarias registradas para este propietario
+                        </p>
+                        <p style={{ margin: '4px 0 12px', fontSize: '11.5px', color: '#94a3b8' }}>
+                          Haz clic abajo para registrar su primera cuenta bancaria o pago móvil
+                        </p>
+                        {!mostrarFormNuevaCuenta && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNuevaCuenta({
+                                bancoId: 24,
+                                numeroCuenta: '',
+                                tipoCuenta: 'CORRIENTE',
+                                titular: form.nombreCompleto || '',
+                                cedulaRIF: form.cedulaRif || '',
+                                telefono: form.telefono || '',
+                                esPrincipal: true,
+                              });
+                              setMostrarFormNuevaCuenta(true);
+                            }}
+                            className="btn btn-sm"
+                            style={{
+                              background: '#2563eb',
+                              color: '#ffffff',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              borderRadius: '6px',
+                              padding: '6px 14px',
+                              border: 'none',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <i className="fa-solid fa-plus" style={{ marginRight: '6px' }}></i>
+                            + Agregar Cuenta Bancaria
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
+                        {form.cuentas.map((c, idx) => {
+                          const bancoObj = bancosOptions.find((b) => Number(b.value) === Number(c.bancoId));
+                          const bancoNombreDisplay = c.bancoNombre || (bancoObj ? bancoObj.label : `Banco #${c.bancoId}`);
+                          return (
+                            <div
+                              key={idx}
+                              style={{
+                                background: '#ffffff',
+                                border: c.esPrincipal ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                                borderRadius: '10px',
+                                padding: '12px',
+                                position: 'relative',
+                                boxShadow: c.esPrincipal ? '0 2px 4px rgba(37, 99, 235, 0.1)' : '0 1px 2px rgba(0,0,0,0.05)',
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <i className="fa-solid fa-building-columns" style={{ color: c.esPrincipal ? '#2563eb' : '#64748b', fontSize: '13px' }}></i>
+                                  <span style={{ fontWeight: 800, fontSize: '12.5px', color: '#0f172a' }}>
+                                    {bancoNombreDisplay}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  {c.esPrincipal ? (
+                                    <span
+                                      style={{
+                                        background: '#ecfdf5',
+                                        color: '#047857',
+                                        border: '1px solid #a7f3d0',
+                                        fontSize: '10.5px',
+                                        fontWeight: 800,
+                                        padding: '1px 6px',
+                                        borderRadius: '6px',
+                                      }}
+                                    >
+                                      ⭐ Principal
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleMarcarPrincipal(idx)}
+                                      style={{
+                                        background: '#f8fafc',
+                                        color: '#2563eb',
+                                        border: '1px solid #cbd5e1',
+                                        fontSize: '10.5px',
+                                        fontWeight: 700,
+                                        padding: '1px 6px',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                      }}
+                                      title="Establecer esta cuenta como la principal para liquidaciones"
+                                    >
+                                      Hacer Principal
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEliminarCuenta(idx)}
+                                    style={{
+                                      background: 'transparent',
+                                      border: 'none',
+                                      color: '#ef4444',
+                                      padding: '2px 4px',
+                                      cursor: 'pointer',
+                                      fontSize: '12px',
+                                    }}
+                                    title="Eliminar cuenta"
+                                  >
+                                    <i className="fa-solid fa-trash-can"></i>
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div style={{ fontFamily: 'monospace', fontSize: '13px', fontWeight: 700, color: '#1e293b', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                                {c.numeroCuenta ? (
+                                  c.numeroCuenta.replace(/(\d{4})(\d{4})(\d{2})(\d{10})/, '$1 $2 $3 $4')
+                                ) : (
+                                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Sin número de cuenta</span>
+                                )}
+                              </div>
+
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '11px', color: '#64748b' }}>
+                                <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                  {c.tipoCuenta || 'CORRIENTE'}
+                                </span>
+                                {(c.titular || form.nombreCompleto) && (
+                                  <span>
+                                    <i className="fa-regular fa-user" style={{ marginRight: '3px' }}></i>
+                                    {c.titular || form.nombreCompleto}
+                                  </span>
+                                )}
+                                {(c.cedulaRIF || form.cedulaRif) && (
+                                  <span>
+                                    <i className="fa-regular fa-id-card" style={{ marginRight: '3px' }}></i>
+                                    {c.cedulaRIF || form.cedulaRif}
+                                  </span>
+                                )}
+                                {(c.telefono || form.telefono) && (
+                                  <span style={{ color: '#059669', fontWeight: 600 }}>
+                                    <i className="fa-solid fa-mobile-screen" style={{ marginRight: '3px' }}></i>
+                                    {c.telefono || form.telefono}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* CORREO ELECTRÓNICO */}

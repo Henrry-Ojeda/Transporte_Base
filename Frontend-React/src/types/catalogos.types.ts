@@ -44,6 +44,21 @@ export interface GuardarFincaDto {
   activo: boolean;
 }
 
+export interface PropietarioCuentaBancariaDto {
+  id?: number;
+  propietarioId?: number;
+  bancoId: number;
+  bancoNombre?: string;
+  bancoCodigo?: string;
+  numeroCuenta: string;
+  tipoCuenta?: 'CORRIENTE' | 'AHORRO' | 'PAGO MOVIL' | string;
+  titular?: string;
+  cedulaRIF?: string;
+  telefono?: string;
+  esPrincipal: boolean;
+  activo?: boolean;
+}
+
 export interface PropietarioDto {
   id: number;
   nombre?: string;
@@ -63,6 +78,7 @@ export interface PropietarioDto {
   totalFincas?: number;
   fincasNombres?: string[];
   fincasAsignadas?: { id: number; nombre: string }[];
+  cuentas?: PropietarioCuentaBancariaDto[];
 }
 
 export interface CrearPropietarioDto {
@@ -76,6 +92,7 @@ export interface CrearPropietarioDto {
   pagoMovilCedula?: string;
   pagoMovilBancoId?: number;
   activo: boolean;
+  cuentas?: PropietarioCuentaBancariaDto[];
 }
 
 export interface CompaniaDto {

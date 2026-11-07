@@ -1395,6 +1395,7 @@ namespace Transporte.Core.DTOs
         public decimal? OdometroFinalKm { get; set; }
         public decimal? KmRecorridos { get; set; }
 
+        public List<int>? FincasPlanificadasIds { get; set; }
         public string? Observacion { get; set; }
         public DateTime CreatedAt { get; set; }
     }
@@ -2409,6 +2410,10 @@ namespace Transporte.Core.DTOs
         public int PorcentajeOcupacion { get; set; }
         public string? Observacion { get; set; }
         public bool Activo { get; set; } = true;
+        public long? ControlRutaId { get; set; }
+        public string? EstadoTicket { get; set; }
+        public int LitrosRecolectadosReal { get; set; }
+        public List<int> FincasRecolectadasIds { get; set; } = new();
         public DateTime CreatedAt { get; set; }
     }
 

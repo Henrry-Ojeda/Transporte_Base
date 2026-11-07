@@ -20,6 +20,7 @@ interface SearchableSelectProps {
   allowClear?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  dropDirection?: 'auto' | 'down' | 'up';
 }
 
 export const SearchableSelect: React.FC<SearchableSelectProps> = ({
@@ -33,6 +34,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   allowClear = true,
   className = '',
   style,
+  dropDirection = 'down',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,20 +44,27 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const optionsListRef = useRef<HTMLDivElement>(null);
 
-  // Detección automática de dropup para evitar que se corte al fondo del modal o ventana
+  // Detección de dropup o forzado hacia abajo para evitar que tape la cabecera de los modales
   useEffect(() => {
     if (isOpen && containerRef.current) {
+      if (dropDirection === 'down') {
+        setDropUp(false);
+        return;
+      }
+      if (dropDirection === 'up') {
+        setDropUp(true);
+        return;
+      }
       const rect = containerRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
-      // Solo hacer dropup si abajo no cabe y arriba hay suficiente espacio (mínimo 280px) para no chocar con la cabecera
-      if (spaceBelow < 260 && spaceAbove >= 280 && spaceAbove > spaceBelow) {
+      if (spaceBelow < 220 && spaceAbove >= 360 && spaceAbove > spaceBelow) {
         setDropUp(true);
       } else {
         setDropUp(false);
       }
     }
-  }, [isOpen]);
+  }, [isOpen, dropDirection]);
 
   // Cerrar al hacer clic fuera
   useEffect(() => {

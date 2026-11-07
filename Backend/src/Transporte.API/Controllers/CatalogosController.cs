@@ -72,7 +72,12 @@ namespace Transporte.API.Controllers
         [Authorize]
         public async Task<IActionResult> ActualizarFinca([FromRoute] int id, [FromBody] EditarFincaDto dto)
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            int? userId = null;
+            var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirst("id")?.Value ?? User.FindFirst("sub")?.Value;
+            if (int.TryParse(idClaim, out var parsedId))
+            {
+                userId = parsedId;
+            }
             var usuarioNombre = User.FindFirstValue(ClaimTypes.Name) ?? User.Identity?.Name ?? "Administrador";
 
             var ok = await _catalogosRepository.ActualizarFincaAsync(id, dto, userId, usuarioNombre);
@@ -88,7 +93,12 @@ namespace Transporte.API.Controllers
             if (dto.NuevoPrecioUSD <= 0)
                 return BadRequest(new { message = "El precio por litro ($/LT) debe ser mayor a 0." });
 
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            int userId = 1;
+            var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirst("id")?.Value ?? User.FindFirst("sub")?.Value;
+            if (int.TryParse(idClaim, out var parsedId))
+            {
+                userId = parsedId;
+            }
             var usuarioNombre = User.FindFirstValue(ClaimTypes.Name) ?? User.Identity?.Name ?? "Administrador";
 
             var count = await _catalogosRepository.ActualizarPreciosMasivoAsync(dto, userId, usuarioNombre);

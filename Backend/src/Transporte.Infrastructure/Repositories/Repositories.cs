@@ -8613,7 +8613,25 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                   AND ISNULL(cr.ProcesoActualId, 1) < 4
                 ORDER BY cr.Fecha DESC, cr.Id DESC";
 
-            return await connection.QueryFirstOrDefaultAsync<ControlRutaDto>(sql, new { choferId });
+            var viaje = await connection.QueryFirstOrDefaultAsync<ControlRutaDto>(sql, new { choferId });
+            if (viaje != null)
+            {
+                var fincasPlanSql = @"
+                    SELECT TOP 1 FincasIds 
+                    FROM TB_PLANIFICACION_RUTAS_CHOFERES 
+                    WHERE Fecha = @Fecha AND ConductorId = @ChoferId AND Activo = 1 
+                    ORDER BY Id DESC";
+                var fincasStr = await connection.ExecuteScalarAsync<string?>(fincasPlanSql, new { Fecha = viaje.Fecha.Date, ChoferId = choferId });
+                if (!string.IsNullOrWhiteSpace(fincasStr))
+                {
+                    viaje.FincasPlanificadasIds = fincasStr
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s => int.TryParse(s.Trim(), out var val) ? val : 0)
+                        .Where(x => x > 0)
+                        .ToList();
+                }
+            }
+            return viaje;
         }
 
         public async Task<long> CrearNuevoViajeAsync(CrearViajeDto dto, int usuarioId, string rol)

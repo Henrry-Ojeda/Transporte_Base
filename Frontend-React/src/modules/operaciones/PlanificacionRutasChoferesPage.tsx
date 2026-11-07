@@ -98,16 +98,20 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
     staleTime: 1000 * 60 * 5,
   });
 
+  const [fincasBloqueadas, setFincasBloqueadas] = useState<number[]>([]);
+
   // Mutaciones
   const guardarMutation = useMutation({
     mutationFn: (dto: GuardarPlanificacionRutaChoferDto) => operacionesApi.guardarPlanificacionChofer(dto),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['planificaciones-choferes'] });
+      queryClient.invalidateQueries({ queryKey: ['controles-rutas'] });
+      queryClient.invalidateQueries({ queryKey: ['viajes-rutas'] });
       setModalAbierto(false);
       Swal.fire({
         icon: 'success',
         title: 'Planificación Guardada',
-        text: res.message || 'La asignación de ruta y chofer se guardó exitosamente.',
+        text: res.message || 'La asignación de ruta y chofer se guardó exitosamente y se sincronizó con el ticket.',
         confirmButtonColor: '#2563eb',
         timer: 2000,
         showConfirmButton: false,
@@ -231,6 +235,7 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
   // Abrir modal para crear
   const abrirModalCrear = () => {
     setPlanificacionEditar(null);
+    setFincasBloqueadas([]);
     setFormFecha(fechaOperativa);
     setFormCamionId(undefined);
     setFormChoferId(undefined);
@@ -242,9 +247,10 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
     setModalAbierto(true);
   };
 
-  // Abrir modal para editar
+  // Abrir modal para editar (o modificar fincas en caliente)
   const abrirModalEditar = (item: PlanificacionRutaChoferDto) => {
     setPlanificacionEditar(item);
+    setFincasBloqueadas(item.fincasRecolectadasIds || []);
     setFormFecha(item.fecha ? String(item.fecha).split('T')[0] : fechaOperativa);
     setFormCamionId(item.camionId);
     setFormChoferId(item.conductorId);
@@ -299,31 +305,33 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
   // Alternar finca en el checklist
   const toggleFinca = (fincaId: number) => {
     if (!fincaId) return;
+    if (fincasBloqueadas.includes(fincaId)) return; // Finca ya recolectada por el chofer no se puede desmarcar
     setFormFincasSeleccionadas((prev) =>
       prev.includes(fincaId) ? prev.filter((id) => id !== fincaId) : [...prev, fincaId]
     );
   };
 
-  // Seleccionar todas las fincas de la ruta activa o invertir
+  // Seleccionar todas las fincas visibles en el checklist
   const seleccionarTodasDeRuta = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const idsVisibles = fincasParaModal.map(getFincaId).filter((id) => id > 0);
     if (idsVisibles.length === 0) return;
     setFormFincasSeleccionadas((prev) => {
-      const todosYaEstan = idsVisibles.every((id) => prev.includes(id));
+      const prevNums = prev.map(Number);
+      const todosYaEstan = idsVisibles.every((id) => prevNums.includes(id));
       if (todosYaEstan) {
-        return prev.filter((id) => !idsVisibles.includes(id));
+        return prevNums.filter((id) => !idsVisibles.includes(id) || fincasBloqueadas.includes(id));
       }
-      return Array.from(new Set([...prev, ...idsVisibles]));
+      return Array.from(new Set([...prevNums, ...idsVisibles]));
     });
   };
 
-  // Deseleccionar todas las fincas
+  // Deseleccionar todas las fincas no bloqueadas
   const deseleccionarTodas = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setFormFincasSeleccionadas([]);
+    setFormFincasSeleccionadas([...fincasBloqueadas]);
   };
 
   // Al cambiar camión, si tiene chofer asignado sugerirlo
@@ -680,8 +688,28 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
                         <Truck className="w-5 h-5" />
                       </div>
                       <div>
-                        <div className="font-extrabold text-slate-900 text-base leading-tight">
-                          {plan.camionPlaca}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-slate-900 text-base leading-tight">
+                            {plan.camionPlaca}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md text-[11px] font-black bg-blue-50 text-blue-700 border border-blue-200">
+                            Ticket #{plan.controlRutaId || plan.id}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase ${
+                              plan.estadoTicket === 'FINALIZADO'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : (plan.litrosRecolectadosReal || 0) > 0
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}
+                          >
+                            {plan.estadoTicket === 'FINALIZADO'
+                              ? '✅ Finalizado'
+                              : (plan.litrosRecolectadosReal || 0) > 0
+                              ? '🚛 En Ruta'
+                              : '📋 Planificado'}
+                          </span>
                         </div>
                         <div className="text-xs text-slate-500 font-medium">
                           Capacidad: {(plan.capacidadCamionLitros || 0).toLocaleString()} Lts
@@ -693,8 +721,8 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => abrirModalEditar(plan)}
-                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Editar Asignación"
+                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                        title="Modificar Fincas / Ruta (En Caliente)"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
@@ -707,7 +735,7 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
                           );
                           if (res) eliminarMutation.mutate(plan.id);
                         }}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                         title="Eliminar Asignación"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -772,21 +800,41 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
                         Sobrecupo: Excede en {((plan.litrosEstimados || 0) - (plan.capacidadCamionLitros || 0)).toLocaleString()} Lts
                       </div>
                     )}
+
+                    {(plan.litrosRecolectadosReal || 0) > 0 && (
+                      <div className="mt-2.5 bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-center justify-between text-xs">
+                        <span className="font-bold text-emerald-800 flex items-center gap-1.5">
+                          <Droplet className="w-3.5 h-3.5 text-emerald-600" /> Leche Recolectada en Ruta:
+                        </span>
+                        <span className="font-black text-emerald-900 text-sm">
+                          {(plan.litrosRecolectadosReal || 0).toLocaleString()} Lts
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Lista de Fincas Asignadas */}
                   <div>
                     <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
                       <span>Fincas Asignadas ({fincasIds.length})</span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        {plan.fincasRecolectadasIds?.length || 0} recogidas
+                      </span>
                     </div>
                     <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
                       {fincasIds.map((fId) => {
                         const finca = fincasPromedios.find((f) => f.fincaId === fId);
+                        const yaRecolectada = plan.fincasRecolectadasIds?.includes(fId);
                         return (
                           <span
                             key={fId}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200"
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+                              yaRecolectada
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                : 'bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
                           >
+                            <span>{yaRecolectada ? '✅' : '⏳'}</span>
                             <span className="truncate max-w-[140px]">{finca?.fincaNombre || `Finca #${fId}`}</span>
                             {finca?.promedioLitros ? (
                               <span className="text-[10px] font-bold text-blue-600 ml-0.5">
@@ -800,13 +848,24 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Footer de Tarjeta */}
-                {plan.observacion && (
-                  <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500 italic">
-                    <Info className="w-3 h-3 inline mr-1 text-slate-400" />
-                    {plan.observacion}
-                  </div>
-                )}
+                {/* Footer de Tarjeta & Botón Acción Directa */}
+                <div>
+                  {plan.observacion && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500 italic">
+                      <Info className="w-3 h-3 inline mr-1 text-slate-400" />
+                      {plan.observacion}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => abrirModalEditar(plan)}
+                    className="w-full mt-3 py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    Modificar Fincas / Ruta (En Caliente)
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -832,9 +891,9 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
             inset: 0,
             zIndex: 100000,
             display: 'flex',
-            alignItems: 'flex-start',
+            alignItems: 'center',
             justifyContent: 'center',
-            padding: '24px 16px',
+            padding: '60px 16px 24px',
             backgroundColor: 'rgba(15, 23, 42, 0.75)',
             backdropFilter: 'blur(6px)',
             overflowY: 'auto',
@@ -844,7 +903,7 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
             style={{
               width: '100%',
               maxWidth: '920px',
-              maxHeight: 'calc(100vh - 48px)',
+              maxHeight: 'calc(100vh - 90px)',
               margin: 'auto',
               background: '#ffffff',
               borderRadius: '20px',
@@ -1098,7 +1157,8 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
                   ) : (
                     fincasParaModal.map((finca) => {
                       const fId = getFincaId(finca);
-                      const isChecked = formFincasSeleccionadas.includes(fId);
+                      const isBloqueada = fincasBloqueadas.includes(fId);
+                      const isChecked = formFincasSeleccionadas.includes(fId) || isBloqueada;
                       const asignadaA = fincasAsignadasEnFecha.get(fId);
                       const nombreFinca = finca.fincaNombre || (finca as any).FincaNombre || (finca as any).nombre || `Finca #${fId}`;
                       const nombrePropietario = finca.propietario || (finca as any).Propietario || (finca as any).productor || 'Sin propietario';
@@ -1107,29 +1167,43 @@ export const PlanificacionRutasChoferesPage: React.FC = () => {
                       return (
                         <div
                           key={fId}
-                          onClick={() => toggleFinca(fId)}
-                          className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition-colors ${
-                            isChecked ? 'bg-blue-50/70 hover:bg-blue-50' : 'hover:bg-slate-50'
+                          onClick={() => {
+                            if (!isBloqueada) toggleFinca(fId);
+                          }}
+                          className={`flex items-center justify-between p-2 rounded-xl transition-colors ${
+                            isBloqueada
+                              ? 'bg-emerald-50/70 border border-emerald-200 cursor-not-allowed'
+                              : isChecked
+                              ? 'bg-blue-50/70 hover:bg-blue-50 cursor-pointer'
+                              : 'hover:bg-slate-50 cursor-pointer'
                           }`}
                         >
                           <div className="flex items-center gap-2.5">
                             <input
                               type="checkbox"
                               checked={isChecked}
+                              disabled={isBloqueada}
                               onChange={() => {}} // controlado por el onClick del contenedor
-                              className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                              className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-60"
                             />
                             <div>
-                              <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                              <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
                                 <span>{nombreFinca}</span>
-                                {asignadaA && (
+                                {isBloqueada ? (
+                                  <span
+                                    className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                    title="Esta finca ya fue recolectada por el chofer. No se puede desasignar del ticket."
+                                  >
+                                    ✅ Recolectada en ruta
+                                  </span>
+                                ) : asignadaA ? (
                                   <span
                                     className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300"
                                     title={`Esta finca ya está asignada hoy a ${asignadaA.camionPlaca} (${asignadaA.choferNombre})`}
                                   >
                                     ⚠️ Asignada a {asignadaA.camionPlaca}
                                   </span>
-                                )}
+                                ) : null}
                               </div>
                               <div className="text-[11px] text-slate-400">
                                 {nombrePropietario}

@@ -36,6 +36,7 @@ export interface ControlRutaDto {
   odometroFinalKm?: number;
   observacion?: string;
   observaciones?: string;
+  fincasPlanificadasIds?: number[];
   createdAt: string;
   fincasDetalle?: ControlRutaFincaDto[];
   entregasDetalle?: ControlRutaEntregaDto[];
@@ -176,6 +177,10 @@ export interface PlanificacionRutaChoferDto {
   porcentajeOcupacion: number;
   observacion?: string;
   activo: boolean;
+  controlRutaId?: number | null;
+  estadoTicket?: string;
+  litrosRecolectadosReal?: number;
+  fincasRecolectadasIds?: number[];
   createdAt: string;
 }
 

@@ -1110,35 +1110,19 @@ export const AppMovilPage: React.FC = () => {
     return viajeActivo.rutaLogisticaId ? [Number(viajeActivo.rutaLogisticaId)] : [];
   }, [viajeActivo]);
 
-  const fincasFiltradas = useMemo(() => {
-    let result = fincas;
-    if (busquedaFinca.trim()) {
-      const term = busquedaFinca.toLowerCase();
-      result = fincas.filter(
-        (f) =>
-          f.nombre.toLowerCase().includes(term) ||
-          (f.codigo && f.codigo.toLowerCase().includes(term))
-      );
-    }
-
-    if (rutasActivasIds.length > 0) {
-      return [...result].sort((a, b) => {
-        const aEnRuta = a.rutaId && rutasActivasIds.includes(a.rutaId) ? 1 : 0;
-        const bEnRuta = b.rutaId && rutasActivasIds.includes(b.rutaId) ? 1 : 0;
-        if (aEnRuta !== bEnRuta) return bEnRuta - aEnRuta;
-        return a.nombre.localeCompare(b.nombre);
-      });
-    }
-
-    return result;
-  }, [fincas, busquedaFinca, rutasActivasIds]);
-
   // Fincas de la Ruta Asignada al Viaje Activo (con estado: recolectada / pendiente)
   const fincasDeMiRuta = useMemo(() => {
     if (!viajeActivo) return [];
 
     let fincasRuta: FincaDto[] = [];
-    if (rutasActivasIds.length > 0) {
+    const planificadas = (viajeActivo as any).fincasPlanificadasIds || (viajeActivo as any).listaFincasIds;
+    if (Array.isArray(planificadas) && planificadas.length > 0) {
+      const idsNum = planificadas.map(Number);
+      fincasRuta = fincas.filter((f) => idsNum.includes(f.id));
+    } else if (typeof planificadas === 'string' && planificadas.trim()) {
+      const idsNum = planificadas.split(',').map((x: string) => Number(x.trim())).filter((n: number) => n > 0);
+      fincasRuta = fincas.filter((f) => idsNum.includes(f.id));
+    } else if (rutasActivasIds.length > 0) {
       fincasRuta = fincas.filter((f) => f.rutaId && rutasActivasIds.includes(f.rutaId));
     }
 
@@ -1164,6 +1148,21 @@ export const AppMovilPage: React.FC = () => {
       return a.nombre.localeCompare(b.nombre);
     });
   }, [viajeActivo, rutasActivasIds, fincas, todasLasParadas]);
+
+  const fincasFiltradas = useMemo(() => {
+    // Si el viaje tiene fincas planificadas por el Admin, el chofer sólo puede ver y cargar esas fincas
+    let base = fincasDeMiRuta.length > 0 ? fincasDeMiRuta : fincas;
+    if (busquedaFinca.trim()) {
+      const term = busquedaFinca.toLowerCase();
+      base = base.filter(
+        (f) =>
+          f.nombre.toLowerCase().includes(term) ||
+          (f.codigo && f.codigo.toLowerCase().includes(term))
+      );
+    }
+
+    return [...base].sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [fincas, fincasDeMiRuta, busquedaFinca]);
 
   // Filtro de circuito en pestaña Recolección
   const [filtroCircuito, setFiltroCircuito] = useState<'todas' | 'pendientes' | 'recolectadas'>('todas');

@@ -118,9 +118,16 @@ namespace Transporte.API.Controllers
         [HttpGet("planificacion-choferes")]
         public async Task<IActionResult> ObtenerPlanificaciones([FromQuery] System.DateTime? fecha)
         {
-            var fechaConsulta = (fecha ?? System.DateTime.Today).Date;
-            var list = await _rutasLogisticaRepository.ObtenerPlanificacionesPorFechaAsync(fechaConsulta);
-            return Ok(list);
+            try
+            {
+                var fechaConsulta = (fecha ?? System.DateTime.Today).Date;
+                var list = await _rutasLogisticaRepository.ObtenerPlanificacionesPorFechaAsync(fechaConsulta);
+                return Ok(list);
+            }
+            catch (System.Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message, stack = ex.StackTrace });
+            }
         }
 
         [HttpPost("planificacion-choferes")]

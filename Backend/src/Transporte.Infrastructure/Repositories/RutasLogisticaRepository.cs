@@ -29,16 +29,22 @@ namespace Transporte.Infrastructure.Repositories
     public class RutasLogisticaRepository : IRutasLogisticaRepository
     {
         private readonly string _connectionString;
+        private readonly Transporte.Core.Interfaces.ITenantService? _tenantService;
 
         public RutasLogisticaRepository(IConfiguration configuration, Transporte.Core.Interfaces.ITenantService? tenantService = null)
         {
+            _tenantService = tenantService;
             _connectionString = tenantService?.GetConnectionString() 
                 ?? configuration.GetConnectionString("DefaultConnection") 
                 ?? configuration.GetConnectionString("BD_TRANSPORTE") 
                 ?? "Server=localhost;Database=BD_CV_PROD;Trusted_Connection=True;TrustServerCertificate=True;";
         }
 
-        private IDbConnection CreateConnection() => new SqlConnection(_connectionString);
+        private IDbConnection CreateConnection()
+        {
+            var connStr = _tenantService?.GetConnectionString() ?? _connectionString;
+            return new SqlConnection(connStr);
+        }
 
         public async Task<IEnumerable<RutaLogisticaDto>> ObtenerRutasAsync()
         {
@@ -235,7 +241,7 @@ namespace Transporte.Infrastructure.Repositories
                 LEFT JOIN TB_CAMIONES c ON p.CamionId = c.Id
                 LEFT JOIN TB_USUARIOS u ON p.ConductorId = u.Id
                 LEFT JOIN TB_RUTAS_LOGISTICA r ON p.RutaLogisticaId = r.Id
-                WHERE p.Fecha = @fecha AND p.Activo = 1
+                WHERE CAST(p.Fecha AS DATE) = CAST(@fecha AS DATE) AND p.Activo = 1
                 ORDER BY p.Id ASC";
             var list = (await connection.QueryAsync<PlanificacionRutaChoferDto>(sql, new { fecha = fecha.Date })).ToList();
             foreach (var item in list)
@@ -253,7 +259,7 @@ namespace Transporte.Infrastructure.Repositories
                 var ticketSql = @"
                     SELECT TOP 1 cr.Id, cr.Estado, cr.TotalLitrosFinca
                     FROM TB_CONTROL_RUTAS cr
-                    WHERE (cr.Id = @ControlRutaId OR (cr.Fecha = @Fecha AND cr.UsuarioId = @ConductorId))
+                    WHERE (cr.Id = @ControlRutaId OR (CAST(cr.Fecha AS DATE) = CAST(@Fecha AS DATE) AND cr.UsuarioId = @ConductorId))
                     ORDER BY cr.Id DESC";
                 var ticketInfo = await connection.QueryFirstOrDefaultAsync<dynamic>(ticketSql, new
                 {
@@ -291,28 +297,31 @@ namespace Transporte.Infrastructure.Repositories
                     SELECT 
                         cr.Id AS ControlRutaId,
                         cr.Fecha,
-                        cr.CamionId,
-                        c.Placa AS CamionPlaca,
-                        ISNULL(c.CapacidadLitros, 6000) AS CapacidadCamionLitros,
+                        ISNULL(cam.Id, 0) AS CamionId,
+                        ISNULL(cam.Placa, 'Sin Camión') AS CamionPlaca,
+                        ISNULL(cam.CapacidadLitros, 6000) AS CapacidadCamionLitros,
                         cr.UsuarioId AS ConductorId,
-                        u.NombreCompleto AS ConductorNombre,
+                        ISNULL(u.NombreCompleto, 'Conductor') AS ConductorNombre,
                         cr.Estado AS EstadoTicket,
+                        cr.RutaLogisticaId,
+                        r.Nombre AS RutaLogisticaNombre,
                         CAST(ISNULL(cr.TotalLitrosFinca, 0) AS INT) AS LitrosRecolectadosReal,
-                        cr.Observaciones AS Observacion
+                        cr.Observacion AS Observacion
                     FROM TB_CONTROL_RUTAS cr
-                    LEFT JOIN TB_CAMIONES c ON cr.CamionId = c.Id
                     LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
-                    WHERE cr.Fecha = @fecha AND (cr.IsDeleted = 0 OR cr.IsDeleted IS NULL)
+                    LEFT JOIN TB_CAMIONES cam ON cam.UsuarioId = cr.UsuarioId AND cam.Activo = 1
+                    LEFT JOIN TB_RUTAS_LOGISTICA r ON cr.RutaLogisticaId = r.Id
+                    WHERE CAST(cr.Fecha AS DATE) = CAST(@fecha AS DATE)
                     ORDER BY cr.Id ASC";
 
                 var ticketsDirectos = await connection.QueryAsync<dynamic>(ticketsSinPlanSql, new { fecha = fecha.Date });
                 foreach (var tk in ticketsDirectos)
                 {
-                    long tId = (long)tk.ControlRutaId;
+                    long tId = Convert.ToInt64(tk.ControlRutaId);
                     if (ticketsIdsExistentes.Contains(tId)) continue;
 
-                    int conductorId = (int?)tk.ConductorId ?? 0;
-                    int camionId = (int?)tk.CamionId ?? 0;
+                    int conductorId = Convert.ToInt32(tk.ConductorId ?? 0);
+                    int camionId = Convert.ToInt32(tk.CamionId ?? 0);
 
                     // Si ya existe una planificación para este camión en la fecha, no duplicar
                     if (list.Any(p => (camionId > 0 && p.CamionId == camionId)))
@@ -320,45 +329,88 @@ namespace Transporte.Infrastructure.Repositories
                         continue;
                     }
 
-                    // Fincas recolectadas de este ticket
-                    var fincasRecSql = @"
+                    // Fincas recolectadas de este ticket (con leche ya pesada)
+                    var fincasConLecheSql = @"
                         SELECT DISTINCT FincaId 
                         FROM TB_RUTAS_RECOLECCION 
                         WHERE ControlRutaId = @TicketId AND FincaId IS NOT NULL AND Litros > 0";
-                    var recIds = (await connection.QueryAsync<int>(fincasRecSql, new { TicketId = tId })).ToList();
+                    var recolectadasIds = (await connection.QueryAsync<int>(fincasConLecheSql, new { TicketId = tId })).ToList();
 
-                    int capacidadCamion = (int)tk.CapacidadCamionLitros;
-                    int litrosReal = (int)tk.LitrosRecolectadosReal;
-                    int pct = capacidadCamion > 0 ? (int)Math.Round((double)litrosReal / capacidadCamion * 100) : 0;
+                    // TODAS las fincas asignadas al ticket (tanto pendientes como recolectadas)
+                    var todasFincasTicketSql = @"
+                        SELECT DISTINCT FincaId 
+                        FROM TB_RUTAS_RECOLECCION 
+                        WHERE ControlRutaId = @TicketId AND FincaId IS NOT NULL";
+                    var todasFincasIds = (await connection.QueryAsync<int>(todasFincasTicketSql, new { TicketId = tId })).ToList();
+
+                    // Si no tiene paradas en TB_RUTAS_RECOLECCION pero tiene RutaLogisticaId, obtener fincas de la ruta
+                    int? rLogId = tk.RutaLogisticaId != null ? Convert.ToInt32(tk.RutaLogisticaId) : null;
+                    if (todasFincasIds.Count == 0 && rLogId.HasValue && rLogId.Value > 0)
+                    {
+                        var fincasRutaSql = "SELECT Id FROM TB_FINCAS WHERE RutaId = @RutaId AND (Activo = 1 OR Activo IS NULL)";
+                        var fIdsRuta = await connection.QueryAsync<int>(fincasRutaSql, new { RutaId = rLogId.Value });
+                        todasFincasIds = fIdsRuta.ToList();
+                    }
+
+                    int capacidadCamion = Convert.ToInt32(tk.CapacidadCamionLitros ?? 6000);
+                    int litrosReal = Convert.ToInt32(tk.LitrosRecolectadosReal ?? 0);
+
+                    // Calcular litros proyectados con promedio de 15 días de las fincas asignadas
+                    int litrosEstimados = 0;
+                    if (todasFincasIds.Count > 0)
+                    {
+                        var sqlEstimados = @"
+                            SELECT CAST(ISNULL(SUM(ISNULL(p15.Promedio15Dias, 200)), 0) AS INT)
+                            FROM TB_FINCAS f
+                            LEFT JOIN (
+                                SELECT FincaId, ROUND(AVG(CAST(Litros AS FLOAT)), 0) AS Promedio15Dias
+                                FROM TB_RUTAS_RECOLECCION
+                                WHERE Fecha >= DATEADD(day, -15, CAST(GETDATE() AS DATE))
+                                GROUP BY FincaId
+                            ) p15 ON f.Id = p15.FincaId
+                            WHERE f.Id IN @FincasIds";
+                        var sumObj = await connection.ExecuteScalarAsync<object?>(sqlEstimados, new { FincasIds = todasFincasIds });
+                        litrosEstimados = sumObj != null ? Convert.ToInt32(sumObj) : 0;
+                    }
+                    if (litrosEstimados == 0 && litrosReal > 0)
+                    {
+                        litrosEstimados = litrosReal;
+                    }
+
+                    int pct = capacidadCamion > 0 ? (int)Math.Round((double)(litrosEstimados > 0 ? litrosEstimados : litrosReal) / capacidadCamion * 100) : 0;
+                    DateTime tkFecha = tk.Fecha is DateTime dt ? dt : Convert.ToDateTime(tk.Fecha);
 
                     var planVirtual = new PlanificacionRutaChoferDto
                     {
                         Id = (int)tId,
-                        Fecha = (DateTime)tk.Fecha,
+                        Fecha = tkFecha,
                         CamionId = camionId,
                         CamionPlaca = (string?)tk.CamionPlaca ?? $"Camión #{camionId}",
                         CapacidadCamionLitros = capacidadCamion,
                         ConductorId = conductorId,
                         ConductorNombre = (string?)tk.ConductorNombre ?? "Conductor",
+                        RutaLogisticaId = rLogId,
+                        RutaLogisticaNombre = (string?)tk.RutaLogisticaNombre,
                         ControlRutaId = tId,
                         EstadoTicket = (string?)tk.EstadoTicket ?? "ABIERTO",
                         LitrosRecolectadosReal = litrosReal,
-                        ListaFincasIds = recIds,
-                        FincasRecolectadasIds = recIds,
-                        TotalFincas = recIds.Count,
-                        LitrosEstimados = litrosReal,
+                        ListaFincasIds = todasFincasIds,
+                        FincasRecolectadasIds = recolectadasIds,
+                        TotalFincas = todasFincasIds.Count,
+                        LitrosEstimados = litrosEstimados,
                         PorcentajeOcupacion = pct,
                         Observacion = (string?)tk.Observacion,
                         Activo = true,
-                        CreatedAt = (DateTime)tk.Fecha
+                        CreatedAt = tkFecha
                     };
 
                     list.Add(planVirtual);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Silencioso para no bloquear la consulta de planificaciones
+                Console.WriteLine($"Error en sincronizacion automatica de tickets a planificacion: {ex.Message}");
+                throw;
             }
 
             return list;
@@ -378,7 +430,7 @@ namespace Transporte.Infrastructure.Repositories
             // 1. Sincronizar o crear el Ticket operativo en TB_CONTROL_RUTAS
             var ticketExistenteId = await connection.ExecuteScalarAsync<long?>(@"
                 SELECT TOP 1 Id FROM TB_CONTROL_RUTAS 
-                WHERE Fecha = @Fecha AND UsuarioId = @ConductorId
+                WHERE CAST(Fecha AS DATE) = CAST(@Fecha AS DATE) AND UsuarioId = @ConductorId
                 ORDER BY Id DESC", new { Fecha = dto.Fecha.Date, ConductorId = dto.ConductorId });
 
             long ticketIdEfectivo;
@@ -447,7 +499,7 @@ namespace Transporte.Infrastructure.Repositories
                         ModifiedAt = GETDATE(),
                         ModifiedBy = @usuarioId
                     WHERE Id = @Id";
-                await connection.ExecuteAsync(sqlUpdate, new
+                var affected = await connection.ExecuteAsync(sqlUpdate, new
                 {
                     Id = dto.Id.Value,
                     Fecha = dto.Fecha.Date,
@@ -464,7 +516,37 @@ namespace Transporte.Infrastructure.Repositories
                     ticketIdEfectivo,
                     usuarioId
                 });
-                planId = dto.Id.Value;
+
+                if (affected == 0)
+                {
+                    // Si el ID era virtual (venía de un ticket directo), insertamos la fila
+                    var sqlInsert = @"
+                        INSERT INTO TB_PLANIFICACION_RUTAS_CHOFERES
+                        (Fecha, CamionId, ConductorId, RutaLogisticaId, RutasIds, FincasIds, TotalFincas, LitrosEstimados, CapacidadCamionLitros, PorcentajeOcupacion, Observacion, ControlRutaId, Activo, CreatedAt, CreatedBy)
+                        VALUES
+                        (@Fecha, @CamionId, @ConductorId, @RutaLogisticaId, @RutasIds, @FincasIds, @TotalFincas, @LitrosEstimados, @CapacidadCamionLitros, @PorcentajeOcupacion, @Observacion, @ticketIdEfectivo, 1, GETDATE(), @usuarioId);
+                        SELECT CAST(SCOPE_IDENTITY() AS INT);";
+                    planId = await connection.ExecuteScalarAsync<int>(sqlInsert, new
+                    {
+                        Fecha = dto.Fecha.Date,
+                        dto.CamionId,
+                        dto.ConductorId,
+                        dto.RutaLogisticaId,
+                        dto.RutasIds,
+                        FincasIds = fincasIdsStr,
+                        TotalFincas = totalFincas,
+                        dto.LitrosEstimados,
+                        CapacidadCamionLitros = capacidad,
+                        PorcentajeOcupacion = porcentaje,
+                        dto.Observacion,
+                        ticketIdEfectivo,
+                        usuarioId
+                    });
+                }
+                else
+                {
+                    planId = dto.Id.Value;
+                }
             }
             else
             {

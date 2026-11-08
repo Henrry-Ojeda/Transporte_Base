@@ -17,6 +17,7 @@ namespace Transporte.Infrastructure.Repositories
         Task<bool> EliminarUsuarioAsync(int id);
         Task<IEnumerable<RolDto>> ObtenerRolesAsync();
         Task<IEnumerable<ChoferDto>> ObtenerChoferesDisponiblesAsync();
+        Task<bool> ActualizarPermisoCrearViajeAsync(int usuarioId, bool habilitado);
         Task<PerfilUsuarioDto?> ObtenerPerfilAsync(int userId);
         Task<(bool success, string message)> ActualizarPerfilAsync(int userId, ActualizarPerfilDto dto);
 
@@ -50,6 +51,7 @@ namespace Transporte.Infrastructure.Repositories
                        ISNULL(r.Nombre, u.Rol) AS RolNombre, ISNULL(u.TarifaPorLitro, 0) AS TarifaPorLitro,
                        ISNULL(u.SueldoBase, 0) AS SueldoBase, ISNULL(u.FrecuenciaPago, 'Semanal') AS FrecuenciaPago, ISNULL(u.TipoPago, 'Variado') AS TipoPago,
                        u.BancoNombre, u.NumeroCuenta, u.CedulaPagoMovil, u.TelefonoPagoMovil,
+                       ISNULL(u.PermisoCrearViaje, 0) AS PermisoCrearViaje,
                        u.Activo, u.CreatedAt,
                        c.Id, c.UsuarioId, c.Placa, c.Compartimientos, c.CapacidadLitros, c.MarcaModelo, c.Observaciones, c.Activo, c.CreatedAt
                 FROM TB_USUARIOS u
@@ -88,6 +90,7 @@ namespace Transporte.Infrastructure.Repositories
                        ISNULL(r.Nombre, u.Rol) AS RolNombre, ISNULL(u.TarifaPorLitro, 0) AS TarifaPorLitro,
                        ISNULL(u.SueldoBase, 0) AS SueldoBase, ISNULL(u.FrecuenciaPago, 'Semanal') AS FrecuenciaPago, ISNULL(u.TipoPago, 'Variado') AS TipoPago,
                        u.BancoNombre, u.NumeroCuenta, u.CedulaPagoMovil, u.TelefonoPagoMovil,
+                       ISNULL(u.PermisoCrearViaje, 0) AS PermisoCrearViaje,
                        u.Activo, u.CreatedAt,
                        c.Id, c.UsuarioId, c.Placa, c.Compartimientos, c.CapacidadLitros, c.MarcaModelo, c.Observaciones, c.Activo, c.CreatedAt
                 FROM TB_USUARIOS u
@@ -146,9 +149,9 @@ namespace Transporte.Infrastructure.Repositories
 
                 var sqlUsuario = @"
                     INSERT INTO TB_USUARIOS 
-                    (Username, PasswordHash, NombreCompleto, Cedula, Telefono, VehiculoPlaca, CapacidadTanqueLitros, TarifaPorLitro, SueldoBase, FrecuenciaPago, TipoPago, BancoNombre, NumeroCuenta, CedulaPagoMovil, TelefonoPagoMovil, Rol, RolId, Activo, IsDeleted, CreatedAt)
+                    (Username, PasswordHash, NombreCompleto, Cedula, Telefono, VehiculoPlaca, CapacidadTanqueLitros, TarifaPorLitro, SueldoBase, FrecuenciaPago, TipoPago, BancoNombre, NumeroCuenta, CedulaPagoMovil, TelefonoPagoMovil, Rol, RolId, PermisoCrearViaje, Activo, IsDeleted, CreatedAt)
                     VALUES 
-                    (@Username, @PasswordHash, @NombreCompleto, @Cedula, @Telefono, @VehiculoPlaca, @CapacidadTanqueLitros, @TarifaPorLitro, @SueldoBase, @FrecuenciaPago, @TipoPago, @BancoNombre, @NumeroCuenta, @CedulaPagoMovil, @TelefonoPagoMovil, @Rol, @RolId, @Activo, 0, GETDATE());
+                    (@Username, @PasswordHash, @NombreCompleto, @Cedula, @Telefono, @VehiculoPlaca, @CapacidadTanqueLitros, @TarifaPorLitro, @SueldoBase, @FrecuenciaPago, @TipoPago, @BancoNombre, @NumeroCuenta, @CedulaPagoMovil, @TelefonoPagoMovil, @Rol, @RolId, @PermisoCrearViaje, @Activo, 0, GETDATE());
                     SELECT CAST(SCOPE_IDENTITY() as int);";
 
                 var usuarioId = await connection.ExecuteScalarAsync<int>(sqlUsuario, new
@@ -170,6 +173,7 @@ namespace Transporte.Infrastructure.Repositories
                     dto.TelefonoPagoMovil,
                     Rol = rolCodigo,
                     RolId = rolId,
+                    PermisoCrearViaje = dto.PermisoCrearViaje ? 1 : 0,
                     dto.Activo
                 }, transaction);
 
@@ -273,7 +277,8 @@ namespace Transporte.Infrastructure.Repositories
                         BancoNombre = COALESCE(@BancoNombre, BancoNombre),
                         NumeroCuenta = COALESCE(@NumeroCuenta, NumeroCuenta),
                         CedulaPagoMovil = COALESCE(@CedulaPagoMovil, CedulaPagoMovil),
-                        TelefonoPagoMovil = COALESCE(@TelefonoPagoMovil, TelefonoPagoMovil)
+                        TelefonoPagoMovil = COALESCE(@TelefonoPagoMovil, TelefonoPagoMovil),
+                        PermisoCrearViaje = COALESCE(@PermisoCrearViaje, PermisoCrearViaje)
                         " + (!string.IsNullOrWhiteSpace(passwordHash) ? ", PasswordHash = @PasswordHash " : "") + @"
                     WHERE Id = @id AND IsDeleted = 0";
 
@@ -297,6 +302,7 @@ namespace Transporte.Infrastructure.Repositories
                     dto.NumeroCuenta,
                     dto.CedulaPagoMovil,
                     dto.TelefonoPagoMovil,
+                    PermisoCrearViaje = dto.PermisoCrearViaje.HasValue ? (dto.PermisoCrearViaje.Value ? 1 : 0) : (int?)null,
                     PasswordHash = passwordHash
                 }, transaction);
 
@@ -414,6 +420,15 @@ namespace Transporte.Infrastructure.Repositories
             return rows > 0;
         }
 
+        public async Task<bool> ActualizarPermisoCrearViajeAsync(int usuarioId, bool habilitado)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            var rows = await connection.ExecuteAsync(
+                "UPDATE TB_USUARIOS SET PermisoCrearViaje = @habilitado WHERE Id = @usuarioId AND IsDeleted = 0",
+                new { usuarioId, habilitado = habilitado ? 1 : 0 });
+            return rows > 0;
+        }
+
         public async Task<PerfilUsuarioDto?> ObtenerPerfilAsync(int userId)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -426,6 +441,7 @@ namespace Transporte.Infrastructure.Repositories
                     u.Cedula, 
                     u.Telefono, 
                     u.FotoUrl,
+                    ISNULL(u.PermisoCrearViaje, 0) AS PermisoCrearViaje,
                     u.BancoNombre, 
                     u.NumeroCuenta, 
                     u.CedulaPagoMovil, 

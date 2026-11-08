@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 7,
-  patch: 2,
-  tag: 'v3.7.2',
+  minor: 8,
+  patch: 1,
+  tag: 'v3.8.1',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Web Carga Masiva: Desacople estricto de ticket al cambiar chofer, protección backend contra asignación cruzada de tickets, y preservación de tickets en Receptoría en vista activa',
+  descripcion: 'Sistema de Autorización Temporal de Rutas: Choferes no se auto-asignan rutas; panel de permisos para Admin/SuperAdmin en Móvil y Web, y revocación automática (1 solo uso) al entregar la ruta',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

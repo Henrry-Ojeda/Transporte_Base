@@ -73,6 +73,11 @@ export const sistemaApi = {
     return res.data;
   },
 
+  actualizarPermisoCrearViaje: async (id: number, permisoCrearViaje: boolean): Promise<{ success: boolean; message: string; permisoCrearViaje: boolean }> => {
+    const res = await apiClient.patch(`/usuarios/${id}/permiso-crear-viaje`, { permisoCrearViaje });
+    return res.data;
+  },
+
   eliminarUsuario: async (id: number): Promise<{ success: boolean; message: string }> => {
     const res = await apiClient.delete(`/usuarios/${id}`);
     return res.data;

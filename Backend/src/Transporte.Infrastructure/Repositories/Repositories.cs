@@ -9027,6 +9027,19 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 conductorEfectivo = usuarioId;
             }
 
+            // Validar permiso de creación de viaje si es un chofer iniciando la ruta
+            if (!rol.Contains("ADMIN", StringComparison.OrdinalIgnoreCase) && !rol.Equals("SUPERVISOR", StringComparison.OrdinalIgnoreCase))
+            {
+                var permisoCrear = await connection.ExecuteScalarAsync<bool>(
+                    "SELECT ISNULL(PermisoCrearViaje, 0) FROM TB_USUARIOS WHERE Id = @usuarioId",
+                    new { usuarioId });
+
+                if (!permisoCrear)
+                {
+                    throw new InvalidOperationException("No tienes autorización para iniciar viajes o crear rutas. Todo viaje debe ser asignado por el supervisor o autorizado expresamente por el administrador.");
+                }
+            }
+
             // Validar si el ciclo operativo correspondiente a la fecha está cerrado
             var cicloFecha = await connection.QueryFirstOrDefaultAsync<dynamic>(
                 @"SELECT TOP 1 Id, Codigo, Estado, FechaInicio, FechaFin 
@@ -9377,6 +9390,15 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 INSERT INTO TB_HISTORIAL_PROCESOS_TICKET (ControlRutaId, ProcesoId, FechaCambio, CambiadoPor, Observacion)
                 VALUES (@controlRutaId, 2, GETDATE(), @usuarioId, @obs);",
                 new { controlRutaId, usuarioId, obs = observacion ?? "Viaje despachado y enviado a Receptoría" });
+
+            // Revocar permiso de crear viaje al chofer al terminar la ruta (un solo uso)
+            int choferViajeId = (viaje.UsuarioId != null && (int)viaje.UsuarioId > 0) ? (int)viaje.UsuarioId : 0;
+            if (choferViajeId > 0)
+            {
+                await connection.ExecuteAsync(
+                    "UPDATE TB_USUARIOS SET PermisoCrearViaje = 0 WHERE Id = @choferViajeId",
+                    new { choferViajeId });
+            }
 
             return rows > 0;
         }
@@ -9773,6 +9795,15 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     obs = $"Viaje auditado y finalizado por Administrador. Estado: {estado}. Merma global: {merma:+0;-0;0} L. {observacion}".Trim()
                 });
 
+            // Revocar permiso de crear viaje al chofer al finalizar contablemente
+            int viajeChoferId = (viaje.UsuarioId != null && (int)viaje.UsuarioId > 0) ? (int)viaje.UsuarioId : 0;
+            if (viajeChoferId > 0)
+            {
+                await connection.ExecuteAsync(
+                    "UPDATE TB_USUARIOS SET PermisoCrearViaje = 0 WHERE Id = @viajeChoferId",
+                    new { viajeChoferId });
+            }
+
             return rows > 0;
         }
 
@@ -10029,6 +10060,12 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     ModifiedBy = @usuarioId
                 WHERE Id = @controlRutaId",
                 new { companiaId = finalCompaniaDestinoId, totalDespachado, dif, merma, usuarioId, controlRutaId });
+
+            // Revocar permiso de crear viaje al chofer al terminar la ruta (un solo uso)
+            int rutaChoferId = (viaje.UsuarioId != null && (int)viaje.UsuarioId > 0) ? (int)viaje.UsuarioId : 0;
+            await connection.ExecuteAsync(
+                "UPDATE TB_USUARIOS SET PermisoCrearViaje = 0 WHERE Id IN (@choferDespacho, @rutaChoferId)",
+                new { choferDespacho, rutaChoferId });
 
             return primerControlCompaniaId;
         }

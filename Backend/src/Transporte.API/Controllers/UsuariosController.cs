@@ -133,6 +133,25 @@ namespace Transporte.API.Controllers
             return Ok(new { message = "Contraseña actualizada exitosamente." });
         }
 
+        [HttpPatch("{id}/permiso-crear-viaje")]
+        public async Task<IActionResult> ActualizarPermisoCrearViaje([FromRoute] int id, [FromBody] CambiarPermisoCrearViajeDto dto)
+        {
+            var target = await _usuariosRepository.ObtenerUsuarioPorIdAsync(id);
+            if (target == null) return NotFound(new { message = "Usuario no encontrado." });
+
+            var ok = await _usuariosRepository.ActualizarPermisoCrearViajeAsync(id, dto.PermisoCrearViaje);
+            if (!ok) return BadRequest(new { message = "No se pudo actualizar el permiso para crear ruta." });
+
+            return Ok(new
+            {
+                success = true,
+                message = dto.PermisoCrearViaje
+                    ? $"Permiso concedido exitosamente a {target.NombreCompleto}. Ahora puede crear o iniciar 1 ruta."
+                    : $"Permiso para crear ruta revocado a {target.NombreCompleto}.",
+                permisoCrearViaje = dto.PermisoCrearViaje
+            });
+        }
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> EliminarUsuario([FromRoute] int id)
         {

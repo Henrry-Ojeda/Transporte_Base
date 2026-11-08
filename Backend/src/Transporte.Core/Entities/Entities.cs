@@ -12,6 +12,7 @@ public class Usuario
     public int? CapacidadTanqueLitros { get; set; }
     public string Rol { get; set; } = "CHOFER";
     public int? RolId { get; set; }
+    public bool PermisoCrearViaje { get; set; } = false;
     public bool Activo { get; set; } = true;
     public bool IsDeleted { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

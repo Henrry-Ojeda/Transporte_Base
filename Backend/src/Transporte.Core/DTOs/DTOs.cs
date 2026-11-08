@@ -18,6 +18,7 @@ namespace Transporte.Core.DTOs
         public string NombreCompleto { get; set; } = string.Empty;
         public string Rol { get; set; } = string.Empty;
         public string? FotoUrl { get; set; }
+        public bool PermisoCrearViaje { get; set; } = false;
         public IEnumerable<string> Permisos { get; set; } = Enumerable.Empty<string>();
         public IEnumerable<string> ModulosHabilitados { get; set; } = Enumerable.Empty<string>();
         public string EmpresaCodigo { get; set; } = string.Empty;
@@ -33,6 +34,7 @@ namespace Transporte.Core.DTOs
         public string? Cedula { get; set; }
         public string? Telefono { get; set; }
         public string? FotoUrl { get; set; }
+        public bool PermisoCrearViaje { get; set; } = false;
         public string? BancoNombre { get; set; }
         public string? NumeroCuenta { get; set; }
         public string? CedulaPagoMovil { get; set; }
@@ -1194,6 +1196,7 @@ namespace Transporte.Core.DTOs
         public string? NumeroCuenta { get; set; }
         public string? CedulaPagoMovil { get; set; }
         public string? TelefonoPagoMovil { get; set; }
+        public bool PermisoCrearViaje { get; set; } = false;
         public bool Activo { get; set; } = true;
         public DateTime CreatedAt { get; set; }
         public CamionDto? Camion { get; set; }
@@ -1227,6 +1230,7 @@ namespace Transporte.Core.DTOs
         public string? NumeroCuenta { get; set; }
         public string? CedulaPagoMovil { get; set; }
         public string? TelefonoPagoMovil { get; set; }
+        public bool PermisoCrearViaje { get; set; } = false;
         public bool Activo { get; set; } = true;
 
         // Camión asignado si el rol es CHOFER
@@ -1266,6 +1270,7 @@ namespace Transporte.Core.DTOs
         public string? NumeroCuenta { get; set; }
         public string? CedulaPagoMovil { get; set; }
         public string? TelefonoPagoMovil { get; set; }
+        public bool? PermisoCrearViaje { get; set; }
         public bool? Activo { get; set; }
 
         // Camión asignado si el rol es CHOFER
@@ -1275,6 +1280,11 @@ namespace Transporte.Core.DTOs
         public decimal? CapacidadLitros { get; set; }
         public string? MarcaModelo { get; set; }
         public string? ObservacionesCamion { get; set; }
+    }
+
+    public class CambiarPermisoCrearViajeDto
+    {
+        public bool PermisoCrearViaje { get; set; }
     }
 
     public class RolDto
@@ -2019,6 +2029,7 @@ namespace Transporte.Core.DTOs
         public string Username { get; set; } = string.Empty;
         public string NombreCompleto { get; set; } = string.Empty;
         public string Rol { get; set; } = string.Empty;
+        public bool PermisoCrearViaje { get; set; } = false;
         public int? CamionId { get; set; }
         public string? PlacaCamion { get; set; }
         public decimal CapacidadTanqueLitros { get; set; }

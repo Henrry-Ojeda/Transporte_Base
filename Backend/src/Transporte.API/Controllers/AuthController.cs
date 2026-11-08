@@ -122,6 +122,7 @@ namespace Transporte.API.Controllers
                 Username = user.Username,
                 NombreCompleto = user.NombreCompleto,
                 Rol = user.Rol,
+                PermisoCrearViaje = user.PermisoCrearViaje,
                 Token = tokenString,
                 Permisos = permisos,
                 ModulosHabilitados = _tenantService.GetModulosActivos(),
@@ -148,6 +149,7 @@ namespace Transporte.API.Controllers
                 username = user.Username,
                 nombreCompleto = user.NombreCompleto,
                 rol = user.Rol,
+                permisoCrearViaje = user.PermisoCrearViaje,
                 permisos,
                 modulosHabilitados = _tenantService.GetModulosActivos(),
                 empresaCodigo = _tenantService.GetTenantCode(),
@@ -323,6 +325,9 @@ namespace Transporte.API.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
             var tokenString = tokenHandler.WriteToken(token);
 
+            var usuarioDb = await _usuariosRepository.ObtenerUsuarioPorIdAsync(usuarioId);
+            bool permisoCrear = usuarioDb?.PermisoCrearViaje ?? false;
+
             return Ok(new VincularDispositivoResponseDto
             {
                 Token = tokenString,
@@ -333,6 +338,7 @@ namespace Transporte.API.Controllers
                 Username = username,
                 NombreCompleto = nombreCompleto,
                 Rol = rol,
+                PermisoCrearViaje = permisoCrear,
                 CamionId = camionId,
                 PlacaCamion = placaCamion,
                 CapacidadTanqueLitros = capacidadTanqueLitros,

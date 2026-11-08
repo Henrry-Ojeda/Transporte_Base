@@ -11,6 +11,7 @@ export interface AuthUser {
   nombreCompleto: string;
   rol: string;
   fotoUrl?: string;
+  permisoCrearViaje?: boolean;
   permisos: string[];
   modulosHabilitados?: string[];
   empresaCodigo?: string;
@@ -24,6 +25,7 @@ export interface LoginResponseDto {
   nombreCompleto: string;
   rol: string;
   fotoUrl?: string;
+  permisoCrearViaje?: boolean;
   permisos: string[];
   modulosHabilitados?: string[];
   empresaCodigo?: string;
@@ -38,6 +40,7 @@ export interface PerfilUsuarioDto {
   cedula?: string;
   telefono?: string;
   fotoUrl?: string;
+  permisoCrearViaje?: boolean;
   bancoNombre?: string;
   bancoCuenta?: string;
   numeroCuenta?: string;

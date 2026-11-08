@@ -37,6 +37,7 @@ interface DispositivoMovilData {
   username: string;
   nombreCompleto: string;
   rol: string;
+  permisoCrearViaje?: boolean;
   camionId?: number;
   placaCamion?: string;
   capacidadTanqueLitros: number;
@@ -217,6 +218,13 @@ export const AppMovilPage: React.FC = () => {
   const [rutaNuevoViajeId, setRutaNuevoViajeId] = useState<number | null>(null);
   const [obsNuevoViaje, setObsNuevoViaje] = useState('');
   const [iniciandoViajeChofer, setIniciandoViajeChofer] = useState(false);
+
+  // Panel de Autorizaciones para Crear Ruta (Solo Admin y SuperAdmin)
+  const [modalAutorizacionesChoferes, setModalAutorizacionesChoferes] = useState(false);
+  const [usuariosChoferesPermisos, setUsuariosChoferesPermisos] = useState<any[]>([]);
+  const [cargandoPermisosChoferes, setCargandoPermisosChoferes] = useState(false);
+  const [busquedaChoferPermiso, setBusquedaChoferPermiso] = useState('');
+  const [modificandoPermisoChoferId, setModificandoPermisoChoferId] = useState<number | null>(null);
 
   // Viaje / Ticket Activo Asignado al Chofer (creado por Supervisor/Admin o por el chofer)
   const [viajeActivo, setViajeActivo] = useState<ControlRutaDto | null>(() => {
@@ -413,6 +421,37 @@ export const AppMovilPage: React.FC = () => {
     const encontrado = choferesLista.find((c) => c.id === choferSimuladoId || (c as any).usuarioId === choferSimuladoId);
     return encontrado?.nombreCompleto || 'Julio Atencio';
   }, [esAdminReal, choferSimuladoId, choferesLista, dispositivo]);
+
+  // Permiso de creación de ruta para el Chofer (o Admin ilimitado)
+  const tienePermisoCrearRuta = esAdminReal || Boolean(dispositivo?.permisoCrearViaje || (authUser as any)?.permisoCrearViaje);
+
+  const cargarChoferesPermisos = async () => {
+    setCargandoPermisosChoferes(true);
+    try {
+      const list = await sistemaApi.getUsuarios('CHOFER');
+      setUsuariosChoferesPermisos(Array.isArray(list) ? list : []);
+    } catch (err: any) {
+      console.warn('Error al cargar choferes para permisos:', err);
+    } finally {
+      setCargandoPermisosChoferes(false);
+    }
+  };
+
+  const handleTogglePermisoChofer = async (choferId: number, estadoActual: boolean) => {
+    setModificandoPermisoChoferId(choferId);
+    try {
+      const nuevo = !estadoActual;
+      const res = await sistemaApi.actualizarPermisoCrearViaje(choferId, nuevo);
+      toast.success(res.message || (nuevo ? 'Permiso de 1 ruta otorgado' : 'Permiso revocado'));
+      setUsuariosChoferesPermisos((prev) =>
+        prev.map((u) => (u.id === choferId ? { ...u, permisoCrearViaje: nuevo } : u))
+      );
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al actualizar permiso.');
+    } finally {
+      setModificandoPermisoChoferId(null);
+    }
+  };
 
   // Estados para Módulo Chofer -> Incidentes
   const [misIncidentes, setMisIncidentes] = useState<MantenimientoCamionDto[]>([]);
@@ -1114,6 +1153,20 @@ export const AppMovilPage: React.FC = () => {
           localStorage.removeItem('movil_viaje_activo');
           localStorage.removeItem('movil_paradas_activo');
         } catch {}
+      }
+
+      // Refrescar permiso de creación de viaje si es chofer y hay dispositivo conectado
+      if (dispositivo?.id) {
+        authApi.getMe().then((me: any) => {
+          if (me && typeof me.permisoCrearViaje !== 'undefined') {
+            setDispositivo((prev) => {
+              if (!prev || prev.permisoCrearViaje === me.permisoCrearViaje) return prev;
+              const upd = { ...prev, permisoCrearViaje: me.permisoCrearViaje };
+              try { localStorage.setItem('movil_device_info', JSON.stringify(upd)); } catch {}
+              return upd;
+            });
+          }
+        }).catch(() => {});
       }
     } catch (err) {
       console.warn('No se pudo sincronizar viajes activos con el servidor (manteniendo local):', err);
@@ -1949,6 +2002,7 @@ export const AppMovilPage: React.FC = () => {
         username: res.username,
         nombreCompleto: res.nombreCompleto,
         rol: res.rol,
+        permisoCrearViaje: (res as any).permisoCrearViaje ?? false,
         camionId: res.camionId,
         placaCamion: res.placaCamion,
         capacidadTanqueLitros: res.capacidadTanqueLitros || 6000,
@@ -2083,6 +2137,7 @@ export const AppMovilPage: React.FC = () => {
         username: res.username,
         nombreCompleto: res.nombreCompleto,
         rol: res.rol,
+        permisoCrearViaje: (res as any).permisoCrearViaje ?? false,
         camionId,
         placaCamion,
         capacidadTanqueLitros,
@@ -4366,30 +4421,53 @@ export const AppMovilPage: React.FC = () => {
                           Viajes / Turnos del Día ({viajesOrdenados.length})
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRutaNuevoViajeId(null);
-                          setObsNuevoViaje('');
-                          setModalNuevoViajeChofer(true);
-                        }}
-                        style={{
-                          background: '#ecfdf5',
-                          border: '1px solid #86efac',
-                          color: '#059669',
-                          borderRadius: '8px',
-                          padding: '4px 10px',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <i className="fa-solid fa-plus-circle"></i>
-                        <span>+ Nuevo Turno</span>
-                      </button>
+                      {tienePermisoCrearRuta ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRutaNuevoViajeId(null);
+                            setObsNuevoViaje('');
+                            setModalNuevoViajeChofer(true);
+                          }}
+                          style={{
+                            background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                            border: '1.5px solid #86efac',
+                            color: '#065f46',
+                            borderRadius: '8px',
+                            padding: '4px 10px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            boxShadow: '0 2px 6px rgba(16, 185, 129, 0.15)',
+                          }}
+                          title="Autorizado por administración para iniciar turno"
+                        >
+                          <i className="fa-solid fa-circle-check text-emerald-600"></i>
+                          <span>+ Nuevo Turno</span>
+                        </button>
+                      ) : (
+                        <div
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: '#f8fafc',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '8px',
+                            padding: '3px 8px',
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            color: '#64748b',
+                          }}
+                          title="Las rutas son asignadas por el Supervisor. Para iniciar un nuevo viaje, solicita permiso al administrador."
+                        >
+                          <i className="fa-solid fa-lock text-slate-400"></i>
+                          <span>Asignado por Supervisor</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Chips de selección de Turnos */}
@@ -4451,12 +4529,14 @@ export const AppMovilPage: React.FC = () => {
                 );
               })()}
 
-              {/* Botón de acción rápida para iniciar 2do viaje si el actual ya está recepcionado */}
+              {/* Botón o banner para 2do viaje si el actual ya está despachado/recepcionado */}
               {viajeActivo && (viajeBloqueadoPorReceptoria || (viajeActivo.procesoActualId || 1) >= 2) && viajesChofer.length === 1 && (
                 <div
                   style={{
-                    background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
-                    border: '1.5px solid #86efac',
+                    background: tienePermisoCrearRuta
+                      ? 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)'
+                      : '#f8fafc',
+                    border: tienePermisoCrearRuta ? '1.5px solid #86efac' : '1.5px dashed #cbd5e1',
                     borderRadius: '16px',
                     padding: '12px 14px',
                     marginBottom: '14px',
@@ -4464,43 +4544,67 @@ export const AppMovilPage: React.FC = () => {
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: '10px',
-                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.1)',
+                    boxShadow: tienePermisoCrearRuta ? '0 2px 8px rgba(16, 185, 129, 0.1)' : 'none',
                   }}
                 >
-                  <div>
-                    <div style={{ fontSize: '12.5px', fontWeight: 900, color: '#166534' }}>
-                      🌅 Turno Mañana Despachado
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '12.5px', fontWeight: 900, color: tienePermisoCrearRuta ? '#166534' : '#334155' }}>
+                      {tienePermisoCrearRuta ? '🌅 Turno Mañana Despachado' : '🌅 Turno Mañana Completado'}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#15803d', marginTop: '1px' }}>
-                      ¿Vas a recolectar en la tarde? Inicia el segundo viaje.
+                    <div style={{ fontSize: '11px', color: tienePermisoCrearRuta ? '#15803d' : '#64748b', marginTop: '1px' }}>
+                      {tienePermisoCrearRuta
+                        ? '¿Vas a recolectar en la tarde? Inicia el segundo viaje.'
+                        : 'Para realizar un segundo viaje en la tarde, solicita autorización a tu supervisor o administrador.'}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRutaNuevoViajeId(null);
-                      setObsNuevoViaje('');
-                      setModalNuevoViajeChofer(true);
-                    }}
-                    style={{
-                      background: 'linear-gradient(135deg, #10b981, #059669)',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '10px',
-                      padding: '8px 12px',
-                      fontSize: '11.5px',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      boxShadow: '0 3px 8px rgba(16, 185, 129, 0.3)',
-                    }}
-                  >
-                    <i className="fa-solid fa-plus-circle"></i>
-                    <span>+ Iniciar 2do Viaje (Tarde)</span>
-                  </button>
+                  {tienePermisoCrearRuta ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRutaNuevoViajeId(null);
+                        setObsNuevoViaje('');
+                        setModalNuevoViajeChofer(true);
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '10px',
+                        padding: '8px 12px',
+                        fontSize: '11.5px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        boxShadow: '0 3px 8px rgba(16, 185, 129, 0.3)',
+                      }}
+                    >
+                      <i className="fa-solid fa-plus-circle"></i>
+                      <span>+ Iniciar 2do Viaje (Tarde)</span>
+                    </button>
+                  ) : (
+                    <div
+                      style={{
+                        background: '#f1f5f9',
+                        color: '#64748b',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                        padding: '6px 10px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title="Requiere autorización previa de Administración para iniciar 2do viaje"
+                    >
+                      <i className="fa-solid fa-lock text-slate-400"></i>
+                      <span>Requiere Permiso</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -4662,7 +4766,7 @@ export const AppMovilPage: React.FC = () => {
                   style={{
                     background: '#ffffff',
                     borderRadius: '20px',
-                    padding: '22px 18px',
+                    padding: '24px 18px',
                     border: '1.5px dashed #cbd5e1',
                     textAlign: 'center',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
@@ -4673,8 +4777,8 @@ export const AppMovilPage: React.FC = () => {
                       width: '48px',
                       height: '48px',
                       borderRadius: '14px',
-                      background: '#f1f5f9',
-                      color: '#64748b',
+                      background: tienePermisoCrearRuta ? '#eff6ff' : '#f1f5f9',
+                      color: tienePermisoCrearRuta ? '#2563eb' : '#64748b',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -4682,38 +4786,63 @@ export const AppMovilPage: React.FC = () => {
                       margin: '0 auto 10px auto',
                     }}
                   >
-                    <i className="fa-solid fa-truck-ramp-box"></i>
+                    <i className={`fa-solid ${tienePermisoCrearRuta ? 'fa-truck-ramp-box' : 'fa-shield-halved'}`}></i>
                   </div>
                   <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#1e293b' }}>
-                    Sin Ticket de Ruta Activo
+                    {tienePermisoCrearRuta ? 'Sin Ticket de Ruta Activo' : 'Esperando Asignación de Ruta'}
                   </div>
                   <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 14px 0', lineHeight: '1.4' }}>
-                    Registra tu primera recolección o pulsa el botón para iniciar el viaje del día.
+                    {tienePermisoCrearRuta
+                      ? 'Tienes autorización de Administración para iniciar un viaje. Carga tu primera finca.'
+                      : 'Las rutas son asignadas por el Supervisor. Si requieres iniciar un viaje manualmente, solicita la autorización previa a Administración.'}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormCarga((prev) => ({ ...prev, fecha: hoyStr }));
-                      setModalRegistro(true);
-                    }}
-                    style={{
-                      background: 'linear-gradient(135deg, #0284c7, #2563eb)',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '12px',
-                      padding: '10px 18px',
-                      fontSize: '13px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
-                    }}
-                  >
-                    <i className="fa-solid fa-play text-xs"></i>
-                    <span>Iniciar Recorrido / Cargar Finca</span>
-                  </button>
+                  {tienePermisoCrearRuta ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormCarga((prev) => ({ ...prev, fecha: hoyStr }));
+                        setModalRegistro(true);
+                      }}
+                      style={{
+                        background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '12px',
+                        padding: '10px 18px',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
+                      }}
+                    >
+                      <i className="fa-solid fa-play text-xs"></i>
+                      <span>Iniciar Recorrido / Cargar Finca</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => cargarViajeActivo()}
+                      style={{
+                        background: '#f8fafc',
+                        color: '#334155',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '12px',
+                        padding: '9px 16px',
+                        fontSize: '12.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <i className={`fa-solid fa-rotate ${cargandoViaje ? 'fa-spin' : ''}`}></i>
+                      <span>Verificar Nuevas Asignaciones</span>
+                    </button>
+                  )}
                 </div>
               ) : null}
 
@@ -8839,6 +8968,74 @@ export const AppMovilPage: React.FC = () => {
                   <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>PARADAS</div>
                 </div>
               </div>
+            </div>
+
+            {/* TARJETA DE GESTIÓN DE AUTORIZACIONES CHOFERES (ADMIN/SUPERADMIN) */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%)',
+                borderRadius: '18px',
+                padding: '14px 16px',
+                border: '1.5px solid #86efac',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '12px',
+                    background: '#ecfdf5',
+                    color: '#059669',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    flexShrink: 0,
+                    border: '1px solid #a7f3d0',
+                  }}
+                >
+                  <i className="fa-solid fa-user-shield"></i>
+                </div>
+                <div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 900, color: '#0f172a' }}>
+                    Autorizaciones Choferes
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#15803d', marginTop: '1px' }}>
+                    Permite a choferes crear 1 ruta (1 solo uso)
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  cargarChoferesPermisos();
+                  setModalAutorizacionesChoferes(true);
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 3px 8px rgba(16, 185, 129, 0.3)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <i className="fa-solid fa-key"></i>
+                <span>Gestionar</span>
+              </button>
             </div>
 
             {/* Lista de Camiones Cisterna En Ruta */}
@@ -13809,6 +14006,307 @@ export const AppMovilPage: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* MODAL DE AUTORIZACIONES PARA CREAR RUTA (SOLO ADMIN Y SUPERADMIN) */}
+      {modalAutorizacionesChoferes && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '24px',
+              width: '100%',
+              maxWidth: '460px',
+              maxHeight: '90vh',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            {/* Header del modal */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                padding: '18px 20px',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    background: 'rgba(255,255,255,0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                  }}
+                >
+                  <i className="fa-solid fa-user-shield"></i>
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900 }}>
+                    Autorizar Creación de Rutas
+                  </h3>
+                  <div style={{ fontSize: '11px', color: '#d1fae5', marginTop: '1px' }}>
+                    Permiso temporal (1 solo uso) para Choferes
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalAutorizacionesChoferes(false)}
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  color: '#ffffff',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Aviso normativo */}
+            <div
+              style={{
+                background: '#f0fdf4',
+                borderBottom: '1px solid #bbf7d0',
+                padding: '10px 16px',
+                fontSize: '11px',
+                color: '#166534',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <i className="fa-solid fa-circle-info text-emerald-600"></i>
+              <span>
+                Los choferes no se auto-asignan rutas. Al otorgar permiso, podrán iniciar 1 ruta y al terminarla se revoca automáticamente.
+              </span>
+            </div>
+
+            {/* Buscador de chofer */}
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+              <div style={{ position: 'relative' }}>
+                <i
+                  className="fa-solid fa-magnifying-glass"
+                  style={{
+                    position: 'absolute',
+                    left: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: '#94a3b8',
+                    fontSize: '12px',
+                  }}
+                ></i>
+                <input
+                  type="text"
+                  placeholder="Buscar chofer por nombre o cédula..."
+                  value={busquedaChoferPermiso}
+                  onChange={(e) => setBusquedaChoferPermiso(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px 8px 34px',
+                    fontSize: '12.5px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    background: '#ffffff',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Lista de Choferes */}
+            <div style={{ padding: '12px 16px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {cargandoPermisosChoferes ? (
+                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                  <i className="fa-solid fa-spinner fa-spin mr-2"></i> Cargando choferes...
+                </div>
+              ) : (() => {
+                const filtrados = (usuariosChoferesPermisos || []).filter((u: any) => {
+                  const q = busquedaChoferPermiso.toLowerCase();
+                  return (
+                    (u.nombreCompleto || '').toLowerCase().includes(q) ||
+                    (u.nombreUsuario || u.username || '').toLowerCase().includes(q) ||
+                    (u.cedula || '').toLowerCase().includes(q) ||
+                    (u.camion?.placa || '').toLowerCase().includes(q)
+                  );
+                });
+
+                if (filtrados.length === 0) {
+                  return (
+                    <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', fontSize: '12.5px' }}>
+                      No se encontraron choferes registrados o que coincidan con la búsqueda.
+                    </div>
+                  );
+                }
+
+                return filtrados.map((u: any) => {
+                  const tienePermiso = !!u.permisoCrearViaje;
+                  const procesando = modificandoPermisoChoferId === u.id;
+                  const camionStr = u.camion?.placa ? ` • Camión ${u.camion.placa}` : '';
+
+                  return (
+                    <div
+                      key={u.id}
+                      style={{
+                        background: tienePermiso ? '#f0fdf4' : '#ffffff',
+                        border: `1.5px solid ${tienePermiso ? '#86efac' : '#e2e8f0'}`,
+                        borderRadius: '14px',
+                        padding: '12px 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '10px',
+                        boxShadow: tienePermiso ? '0 2px 8px rgba(16, 185, 129, 0.12)' : 'none',
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>
+                            {u.nombreCompleto}
+                          </span>
+                          {tienePermiso ? (
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                background: '#dcfce7',
+                                color: '#15803d',
+                                padding: '1px 6px',
+                                borderRadius: '5px',
+                              }}
+                            >
+                              🟢 Autorizado (1 Ruta)
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                background: '#f1f5f9',
+                                color: '#64748b',
+                                padding: '1px 6px',
+                                borderRadius: '5px',
+                              }}
+                            >
+                              🔒 Sin Permiso
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                          @{u.nombreUsuario || u.username} {u.cedula ? `• C.I. ${u.cedula}` : ''}{camionStr}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePermisoChofer(u.id, tienePermiso)}
+                        disabled={procesando}
+                        style={{
+                          background: tienePermiso ? '#fee2e2' : 'linear-gradient(135deg, #10b981, #059669)',
+                          color: tienePermiso ? '#b91c1c' : '#ffffff',
+                          border: tienePermiso ? '1px solid #fca5a5' : 'none',
+                          borderRadius: '10px',
+                          padding: '8px 12px',
+                          fontSize: '11.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          whiteSpace: 'nowrap',
+                          boxShadow: tienePermiso ? 'none' : '0 2px 6px rgba(16, 185, 129, 0.25)',
+                        }}
+                      >
+                        <i className={`fa-solid ${procesando ? 'fa-spinner fa-spin' : tienePermiso ? 'fa-lock' : 'fa-key'}`}></i>
+                        <span>{procesando ? 'Guardando...' : tienePermiso ? 'Revocar' : 'Autorizar 1 Ruta'}</span>
+                      </button>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Footer del modal */}
+            <div
+              style={{
+                padding: '12px 16px',
+                background: '#f8fafc',
+                borderTop: '1px solid #e2e8f0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <button
+                type="button"
+                onClick={cargarChoferesPermisos}
+                disabled={cargandoPermisosChoferes}
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '6px 12px',
+                  fontSize: '11.5px',
+                  fontWeight: 700,
+                  color: '#475569',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                }}
+              >
+                <i className={`fa-solid fa-rotate ${cargandoPermisosChoferes ? 'fa-spin' : ''}`}></i>
+                <span>Actualizar Lista</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setModalAutorizacionesChoferes(false)}
+                style={{
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '6px 16px',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

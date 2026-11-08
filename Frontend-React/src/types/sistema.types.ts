@@ -23,6 +23,7 @@ export interface UsuarioDto {
   activo: boolean;
   telefono?: string;
   cedula?: string;
+  permisoCrearViaje?: boolean;
   ultimoAcceso?: string;
   createdAt: string;
   camion?: {
@@ -45,6 +46,7 @@ export interface GuardarUsuarioDto {
   rol: string;
   telefono?: string;
   cedula?: string;
+  permisoCrearViaje?: boolean;
   activo: boolean;
   bancoNombre?: string;
   numeroCuenta?: string;

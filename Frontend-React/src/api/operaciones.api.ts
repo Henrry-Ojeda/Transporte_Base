@@ -371,6 +371,34 @@ export const operacionesApi = {
     return res.data;
   },
 
+  recibirEnReceptoria: async (id: number, dto: {
+    litrosRecibidos: number;
+    accion?: string;
+    litrosCargadosAdicional?: number;
+    companiaDestinoId?: number;
+    observacion?: string;
+  }): Promise<{ success?: boolean; message?: string }> => {
+    try {
+      const res = await apiClient.post(`/control-rutas/${id}/recibir-receptoria`, {
+        litrosRecibidos: Math.round(Number(dto.litrosRecibidos)),
+        accion: dto.accion || 'DEJAR_EN_RECEPTORIA',
+        litrosCargadosAdicional: dto.litrosCargadosAdicional,
+        companiaDestinoId: dto.companiaDestinoId,
+        observacion: dto.observacion,
+      });
+      return res.data;
+    } catch {
+      const res = await apiClient.post(`/controlrutas/${id}/recibir-receptoria`, {
+        litrosRecibidos: Math.round(Number(dto.litrosRecibidos)),
+        accion: dto.accion || 'DEJAR_EN_RECEPTORIA',
+        litrosCargadosAdicional: dto.litrosCargadosAdicional,
+        companiaDestinoId: dto.companiaDestinoId,
+        observacion: dto.observacion,
+      });
+      return res.data;
+    }
+  },
+
   // TRAZABILIDAD BÚFALA
   getTrazabilidadBufala: async (fechaInicio?: string, fechaFin?: string): Promise<any[]> => {
     const params: Record<string, any> = {};

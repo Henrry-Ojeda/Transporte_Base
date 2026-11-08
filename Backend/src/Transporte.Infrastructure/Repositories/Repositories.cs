@@ -9426,7 +9426,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 "SELECT * FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId", new { controlRutaId });
             if (viaje == null) return false;
 
-            int totalFinca = (int)viaje.TotalLitrosFinca;
+            int totalFinca = Convert.ToInt32(viaje.TotalLitrosFinca ?? 0);
             int diferenciaRec = totalFinca - dto.LitrosRecibidos;
             decimal porcentajeRec = totalFinca > 0 ? Math.Round((Math.Abs(diferenciaRec) * 100.0m) / totalFinca, 2) : 0;
 
@@ -9507,6 +9507,22 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                             usuarioId
                         });
                 }
+
+                try
+                {
+                    await connection.ExecuteAsync(@"
+                        UPDATE TB_CONTROL_COMPANIAS
+                        SET LitrosRecibidosCompania = @litrosRecibidos,
+                            DiferenciaLitros = @diferenciaRec,
+                            PorcentajeMerma = @porcentajeRec,
+                            Estado = 'FINALIZADO',
+                            FechaEntrega = ISNULL(FechaEntrega, GETDATE()),
+                            ModifiedAt = GETDATE(),
+                            ModifiedBy = @usuarioId
+                        WHERE ControlRutaId = @controlRutaId AND Estado != 'FINALIZADO';",
+                        new { litrosRecibidos = dto.LitrosRecibidos, diferenciaRec, porcentajeRec, usuarioId, controlRutaId });
+                }
+                catch { /* Tolerante */ }
 
                 return rows > 0;
             }
@@ -11246,8 +11262,12 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
         {
             using var connection = new SqlConnection(_connectionString);
             var control = await connection.QueryFirstOrDefaultAsync<dynamic>(
-                "SELECT * FROM TB_CONTROL_COMPANIAS WHERE Id = @id", new { id });
+                @"SELECT TOP 1 * FROM TB_CONTROL_COMPANIAS 
+                  WHERE Id = @id OR ControlRutaId = @id 
+                  ORDER BY CASE WHEN Id = @id THEN 1 ELSE 2 END, Id DESC", new { id });
             if (control == null) return false;
+            long actualId = Convert.ToInt64(control.Id);
+            id = actualId;
 
             int despachados = (int)(control.LitrosDespachados ?? 0);
             int recibidos = dto.Desgloses != null && dto.Desgloses.Count > 0 
@@ -11408,6 +11428,30 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     ModifiedBy = @modificadoPor
                 WHERE Id = @id",
                 new { targetComp, recibidos, diferencia, porcentaje, tipoFinal, obsFinal, fotoReciboUrl = dto.FotoReciboUrl, modificadoPor, id });
+
+            if (control.ControlRutaId != null)
+            {
+                try
+                {
+                    long cRutaId = Convert.ToInt64(control.ControlRutaId);
+                    await connection.ExecuteAsync(@"
+                        UPDATE TB_CONTROL_RUTAS
+                        SET LitrosRecibidosReceptoria = @recibidos,
+                            TotalLitrosReceptoria = @recibidos,
+                            DiferenciaReceptoria = @diferencia,
+                            DiferenciaLitros = @diferencia,
+                            PorcentajeMerma = @porcentaje,
+                            MermaTotalLitros = @diferencia,
+                            ProcesoActualId = 4,
+                            Estado = 'FINALIZADO',
+                            FechaLlegadaReceptoria = ISNULL(FechaLlegadaReceptoria, GETDATE()),
+                            ModifiedAt = GETDATE(),
+                            ModifiedBy = @modificadoPor
+                        WHERE Id = @cRutaId AND Estado != 'FINALIZADO';",
+                        new { recibidos, diferencia, porcentaje, modificadoPor, cRutaId });
+                }
+                catch { /* Tolerante */ }
+            }
 
             // Registrar / actualizar automáticamente en TB_ENTREGAS_COMPANIA para liquidaciones si existe un ciclo válido
             if (rows > 0 && cicloId.HasValue && cicloId.Value > 0)

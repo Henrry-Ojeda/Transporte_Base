@@ -2030,14 +2030,28 @@ export const AppMovilPage: React.FC = () => {
     }
     try {
       const ticketId = modalVerificarLitros.ticket.id;
-      const res = await operacionesApi.validarEntregaCompania(ticketId, {
-        litrosConfirmados: lts,
-        litrosRecibidosCompania: lts,
-        observaciones: modalVerificarLitros.observacion.trim(),
-      });
-      toast.success(res.message || 'Litros verificados y conciliados en Receptoría.');
+      let res: any;
+      try {
+        // 1. Intentar validar entrega de compañía/despacho (funciona con ID de compañía o con ControlRutaId)
+        res = await operacionesApi.validarEntregaCompania(ticketId, {
+          litrosConfirmados: lts,
+          litrosRecibidosCompania: lts,
+          observaciones: modalVerificarLitros.observacion.trim(),
+        });
+      } catch (errValidar: any) {
+        // 2. Si es una recepción directa de ruta en receptoría, invocar recibirEnReceptoria
+        res = await operacionesApi.recibirEnReceptoria(ticketId, {
+          litrosRecibidos: lts,
+          accion: 'DEJAR_EN_RECEPTORIA',
+          observacion: modalVerificarLitros.observacion.trim(),
+        });
+      }
+      toast.success(res?.message || 'Litros verificados y conciliados en Receptoría.');
       setModalVerificarLitros(null);
       cargarDatosReceptoria(fechaReceptoria);
+      if (esAdminReal) {
+        cargarDatosAdminEnVivo();
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Error al verificar litros');
     }

@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 9,
-  patch: 6,
-  tag: 'v3.9.6',
+  patch: 7,
+  tag: 'v3.9.7',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Móvil Admin: Modal de circuito con asignación y búsqueda de fincas integradas; selector de chofer activo en tiempo real con buscador integrado',
+  descripcion: 'Receptoría Móvil: Conciliación y verificación de litros compatible con ControlRutaId y ControlCompaniaId; soporte para recibirEnReceptoria y sincronización total de estado a Finalizado',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

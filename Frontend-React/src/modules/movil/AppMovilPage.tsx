@@ -196,6 +196,28 @@ export const AppMovilPage: React.FC = () => {
     } catch {}
   };
 
+  // Viajes / Tickets del Chofer para el Día (Turno 1 Mañana, Turno 2 Tarde, etc.)
+  const [viajesChofer, setViajesChofer] = useState<ControlRutaDto[]>(() => {
+    try {
+      const saved = localStorage.getItem('movil_viajes_chofer');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [viajeSeleccionadoId, setViajeSeleccionadoId] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem('movil_viaje_seleccionado_id');
+      return saved ? Number(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [modalNuevoViajeChofer, setModalNuevoViajeChofer] = useState(false);
+  const [rutaNuevoViajeId, setRutaNuevoViajeId] = useState<number | null>(null);
+  const [obsNuevoViaje, setObsNuevoViaje] = useState('');
+  const [iniciandoViajeChofer, setIniciandoViajeChofer] = useState(false);
+
   // Viaje / Ticket Activo Asignado al Chofer (creado por Supervisor/Admin o por el chofer)
   const [viajeActivo, setViajeActivo] = useState<ControlRutaDto | null>(() => {
     try {
@@ -839,11 +861,15 @@ export const AppMovilPage: React.FC = () => {
     };
   }, [dispositivo]);
 
-  // Cargar catálogo de choferes para selector de administración si está online
+  // Cargar catálogo de choferes y rutas para selector de administración y nuevos turnos si está online
   useEffect(() => {
     if (isOnline) {
       catalogosApi.getChoferes().then((ch) => {
         if (Array.isArray(ch) && ch.length > 0) setChoferesLista(ch);
+      }).catch(() => {});
+
+      operacionesApi.getRutasLogistica().then((rutas: any) => {
+        if (Array.isArray(rutas) && rutas.length > 0) setRutasLogisticas(rutas);
       }).catch(() => {});
     }
   }, [isOnline]);
@@ -871,13 +897,133 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
-  const cargarViajeActivo = async (idTarget?: number) => {
+  const seleccionarViaje = async (v: ControlRutaDto) => {
+    if (!v || !v.id) return;
+    setViajeSeleccionadoId(v.id);
+    setViajeActivo(v);
+    try {
+      localStorage.setItem('movil_viaje_seleccionado_id', String(v.id));
+      localStorage.setItem('movil_viaje_activo', JSON.stringify(v));
+    } catch {}
+
+    if (v.camionId || v.camionPlaca) {
+      setDispositivo((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          camionId: v.camionId || prev.camionId,
+          placaCamion: v.camionPlaca || prev.placaCamion,
+          capacidadTanqueLitros: v.capacidadCamionLitros || prev.capacidadTanqueLitros || 6000,
+        };
+      });
+    }
+
+    setCargandoViaje(true);
+    try {
+      const paradas = await operacionesApi.getFincasViaje(v.id);
+      if (Array.isArray(paradas)) {
+        setParadasViajeActivo(paradas);
+        try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradas)); } catch {}
+      }
+      await cargarDespachoActivo(choferEfectivoId, v.id);
+    } catch (err) {
+      console.warn('Error al cambiar de viaje activo:', err);
+    } finally {
+      setCargandoViaje(false);
+    }
+  };
+
+  const handleIniciarNuevoViajeChofer = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!choferEfectivoId) {
+      toast.error('No se ha detectado el conductor asignado');
+      return;
+    }
+    setIniciandoViajeChofer(true);
+    try {
+      const turnoNum = viajesChofer.length + 1;
+      const turnoNombre = turnoNum === 1 ? 'Turno 1 (Mañana)' : turnoNum === 2 ? 'Turno 2 (Tarde)' : `Turno ${turnoNum}`;
+      const res = await operacionesApi.iniciarViaje({
+        fecha: viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr,
+        choferId: choferEfectivoId,
+        conductorId: choferEfectivoId,
+        camionId: dispositivo?.camionId || viajeActivo?.camionId || undefined,
+        rutaLogisticaId: rutaNuevoViajeId || undefined,
+        observaciones: `Viaje creado desde App Móvil - ${turnoNombre}. ${obsNuevoViaje}`.trim(),
+      });
+
+      await Swal.fire({
+        icon: 'success',
+        title: `¡${turnoNombre} Iniciado!`,
+        text: `Se ha generado el Ticket #${res.id || ''} para comenzar el recorrido.`,
+        confirmButtonColor: '#059669',
+        timer: 2500,
+        showConfirmButton: false,
+      });
+
+      setModalNuevoViajeChofer(false);
+      setRutaNuevoViajeId(null);
+      setObsNuevoViaje('');
+      await cargarViajeActivo(choferEfectivoId, res.id);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al iniciar nuevo viaje');
+    } finally {
+      setIniciandoViajeChofer(false);
+    }
+  };
+
+  const getTurnoInfo = (viaje: ControlRutaDto, idx: number) => {
+    let tituloTurno = '';
+    let iconoTurno = 'fa-sun';
+    if (idx === 0) {
+      tituloTurno = '🌅 Turno 1 (Mañana)';
+      iconoTurno = 'fa-sun';
+    } else if (idx === 1) {
+      tituloTurno = '🌇 Turno 2 (Tarde)';
+      iconoTurno = 'fa-cloud-sun';
+    } else if (idx === 2) {
+      tituloTurno = '🌙 Turno 3 (Noche)';
+      iconoTurno = 'fa-moon';
+    } else {
+      tituloTurno = `🚛 Viaje #${idx + 1}`;
+      iconoTurno = 'fa-truck';
+    }
+    const proc = viaje.procesoActualId || 1;
+    const est = String(viaje.estado || '').toUpperCase();
+    const esFinalizado = proc >= 4 || est === 'FINALIZADO' || est === 'CERRADO' || est === 'ENTREGADO' || est === 'CUADRADO';
+    const esReceptoria = proc === 2 || est === 'RECEPCIONADO' || est === 'EN RECEPTORIA';
+    const esPlanta = proc === 3 || est === 'CAMINO_COMPANIA' || est === 'EN VIA';
+
+    let estadoLabel = '🟢 EN RECOLECCIÓN';
+    let estadoColor = '#15803d';
+    let estadoBg = '#dcfce7';
+
+    if (esFinalizado) {
+      estadoLabel = '🔒 CERRADO';
+      estadoColor = '#475569';
+      estadoBg = '#f1f5f9';
+    } else if (esReceptoria) {
+      estadoLabel = '🔒 EN RECEPTORÍA';
+      estadoColor = '#b45309';
+      estadoBg = '#fef3c7';
+    } else if (esPlanta) {
+      estadoLabel = '🏭 EN PLANTA';
+      estadoColor = '#1d4ed8';
+      estadoBg = '#dbeafe';
+    }
+
+    return { tituloTurno, iconoTurno, estadoLabel, estadoColor, estadoBg, esFinalizado, esReceptoria, esPlanta };
+  };
+
+  const cargarViajeActivo = async (idTarget?: number, forzarId?: number) => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
 
-    // Si no hay red disponible, recuperar estrictamente de LocalStorage y no tocar nada más
+    // Si no hay red disponible, recuperar de LocalStorage
     if (!navigator.onLine) {
       try {
+        const savedList = localStorage.getItem('movil_viajes_chofer');
+        if (savedList) setViajesChofer(JSON.parse(savedList));
         const savedV = localStorage.getItem('movil_viaje_activo');
         if (savedV) setViajeActivo(JSON.parse(savedV));
         const savedP = localStorage.getItem('movil_paradas_activo');
@@ -888,60 +1034,89 @@ export const AppMovilPage: React.FC = () => {
 
     setCargandoViaje(true);
     try {
-      // 1. Obtener viaje activo asignado al chofer en TB_CONTROL_RUTAS
-      const v = await operacionesApi.getViajeActivo(idBusqueda);
-      const est = String(v?.estado || '').trim().toUpperCase();
-      const esCerrado = est === 'FINALIZADO' || est === 'CERRADO' || est === 'ENTREGADO' || est === 'CUADRADO' || (v?.procesoActualId || 1) >= 4;
+      // 1. Obtener todos los viajes del día o activos del chofer en TB_CONTROL_RUTAS
+      const fConsulta = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
+      let lista = await operacionesApi.getViajesActivosChofer(idBusqueda, fConsulta);
+      if (!Array.isArray(lista) || lista.length === 0) {
+        lista = await operacionesApi.getViajesActivosChofer(idBusqueda);
+      }
+      if (!Array.isArray(lista) || lista.length === 0) {
+        const unico = await operacionesApi.getViajeActivo(idBusqueda);
+        if (unico && unico.id) lista = [unico];
+        else lista = [];
+      }
 
-      if (v && v.id && !esCerrado) {
-        setViajeActivo(v);
-        try { localStorage.setItem('movil_viaje_activo', JSON.stringify(v)); } catch {}
+      setViajesChofer(lista);
+      try { localStorage.setItem('movil_viajes_chofer', JSON.stringify(lista)); } catch {}
 
-        // Si el ticket trae cisterna o placa específica, actualizar localmente
-        if (v.camionId || v.camionPlaca) {
+      // 2. Determinar cuál viaje seleccionar
+      let targetV: ControlRutaDto | null = null;
+      if (forzarId) {
+        targetV = lista.find((x) => x.id === forzarId) || null;
+      }
+      if (!targetV && viajeSeleccionadoId) {
+        targetV = lista.find((x) => x.id === viajeSeleccionadoId) || null;
+      }
+      if (!targetV && lista.length > 0) {
+        // Priorizar el primer viaje que esté en proceso < 4 (abierto o en ruta)
+        const abierto = lista.find((x) => (x.procesoActualId || 1) < 4 && String(x.estado || '').toUpperCase() !== 'FINALIZADO');
+        targetV = abierto || lista[lista.length - 1]; // o el último turno
+      }
+
+      if (targetV && targetV.id) {
+        setViajeSeleccionadoId(targetV.id);
+        setViajeActivo(targetV);
+        try {
+          localStorage.setItem('movil_viaje_seleccionado_id', String(targetV.id));
+          localStorage.setItem('movil_viaje_activo', JSON.stringify(targetV));
+        } catch {}
+
+        if (targetV.camionId || targetV.camionPlaca) {
           setDispositivo((prev) => {
             if (!prev) return null;
             if (
-              prev.camionId === v.camionId &&
-              prev.placaCamion === (v.camionPlaca || prev.placaCamion) &&
-              prev.capacidadTanqueLitros === (v.capacidadCamionLitros || prev.capacidadTanqueLitros)
+              prev.camionId === targetV.camionId &&
+              prev.placaCamion === (targetV.camionPlaca || prev.placaCamion) &&
+              prev.capacidadTanqueLitros === (targetV.capacidadCamionLitros || prev.capacidadTanqueLitros)
             ) {
               return prev;
             }
             const updated = {
               ...prev,
-              camionId: v.camionId || prev.camionId,
-              placaCamion: v.camionPlaca || prev.placaCamion,
-              capacidadTanqueLitros: v.capacidadCamionLitros || prev.capacidadTanqueLitros || 6000,
+              camionId: targetV.camionId || prev.camionId,
+              placaCamion: targetV.camionPlaca || prev.placaCamion,
+              capacidadTanqueLitros: targetV.capacidadCamionLitros || prev.capacidadTanqueLitros || 6000,
             };
             localStorage.setItem('movil_device_info', JSON.stringify(updated));
             return updated;
           });
         }
-        // 2. Cargar paradas ya registradas en este ticket en el servidor
-        const paradas = await operacionesApi.getFincasViaje(v.id);
+
+        // Cargar paradas del viaje seleccionado
+        const paradas = await operacionesApi.getFincasViaje(targetV.id);
         if (Array.isArray(paradas)) {
           setParadasViajeActivo(paradas);
           try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradas)); } catch {}
-          // Limpiar de cargas locales cualquier carga ya sincronizada para evitar discrepancias de conteo
           setCargas((prev) => {
             const soloPendientes = prev.filter((c) => !c.synced);
             try { localStorage.setItem('movil_cargas_local', JSON.stringify(soloPendientes)); } catch {}
             return soloPendientes;
           });
         }
-      } else if (v && esCerrado) {
-        // Solo si el servidor confirmó explícitamente que el ticket fue cerrado
+
+        await cargarDespachoActivo(idBusqueda, targetV.id);
+      } else {
+        setViajeSeleccionadoId(null);
         setViajeActivo(null);
         setParadasViajeActivo([]);
         try {
+          localStorage.removeItem('movil_viaje_seleccionado_id');
           localStorage.removeItem('movil_viaje_activo');
           localStorage.removeItem('movil_paradas_activo');
         } catch {}
       }
     } catch (err) {
-      console.warn('No se pudo sincronizar el viaje activo con el servidor (manteniendo local):', err);
-      // En caso de fallo de red, rescatar de LocalStorage si está vacío en memoria
+      console.warn('No se pudo sincronizar viajes activos con el servidor (manteniendo local):', err);
       try {
         const savedV = localStorage.getItem('movil_viaje_activo');
         if (savedV && !viajeActivo) setViajeActivo(JSON.parse(savedV));
@@ -953,13 +1128,14 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
-  const cargarDespachoActivo = async (idTarget?: number) => {
+  const cargarDespachoActivo = async (idTarget?: number, controlRutaIdTarget?: number) => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
+    const targetRutaId = controlRutaIdTarget || viajeActivo?.id;
     setCargandoDespacho(true);
     try {
       // 1. Consultar todos los tickets activos de despacho del chofer y viaje en curso
-      const activos = await operacionesApi.getTicketsActivosDespachoChofer(idBusqueda, viajeActivo?.id);
+      const activos = await operacionesApi.getTicketsActivosDespachoChofer(idBusqueda, targetRutaId);
       if (Array.isArray(activos) && activos.length > 0) {
         setDespachosActivos(activos);
         setDespachoActivo(activos[0]);
@@ -2544,6 +2720,7 @@ export const AppMovilPage: React.FC = () => {
 
     const nuevaCarga: CargaOffline = {
       localId: `local_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      serverTicketId: viajeActivo?.id,
       fecha: fechaAUsar,
       hora: horaStr,
       fincaId: Number(formCarga.fincaId),
@@ -4168,6 +4345,165 @@ export const AppMovilPage: React.FC = () => {
                 </div>
               )}
 
+              {/* SELECTOR DE TURNOS DEL DÍA (MAÑANA / TARDE) */}
+              {viajesChofer.length > 0 && (() => {
+                const viajesOrdenados = [...viajesChofer].sort((a, b) => a.id - b.id);
+                return (
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '20px',
+                      padding: '14px 16px',
+                      marginBottom: '14px',
+                      border: '1.5px solid #cbd5e1',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <i className="fa-solid fa-calendar-day text-emerald-600 text-sm"></i>
+                        <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>
+                          Viajes / Turnos del Día ({viajesOrdenados.length})
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRutaNuevoViajeId(null);
+                          setObsNuevoViaje('');
+                          setModalNuevoViajeChofer(true);
+                        }}
+                        style={{
+                          background: '#ecfdf5',
+                          border: '1px solid #86efac',
+                          color: '#059669',
+                          borderRadius: '8px',
+                          padding: '4px 10px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <i className="fa-solid fa-plus-circle"></i>
+                        <span>+ Nuevo Turno</span>
+                      </button>
+                    </div>
+
+                    {/* Chips de selección de Turnos */}
+                    <div style={{ display: 'grid', gridTemplateColumns: viajesOrdenados.length > 1 ? '1fr 1fr' : '1fr', gap: '8px' }}>
+                      {viajesOrdenados.map((v, idx) => {
+                        const esSel = viajeActivo?.id === v.id;
+                        const info = getTurnoInfo(v, idx);
+                        const lts = (v.totalLitrosFinca || 0).toLocaleString();
+                        return (
+                          <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => seleccionarViaje(v)}
+                            style={{
+                              textAlign: 'left',
+                              background: esSel ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)' : '#f8fafc',
+                              border: esSel ? '2px solid #10b981' : '1.5px solid #e2e8f0',
+                              borderRadius: '14px',
+                              padding: '10px 12px',
+                              cursor: 'pointer',
+                              position: 'relative',
+                              boxShadow: esSel ? '0 4px 12px rgba(16, 185, 129, 0.2)' : 'none',
+                              transition: 'all 0.2s ease',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <span style={{ fontSize: '12px', fontWeight: 900, color: esSel ? '#166534' : '#1e293b' }}>
+                                {info.tituloTurno}
+                              </span>
+                              {esSel && (
+                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: esSel ? '#15803d' : '#475569' }}>
+                              Ticket #{v.codigoTicket || v.id} • {lts} L
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                              <span
+                                style={{
+                                  fontSize: '9.5px',
+                                  fontWeight: 800,
+                                  background: info.estadoBg,
+                                  color: info.estadoColor,
+                                  padding: '1px 6px',
+                                  borderRadius: '5px',
+                                }}
+                              >
+                                {info.estadoLabel}
+                              </span>
+                              <span style={{ fontSize: '10px', color: '#64748b' }}>
+                                {(v as any).totalFincas || 0} paradas
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Botón de acción rápida para iniciar 2do viaje si el actual ya está recepcionado */}
+              {viajeActivo && (viajeBloqueadoPorReceptoria || (viajeActivo.procesoActualId || 1) >= 2) && viajesChofer.length === 1 && (
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
+                    border: '1.5px solid #86efac',
+                    borderRadius: '16px',
+                    padding: '12px 14px',
+                    marginBottom: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.1)',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '12.5px', fontWeight: 900, color: '#166534' }}>
+                      🌅 Turno Mañana Despachado
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#15803d', marginTop: '1px' }}>
+                      ¿Vas a recolectar en la tarde? Inicia el segundo viaje.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRutaNuevoViajeId(null);
+                      setObsNuevoViaje('');
+                      setModalNuevoViajeChofer(true);
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
+                      fontSize: '11.5px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      boxShadow: '0 3px 8px rgba(16, 185, 129, 0.3)',
+                    }}
+                  >
+                    <i className="fa-solid fa-plus-circle"></i>
+                    <span>+ Iniciar 2do Viaje (Tarde)</span>
+                  </button>
+                </div>
+              )}
+
               {/* TARJETA DE TICKET / VIAJE ACTIVO ASIGNADO */}
               {viajeActivo ? (
                 <div
@@ -4827,6 +5163,44 @@ export const AppMovilPage: React.FC = () => {
            =================================================================== */}
         {tabActiva === 'recoleccion' && (
           <div>
+            {/* SELECTOR RÁPIDO DE TURNOS EN RECOLECCIÓN (MAÑANA / TARDE) */}
+            {viajesChofer.length > 1 && (() => {
+              const viajesOrdenados = [...viajesChofer].sort((a, b) => a.id - b.id);
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                  {viajesOrdenados.map((v, idx) => {
+                    const esSel = viajeActivo?.id === v.id;
+                    const info = getTurnoInfo(v, idx);
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => seleccionarViaje(v)}
+                        style={{
+                          background: esSel ? 'linear-gradient(135deg, #10b981, #059669)' : '#ffffff',
+                          color: esSel ? '#ffffff' : '#334155',
+                          border: esSel ? 'none' : '1.5px solid #cbd5e1',
+                          borderRadius: '12px',
+                          padding: '8px 10px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          boxShadow: esSel ? '0 4px 10px rgba(16, 185, 129, 0.3)' : 'none',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <div style={{ fontSize: '11.5px', fontWeight: 900 }}>
+                          {info.tituloTurno}
+                        </div>
+                        <div style={{ fontSize: '10.5px', opacity: esSel ? 0.95 : 0.8, marginTop: '2px' }}>
+                          Ticket #{v.codigoTicket || v.id} • {(v.totalLitrosFinca || 0).toLocaleString()} L
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             {/* Banner de Viaje / Ticket Activo */}
             {viajeActivo && (
               <div
@@ -13194,6 +13568,240 @@ export const AppMovilPage: React.FC = () => {
                   >
                     <i className="fa-solid fa-right-left"></i>
                     {guardandoTraspaso ? 'Traspasando...' : 'Confirmar Traspaso'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ===================================================================
+          MODAL: INICIAR NUEVO VIAJE / TURNO CHOFER (MAÑANA / TARDE)
+         =================================================================== */}
+      {modalNuevoViajeChofer && (() => {
+        const turnoNum = viajesChofer.length + 1;
+        const nombreSugerido = turnoNum === 1 ? 'Turno 1 (Mañana)' : turnoNum === 2 ? 'Turno 2 (Tarde)' : `Turno ${turnoNum}`;
+        const fechaActualMostrar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              background: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '460px',
+                background: '#ffffff',
+                borderRadius: '24px',
+                overflow: 'hidden',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                maxHeight: '90vh',
+              }}
+            >
+              {/* Cabecera Verde */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                  padding: '18px 20px',
+                  color: '#ffffff',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '12px',
+                      background: 'rgba(255,255,255,0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '18px',
+                    }}
+                  >
+                    <i className="fa-solid fa-truck-fast"></i>
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, lineHeight: 1.2 }}>
+                      Iniciar {nombreSugerido}
+                    </h3>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#d1fae5', fontWeight: 600 }}>
+                      Nuevo viaje independiente de recolección de leche
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalNuevoViajeChofer(false)}
+                  style={{
+                    background: 'rgba(255,255,255,0.15)',
+                    border: 'none',
+                    color: '#ffffff',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                  }}
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+
+              {/* Formulario */}
+              <form onSubmit={handleIniciarNuevoViajeChofer} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Info Conductor y Vehículo */}
+                  <div
+                    style={{
+                      background: '#f8fafc',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '14px',
+                      padding: '12px 14px',
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '8px',
+                      fontSize: '12px',
+                    }}
+                  >
+                    <div>
+                      <span style={{ color: '#64748b', fontSize: '10.5px', fontWeight: 700, textTransform: 'uppercase' }}>Conductor</span>
+                      <div style={{ fontWeight: 800, color: '#0f172a', marginTop: '1px' }}>
+                        {choferEfectivoNombre || 'Chofer Asignado'}
+                      </div>
+                    </div>
+                    <div>
+                      <span style={{ color: '#64748b', fontSize: '10.5px', fontWeight: 700, textTransform: 'uppercase' }}>Fecha y Turno</span>
+                      <div style={{ fontWeight: 800, color: '#059669', marginTop: '1px' }}>
+                        {fechaActualMostrar} • {nombreSugerido}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Circuito / Ruta Logística */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                      Circuito o Ruta Logística (Opcional)
+                    </label>
+                    <select
+                      value={rutaNuevoViajeId || ''}
+                      onChange={(e) => setRutaNuevoViajeId(e.target.value ? Number(e.target.value) : null)}
+                      style={{
+                        width: '100%',
+                        height: '44px',
+                        borderRadius: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        padding: '0 12px',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        background: '#ffffff',
+                        color: '#0f172a',
+                      }}
+                    >
+                      <option value="">🛣️ Modo Libre (Sin Circuito Fijo / Cargas Flexibles)</option>
+                      {rutasLogisticas.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          📍 {r.nombre} {r.descripcion ? `(${r.descripcion})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                      Al seleccionar un circuito, se cargarán sus fincas predeterminadas en este turno.
+                    </span>
+                  </div>
+
+                  {/* Observaciones */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                      Observación / Nota del Turno (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={obsNuevoViaje}
+                      onChange={(e) => setObsNuevoViaje(e.target.value)}
+                      placeholder="Ej: Segundo recorrido de la tarde, ruta alterna..."
+                      style={{
+                        width: '100%',
+                        height: '44px',
+                        borderRadius: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        padding: '0 12px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        background: '#ffffff',
+                        color: '#0f172a',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Botones Pie */}
+                <div
+                  style={{
+                    padding: '14px 20px',
+                    background: '#f8fafc',
+                    borderTop: '1px solid #e2e8f0',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1.6fr',
+                    gap: '10px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setModalNuevoViajeChofer(false)}
+                    style={{
+                      height: '46px',
+                      borderRadius: '12px',
+                      fontWeight: 700,
+                      border: '1.5px solid #cbd5e1',
+                      background: '#ffffff',
+                      color: '#475569',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={iniciandoViajeChofer}
+                    style={{
+                      background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                      border: 'none',
+                      fontWeight: 900,
+                      height: '46px',
+                      color: '#ffffff',
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                    }}
+                  >
+                    <i className={`fa-solid ${iniciandoViajeChofer ? 'fa-spinner fa-spin' : 'fa-play'}`}></i>
+                    <span>{iniciandoViajeChofer ? 'Iniciando...' : `Iniciar ${nombreSugerido}`}</span>
                   </button>
                 </div>
               </form>

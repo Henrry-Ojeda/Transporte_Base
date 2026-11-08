@@ -8133,6 +8133,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
         // Nuevos métodos del ciclo de vida logístico de Viajes / Tickets (AGENTS_2)
         Task<ControlRutaDto?> ObtenerViajeActivoChoferAsync(int choferId);
+        Task<IEnumerable<ControlRutaDto>> ObtenerViajesActivosChoferAsync(int choferId, DateTime? fecha = null);
         Task<long> CrearNuevoViajeAsync(CrearViajeDto dto, int usuarioId, string rol);
         Task<long> AgregarFincaAViajeAsync(AgregarFincaViajeDto dto, int usuarioId, string rol);
         Task<IEnumerable<RutaItemDto>> ObtenerFincasDeViajeAsync(long controlRutaId);
@@ -8800,6 +8801,84 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 }
             }
             return viaje;
+        }
+
+        public async Task<IEnumerable<ControlRutaDto>> ObtenerViajesActivosChoferAsync(int choferId, DateTime? fecha = null)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            var sql = @"
+                SELECT 
+                    cr.Id, cr.Fecha, cr.UsuarioId, u.NombreCompleto AS NombreConductor,
+                    cr.CicloId, cr.TotalLitrosFinca, cr.TotalLitrosReceptoria,
+                    cr.DiferenciaLitros, cr.PorcentajeMerma, cr.Estado, cr.Observacion, cr.CreatedAt,
+                    cr.ProcesoActualId,
+                    pt.Codigo AS CodigoProceso,
+                    pt.Nombre AS NombreProceso,
+                    pt.Color AS ColorProceso,
+                    pt.Icono AS IconoProceso,
+                    cr.RutaLogisticaId,
+                    rl.Nombre AS RutaLogisticaNombre,
+                    cam.Id AS CamionId,
+                    cam.Placa AS CamionPlaca,
+                    cam.CapacidadLitros AS CapacidadCamionLitros,
+                    cr.TipoDestino,
+                    cr.LitrosRecibidosReceptoria,
+                    cr.DiferenciaReceptoria,
+                    cr.LitrosCargadosAdicional,
+                    cr.CompaniaDestinoId,
+                    cp.Nombre AS NombreCompaniaDestino,
+                    cr.LitrosEntregadosCompania,
+                    cr.DiferenciaCompania,
+                    cr.MermaTotalLitros,
+                    cr.FechaLlegadaReceptoria,
+                    cr.FechaEntregaCompania,
+                    cr.CerradoPor,
+                    uc.NombreCompleto AS NombreCerradoPor,
+                    (SELECT COUNT(*) FROM TB_RUTAS_RECOLECCION r WHERE r.ControlRutaId = cr.Id) AS TotalFincas
+                FROM TB_CONTROL_RUTAS cr
+                INNER JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
+                LEFT JOIN TB_PROCESOS_TICKET pt ON cr.ProcesoActualId = pt.Id
+                LEFT JOIN TB_COMPANIAS cp ON cr.CompaniaDestinoId = cp.Id
+                LEFT JOIN TB_USUARIOS uc ON cr.CerradoPor = uc.Id
+                LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
+                LEFT JOIN TB_CAMIONES cam ON cam.UsuarioId = cr.UsuarioId AND cam.Activo = 1
+                WHERE cr.UsuarioId = @choferId 
+                  AND (
+                      (@fecha IS NOT NULL AND CAST(cr.Fecha AS DATE) = CAST(@fecha AS DATE))
+                      OR (
+                          @fecha IS NULL AND (
+                              CAST(cr.Fecha AS DATE) = CAST(GETDATE() AS DATE)
+                              OR (
+                                  UPPER(ISNULL(cr.Estado, '')) NOT IN ('FINALIZADO', 'CERRADO') 
+                                  AND ISNULL(cr.ProcesoActualId, 1) < 4
+                                  AND DATEDIFF(day, cr.Fecha, GETDATE()) <= 2
+                              )
+                          )
+                      )
+                  )
+                ORDER BY cr.Fecha DESC, cr.Id ASC";
+
+            var viajes = (await connection.QueryAsync<ControlRutaDto>(sql, new { choferId, fecha })).ToList();
+            
+            foreach (var v in viajes)
+            {
+                var fincasPlanSql = @"
+                    SELECT TOP 1 FincasIds 
+                    FROM TB_PLANIFICACION_RUTAS_CHOFERES 
+                    WHERE Fecha = @Fecha AND ConductorId = @ChoferId AND Activo = 1 
+                    ORDER BY Id DESC";
+                var fincasStr = await connection.ExecuteScalarAsync<string?>(fincasPlanSql, new { Fecha = v.Fecha.Date, ChoferId = choferId });
+                if (!string.IsNullOrWhiteSpace(fincasStr))
+                {
+                    v.FincasPlanificadasIds = fincasStr
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s => int.TryParse(s.Trim(), out var val) ? val : 0)
+                        .Where(x => x > 0)
+                        .ToList();
+                }
+            }
+
+            return viajes;
         }
 
         public async Task<long> CrearNuevoViajeAsync(CrearViajeDto dto, int usuarioId, string rol)
@@ -9816,6 +9895,17 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             int? finalCompaniaDestinoId = primerCompaniaId > 0 
                 ? primerCompaniaId 
                 : ((dto.CompaniaId.HasValue && dto.CompaniaId.Value > 0) ? dto.CompaniaId.Value : (int?)null);
+
+            if (finalCompaniaDestinoId.HasValue && finalCompaniaDestinoId.Value > 0)
+            {
+                var existeComp = await connection.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM TB_COMPANIAS WHERE Id = @id", new { id = finalCompaniaDestinoId.Value });
+                if (existeComp == 0) finalCompaniaDestinoId = null;
+            }
+            else
+            {
+                finalCompaniaDestinoId = null;
+            }
 
             // Finalizar la entrada en TB_CONTROL_RUTAS (Estado = 'RECEPCIONADO') con el total consolidado
             await connection.ExecuteAsync(@"

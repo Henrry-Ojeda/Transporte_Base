@@ -37,6 +37,18 @@ export const operacionesApi = {
     }
   },
 
+  getViajesActivosChofer: async (choferId?: number, fecha?: string): Promise<ControlRutaDto[]> => {
+    try {
+      const params: Record<string, any> = {};
+      if (choferId) params.choferId = choferId;
+      if (fecha) params.fecha = fecha;
+      const res = await apiClient.get<ControlRutaDto[]>('/control-rutas/viajes-activos', { params });
+      return Array.isArray(res.data) ? res.data : [];
+    } catch {
+      return [];
+    }
+  },
+
   getControlPorId: async (id: number): Promise<ControlRutaDto> => {
     const res = await apiClient.get<ControlRutaDto>(`/control-rutas/${id}`);
     return res.data;

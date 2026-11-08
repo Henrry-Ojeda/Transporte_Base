@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 5,
+  minor: 6,
   patch: 1,
-  tag: 'v3.5.1',
+  tag: 'v3.6.1',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Móvil & Web: bloqueo de edición de fincas en viajes recepcionados, ocultamiento de botones despacho/traspaso, soporte multi-ticket y confirmación exclusiva a compañías externas',
+  descripcion: 'App Móvil Chofer: visualización separada de viajes múltiples por día (Turno 1 Mañana / Turno 2 Tarde) con fincas y métricas independientes, selector de turnos, y creación rápida de segundo viaje',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

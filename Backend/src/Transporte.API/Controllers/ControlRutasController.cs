@@ -235,6 +235,21 @@ namespace Transporte.API.Controllers
         }
 
         /// <summary>
+        /// Obtiene todos los viajes activos o del día asignados al chofer (ej. mañana y tarde).
+        /// </summary>
+        [HttpGet("viajes-activos")]
+        public async Task<IActionResult> ObtenerViajesActivosChofer([FromQuery] int? choferId = null, [FromQuery] DateTime? fecha = null)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var rol = (User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER").ToUpper();
+            bool esAdmin = rol.Contains("ADMIN") || rol == "SUPERADMIN" || rol == "SUPERVISOR";
+            int idBusqueda = (esAdmin && choferId.HasValue && choferId.Value > 0) ? choferId.Value : userId;
+
+            var viajes = await _controlRutasRepository.ObtenerViajesActivosChoferAsync(idBusqueda, fecha);
+            return Ok(viajes ?? Enumerable.Empty<ControlRutaDto>());
+        }
+
+        /// <summary>
         /// Crea un nuevo Viaje / Ticket para iniciar la recolección de leche.
         /// </summary>
         [HttpPost("iniciar-viaje")]

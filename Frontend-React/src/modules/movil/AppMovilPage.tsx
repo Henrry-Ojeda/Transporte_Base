@@ -50,6 +50,7 @@ interface CargaOffline {
   tipoLeche: string;
   esAcida: boolean;
   esDiferido: boolean;
+  litrosDiferir?: number;
   temperatura?: number;
   observacion?: string;
   fotoRecibo?: string;
@@ -487,6 +488,7 @@ export const AppMovilPage: React.FC = () => {
     tipoLeche: 'VACA',
     esAcida: false,
     esDiferido: false,
+    litrosDiferir: '',
     temperatura: '',
     observacion: '',
     fotoRecibo: '',
@@ -2134,17 +2136,23 @@ export const AppMovilPage: React.FC = () => {
       ltsPrevios = String(paradaServidor.litros || paradaServidor.Litros);
     }
 
-    setFormCarga((prev) => ({
-      ...prev,
-      fecha: fechaAUsar,
-      fincaId: Number(fincaItem.id),
-      litros: ltsPrevios,
-      tipoLeche: cargaLocal?.tipoLeche || fincaItem.parada?.tipoLeche || prev.tipoLeche || 'VACA',
-      esAcida: Boolean(cargaLocal?.esAcida ?? fincaItem.parada?.esAcida ?? prev.esAcida),
-      esDiferido: Boolean(cargaLocal?.esDiferido ?? fincaItem.parada?.esDiferido ?? prev.esDiferido),
-      temperatura: cargaLocal?.temperatura ? String(cargaLocal.temperatura) : '',
-      observacion: cargaLocal?.observacion || '',
-    }));
+    setFormCarga((prev) => {
+      const esDiferidoPrev = Boolean(cargaLocal?.esDiferido ?? fincaItem.parada?.esDiferido ?? prev.esDiferido);
+      const ltsDiferirPrev = cargaLocal?.litrosDiferir ? String(cargaLocal.litrosDiferir) : (esDiferidoPrev ? ltsPrevios : '');
+      return {
+        ...prev,
+        fecha: fechaAUsar,
+        fincaId: Number(fincaItem.id),
+        litros: ltsPrevios,
+        tipoLeche: cargaLocal?.tipoLeche || fincaItem.parada?.tipoLeche || prev.tipoLeche || 'VACA',
+        esAcida: Boolean(cargaLocal?.esAcida ?? fincaItem.parada?.esAcida ?? prev.esAcida),
+        esDiferido: esDiferidoPrev,
+        litrosDiferir: ltsDiferirPrev,
+        temperatura: cargaLocal?.temperatura ? String(cargaLocal.temperatura) : '',
+        observacion: cargaLocal?.observacion || '',
+        fotoRecibo: cargaLocal?.fotoRecibo || '',
+      };
+    });
     setModalRegistro(true);
   };
 
@@ -2168,6 +2176,8 @@ export const AppMovilPage: React.FC = () => {
 
     const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : (formCarga.fecha || hoyStr);
 
+    const litrosDiferirNum = formCarga.esDiferido ? Number(formCarga.litrosDiferir || formCarga.litros) : undefined;
+
     const nuevaCarga: CargaOffline = {
       localId: `local_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       fecha: fechaAUsar,
@@ -2178,6 +2188,7 @@ export const AppMovilPage: React.FC = () => {
       tipoLeche: formCarga.tipoLeche,
       esAcida: formCarga.esAcida,
       esDiferido: formCarga.esDiferido,
+      litrosDiferir: litrosDiferirNum,
       temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
       observacion: formCarga.observacion,
       fotoRecibo: formCarga.fotoRecibo || undefined,
@@ -2195,6 +2206,7 @@ export const AppMovilPage: React.FC = () => {
         tipoLeche: formCarga.tipoLeche,
         esAcida: formCarga.esAcida,
         esDiferido: formCarga.esDiferido,
+        litrosDiferir: litrosDiferirNum,
         temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
         observacion: formCarga.observacion,
         fotoRecibo: formCarga.fotoRecibo || nuevasCargas[idxExistente].fotoRecibo,
@@ -2218,6 +2230,7 @@ export const AppMovilPage: React.FC = () => {
           tipoLeche: formCarga.tipoLeche,
           esAcida: formCarga.esAcida,
           esDiferido: formCarga.esDiferido,
+          litrosDiferir: litrosDiferirNum,
         };
       } else {
         list.push({
@@ -2229,6 +2242,7 @@ export const AppMovilPage: React.FC = () => {
           tipoLeche: formCarga.tipoLeche,
           esAcida: formCarga.esAcida,
           esDiferido: formCarga.esDiferido,
+          litrosDiferir: litrosDiferirNum,
           createdAt: new Date().toISOString(),
           origen: 'Teléfono',
         });
@@ -2246,6 +2260,7 @@ export const AppMovilPage: React.FC = () => {
       tipoLeche: 'VACA',
       esAcida: false,
       esDiferido: false,
+      litrosDiferir: '',
       temperatura: '',
       observacion: '',
       fotoRecibo: '',
@@ -3897,9 +3912,16 @@ export const AppMovilPage: React.FC = () => {
                                 {f.recolectada ? '✓ ' : ''}{f.nombre}
                               </span>
                               {f.recolectada ? (
-                                <span style={{ background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px', border: '1px solid #bbf7d0' }}>
-                                  Recolectada
-                                </span>
+                                <>
+                                  <span style={{ background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px', border: '1px solid #bbf7d0' }}>
+                                    Recolectada
+                                  </span>
+                                  {Boolean(f.parada?.esDiferido ?? f.parada?.EsDiferido ?? cargas.find((c) => Number(c.fincaId) === Number(f.id))?.esDiferido) && (
+                                    <span style={{ background: '#fff7ed', color: '#c2410c', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px', border: '1px solid #fed7aa', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                      <i className="fa-solid fa-clock-rotate-left"></i> Diferido
+                                    </span>
+                                  )}
+                                </>
                               ) : (
                                 <span style={{ background: '#f1f5f9', color: '#64748b', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '5px', border: '1px solid #cbd5e1' }}>
                                   ⏳ Pendiente
@@ -9271,6 +9293,143 @@ export const AppMovilPage: React.FC = () => {
                     </span>
                   </label>
                 </div>
+              </div>
+
+              {/* OPCIÓN DIFERIR LITROS (Siguiente Ciclo Operativo) */}
+              <div
+                style={{
+                  marginBottom: '16px',
+                  borderRadius: '12px',
+                  border: formCarga.esDiferido ? '1.5px solid #fdba74' : '1.5px solid #e2e8f0',
+                  background: formCarga.esDiferido ? 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)' : '#f8fafc',
+                  padding: '12px 14px',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <i
+                      className="fa-solid fa-clock-rotate-left"
+                      style={{
+                        color: formCarga.esDiferido ? '#ea580c' : '#64748b',
+                        fontSize: '15px',
+                      }}
+                    ></i>
+                    <div>
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          color: formCarga.esDiferido ? '#9a3412' : '#1e293b',
+                        }}
+                      >
+                        Diferir Litros (Próxima Semana)
+                      </span>
+                      <span style={{ fontSize: '11px', color: formCarga.esDiferido ? '#c2410c' : '#64748b' }}>
+                        Suma al tanque hoy, se liquida la siguiente semana
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={formCarga.esDiferido}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setFormCarga((prev) => ({
+                        ...prev,
+                        esDiferido: checked,
+                        litrosDiferir: checked ? (prev.litrosDiferir || prev.litros) : '',
+                      }));
+                    }}
+                    style={{
+                      width: '20px',
+                      height: '20px',
+                      accentColor: '#ea580c',
+                      cursor: 'pointer',
+                    }}
+                  />
+                </label>
+
+                {formCarga.esDiferido && (
+                  <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px dashed #fed7aa' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 800, color: '#9a3412' }}>
+                        Litros a Diferir para Próxima Semana:
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setFormCarga((prev) => ({ ...prev, litrosDiferir: prev.litros }))}
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          color: '#c2410c',
+                          background: '#ffffff',
+                          border: '1px solid #fdba74',
+                          borderRadius: '6px',
+                          padding: '2px 8px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Diferir Todo ({formCarga.litros || 0} L)
+                      </button>
+                    </div>
+
+                    <input
+                      type="number"
+                      min="1"
+                      max={formCarga.litros || undefined}
+                      placeholder={`Ej. ${formCarga.litros || 100}`}
+                      value={formCarga.litrosDiferir}
+                      onChange={(e) => setFormCarga((prev) => ({ ...prev, litrosDiferir: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        height: '42px',
+                        borderRadius: '8px',
+                        border: '2px solid #fdba74',
+                        background: '#ffffff',
+                        color: '#ea580c',
+                        fontWeight: 900,
+                        fontSize: '16px',
+                        textAlign: 'center',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        background: 'rgba(255, 255, 255, 0.7)',
+                        borderRadius: '8px',
+                        padding: '6px 10px',
+                        fontSize: '11.5px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span style={{ color: '#475569' }}>
+                        Esta semana:{' '}
+                        <strong style={{ color: '#16a34a' }}>
+                          {Math.max(0, Number(formCarga.litros || 0) - Number(formCarga.litrosDiferir || 0))} L
+                        </strong>
+                      </span>
+                      <span style={{ color: '#475569' }}>
+                        Próxima semana:{' '}
+                        <strong style={{ color: '#ea580c' }}>
+                          {Number(formCarga.litrosDiferir || 0)} L
+                        </strong>
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Foto del Comprobante / Recibo de Finca */}

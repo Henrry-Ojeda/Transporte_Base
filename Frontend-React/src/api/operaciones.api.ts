@@ -408,6 +408,11 @@ export const operacionesApi = {
     return res.data;
   },
 
+  revertirDiferimiento: async (rutaId: number): Promise<{ message: string }> => {
+    const res = await apiClient.post<{ message: string }>(`/rutas/${rutaId}/revertir-diferimiento`);
+    return res.data;
+  },
+
   // BALANCE LECHE / MERMAS
   getMermasHoy: async (fechaInicio?: string, fechaFin?: string, choferId?: number): Promise<BalanceVolumetricoResumenDto> => {
     const params: Record<string, any> = {};

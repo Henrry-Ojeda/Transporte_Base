@@ -6,6 +6,7 @@ import apiClient from '@/api/client';
 import { operacionesApi } from '@/api/operaciones.api';
 import { catalogosApi } from '@/api/catalogos.api';
 import { sistemaApi } from '@/api/sistema.api';
+import { finanzasApi } from '@/api/finanzas.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { CamionSelect, ChoferSelect, FincaSelect, CompaniaSelect } from '@/components/selectors';
 import { SearchableSelect, type SelectOption } from '@/components/common/SearchableSelect';
@@ -35,6 +36,12 @@ interface RutaDetalleFinca {
   CreatedAt?: string;
   esDiferido?: boolean;
   litrosOriginales?: number;
+  fotoComprobante?: string;
+  FotoComprobante?: string;
+  foto?: string;
+  puedeModificar?: boolean;
+  cicloId?: number;
+  cicloLiquidacionId?: number;
 }
 
 export const RecoleccionRutasPage: React.FC = () => {
@@ -521,6 +528,16 @@ export const RecoleccionRutasPage: React.FC = () => {
     queryFn: () => operacionesApi.getRutasLogistica(),
   });
 
+  const { data: ciclos = [] } = useQuery<any[]>({
+    queryKey: ['ciclos-semanales'],
+    queryFn: () => finanzasApi.getCiclos(),
+  });
+
+  const { data: cicloActivo = null } = useQuery<any>({
+    queryKey: ['ciclo-activo'],
+    queryFn: () => finanzasApi.getCicloActivo(),
+  });
+
   // Consulta histórica de fincas para cálculo del promedio semanal en vivo
   const fecha90DiasAtrasStr = useMemo(() => {
     const d = new Date();
@@ -999,6 +1016,231 @@ export const RecoleccionRutasPage: React.FC = () => {
       toast.error(err.response?.data?.message || 'Error al remover parada');
     },
   });
+
+  const diferirLitrosMutation = useMutation({
+    mutationFn: (vars: { rutaId: number; litrosDiferir: number; cicloDestinoId?: number; motivo?: string }) =>
+      operacionesApi.diferirLitros(vars.rutaId, {
+        litrosDiferir: vars.litrosDiferir,
+        cicloDestinoId: vars.cicloDestinoId,
+        motivo: vars.motivo,
+      }),
+    onSuccess: (data) => {
+      toast.success(data?.message || 'Litros diferidos exitosamente');
+      queryClient.invalidateQueries({ queryKey: ['rutas-fincas-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
+      viajes.forEach((v) => cargarFincasTicket(v.id));
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || 'Error al diferir litros');
+    },
+  });
+
+  const revertirDiferimientoMutation = useMutation({
+    mutationFn: (rutaId: number) => operacionesApi.revertirDiferimiento(rutaId),
+    onSuccess: (data) => {
+      toast.success(data?.message || 'Diferimiento revertido exitosamente');
+      queryClient.invalidateQueries({ queryKey: ['rutas-fincas-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
+      viajes.forEach((v) => cargarFincasTicket(v.id));
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || 'Error al revertir diferimiento');
+    },
+  });
+
+  const verFotoComprobante = (fotoUrl: string, fincaNombre?: string, litros?: number) => {
+    if (!fotoUrl) return;
+    Swal.fire({
+      title: `<span style="font-size: 17px; font-weight: 800; display: inline-flex; align-items: center; gap: 8px;"><i class="fa-solid fa-receipt" style="color: #3b82f6;"></i> Comprobante: ${fincaNombre || 'Finca'}</span>`,
+      html: `
+        <div style="text-align: center; margin-top: 8px;">
+          <div style="font-size: 13px; color: #94a3b8; margin-bottom: 10px;">
+            Volumen Recolectado: <strong style="color: #38bdf8; font-size: 14px;">${(litros || 0).toLocaleString('es-VE')} Lts</strong>
+          </div>
+          <div style="max-height: 65vh; overflow: auto; border-radius: 12px; background: #020617; padding: 6px; border: 1.5px solid #334155; box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);">
+            <img src="${fotoUrl}" alt="Recibo" style="max-width: 100%; height: auto; border-radius: 8px; display: block; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.4);" />
+          </div>
+          <div style="margin-top: 14px; display: flex; justify-content: center; gap: 10px;">
+            <a href="${fotoUrl}" download="comprobante_${fincaNombre || 'finca'}.jpg" target="_blank" rel="noopener noreferrer" 
+              style="background: #2563eb; color: #ffffff; padding: 8px 16px; border-radius: 8px; font-size: 12.5px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(37,99,235,0.4);">
+              <i class="fa-solid fa-arrow-down"></i> Descargar / Abrir en Pestaña
+            </a>
+          </div>
+        </div>
+      `,
+      background: '#0f172a',
+      color: '#ffffff',
+      showCloseButton: true,
+      showConfirmButton: false,
+      width: '680px',
+    });
+  };
+
+  const abrirEditarDesdeHistorial = (row: RutaDetalleFinca) => {
+    setFormEditar({
+      id: row.id,
+      fincaId: row.fincaId,
+      litros: row.litros,
+      tipoLeche: row.tipoLeche || 'VACA',
+      esAcida: Boolean(row.esAcida),
+      esDiferido: Boolean(row.esDiferido),
+      fecha: row.fecha || hoyStr,
+      observacion: row.observacion || '',
+      fotoComprobante: row.fotoComprobante || row.FotoComprobante || row.foto || '',
+    });
+    setModalEditarRecoleccion(true);
+  };
+
+  const handleAbrirDiferir = async (row: RutaDetalleFinca) => {
+    const rutaId = row.id;
+    const fincaNombre = row.fincaNombre || `Finca #${row.fincaId}`;
+    const litrosActuales = Number(row.litros || 0);
+    const cicloActualId = Number(row.cicloId || cicloActivo?.id || 0);
+
+    const semanasDisponibles = Array.isArray(ciclos) ? ciclos : [];
+    const ciclosSiguientes = semanasDisponibles
+      .filter((s: any) => Number(s.id) > cicloActualId)
+      .sort((a: any, b: any) => Number(a.id) - Number(b.id));
+    const sigCiclo = ciclosSiguientes[0] || null;
+    const sigCicloId = sigCiclo ? Number(sigCiclo.id) : (cicloActualId + 1);
+
+    const opcionesCiclosHtml = semanasDisponibles.map((s: any) => {
+      const sId = Number(s.id);
+      const sel = sId === sigCicloId ? 'selected' : '';
+      return `<option value="${sId}" ${sel}>${s.codigo || `Semana ${sId}`}</option>`;
+    }).join('');
+
+    const sugeridoDiferir = Math.min(100, Math.max(1, litrosActuales - 1));
+
+    const { value: formValues } = await Swal.fire({
+      title: `<span style="font-size: 18px; font-weight: 800; color: #ea580c; display: flex; align-items: center; justify-content: center; gap: 8px;"><i class="fa-solid fa-clock-rotate-left"></i> Diferir Litros para Siguiente Semana</span>`,
+      html: `
+        <div style="text-align: left; font-size: 13px; color: #cbd5e1; line-height: 1.5;">
+          <div style="background: rgba(15, 23, 42, 0.95); border: 1.5px solid #334155; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="color: #94a3b8; font-size: 12px;">Finca Productora:</span>
+              <strong style="color: #38bdf8; font-size: 14px;">${fincaNombre}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="color: #94a3b8; font-size: 12px;">Fecha Recolección:</span>
+              <strong style="color: #f1f5f9;">${(row.fecha || '').split('T')[0]}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="color: #94a3b8; font-size: 12px;">Litros Físicos Recolectados:</span>
+              <strong style="color: #10b981; font-size: 16px;">${litrosActuales.toLocaleString('es-VE')} Lts</strong>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 12px;">
+            <label for="swalLitrosDiferir" style="display: block; font-weight: 800; color: #f8fafc; font-size: 13px; margin-bottom: 6px;">
+              Litros a pasar para la Siguiente Semana (Diferir):
+            </label>
+            <input id="swalLitrosDiferir" type="number" min="1" max="${litrosActuales}" value="${sugeridoDiferir}" class="swal2-input" 
+              style="width: 100%; box-sizing: border-box; margin: 0; height: 44px; font-size: 16px; font-weight: 800; color: #ea580c; background: #ffffff; border: 2px solid #fdba74; border-radius: 8px; text-align: center;" />
+            <small style="display: block; color: #94a3b8; font-size: 11px; margin-top: 4px;">
+              * Puede diferir parte o la totalidad de los ${litrosActuales.toLocaleString('es-VE')} Lts.
+            </small>
+          </div>
+
+          <!-- PREVISUALIZACIÓN EN TIEMPO REAL -->
+          <div style="background: rgba(249, 115, 22, 0.1); border: 1.5px solid rgba(249, 115, 22, 0.4); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 12.5px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: #cbd5e1;">Se liquida esta semana (Sem. ${cicloActualId}):</span>
+              <strong id="spanPrevLiquidarSemana" style="color: #10b981; font-size: 13.5px;">${(litrosActuales - sugeridoDiferir).toLocaleString('es-VE')} Lts</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: #cbd5e1;">Pasa para liquidar en semana entrante:</span>
+              <strong id="spanPrevDiferirSemana" style="color: #f97316; font-size: 13.5px;">${sugeridoDiferir.toLocaleString('es-VE')} Lts</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-top: 1px dashed rgba(249, 115, 22, 0.3); padding-top: 4px;">
+              <span style="color: #94a3b8; font-size: 11.5px;"><i class="fa-solid fa-truck"></i> Camión y Tanque Operativo:</span>
+              <strong style="color: #38bdf8; font-size: 12px;">${litrosActuales.toLocaleString('es-VE')} Lts (Físico Intacto)</strong>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 12px;">
+            <label for="swalCicloDestino" style="display: block; font-weight: 800; color: #f8fafc; font-size: 12.5px; margin-bottom: 4px;">
+              Semana Operativa Destino para Liquidación:
+            </label>
+            <select id="swalCicloDestino" class="swal2-select" style="width: 100%; box-sizing: border-box; margin: 0; height: 40px; font-size: 13px; font-weight: 700; background: #ffffff; color: #0f172a; border-radius: 8px;">
+              ${opcionesCiclosHtml || `<option value="${sigCicloId}">Siguiente Semana (Semana ${sigCicloId})</option>`}
+            </select>
+          </div>
+
+          <div>
+            <label for="swalMotivoDiferir" style="display: block; font-weight: 800; color: #f8fafc; font-size: 12.5px; margin-bottom: 4px;">
+              Motivo / Observación:
+            </label>
+            <input id="swalMotivoDiferir" type="text" value="Solicitud del productor" class="swal2-input" 
+              style="width: 100%; box-sizing: border-box; margin: 0; height: 38px; font-size: 13px; font-weight: 600; color: #0f172a; background: #ffffff; border-radius: 8px;" />
+          </div>
+        </div>
+      `,
+      didOpen: () => {
+        const inputLitros = document.getElementById('swalLitrosDiferir') as HTMLInputElement;
+        const spanLiq = document.getElementById('spanPrevLiquidarSemana');
+        const spanDif = document.getElementById('spanPrevDiferirSemana');
+        if (inputLitros) {
+          inputLitros.addEventListener('input', () => {
+            const val = Number(inputLitros.value) || 0;
+            const liq = Math.max(0, litrosActuales - val);
+            if (spanLiq) spanLiq.innerText = `${liq.toLocaleString('es-VE')} Lts`;
+            if (spanDif) spanDif.innerText = `${val.toLocaleString('es-VE')} Lts`;
+          });
+        }
+      },
+      background: '#0f172a',
+      color: '#ffffff',
+      showCancelButton: true,
+      confirmButtonText: '<i class="fa-solid fa-check"></i> Confirmar Diferimiento',
+      confirmButtonColor: '#ea580c',
+      cancelButtonText: 'Cancelar',
+      cancelButtonColor: '#475569',
+      focusConfirm: false,
+      preConfirm: () => {
+        const litrosInput = (document.getElementById('swalLitrosDiferir') as HTMLInputElement)?.value;
+        const cicloDestinoInput = (document.getElementById('swalCicloDestino') as HTMLSelectElement)?.value;
+        const motivoInput = (document.getElementById('swalMotivoDiferir') as HTMLInputElement)?.value;
+        const val = Number(litrosInput);
+        if (!val || val <= 0) {
+          Swal.showValidationMessage('Debe ingresar una cantidad de litros mayor a cero');
+          return false;
+        }
+        return {
+          litrosDiferir: val,
+          cicloDestinoId: cicloDestinoInput ? Number(cicloDestinoInput) : undefined,
+          motivo: motivoInput || 'Solicitud del productor',
+        };
+      },
+    });
+
+    if (formValues) {
+      diferirLitrosMutation.mutate({
+        rutaId,
+        litrosDiferir: formValues.litrosDiferir,
+        cicloDestinoId: formValues.cicloDestinoId,
+        motivo: formValues.motivo,
+      });
+    }
+  };
+
+  const handleRevertirDiferir = async (row: RutaDetalleFinca) => {
+    const result = await Swal.fire({
+      title: '¿Revertir Diferimiento?',
+      text: `Se reintegrarán los litros a la recolección original de ${row.fincaNombre || 'la finca'}.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, Revertir',
+      confirmButtonColor: '#dc2626',
+      cancelButtonText: 'Cancelar',
+      background: '#0f172a',
+      color: '#ffffff',
+    });
+
+    if (result.isConfirmed) {
+      revertirDiferimientoMutation.mutate(row.id);
+    }
+  };
 
   const eliminarTicketMutation = useMutation({
     mutationFn: (ticketId: number) => operacionesApi.eliminarControl(ticketId),
@@ -1893,6 +2135,199 @@ export const RecoleccionRutasPage: React.FC = () => {
           {row.observacion || 'Sin observaciones'}
         </span>
       ),
+    },
+    {
+      header: 'COMPROBANTE / FOTO',
+      accessorKey: 'fotoComprobante',
+      cell: (row) => {
+        const foto = row.fotoComprobante || row.FotoComprobante || row.foto;
+        if (foto && String(foto).trim().length > 5) {
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div
+                onClick={() => verFotoComprobante(foto, row.fincaNombre, row.litros)}
+                style={{
+                  position: 'relative',
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  border: '1.5px solid #60a5fa',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.12)',
+                  backgroundColor: '#0f172a',
+                  flexShrink: 0,
+                }}
+                title="Click para ver comprobante en alta resolución"
+              >
+                <img
+                  src={foto}
+                  alt="Recibo"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    backgroundColor: 'rgba(0,0,0,0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                  }}
+                >
+                  <i className="fa-solid fa-magnifying-glass"></i>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => verFotoComprobante(foto, row.fincaNombre, row.litros)}
+                className="btn btn-xs"
+                style={{
+                  background: '#eff6ff',
+                  color: '#2563eb',
+                  border: '1px solid #bfdbfe',
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  borderRadius: '6px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                <i className="fa-solid fa-eye"></i> Ver
+              </button>
+            </div>
+          );
+        }
+        return (
+          <span style={{ color: '#94a3b8', fontSize: '11.5px', fontStyle: 'italic', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <i className="fa-regular fa-image" style={{ opacity: 0.6 }}></i> Sin foto
+          </span>
+        );
+      },
+    },
+    {
+      header: 'ACCIONES',
+      cell: (row) => {
+        const puedeEditar = esAdminOSup || row.puedeModificar !== false;
+        const esDiferido = Boolean(row.esDiferido);
+
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}>
+            {puedeEditar && (
+              <button
+                type="button"
+                onClick={() => abrirEditarDesdeHistorial(row)}
+                className="btn btn-xs btn-outline"
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '11.5px',
+                  borderColor: '#93c5fd',
+                  color: '#2563eb',
+                  background: '#eff6ff',
+                  fontWeight: 800,
+                  borderRadius: '6px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                }}
+                title="Editar litros, tipo de leche u observación"
+              >
+                <i className="fa-solid fa-pen-to-square"></i> Editar
+              </button>
+            )}
+
+            {esDiferido ? (
+              <button
+                type="button"
+                onClick={() => handleRevertirDiferir(row)}
+                className="btn btn-xs btn-outline"
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  borderColor: '#fca5a5',
+                  color: '#dc2626',
+                  background: '#fef2f2',
+                  fontWeight: 800,
+                  borderRadius: '6px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                }}
+                title="Revertir diferimiento y reintegrar a la recolección original"
+              >
+                <i className="fa-solid fa-rotate-left"></i> Revertir
+              </button>
+            ) : (
+              puedeEditar && row.litros > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleAbrirDiferir(row)}
+                  className="btn btn-xs btn-outline"
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    borderColor: '#fdba74',
+                    color: '#c2410c',
+                    background: '#fff7ed',
+                    fontWeight: 800,
+                    borderRadius: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                  }}
+                  title="Diferir litros para la siguiente semana operativa"
+                >
+                  <i className="fa-solid fa-clock-rotate-left"></i> Diferir
+                </button>
+              )
+            )}
+
+            {esAdminOSup && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await Swal.fire({
+                    title: '¿Eliminar Recolección?',
+                    text: `Se eliminará el registro de ${row.litros} Lts de ${row.fincaNombre || 'la finca'}.`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#e11d48',
+                    cancelButtonColor: '#64748b',
+                    confirmButtonText: 'Sí, Eliminar',
+                    cancelButtonText: 'Cancelar',
+                    background: '#0f172a',
+                    color: '#ffffff',
+                  });
+                  if (res.isConfirmed) {
+                    eliminarRecoleccionMutation.mutate(row.id);
+                  }
+                }}
+                className="btn btn-xs btn-outline"
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  color: '#e11d48',
+                  borderColor: '#fecdd3',
+                  background: '#fff1f2',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                }}
+                title="Eliminar registro"
+              >
+                <i className="fa-solid fa-trash"></i>
+              </button>
+            )}
+          </div>
+        );
+      },
     },
   ];
 

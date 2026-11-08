@@ -538,6 +538,21 @@ export const RecoleccionRutasPage: React.FC = () => {
     queryFn: () => finanzasApi.getCicloActivo(),
   });
 
+  // Semana operativa de la fecha seleccionada
+  const cicloFechaFiltro = useMemo(() => {
+    if (!Array.isArray(ciclos) || ciclos.length === 0 || !fechaFiltro) return null;
+    return ciclos.find((c: any) => {
+      const fIni = String(c.fechaInicio).split('T')[0];
+      const fFin = String(c.fechaFin).split('T')[0];
+      return fechaFiltro >= fIni && fechaFiltro <= fFin;
+    }) || null;
+  }, [ciclos, fechaFiltro]);
+
+  const esSemanaOperativa = useMemo(() => {
+    if (!cicloFechaFiltro) return true;
+    return String(cicloFechaFiltro.estado || '').toUpperCase() === 'ABIERTO';
+  }, [cicloFechaFiltro]);
+
   // Consulta histórica de fincas para cálculo del promedio semanal en vivo
   const fecha90DiasAtrasStr = useMemo(() => {
     const d = new Date();
@@ -1053,6 +1068,20 @@ export const RecoleccionRutasPage: React.FC = () => {
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.message || 'Error al remover parada');
+    },
+  });
+
+  const limpiarRecoleccionMutation = useMutation({
+    mutationFn: (vars: { rutaId: number; controlRutaId?: number }) =>
+      operacionesApi.limpiarRecoleccion(vars.rutaId, vars.controlRutaId),
+    onSuccess: async (data) => {
+      toast.success(data?.message || 'Información de la finca limpiada (marcada como no recogida)');
+      viajes.forEach((v) => cargarFincasTicket(v.id));
+      queryClient.invalidateQueries({ queryKey: ['rutas-fincas-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || 'Error al limpiar información de la recolección');
     },
   });
 
@@ -2353,6 +2382,50 @@ export const RecoleccionRutasPage: React.FC = () => {
               )
             )}
 
+            {esAdminOSup && row.litros > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await Swal.fire({
+                    title: '¿Limpiar información de recolección?',
+                    html: `¿Deseas reiniciar los datos de recolección de <b>${row.fincaNombre || 'esta finca'}</b>?<br/><br/><div style="text-align: left; font-size: 13px; color: #cbd5e1; background: #1e293b; padding: 10px; border-radius: 8px;">
+                      <p>✅ <b>La finca NO se eliminará</b> del ticket.</p>
+                      <p>✅ Quedará marcada como <b>NO RECOGIDA (0 Litros)</b> para que el chofer pueda recolectarla.</p>
+                      <p>⚠️ Se eliminarán los litros registrados (${row.litros} L), foto de comprobante y observaciones.</p>
+                    </div>`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#2563eb',
+                    cancelButtonColor: '#64748b',
+                    confirmButtonText: '<i class="fa-solid fa-eraser"></i> Sí, Limpiar y Dejar Pendiente',
+                    cancelButtonText: 'Cancelar',
+                    background: '#0f172a',
+                    color: '#ffffff',
+                  });
+                  if (res.isConfirmed) {
+                    limpiarRecoleccionMutation.mutate({ rutaId: row.id, controlRutaId: row.controlRutaId });
+                  }
+                }}
+                className="btn btn-xs btn-outline"
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  borderColor: '#93c5fd',
+                  color: '#2563eb',
+                  background: '#eff6ff',
+                  fontWeight: 800,
+                  borderRadius: '6px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                }}
+                title="Limpiar litros y fotos (Marcar como NO RECOGIDA / PENDIENTE en el ticket)"
+              >
+                <i className="fa-solid fa-eraser"></i> Limpiar
+              </button>
+            )}
+
             {esAdminOSup && (
               <button
                 type="button"
@@ -2684,19 +2757,43 @@ export const RecoleccionRutasPage: React.FC = () => {
           </div>
         </div>
 
-        {/* SELECTOR DE FECHA GLOBAL (ALINEADO A LA DERECHA) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', padding: '6px 14px', borderRadius: '10px', border: '1.5px solid #cbd5e1', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginLeft: 'auto' }}>
-          <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <i className="fa-regular fa-calendar-days" style={{ color: '#2563eb' }}></i>
-            Fecha Operativa:
-          </label>
-          <input
-            type="date"
-            value={fechaFiltro}
-            onChange={(e) => setFechaFiltro(e.target.value)}
-            className="form-input"
-            style={{ height: '30px', fontSize: '13px', width: '140px', border: 'none', fontWeight: 800, color: '#0f172a', background: 'transparent' }}
-          />
+        {/* SELECTOR DE FECHA GLOBAL Y ESTADO DE SEMANA OPERATIVA (ALINEADO A LA DERECHA) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginLeft: 'auto' }}>
+          {cicloFechaFiltro && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '5px 12px',
+                borderRadius: '8px',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                background: esSemanaOperativa ? '#ecfdf5' : '#fff1f2',
+                color: esSemanaOperativa ? '#065f46' : '#9f1239',
+                border: `1px solid ${esSemanaOperativa ? '#a7f3d0' : '#fecdd3'}`,
+              }}
+              title={`Semana del ${cicloFechaFiltro.fechaInicio?.split('T')[0]} al ${cicloFechaFiltro.fechaFin?.split('T')[0]} - Estado: ${cicloFechaFiltro.estado}`}
+            >
+              <i className={`fa-solid ${esSemanaOperativa ? 'fa-calendar-check text-emerald-600' : 'fa-triangle-exclamation text-rose-600'}`}></i>
+              <span>{cicloFechaFiltro.codigo || `Semana #${cicloFechaFiltro.id}`}</span>
+              <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85 }}>({esSemanaOperativa ? 'Operativa' : cicloFechaFiltro.estado})</span>
+            </span>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', padding: '6px 14px', borderRadius: '10px', border: '1.5px solid #cbd5e1', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <i className="fa-regular fa-calendar-days" style={{ color: '#2563eb' }}></i>
+              Fecha Operativa:
+            </label>
+            <input
+              type="date"
+              value={fechaFiltro}
+              onChange={(e) => setFechaFiltro(e.target.value)}
+              className="form-input"
+              style={{ height: '30px', fontSize: '13px', width: '140px', border: 'none', fontWeight: 800, color: '#0f172a', background: 'transparent' }}
+            />
+          </div>
         </div>
       </div>
 
@@ -3729,22 +3826,55 @@ export const RecoleccionRutasPage: React.FC = () => {
                                         </button>
 
                                         {fLitros > 0 ? (
-                                          <button
-                                            type="button"
-                                            disabled
-                                            className="btn btn-xs"
-                                            style={{
-                                              padding: '3px 6px',
-                                              background: '#f8fafc',
-                                              color: '#94a3b8',
-                                              border: '1px solid #cbd5e1',
-                                              cursor: 'not-allowed',
-                                              opacity: 0.7,
-                                            }}
-                                            title="Blindaje Activo: Leche ya recolectada en cisterna (> 0 L). No se puede eliminar del ticket."
-                                          >
-                                            <i className="fa-solid fa-lock" style={{ color: '#10b981' }}></i>
-                                          </button>
+                                          <>
+                                            {esAdminOSup && (
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  const res = await Swal.fire({
+                                                    title: '¿Limpiar información de recolección?',
+                                                    html: `¿Deseas reiniciar los datos de recolección de <b>${fNombre}</b>?<br/><br/><div style="text-align: left; font-size: 13px; color: #cbd5e1; background: #1e293b; padding: 10px; border-radius: 8px;">
+                                                      <p>✅ <b>La finca NO se eliminará</b> del ticket #${item.codigoTicket || item.id}.</p>
+                                                      <p>✅ Quedará marcada como <b>NO RECOGIDA (0 Litros)</b> para que el chofer pueda recolectarla.</p>
+                                                      <p>⚠️ Se eliminarán los litros registrados (${fLitros} L), foto de comprobante y observaciones.</p>
+                                                    </div>`,
+                                                    icon: 'warning',
+                                                    showCancelButton: true,
+                                                    confirmButtonColor: '#2563eb',
+                                                    cancelButtonColor: '#64748b',
+                                                    confirmButtonText: '<i class="fa-solid fa-eraser"></i> Sí, Limpiar (Dejar Pendiente)',
+                                                    cancelButtonText: 'Cancelar',
+                                                    background: '#0f172a',
+                                                    color: '#ffffff',
+                                                  });
+                                                  if (res.isConfirmed) {
+                                                    limpiarRecoleccionMutation.mutate({ rutaId: fId, controlRutaId: item.id });
+                                                  }
+                                                }}
+                                                className="btn btn-xs btn-outline"
+                                                style={{ padding: '3px 6px', borderColor: '#93c5fd', color: '#2563eb', background: '#eff6ff' }}
+                                                title="Limpiar datos y marcar como NO RECOGIDA (0 Lts) en el ticket"
+                                              >
+                                                <i className="fa-solid fa-eraser"></i>
+                                              </button>
+                                            )}
+                                            <button
+                                              type="button"
+                                              disabled
+                                              className="btn btn-xs"
+                                              style={{
+                                                padding: '3px 6px',
+                                                background: '#f8fafc',
+                                                color: '#94a3b8',
+                                                border: '1px solid #cbd5e1',
+                                                cursor: 'not-allowed',
+                                                opacity: 0.7,
+                                              }}
+                                              title="Blindaje Activo: Leche ya recolectada en cisterna (> 0 L). No se puede eliminar del ticket."
+                                            >
+                                              <i className="fa-solid fa-lock" style={{ color: '#10b981' }}></i>
+                                            </button>
+                                          </>
                                         ) : (
                                           (esAdminOSup || !tieneRutaLogistica) && (
                                             <button
@@ -6917,7 +7047,45 @@ export const RecoleccionRutasPage: React.FC = () => {
               </div>
 
               {/* PIE */}
-              <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end items-center gap-2.5 shrink-0">
+              <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-between items-center gap-2.5 shrink-0">
+                <div>
+                  {esAdminOSup && formEditar.id > 0 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const res = await Swal.fire({
+                          title: '¿Limpiar información de recolección?',
+                          html: `¿Deseas reiniciar los datos de recolección de esta finca?<br/><br/><div style="text-align: left; font-size: 13px; color: #cbd5e1; background: #1e293b; padding: 10px; border-radius: 8px;">
+                            <p>✅ <b>La finca NO se eliminará</b> del ticket.</p>
+                            <p>✅ Quedará marcada como <b>NO RECOGIDA (0 Litros)</b> para que el chofer pueda recolectarla mañana.</p>
+                            <p>⚠️ Se eliminarán los litros registrados (${formEditar.litros} L), foto de comprobante y observaciones.</p>
+                          </div>`,
+                          icon: 'warning',
+                          showCancelButton: true,
+                          confirmButtonColor: '#2563eb',
+                          cancelButtonColor: '#64748b',
+                          confirmButtonText: '<i class="fa-solid fa-eraser"></i> Sí, Limpiar y Dejar Pendiente',
+                          cancelButtonText: 'Cancelar',
+                          background: '#0f172a',
+                          color: '#ffffff',
+                        });
+                        if (res.isConfirmed) {
+                          limpiarRecoleccionMutation.mutate({
+                            rutaId: formEditar.id,
+                            controlRutaId: viajeActivo?.id,
+                          });
+                          setModalEditarRecoleccion(false);
+                        }
+                      }}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      title="Limpiar datos y marcar como NO RECOGIDA (0 Lts) en el ticket"
+                    >
+                      <i className="fa-solid fa-eraser"></i>
+                      Limpiar Recolección (0 L)
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2.5">
                 <button
                   type="button"
                   onClick={() => setModalEditarRecoleccion(false)}
@@ -6943,6 +7111,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                     </>
                   )}
                 </button>
+                </div>
               </div>
             </form>
           </div>

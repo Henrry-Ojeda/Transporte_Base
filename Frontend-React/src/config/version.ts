@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 9,
-  patch: 8,
-  tag: 'v3.9.8',
+  patch: 9,
+  tag: 'v3.9.9',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Modo Offline Móvil: Hidratación inmediata de viajes, turnos y paradas sin conexión; optimización y compresión de fotos con tolerancia a cuota de localStorage e IndexedDB resiliente',
+  descripcion: 'Validación de Semana Operativa (Web y Móvil) y función para Administrador de limpiar recolección de finca (marcar como no recogida / 0 Lts) sin removerla del ticket',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

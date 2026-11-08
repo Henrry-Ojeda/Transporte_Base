@@ -136,6 +136,37 @@ namespace Transporte.API.Controllers
             }
         }
 
+        /// <summary>
+        /// Limpia la información de recolección de una finca (litros, fotos, acidez, etc.)
+        /// dejándola asignada en el ticket como PENDIENTE (No Recogida).
+        /// </summary>
+        [HttpPost("{id:long}/limpiar-recoleccion")]
+        public async Task<IActionResult> LimpiarRecoleccion([FromRoute] long id)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var rol = (User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER").ToUpper();
+
+            if (!rol.Contains("ADMIN") && rol != "SUPERADMIN" && rol != "SUPERVISOR")
+            {
+                return StatusCode(403, new { message = "Solo un Administrador o Supervisor puede limpiar los datos de recolección de una finca." });
+            }
+
+            try
+            {
+                var ok = await _rutasRepository.LimpiarRecoleccionAsync(id, userId, rol);
+                if (!ok) return NotFound(new { message = "Recolección no encontrada." });
+                return Ok(new { message = "Información de la finca limpiada exitosamente. La finca vuelve al estado de NO RECOGIDA (Pendiente)." });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpPost("{id}/diferir-litros")]
         public async Task<IActionResult> DiferirLitros([FromRoute] long id, [FromBody] DiferirLitrosDto dto)
         {

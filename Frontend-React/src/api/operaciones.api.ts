@@ -465,6 +465,15 @@ export const operacionesApi = {
     return res.data;
   },
 
+  limpiarRecoleccion: async (rutaId: number, controlRutaId?: number): Promise<{ success?: boolean; message: string }> => {
+    if (controlRutaId) {
+      const res = await apiClient.post(`/control-rutas/${controlRutaId}/fincas/${rutaId}/limpiar`);
+      return res.data;
+    }
+    const res = await apiClient.post(`/rutas/${rutaId}/limpiar-recoleccion`);
+    return res.data;
+  },
+
   diferirLitros: async (rutaId: number, dto: { litrosDiferir: number; cicloDestinoId?: number; motivo?: string }): Promise<{ message: string }> => {
     const res = await apiClient.post<{ message: string }>(`/rutas/${rutaId}/diferir-litros`, dto);
     return res.data;

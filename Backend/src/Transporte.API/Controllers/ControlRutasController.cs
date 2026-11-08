@@ -582,6 +582,36 @@ namespace Transporte.API.Controllers
         }
 
         /// <summary>
+        /// Limpia los litros y detalles de una finca del ticket, dejándola como NO RECOGIDA (Pendiente).
+        /// </summary>
+        [HttpPost("{id:long}/fincas/{rutaId:long}/limpiar")]
+        public async Task<IActionResult> LimpiarFincaTicket([FromRoute] long id, [FromRoute] long rutaId)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var rol = (User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER").ToUpper();
+
+            if (!rol.Contains("ADMIN") && rol != "SUPERADMIN" && rol != "SUPERVISOR")
+            {
+                return StatusCode(403, new { message = "Solo un Administrador o Supervisor puede limpiar los datos de recolección de una finca." });
+            }
+
+            try
+            {
+                var ok = await _controlRutasRepository.LimpiarFincaTicketAsync(id, rutaId, userId, rol);
+                if (!ok) return NotFound(new { message = "Recolección no encontrada en este ticket." });
+                return Ok(new { message = "Información de la finca limpiada exitosamente. La finca queda en el ticket como NO RECOGIDA (Pendiente)." });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Obtiene las entregas / receptorías asociadas a un viaje.
         /// </summary>
         [HttpGet("{id:long}/entregas")]

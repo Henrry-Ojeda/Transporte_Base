@@ -217,6 +217,7 @@ namespace Transporte.Infrastructure.Repositories
         Task<bool> ModificarLitrosAsync(int rutaId, int nuevosLitros, int usuarioId, string rol);
         Task<bool> EditarRutaAsync(int rutaId, EditarRutaDto dto, int usuarioId, string rol);
         Task<bool> EliminarRutaAsync(int rutaId, int usuarioId, string rol);
+        Task<bool> LimpiarRecoleccionAsync(long rutaId, int usuarioId, string rol);
         Task<bool> DiferirLitrosAsync(long rutaId, int litrosDiferir, int? cicloDestinoId, string? motivo, int usuarioId, string rol);
         Task<bool> RevertirDiferimientoAsync(long rutaId, int usuarioId, string rol);
     }
@@ -900,6 +901,74 @@ namespace Transporte.Infrastructure.Repositories
             }
 
             return rows > 0;
+        }
+
+        public async Task<bool> LimpiarRecoleccionAsync(long rutaId, int usuarioId, string rol)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            var ruta = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                "SELECT * FROM TB_RUTAS_RECOLECCION WHERE Id = @rutaId", new { rutaId });
+            if (ruta == null) return false;
+
+            // Resetear información de recolección manteniendo la asignación de la finca en el ticket
+            await connection.ExecuteAsync(@"
+                UPDATE TB_RUTAS_RECOLECCION
+                SET Litros = 0,
+                    FotoComprobante = NULL,
+                    EsAcida = 0,
+                    EsDiferido = 0,
+                    LitrosOriginales = NULL,
+                    Temperatura = NULL,
+                    Observacion = NULL,
+                    PrecioLitroUSDAplicado = NULL,
+                    ModifiedAt = GETDATE(),
+                    ModifiedBy = @usuarioId
+                WHERE Id = @rutaId", new { rutaId, usuarioId });
+
+            if (ruta.ControlRutaId != null)
+            {
+                long tId = (long)ruta.ControlRutaId;
+                await connection.ExecuteAsync(@"
+                    UPDATE cr
+                    SET cr.TotalLitrosFinca = ISNULL((SELECT SUM(r.Litros) FROM TB_RUTAS_RECOLECCION r INNER JOIN TB_FINCAS f ON r.FincaId = f.Id WHERE r.ControlRutaId = cr.Id AND f.Nombre NOT LIKE '%CHOFER%' AND f.Nombre NOT LIKE '%DESCUENTO%'), 0),
+                        cr.DiferenciaReceptoria = ISNULL((SELECT SUM(r.Litros) FROM TB_RUTAS_RECOLECCION r INNER JOIN TB_FINCAS f ON r.FincaId = f.Id WHERE r.ControlRutaId = cr.Id AND f.Nombre NOT LIKE '%CHOFER%' AND f.Nombre NOT LIKE '%DESCUENTO%'), 0) - ISNULL(cr.LitrosRecibidosReceptoria, cr.TotalLitrosReceptoria),
+                        cr.DiferenciaLitros = CASE WHEN ISNULL(cr.LitrosEntregadosCompania, 0) > 0 
+                            THEN (ISNULL((SELECT SUM(r.Litros) FROM TB_RUTAS_RECOLECCION r INNER JOIN TB_FINCAS f ON r.FincaId = f.Id WHERE r.ControlRutaId = cr.Id AND f.Nombre NOT LIKE '%CHOFER%' AND f.Nombre NOT LIKE '%DESCUENTO%'), 0) - ISNULL(cr.LitrosRecibidosReceptoria, cr.TotalLitrosReceptoria)) + ((ISNULL(cr.LitrosRecibidosReceptoria, cr.TotalLitrosReceptoria) + ISNULL(cr.LitrosCargadosAdicional, 0)) - cr.LitrosEntregadosCompania)
+                            ELSE (ISNULL((SELECT SUM(r.Litros) FROM TB_RUTAS_RECOLECCION r INNER JOIN TB_FINCAS f ON r.FincaId = f.Id WHERE r.ControlRutaId = cr.Id AND f.Nombre NOT LIKE '%CHOFER%' AND f.Nombre NOT LIKE '%DESCUENTO%'), 0) - ISNULL(cr.LitrosRecibidosReceptoria, cr.TotalLitrosReceptoria))
+                        END,
+                        cr.MermaTotalLitros = CASE WHEN ISNULL(cr.LitrosEntregadosCompania, 0) > 0 
+                            THEN (ISNULL((SELECT SUM(r.Litros) FROM TB_RUTAS_RECOLECCION r INNER JOIN TB_FINCAS f ON r.FincaId = f.Id WHERE r.ControlRutaId = cr.Id AND f.Nombre NOT LIKE '%CHOFER%' AND f.Nombre NOT LIKE '%DESCUENTO%'), 0) - ISNULL(cr.LitrosRecibidosReceptoria, cr.TotalLitrosReceptoria)) + ((ISNULL(cr.LitrosRecibidosReceptoria, cr.TotalLitrosReceptoria) + ISNULL(cr.LitrosCargadosAdicional, 0)) - cr.LitrosEntregadosCompania)
+                            ELSE (ISNULL((SELECT SUM(r.Litros) FROM TB_RUTAS_RECOLECCION r INNER JOIN TB_FINCAS f ON r.FincaId = f.Id WHERE r.ControlRutaId = cr.Id AND f.Nombre NOT LIKE '%CHOFER%' AND f.Nombre NOT LIKE '%DESCUENTO%'), 0) - ISNULL(cr.LitrosRecibidosReceptoria, cr.TotalLitrosReceptoria))
+                        END,
+                        cr.ModifiedAt = GETDATE(),
+                        cr.ModifiedBy = @usuarioId
+                    FROM TB_CONTROL_RUTAS cr
+                    WHERE cr.Id = @tId", new { tId, usuarioId });
+
+                // Notificar al chofer del ticket
+                var viajeInfo = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT UsuarioId FROM TB_CONTROL_RUTAS WHERE Id = @tId", new { tId });
+                if (viajeInfo != null && viajeInfo.UsuarioId != null)
+                {
+                    int chofId = (int)viajeInfo.UsuarioId;
+                    var fincaNom = await connection.QueryFirstOrDefaultAsync<string>(
+                        "SELECT Nombre FROM TB_FINCAS WHERE Id = @fId", new { fId = (int)ruta.FincaId }) ?? $"Finca #{ruta.FincaId}";
+                    try
+                    {
+                        await connection.ExecuteAsync(@"
+                            INSERT INTO TB_NOTIFICACIONES_MOVIL (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
+                            VALUES (@chofId, 'RECOLECCION_RESETEADA', '🔄 Parada Marcada como Pendiente', @msg, GETDATE(), @tId, 0, GETDATE())",
+                            new { 
+                                chofId, 
+                                tId, 
+                                msg = $"La información de \"{fincaNom}\" fue limpiada y colocada como NO RECOGIDA para tu recorrido en el Ticket #{tId}." 
+                            });
+                    }
+                    catch { /* Tolerante */ }
+                }
+            }
+
+            return true;
         }
 
         public async Task<bool> DiferirLitrosAsync(long rutaId, int litrosDiferir, int? cicloDestinoId, string? motivo, int usuarioId, string rol)
@@ -8255,6 +8324,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
         // Métodos de Modificación Auditada desde el Control de Viaje
         Task<bool> EditarFincaDeViajeAuditadoAsync(long controlRutaId, long rutaId, EditarFincaViajeAuditadoDto dto, int usuarioId, string rol);
         Task<bool> EliminarFincaDeViajeAuditadoAsync(long controlRutaId, long rutaId, string motivo, int usuarioId, string rol);
+        Task<bool> LimpiarFincaTicketAsync(long controlRutaId, long rutaId, int usuarioId, string rol);
         Task<IEnumerable<EntregaItemDto>> ObtenerEntregasDeViajeAsync(long controlRutaId);
         Task<bool> EditarEntregaDeViajeAuditadoAsync(long controlRutaId, long entregaId, EditarEntregaViajeAuditadoDto dto, int usuarioId, string rol);
         Task<IEnumerable<LogModificacionControlDto>> ObtenerLogsModificacionesControlAsync(long controlRutaId);
@@ -10791,6 +10861,74 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
             // 3. Recalcular métricas del ticket
             await _RecalcularMetricasTicketAsync(connection, controlRutaId, usuarioId);
+
+            return true;
+        }
+
+        public async Task<bool> LimpiarFincaTicketAsync(long controlRutaId, long rutaId, int usuarioId, string rol)
+        {
+            using var connection = new SqlConnection(_connectionString);
+
+            var viaje = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                "SELECT * FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId", new { controlRutaId });
+            if (viaje == null) throw new InvalidOperationException("El Viaje / Ticket no existe.");
+
+            var rutaActual = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                @"SELECT r.*, f.Nombre AS FincaNombre 
+                  FROM TB_RUTAS_RECOLECCION r 
+                  INNER JOIN TB_FINCAS f ON r.FincaId = f.Id 
+                  WHERE r.Id = @rutaId AND r.ControlRutaId = @controlRutaId", new { rutaId, controlRutaId });
+            if (rutaActual == null) throw new InvalidOperationException("La recolección de finca no pertenece a este ticket o no existe.");
+
+            string valAnt = $"Finca: {rutaActual.FincaNombre}, Litros: {rutaActual.Litros}, EsAcida: {((bool)rutaActual.EsAcida ? "SI" : "NO")}, Obs: {rutaActual.Observacion ?? "-"}, Foto: {(string.IsNullOrEmpty((string)rutaActual.FotoComprobante) ? "NO" : "SI")}";
+
+            // Resetear información de recolección manteniendo la asignación de la finca en el ticket (NO se elimina la finca)
+            await connection.ExecuteAsync(@"
+                UPDATE TB_RUTAS_RECOLECCION
+                SET Litros = 0,
+                    FotoComprobante = NULL,
+                    EsAcida = 0,
+                    EsDiferido = 0,
+                    LitrosOriginales = NULL,
+                    Temperatura = NULL,
+                    Observacion = NULL,
+                    PrecioLitroUSDAplicado = NULL,
+                    ModifiedAt = GETDATE(),
+                    ModifiedBy = @usuarioId
+                WHERE Id = @rutaId", new { rutaId, usuarioId });
+
+            // Registrar en auditoría
+            try
+            {
+                await connection.ExecuteAsync(@"
+                    INSERT INTO TB_LOG_MODIFICACIONES_CONTROL
+                    (ControlRutaId, TipoEntidad, EntidadId, TipoAccion, ValoresAnteriores, ValoresNuevos, Motivo, UsuarioId, Fecha)
+                    VALUES (@controlRutaId, 'FINCA_RUTA', @rutaId, 'LIMPIAR_RECOLECCION', @valAnt, 'Litros: 0 (No Recogida)', 'Información de recolección eliminada (marcada como no recogida)', @usuarioId, GETDATE());",
+                    new { controlRutaId, rutaId, valAnt, usuarioId });
+            }
+            catch { /* Tolerante */ }
+
+            // Recalcular métricas del ticket
+            await _RecalcularMetricasTicketAsync(connection, controlRutaId, usuarioId);
+
+            // Notificar al conductor si aplica
+            if (viaje.UsuarioId != null)
+            {
+                int chofId = (int)viaje.UsuarioId;
+                string fNom = (string)rutaActual.FincaNombre;
+                try
+                {
+                    await connection.ExecuteAsync(@"
+                        INSERT INTO TB_NOTIFICACIONES_MOVIL (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
+                        VALUES (@chofId, 'RECOLECCION_RESETEADA', '🔄 Parada Marcada como Pendiente', @msg, GETDATE(), @controlRutaId, 0, GETDATE())",
+                        new { 
+                            chofId, 
+                            controlRutaId, 
+                            msg = $"La información de \"{fNom}\" fue limpiada y colocada como NO RECOGIDA para tu recorrido en el Ticket #{controlRutaId}." 
+                        });
+                }
+                catch { /* Tolerante */ }
+            }
 
             return true;
         }

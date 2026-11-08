@@ -9,6 +9,7 @@ import { sistemaApi } from '@/api/sistema.api';
 import { mantenimientoApi } from '@/api/mantenimiento.api';
 import { combustibleApi } from '@/api/combustible.api';
 import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.api';
+import { finanzasApi } from '@/api/finanzas.api';
 import { useAuthStore } from '@/stores/authStore';
 import type {
   FincaDto,
@@ -455,6 +456,100 @@ export const AppMovilPage: React.FC = () => {
       toast.error(err.response?.data?.message || 'Error al registrar los litros');
     } finally {
       setGuardandoLitrosAdmin(false);
+    }
+  };
+
+  // Ciclos operativos para validar semanas abiertas/cerradas en móvil
+  const [ciclosOperativos, setCiclosOperativos] = useState<any[]>([]);
+
+  useEffect(() => {
+    finanzasApi
+      .getCiclos()
+      .then((data) => {
+        if (Array.isArray(data)) setCiclosOperativos(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  const verificarSemanaOperativa = (fechaStr?: string) => {
+    if (!fechaStr || !ciclosOperativos.length) return { esOperativa: true, ciclo: null, texto: 'Semana Operativa' };
+    const fSolo = fechaStr.includes('T') ? fechaStr.split('T')[0] : fechaStr;
+    const ciclo = ciclosOperativos.find((c: any) => {
+      const fIni = String(c.fechaInicio).split('T')[0];
+      const fFin = String(c.fechaFin).split('T')[0];
+      return fSolo >= fIni && fSolo <= fFin;
+    });
+    if (!ciclo) return { esOperativa: true, ciclo: null, texto: 'Sin ciclo' };
+    const estado = String(ciclo.estado || '').toUpperCase();
+    const abierta = estado === 'ABIERTO' || estado === 'ACTIVO' || estado === 'OPERATIVO';
+    return {
+      esOperativa: abierta,
+      ciclo,
+      texto: abierta
+        ? `Semana ${ciclo.numeroSemana} (Abierta)`
+        : `Semana ${ciclo.numeroSemana} (Cerrada)`,
+    };
+  };
+
+  const handleLimpiarRecoleccionMovil = async (ticket: ControlRutaDto, parada: any) => {
+    if (!ticket || !parada) return;
+    const ticketId = ticket.id;
+    const pId = parada.id;
+    const fNom = parada.fincaNombre || parada.nombreFinca || 'esta finca';
+    const lts = Number(parada.litros || parada.litrosLeche || parada.litrosCargados || 0);
+
+    const res = await Swal.fire({
+      title: '¿Limpiar Recolección?',
+      html: `¿Deseas reiniciar los datos de recolección de <b>${fNom}</b>?<br/><br/><div style="text-align: left; font-size: 13px; color: #cbd5e1; background: #1e293b; padding: 10px; border-radius: 8px;">
+        <p>✅ <b>La finca NO se eliminará</b> del ticket #${ticket.codigoTicket || ticketId}.</p>
+        <p>✅ Quedará como <b>NO RECOGIDA (0 Litros)</b> para que el chofer pueda recolectarla.</p>
+        <p>⚠️ Se eliminarán los litros registrados (${lts} L), foto de comprobante y observaciones.</p>
+      </div>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#2563eb',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: '<i class="fa-solid fa-eraser"></i> Sí, Limpiar y Dejar Pendiente',
+      cancelButtonText: 'Cancelar',
+      background: '#0f172a',
+      color: '#ffffff',
+    });
+
+    if (!res.isConfirmed) return;
+
+    try {
+      await operacionesApi.limpiarRecoleccion(pId, ticketId);
+      toast.success(`Datos de ${fNom} limpiados. Marcada como No Recogida.`);
+
+      const choferId = ticket.usuarioId;
+      if (choferId) {
+        try {
+          await notificacionesApi.enviarNotificacion({
+            usuarioId: choferId,
+            tipo: 'FINCA_LIMPIADA',
+            titulo: '🔄 Recolección Reiniciada por Administrador',
+            mensaje: `Se reiniciaron los datos de la finca "${fNom}". Ahora figura como Pendiente / No Recogida en tu Ticket #${ticket.codigoTicket || ticketId}.`,
+            fechaOperativa: ticket.fecha ? ticket.fecha.split('T')[0] : hoyStr,
+            referenciaId: ticketId,
+          });
+        } catch {}
+      }
+
+      // Recargar datos en vivo y timelapse
+      cargarDatosAdminEnVivo();
+      if (modalTimelapseMovil && viajeTimelapseMovil?.id === ticketId) {
+        const paradasActualizadas = await operacionesApi.getFincasViaje(ticketId);
+        setParadasTimelapseMovil(Array.isArray(paradasActualizadas) ? paradasActualizadas : []);
+      }
+      if (modalAdminCargarLitros.open) {
+        setModalAdminCargarLitros({ open: false, ticket: null, paradaExistente: null });
+      }
+      if (choferEfectivoId === choferId) {
+        cargarViajeActivo(choferId);
+      }
+    } catch (err: any) {
+      console.error('Error al limpiar recolección móvil:', err);
+      toast.error(err.response?.data?.message || 'Error al limpiar recolección de la finca');
     }
   };
 
@@ -4853,8 +4948,30 @@ export const AppMovilPage: React.FC = () => {
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '11px', color: '#0284c7', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Turno de Operación • {new Date().toLocaleDateString('es-VE', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  <div style={{ fontSize: '11px', color: '#0284c7', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span>Turno de Operación • {new Date().toLocaleDateString('es-VE', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                    {(() => {
+                      const sem = verificarSemanaOperativa(viajeActivo?.fecha || hoyStr);
+                      return (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            padding: '1px 6px',
+                            borderRadius: '5px',
+                            fontSize: '9.5px',
+                            fontWeight: 800,
+                            background: sem.esOperativa ? '#dcfce7' : '#fee2e2',
+                            color: sem.esOperativa ? '#15803d' : '#b91c1c',
+                            border: `1px solid ${sem.esOperativa ? '#86efac' : '#fca5a5'}`,
+                          }}
+                        >
+                          <i className={`fa-solid ${sem.esOperativa ? 'fa-circle-check' : 'fa-triangle-exclamation'}`}></i>
+                          {sem.texto}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <span
                     style={{
@@ -16148,8 +16265,26 @@ export const AppMovilPage: React.FC = () => {
                   <div style={{ fontSize: '12px', color: '#e0f2fe', marginTop: '3px', fontWeight: 700 }}>
                     🚛 {v.camionPlaca || 'S/P'} • Conductor: {v.nombreConductor || 'Chofer'}
                   </div>
-                  <div style={{ fontSize: '11px', color: '#bae6fd', marginTop: '1px' }}>
-                    Ruta: {v.rutaLogisticaNombre || 'Modo Libre'} • Fecha: {(v.fecha || '').split('T')[0]}
+                  <div style={{ fontSize: '11px', color: '#bae6fd', marginTop: '1px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span>Ruta: {v.rutaLogisticaNombre || 'Modo Libre'} • Fecha: {(v.fecha || '').split('T')[0]}</span>
+                    {(() => {
+                      const sem = verificarSemanaOperativa(v.fecha);
+                      return (
+                        <span
+                          style={{
+                            padding: '1px 6px',
+                            borderRadius: '5px',
+                            fontSize: '9.5px',
+                            fontWeight: 800,
+                            background: sem.esOperativa ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.35)',
+                            color: sem.esOperativa ? '#dcfce7' : '#fee2e2',
+                            border: `1px solid ${sem.esOperativa ? '#86efac' : '#fca5a5'}`,
+                          }}
+                        >
+                          {sem.esOperativa ? '✓' : '⚠️'} {sem.texto}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -16327,6 +16462,28 @@ export const AppMovilPage: React.FC = () => {
                                 title="Editar litros de esta parada"
                               >
                                 <i className="fa-solid fa-pen text-xs"></i>
+                              </button>
+                            )}
+
+                            {esAdminReal && ltsParada > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleLimpiarRecoleccionMovil(v, p)}
+                                style={{
+                                  background: '#eff6ff',
+                                  color: '#2563eb',
+                                  border: '1px solid #bfdbfe',
+                                  borderRadius: '8px',
+                                  width: '32px',
+                                  height: '32px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                }}
+                                title="Limpiar datos y marcar como NO RECOGIDA (0 Lts) en el ticket"
+                              >
+                                <i className="fa-solid fa-eraser text-xs"></i>
                               </button>
                             )}
                           </div>
@@ -16663,6 +16820,28 @@ export const AppMovilPage: React.FC = () => {
                   >
                     Cancelar
                   </button>
+                  {esEdicion && modalAdminCargarLitros.paradaExistente && (
+                    <button
+                      type="button"
+                      onClick={() => handleLimpiarRecoleccionMovil(ticket, modalAdminCargarLitros.paradaExistente)}
+                      style={{
+                        padding: '12px 14px',
+                        borderRadius: '12px',
+                        border: '1.5px solid #bfdbfe',
+                        background: '#eff6ff',
+                        color: '#2563eb',
+                        fontWeight: 800,
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                      title="Reiniciar datos y marcar como No Recogida (0 Lts) en el ticket"
+                    >
+                      <i className="fa-solid fa-eraser"></i> Limpiar (0 L)
+                    </button>
+                  )}
                   <button
                     type="submit"
                     disabled={guardandoLitrosAdmin}

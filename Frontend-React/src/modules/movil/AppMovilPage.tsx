@@ -289,6 +289,9 @@ export const AppMovilPage: React.FC = () => {
   // Lista de Choferes disponibles para supervisión / simulación y logística
   const [choferesLista, setChoferesLista] = useState<ChoferDto[]>([]);
 
+  // Filtro en vista Supervisar Chofer: 'activos' (solo con viaje activo) o 'todos'
+  const [filtroChoferSupervisar, setFiltroChoferSupervisar] = useState<'activos' | 'todos'>('activos');
+
   // Chofer seleccionado para supervisar/auditar (cuando el usuario es Administrador/SuperAdmin)
   const [choferSimuladoId, setChoferSimuladoId] = useState<number>(() => {
     try {
@@ -298,6 +301,161 @@ export const AppMovilPage: React.FC = () => {
       return 13;
     }
   });
+
+  // Estados para Modal Timelapse de Viaje Móvil (Paradas, Horas, Litros, Trazabilidad)
+  const [modalTimelapseMovil, setModalTimelapseMovil] = useState(false);
+  const [viajeTimelapseMovil, setViajeTimelapseMovil] = useState<ControlRutaDto | null>(null);
+  const [paradasTimelapseMovil, setParadasTimelapseMovil] = useState<any[]>([]);
+  const [cargandoTimelapseMovil, setCargandoTimelapseMovil] = useState(false);
+
+  const abrirTimelapseMovil = async (viaje: ControlRutaDto) => {
+    setViajeTimelapseMovil(viaje);
+    setModalTimelapseMovil(true);
+    setCargandoTimelapseMovil(true);
+    try {
+      const paradas = await operacionesApi.getFincasViaje(viaje.id);
+      setParadasTimelapseMovil(Array.isArray(paradas) ? paradas : []);
+    } catch (err) {
+      console.warn('Error al cargar paradas para timelapse:', err);
+      setParadasTimelapseMovil([]);
+    } finally {
+      setCargandoTimelapseMovil(false);
+    }
+  };
+
+  // Estados para Modal Administrador Cargar / Registrar Litros Directo en Ticket En Vivo
+  const [modalAdminCargarLitros, setModalAdminCargarLitros] = useState<{
+    open: boolean;
+    ticket: ControlRutaDto | null;
+    paradaExistente?: any | null;
+  }>({
+    open: false,
+    ticket: null,
+    paradaExistente: null,
+  });
+
+  const [formAdminLitros, setFormAdminLitros] = useState({
+    fincaId: 0,
+    litros: '',
+    tipoLeche: 'VACA',
+    esAcida: false,
+    esDiferido: false,
+    temperatura: '',
+    observacion: '',
+    fotoComprobante: '',
+  });
+  const [busquedaFincaAdmin, setBusquedaFincaAdmin] = useState('');
+  const [guardandoLitrosAdmin, setGuardandoLitrosAdmin] = useState(false);
+
+  const abrirModalAdminCargarLitros = (ticket: ControlRutaDto, paradaExistente?: any) => {
+    setModalAdminCargarLitros({
+      open: true,
+      ticket,
+      paradaExistente: paradaExistente || null,
+    });
+    if (paradaExistente) {
+      setFormAdminLitros({
+        fincaId: Number(paradaExistente.fincaId || paradaExistente.FincaId || 0),
+        litros: String(paradaExistente.litros || paradaExistente.litrosLeche || paradaExistente.litrosCargados || ''),
+        tipoLeche: paradaExistente.tipoLeche || 'VACA',
+        esAcida: Boolean(paradaExistente.esAcida),
+        esDiferido: Boolean(paradaExistente.esDiferido),
+        temperatura: paradaExistente.temperatura ? String(paradaExistente.temperatura) : '',
+        observacion: paradaExistente.observacion || '',
+        fotoComprobante: paradaExistente.fotoComprobante || paradaExistente.fotoRecibo || '',
+      });
+    } else {
+      setFormAdminLitros({
+        fincaId: 0,
+        litros: '',
+        tipoLeche: 'VACA',
+        esAcida: false,
+        esDiferido: false,
+        temperatura: '',
+        observacion: '',
+        fotoComprobante: '',
+      });
+    }
+    setBusquedaFincaAdmin('');
+  };
+
+  const handleGuardarLitrosAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalAdminCargarLitros.ticket) return;
+    const ticketId = modalAdminCargarLitros.ticket.id;
+    const fId = Number(formAdminLitros.fincaId);
+    if (!fId) {
+      toast.error('Selecciona la finca ganadera');
+      return;
+    }
+    const lts = Number(formAdminLitros.litros);
+    if (!lts || lts <= 0) {
+      toast.error('Ingresa una cantidad válida de litros');
+      return;
+    }
+
+    setGuardandoLitrosAdmin(true);
+    try {
+      if (modalAdminCargarLitros.paradaExistente?.id) {
+        await operacionesApi.editarRecoleccion(modalAdminCargarLitros.paradaExistente.id, {
+          fincaId: fId,
+          litros: lts,
+          tipoLeche: formAdminLitros.tipoLeche,
+          esAcida: formAdminLitros.esAcida,
+          esDiferido: formAdminLitros.esDiferido,
+          observacion: formAdminLitros.observacion,
+          fotoComprobante: formAdminLitros.fotoComprobante || undefined,
+        });
+        toast.success(`Parada actualizada en el Ticket #${ticketId}`);
+      } else {
+        await operacionesApi.agregarFincaViaje(ticketId, {
+          fincaId: fId,
+          litros: lts,
+          tipoLeche: formAdminLitros.tipoLeche,
+          esAcida: formAdminLitros.esAcida,
+          esDiferido: formAdminLitros.esDiferido,
+          temperatura: formAdminLitros.temperatura ? Number(formAdminLitros.temperatura) : undefined,
+          observacion: formAdminLitros.observacion,
+          fotoComprobante: formAdminLitros.fotoComprobante || undefined,
+        });
+        toast.success(`${lts.toLocaleString()} Lts agregados al Ticket #${ticketId}`);
+      }
+
+      // Notificar al chofer del ticket
+      const choferId = modalAdminCargarLitros.ticket.usuarioId;
+      const fincaObj = fincas.find((f) => f.id === fId);
+      const fincaNom = fincaObj?.nombre || `Finca #${fId}`;
+      if (choferId) {
+        try {
+          await notificacionesApi.enviarNotificacion({
+            usuarioId: choferId,
+            tipo: 'CARGA_REGISTRADA',
+            titulo: '📝 Litros Registrados por Administrador',
+            mensaje: `Se registraron ${lts.toLocaleString()} Lts (${formAdminLitros.tipoLeche}) en la finca "${fincaNom}" para tu Ticket #${ticketId}.`,
+            fechaOperativa: modalAdminCargarLitros.ticket.fecha ? modalAdminCargarLitros.ticket.fecha.split('T')[0] : hoyStr,
+            referenciaId: ticketId,
+          });
+        } catch {}
+      }
+
+      // Refrescar viajes en vivo
+      cargarDatosAdminEnVivo();
+      if (modalTimelapseMovil && viajeTimelapseMovil?.id === ticketId) {
+        const paradasActualizadas = await operacionesApi.getFincasViaje(ticketId);
+        setParadasTimelapseMovil(Array.isArray(paradasActualizadas) ? paradasActualizadas : []);
+      }
+      if (choferEfectivoId === choferId) {
+        cargarViajeActivo(choferId);
+      }
+
+      setModalAdminCargarLitros({ open: false, ticket: null, paradaExistente: null });
+    } catch (err: any) {
+      console.error('Error al registrar litros admin:', err);
+      toast.error(err.response?.data?.message || 'Error al registrar los litros');
+    } finally {
+      setGuardandoLitrosAdmin(false);
+    }
+  };
 
   // Persistir viaje activo y paradas en LocalStorage (Solo guardar, no borrar por fallo de red)
   useEffect(() => {
@@ -471,6 +629,26 @@ export const AppMovilPage: React.FC = () => {
 
   // Estados para Módulo Administrador
   const [viajesEnVivo, setViajesEnVivo] = useState<ControlRutaDto[]>([]);
+
+  // Mapa reactivo de Choferes que tienen viaje o ruta activa actualmente
+  const choferesConViajeActivo = useMemo(() => {
+    const mapActivos = new Map<number, ControlRutaDto>();
+    viajesEnVivo.forEach((v) => {
+      const est = String(v.estado || '').toUpperCase();
+      const esActivo =
+        (v.procesoActualId || 1) < 4 &&
+        est !== 'FINALIZADO' &&
+        est !== 'CERRADO' &&
+        est !== 'AUDITADO' &&
+        est !== 'CUADRADO';
+      if (esActivo && v.usuarioId) {
+        if (!mapActivos.has(v.usuarioId)) {
+          mapActivos.set(v.usuarioId, v);
+        }
+      }
+    });
+    return mapActivos;
+  }, [viajesEnVivo]);
   const [cargandoViajesEnVivo, setCargandoViajesEnVivo] = useState(false);
 
   // Estados para Módulo Administrador - Logística Móvil
@@ -1091,11 +1269,11 @@ export const AppMovilPage: React.FC = () => {
 
     setCargandoViaje(true);
     try {
-      // 1. Obtener todos los viajes del día o activos del chofer en TB_CONTROL_RUTAS
-      const fConsulta = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
-      let lista = await operacionesApi.getViajesActivosChofer(idBusqueda, fConsulta);
+      // 1. Obtener todos los viajes activos del chofer en TB_CONTROL_RUTAS (sin restringir por fecha de hoy para no bloquear tickets abiertos de días anteriores como #21303)
+      let lista = await operacionesApi.getViajesActivosChofer(idBusqueda);
       if (!Array.isArray(lista) || lista.length === 0) {
-        lista = await operacionesApi.getViajesActivosChofer(idBusqueda);
+        const fConsulta = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
+        lista = await operacionesApi.getViajesActivosChofer(idBusqueda, fConsulta);
       }
       if (!Array.isArray(lista) || lista.length === 0) {
         const unico = await operacionesApi.getViajeActivo(idBusqueda);
@@ -1111,13 +1289,19 @@ export const AppMovilPage: React.FC = () => {
       if (forzarId) {
         targetV = lista.find((x) => x.id === forzarId) || null;
       }
-      if (!targetV && viajeSeleccionadoId) {
+      // Si se especificó un chofer diferente (idTarget), buscar prioritariamente el viaje activo de ese chofer
+      if (!targetV && !idTarget && viajeSeleccionadoId) {
         targetV = lista.find((x) => x.id === viajeSeleccionadoId) || null;
       }
       if (!targetV && lista.length > 0) {
         // Priorizar el primer viaje que esté en proceso < 4 (abierto o en ruta)
-        const abierto = lista.find((x) => (x.procesoActualId || 1) < 4 && String(x.estado || '').toUpperCase() !== 'FINALIZADO');
-        targetV = abierto || lista[lista.length - 1]; // o el último turno
+        const abierto = lista.find(
+          (x) =>
+            (x.procesoActualId || 1) < 4 &&
+            String(x.estado || '').toUpperCase() !== 'FINALIZADO' &&
+            String(x.estado || '').toUpperCase() !== 'CERRADO'
+        );
+        targetV = abierto || lista[0] || lista[lista.length - 1];
       }
 
       if (targetV && targetV.id) {
@@ -4204,63 +4388,123 @@ export const AppMovilPage: React.FC = () => {
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Barra de Supervisión de Chofer (Sólo visible para Administrador / SuperAdmin) */}
-              {esAdminReal && (
-                <div
-                  style={{
-                    background: '#fef3c7',
-                    border: '1px solid #fde047',
-                    borderRadius: '16px',
-                    padding: '10px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
-                    boxShadow: '0 2px 8px rgba(217, 119, 6, 0.08)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#92400e', fontWeight: 800 }}>
-                    <i className="fa-solid fa-user-gear text-amber-600"></i>
-                    <span>Supervisando Chofer:</span>
-                  </div>
-                  <select
-                    value={choferSimuladoId}
-                    onChange={(e) => {
-                      const nuevoId = Number(e.target.value);
-                      setChoferSimuladoId(nuevoId);
-                      localStorage.setItem('movil_chofer_simulado_id', String(nuevoId));
-                      cargarViajeActivo(nuevoId);
-                      cargarDespachoActivo(nuevoId);
-                      cargarEntregasChofer(nuevoId);
-                    }}
+              {/* Barra de Supervisión de Chofer (Exclusiva para Administrador / SuperAdmin) */}
+              {esAdminReal && (() => {
+                const choferesActivosLista = choferesLista.filter(
+                  (ch) => choferesConViajeActivo.has(ch.id) || choferesConViajeActivo.has((ch as any).usuarioId)
+                );
+                const listaEfectivaParaSelect =
+                  filtroChoferSupervisar === 'activos' && choferesActivosLista.length > 0
+                    ? choferesActivosLista
+                    : choferesLista;
+
+                return (
+                  <div
                     style={{
-                      background: '#ffffff',
-                      border: '1px solid #d97706',
-                      borderRadius: '8px',
-                      padding: '5px 10px',
-                      fontSize: '12.5px',
-                      fontWeight: 800,
-                      color: '#78350f',
-                      outline: 'none',
+                      background: '#fef3c7',
+                      border: '1.5px solid #fde047',
+                      borderRadius: '16px',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      boxShadow: '0 2px 10px rgba(217, 119, 6, 0.1)',
                     }}
                   >
-                    {choferesLista.length > 0 ? (
-                      choferesLista.map((ch) => (
-                        <option key={ch.id} value={ch.id}>
-                          {ch.nombreCompleto} (#{ch.id})
-                        </option>
-                      ))
-                    ) : (
-                      <>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#92400e', fontWeight: 900 }}>
+                        <i className="fa-solid fa-user-gear text-amber-600"></i>
+                        <span>Supervisando Chofer:</span>
+                      </div>
+
+                      {/* Chips de Filtro Rápido: Solo Activos vs Todos */}
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFiltroChoferSupervisar('activos');
+                            if (choferesActivosLista.length > 0 && !choferesConViajeActivo.has(choferSimuladoId)) {
+                              const primerActivo = choferesActivosLista[0].id;
+                              setChoferSimuladoId(primerActivo);
+                              localStorage.setItem('movil_chofer_simulado_id', String(primerActivo));
+                              cargarViajeActivo(primerActivo);
+                              cargarDespachoActivo(primerActivo);
+                              cargarEntregasChofer(primerActivo);
+                            }
+                          }}
+                          style={{
+                            background: filtroChoferSupervisar === 'activos' ? '#16a34a' : '#ffffff',
+                            color: filtroChoferSupervisar === 'activos' ? '#ffffff' : '#15803d',
+                            border: '1px solid #86efac',
+                            borderRadius: '7px',
+                            padding: '3px 8px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          🟢 Con Viaje ({choferesActivosLista.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFiltroChoferSupervisar('todos')}
+                          style={{
+                            background: filtroChoferSupervisar === 'todos' ? '#92400e' : '#ffffff',
+                            color: filtroChoferSupervisar === 'todos' ? '#ffffff' : '#92400e',
+                            border: '1px solid #fde047',
+                            borderRadius: '7px',
+                            padding: '3px 8px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          👥 Todos ({choferesLista.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    <select
+                      value={choferSimuladoId}
+                      onChange={(e) => {
+                        const nuevoId = Number(e.target.value);
+                        setChoferSimuladoId(nuevoId);
+                        localStorage.setItem('movil_chofer_simulado_id', String(nuevoId));
+                        cargarViajeActivo(nuevoId);
+                        cargarDespachoActivo(nuevoId);
+                        cargarEntregasChofer(nuevoId);
+                      }}
+                      style={{
+                        width: '100%',
+                        background: '#ffffff',
+                        border: '1.5px solid #d97706',
+                        borderRadius: '10px',
+                        padding: '8px 12px',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        color: '#78350f',
+                        outline: 'none',
+                      }}
+                    >
+                      {listaEfectivaParaSelect.length > 0 ? (
+                        listaEfectivaParaSelect.map((ch) => {
+                          const vActivo = choferesConViajeActivo.get(ch.id) || choferesConViajeActivo.get((ch as any).usuarioId);
+                          const lts = vActivo ? (vActivo.totalLitrosFinca || vActivo.totalLitrosRecogidos || 0) : 0;
+                          return (
+                            <option key={ch.id} value={ch.id}>
+                              {vActivo
+                                ? `🟢 ${ch.nombreCompleto} — Ticket #${vActivo.codigoTicket || vActivo.id} (${lts.toLocaleString()} L)`
+                                : `⚪ ${ch.nombreCompleto} (#${ch.id}) — Sin viaje`}
+                            </option>
+                          );
+                        })
+                      ) : (
                         <option value={13}>Julio Atencio (#13)</option>
-                        <option value={1}>JOSE Perez (#1)</option>
-                        <option value={2}>Manuel (#2)</option>
-                        <option value={4}>Alfredy (#4)</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-              )}
+                      )}
+                    </select>
+                  </div>
+                );
+              })()}
 
               {/* Tarjeta de Bienvenida y Turno */}
               <div
@@ -6315,30 +6559,132 @@ export const AppMovilPage: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Botones de Acción de Entrega (Chofer) */}
+                      {/* Botones de Acción de Entrega (Chofer y Opciones Admin) */}
                       {est !== 'FINALIZADO' && est !== 'CERRADO' ? (
                         esDestinoReceptoria(d) ? (
-                          <div
-                            style={{
-                              marginTop: '12px',
-                              background: '#ecfdf5',
-                              border: '1.5px solid #a7f3d0',
-                              borderRadius: '12px',
-                              padding: '10px 14px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '10px',
-                            }}
-                          >
-                            <i className="fa-solid fa-hourglass-half text-emerald-600 text-lg"></i>
-                            <div>
-                              <div style={{ fontWeight: 800, fontSize: '12.5px', color: '#065f46' }}>
-                                ⏳ Pendiente por Recepcionar en Planta
-                              </div>
-                              <div style={{ fontSize: '11px', color: '#047857' }}>
-                                La comprobación y descarga de este ticket la gestiona el personal de Receptoría.
+                          <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div
+                              style={{
+                                background: '#ecfdf5',
+                                border: '1.5px solid #a7f3d0',
+                                borderRadius: '12px',
+                                padding: '10px 14px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                              }}
+                            >
+                              <i className="fa-solid fa-hourglass-half text-emerald-600 text-lg"></i>
+                              <div>
+                                <div style={{ fontWeight: 800, fontSize: '12.5px', color: '#065f46' }}>
+                                  ⏳ Pendiente por Recepcionar en Planta
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#047857' }}>
+                                  La comprobación y descarga de este ticket la gestiona el personal de Receptoría.
+                                </div>
                               </div>
                             </div>
+
+                            {/* Opciones avanzadas de Receptoría exclusivas para Rol Admin en Vista Chofer */}
+                            {esAdminReal && (
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const ticketObj =
+                                      viajesEnVivo.find((v) => v.id === d.controlRutaId || v.id === d.id) ||
+                                      (viajeActivo?.id === d.controlRutaId ? viajeActivo : null);
+                                    if (ticketObj) {
+                                      abrirTimelapseMovil(ticketObj);
+                                    } else {
+                                      toast.info(`Cargando paradas del ticket #${d.id}...`);
+                                    }
+                                  }}
+                                  style={{
+                                    background: '#eff6ff',
+                                    color: '#1d4ed8',
+                                    border: '1px solid #bfdbfe',
+                                    borderRadius: '10px',
+                                    padding: '8px 6px',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  <i className="fa-solid fa-clock-rotate-left"></i>
+                                  <span>Timelapse</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const ticketObj =
+                                      viajesEnVivo.find((v) => v.id === d.controlRutaId || v.id === d.id) ||
+                                      (viajeActivo?.id === d.controlRutaId ? viajeActivo : null);
+                                    setModalVerificarLitros({
+                                      open: true,
+                                      ticket: (ticketObj || {
+                                        id: d.controlRutaId || d.id,
+                                        totalLitrosFinca: desp,
+                                        camionPlaca: d.camionPlaca,
+                                        nombreConductor: d.conductorNombre || choferEfectivoNombre,
+                                      }) as any,
+                                      litrosRecibidos: rec > 0 ? rec : desp,
+                                      observacion: '',
+                                    });
+                                  }}
+                                  style={{
+                                    background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+                                    color: '#ffffff',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    padding: '8px 6px',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  <i className="fa-solid fa-scale-balanced"></i>
+                                  <span>Recepcionar</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setModalDevolverTicket({
+                                      open: true,
+                                      ticketId: d.controlRutaId || d.id,
+                                      motivo: '',
+                                    });
+                                  }}
+                                  style={{
+                                    background: '#fff1f2',
+                                    color: '#e11d48',
+                                    border: '1px solid #fecdd3',
+                                    borderRadius: '10px',
+                                    padding: '8px 6px',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  <i className="fa-solid fa-arrow-rotate-left"></i>
+                                  <span>Devolver</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div style={{ marginTop: '12px' }}>
@@ -8709,8 +9055,31 @@ export const AppMovilPage: React.FC = () => {
                           )}
                         </div>
 
-                        {/* Botones de Acción: Verificar Litros vs Devolver Ticket */}
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        {/* Botones de Acción: Timelapse, Verificar Litros vs Devolver Ticket */}
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() => abrirTimelapseMovil(t)}
+                            style={{
+                              background: '#f8fafc',
+                              color: '#0f172a',
+                              border: '1.5px solid #cbd5e1',
+                              borderRadius: '10px',
+                              padding: '9px 10px',
+                              fontSize: '11.5px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px',
+                            }}
+                            title="Ver trazabilidad completa de paradas del ticket"
+                          >
+                            <i className="fa-solid fa-clock-rotate-left text-sky-600"></i>
+                            <span>Timelapse</span>
+                          </button>
+
                           <button
                             type="button"
                             onClick={() =>
@@ -9454,6 +9823,94 @@ export const AppMovilPage: React.FC = () => {
                               }}
                             />
                           </div>
+                        </div>
+
+                        {/* Botonera Operativa para el Administrador: Timelapse, Cargar Litros y Supervisar */}
+                        <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            onClick={() => abrirTimelapseMovil(viaje)}
+                            style={{
+                              flex: 1,
+                              minWidth: '95px',
+                              background: '#eff6ff',
+                              color: '#1d4ed8',
+                              border: '1.5px solid #bfdbfe',
+                              borderRadius: '10px',
+                              padding: '8px 8px',
+                              fontSize: '11.5px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '5px',
+                            }}
+                          >
+                            <i className="fa-solid fa-clock-rotate-left"></i>
+                            <span>Timelapse</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => abrirModalAdminCargarLitros(viaje)}
+                            style={{
+                              flex: 1.2,
+                              minWidth: '110px',
+                              background: 'linear-gradient(135deg, #10b981, #059669)',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: '10px',
+                              padding: '8px 8px',
+                              fontSize: '11.5px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '5px',
+                              boxShadow: '0 2px 6px rgba(16, 185, 129, 0.25)',
+                            }}
+                          >
+                            <i className="fa-solid fa-plus-circle"></i>
+                            <span>+ Cargar Litros</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const chofId = viaje.usuarioId;
+                              if (chofId) {
+                                setChoferSimuladoId(chofId);
+                                localStorage.setItem('movil_chofer_simulado_id', String(chofId));
+                                setModoActivo('CHOFER');
+                                localStorage.setItem('movil_modo_activo', 'CHOFER');
+                                setTabActiva('principal');
+                                cargarViajeActivo(chofId, viaje.id);
+                                cargarDespachoActivo(chofId);
+                                cargarEntregasChofer(chofId);
+                                toast.info(`Supervisando a ${viaje.nombreConductor || 'chofer'} (Ticket #${viaje.id})`);
+                              }
+                            }}
+                            style={{
+                              background: '#f8fafc',
+                              color: '#475569',
+                              border: '1.5px solid #cbd5e1',
+                              borderRadius: '10px',
+                              padding: '8px 10px',
+                              fontSize: '11.5px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px',
+                            }}
+                            title="Ver en Vista Chofer"
+                          >
+                            <i className="fa-solid fa-eye text-slate-500"></i>
+                            <span>Ver Chofer</span>
+                          </button>
                         </div>
                       </div>
                     );
@@ -15036,6 +15493,622 @@ export const AppMovilPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ===================================================================
+          MODAL MOVIL 1: TIMELAPSE DE PARADAS EN VIVO (SECUENCIA & TRAZABILIDAD)
+         =================================================================== */}
+      {modalTimelapseMovil && viajeTimelapseMovil && (() => {
+        const v = viajeTimelapseMovil;
+        const totalLts = paradasTimelapseMovil.reduce(
+          (sum, p) => sum + Number(p.litros || p.litrosLeche || p.litrosCargados || 0),
+          0
+        );
+        const ltsFinal = totalLts > 0 ? totalLts : (v.totalLitrosFinca || v.totalLitrosRecogidos || 0);
+        const cap = v.capacidadCamionLitros || 6000;
+        const pct = Math.min(100, Math.round((ltsFinal / cap) * 100));
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(5px)',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '540px',
+                maxHeight: '92vh',
+                background: '#ffffff',
+                borderTopLeftRadius: '24px',
+                borderTopRightRadius: '24px',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 -10px 40px rgba(0,0,0,0.3)',
+                animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Header Timelapse */}
+              <div
+                style={{
+                  padding: '16px 18px',
+                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '17px', fontWeight: 900 }}>
+                      ⏱️ Timelapse Ticket #{v.codigoTicket || v.id}
+                    </span>
+                    <span
+                      style={{
+                        background: 'rgba(255,255,255,0.2)',
+                        padding: '2px 7px',
+                        borderRadius: '6px',
+                        fontSize: '10.5px',
+                        fontWeight: 800,
+                      }}
+                    >
+                      {v.estado || 'EN RUTA'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#e0f2fe', marginTop: '3px', fontWeight: 700 }}>
+                    🚛 {v.camionPlaca || 'S/P'} • Conductor: {v.nombreConductor || 'Chofer'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#bae6fd', marginTop: '1px' }}>
+                    Ruta: {v.rutaLogisticaNombre || 'Modo Libre'} • Fecha: {(v.fecha || '').split('T')[0]}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setModalTimelapseMovil(false)}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '32px',
+                    height: '32px',
+                    color: '#ffffff',
+                    fontSize: '18px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Barra de KPIs Rápida */}
+              <div style={{ background: '#f0f9ff', padding: '10px 18px', borderBottom: '1px solid #e0f2fe', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '10px', color: '#0369a1', fontWeight: 800 }}>VOLUMEN CARGADO</div>
+                  <div style={{ fontSize: '16px', fontWeight: 900, color: '#0284c7' }}>
+                    {ltsFinal.toLocaleString()} L <span style={{ fontSize: '11.5px', color: '#64748b' }}>/ {cap.toLocaleString()} L ({pct}%)</span>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '10px', color: '#0369a1', fontWeight: 800 }}>TOTAL PARADAS</div>
+                  <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
+                    {paradasTimelapseMovil.length} Fincas
+                  </div>
+                </div>
+              </div>
+
+              {/* Contenido / Timeline Secuencial de Paradas */}
+              <div style={{ padding: '16px 18px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {cargandoTimelapseMovil ? (
+                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                    <i className="fa-solid fa-spinner fa-spin text-2xl mb-2 text-sky-600"></i>
+                    <div style={{ fontSize: '13px', fontWeight: 700 }}>Cargando recorrido y paradas...</div>
+                  </div>
+                ) : paradasTimelapseMovil.length === 0 ? (
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: '16px', border: '1.5px dashed #cbd5e1' }}>
+                    <i className="fa-solid fa-map-location-dot text-3xl mb-2 text-slate-300"></i>
+                    <div style={{ fontWeight: 800, color: '#1e293b' }}>Sin paradas registradas aún</div>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12px' }}>
+                      El chofer aún no ha registrado litros en fincas para este recorrido.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {paradasTimelapseMovil.map((p, idx) => {
+                      const ltsParada = Number(p.litros || p.litrosLeche || p.litrosCargados || 0);
+                      const fNom = p.fincaNombre || p.nombreFinca || fincas.find((f) => f.id === (p.fincaId || p.FincaId))?.nombre || `Finca #${p.fincaId || p.FincaId}`;
+                      const horaP = p.hora || (p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : `Parada #${idx + 1}`);
+                      const esBufala = (p.tipoLeche || '').toUpperCase() === 'BUFALA';
+                      const esAcida = Boolean(p.esAcida);
+                      const foto = p.fotoComprobante || p.fotoRecibo;
+
+                      return (
+                        <div
+                          key={p.id || idx}
+                          style={{
+                            background: '#ffffff',
+                            borderRadius: '14px',
+                            border: '1.5px solid #e2e8f0',
+                            padding: '12px 14px',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '10px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '10px',
+                                background: '#e0f2fe',
+                                color: '#0369a1',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 900,
+                                fontSize: '13px',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {idx + 1}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 800, fontSize: '13.5px', color: '#0f172a' }}>
+                                {fNom}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                                <span><i className="fa-regular fa-clock mr-1 text-slate-400"></i>{horaP}</span>
+                                {esBufala && (
+                                  <span style={{ background: '#fed7aa', color: '#9a3412', padding: '1px 5px', borderRadius: '4px', fontWeight: 800, fontSize: '9.5px' }}>
+                                    BÚFALA
+                                  </span>
+                                )}
+                                {esAcida && (
+                                  <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '1px 5px', borderRadius: '4px', fontWeight: 800, fontSize: '9.5px' }}>
+                                    ⚠️ ÁCIDA
+                                  </span>
+                                )}
+                                {p.temperatura && (
+                                  <span>• {p.temperatura}°C</span>
+                                )}
+                              </div>
+                              {p.observacion && (
+                                <div style={{ fontSize: '11px', color: '#475569', fontStyle: 'italic', marginTop: '2px' }}>
+                                  "{p.observacion}"
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                            <div>
+                              <div style={{ fontSize: '15px', fontWeight: 900, color: '#0284c7' }}>
+                                {ltsParada.toLocaleString()} L
+                              </div>
+                              <div style={{ fontSize: '10px', color: '#16a34a', fontWeight: 800 }}>
+                                ✓ Recolectada
+                              </div>
+                            </div>
+
+                            {foto && (
+                              <button
+                                type="button"
+                                onClick={() => setFotoReciboVerModal(foto)}
+                                style={{
+                                  background: '#f8fafc',
+                                  color: '#0284c7',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '8px',
+                                  width: '32px',
+                                  height: '32px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                }}
+                                title="Ver comprobante de finca"
+                              >
+                                <i className="fa-solid fa-receipt"></i>
+                              </button>
+                            )}
+
+                            {esAdminReal && (
+                              <button
+                                type="button"
+                                onClick={() => abrirModalAdminCargarLitros(v, p)}
+                                style={{
+                                  background: '#f1f5f9',
+                                  color: '#334155',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '8px',
+                                  width: '32px',
+                                  height: '32px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                }}
+                                title="Editar litros de esta parada"
+                              >
+                                <i className="fa-solid fa-pen text-xs"></i>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer con Botón para Agregar Finca/Parada */}
+              {esAdminReal && (
+                <div style={{ padding: '12px 18px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      abrirModalAdminCargarLitros(v);
+                    }}
+                    style={{
+                      flex: 1,
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '12px',
+                      padding: '12px',
+                      fontWeight: 900,
+                      fontSize: '13.5px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      boxShadow: '0 3px 10px rgba(16, 185, 129, 0.25)',
+                    }}
+                  >
+                    <i className="fa-solid fa-plus-circle"></i>
+                    <span>+ Agregar Litros a este Ticket</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ===================================================================
+          MODAL MOVIL 2: ADMINISTRADOR REGISTRAR / CARGAR LITROS EN TICKET
+         =================================================================== */}
+      {modalAdminCargarLitros.open && modalAdminCargarLitros.ticket && (() => {
+        const ticket = modalAdminCargarLitros.ticket;
+        const esEdicion = !!modalAdminCargarLitros.paradaExistente;
+
+        const fincasFiltradas = fincas.filter((f) => {
+          if (!busquedaFincaAdmin.trim()) return true;
+          const q = busquedaFincaAdmin.toLowerCase();
+          return (
+            f.nombre.toLowerCase().includes(q) ||
+            String(f.id).includes(q) ||
+            (f.codigo && f.codigo.toLowerCase().includes(q))
+          );
+        });
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10000,
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(5px)',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '540px',
+                maxHeight: '94vh',
+                background: '#ffffff',
+                borderTopLeftRadius: '24px',
+                borderTopRightRadius: '24px',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 -10px 40px rgba(0,0,0,0.3)',
+                animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '16px 18px',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900 }}>
+                    {esEdicion ? '✏️ Editar Parada de Leche' : '📝 Registrar Carga de Leche (Admin)'}
+                  </h3>
+                  <div style={{ fontSize: '11.5px', color: '#d1fae5', marginTop: '2px' }}>
+                    Ticket #{ticket.codigoTicket || ticket.id} • {ticket.nombreConductor || 'Chofer'} ({ticket.camionPlaca || 'S/P'})
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalAdminCargarLitros({ open: false, ticket: null, paradaExistente: null })}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '32px',
+                    height: '32px',
+                    color: '#ffffff',
+                    fontSize: '18px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Formulario */}
+              <form
+                onSubmit={handleGuardarLitrosAdmin}
+                style={{ padding: '16px 18px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}
+              >
+                {/* Selector de Finca con Buscador */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Finca Ganadera *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Filtrar finca por nombre o código..."
+                    value={busquedaFincaAdmin}
+                    onChange={(e) => setBusquedaFincaAdmin(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '12.5px',
+                      marginBottom: '6px',
+                    }}
+                  />
+                  <select
+                    required
+                    value={formAdminLitros.fincaId}
+                    onChange={(e) => setFormAdminLitros((prev) => ({ ...prev, fincaId: Number(e.target.value) }))}
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #10b981',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      background: '#ffffff',
+                    }}
+                  >
+                    <option value={0}>-- Selecciona la Finca Ganadera --</option>
+                    {fincasFiltradas.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.nombre} {f.codigo ? `(${f.codigo})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Litros de Leche */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>
+                      Litros Recolectados *
+                    </label>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {[100, 500, 1000].map((inc) => (
+                        <button
+                          key={inc}
+                          type="button"
+                          onClick={() => {
+                            const actual = Number(formAdminLitros.litros) || 0;
+                            setFormAdminLitros((prev) => ({ ...prev, litros: String(actual + inc) }));
+                          }}
+                          style={{
+                            background: '#f1f5f9',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '6px',
+                            padding: '2px 6px',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          +{inc}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    required
+                    placeholder="Ej: 1500"
+                    value={formAdminLitros.litros}
+                    onChange={(e) => setFormAdminLitros((prev) => ({ ...prev, litros: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #10b981',
+                      fontSize: '16px',
+                      fontWeight: 900,
+                      color: '#065f46',
+                    }}
+                  />
+                </div>
+
+                {/* Tipo de Leche (Vaca vs Búfala) */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Tipo de Leche
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setFormAdminLitros((prev) => ({ ...prev, tipoLeche: 'VACA' }))}
+                      style={{
+                        padding: '9px',
+                        borderRadius: '10px',
+                        border: formAdminLitros.tipoLeche === 'VACA' ? '2px solid #0284c7' : '1.5px solid #cbd5e1',
+                        background: formAdminLitros.tipoLeche === 'VACA' ? '#f0f9ff' : '#ffffff',
+                        color: formAdminLitros.tipoLeche === 'VACA' ? '#0369a1' : '#64748b',
+                        fontWeight: 800,
+                        fontSize: '12.5px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      🥛 Leche de Vaca
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormAdminLitros((prev) => ({ ...prev, tipoLeche: 'BUFALA' }))}
+                      style={{
+                        padding: '9px',
+                        borderRadius: '10px',
+                        border: formAdminLitros.tipoLeche === 'BUFALA' ? '2px solid #ea580c' : '1.5px solid #cbd5e1',
+                        background: formAdminLitros.tipoLeche === 'BUFALA' ? '#fff7ed' : '#ffffff',
+                        color: formAdminLitros.tipoLeche === 'BUFALA' ? '#c2410c' : '#64748b',
+                        fontWeight: 800,
+                        fontSize: '12.5px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      🐃 Leche de Búfala
+                    </button>
+                  </div>
+                </div>
+
+                {/* Checkboxes: Leche Ácida y Diferir */}
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#b91c1c', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={formAdminLitros.esAcida}
+                      onChange={(e) => setFormAdminLitros((prev) => ({ ...prev, esAcida: e.target.checked }))}
+                    />
+                    <span>⚠️ Leche Ácida</span>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#b45309', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={formAdminLitros.esDiferido}
+                      onChange={(e) => setFormAdminLitros((prev) => ({ ...prev, esDiferido: e.target.checked }))}
+                    />
+                    <span>⏳ Diferir Litros</span>
+                  </label>
+                </div>
+
+                {/* Temperatura y Observación */}
+                <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '3px' }}>
+                      Temp (°C)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      placeholder="4.0"
+                      value={formAdminLitros.temperatura}
+                      onChange={(e) => setFormAdminLitros((prev) => ({ ...prev, temperatura: e.target.value }))}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '3px' }}>
+                      Observación
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Nota de recolección..."
+                      value={formAdminLitros.observacion}
+                      onChange={(e) => setFormAdminLitros((prev) => ({ ...prev, observacion: e.target.value }))}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Botones de Acción */}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setModalAdminCargarLitros({ open: false, ticket: null, paradaExistente: null })}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#475569',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={guardandoLitrosAdmin}
+                    style={{
+                      flex: 2,
+                      padding: '12px',
+                      borderRadius: '12px',
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      color: '#ffffff',
+                      fontWeight: 900,
+                      fontSize: '13.5px',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                    }}
+                  >
+                    {guardandoLitrosAdmin ? (
+                      <span><i className="fa-solid fa-spinner fa-spin mr-2"></i>Guardando...</span>
+                    ) : (
+                      <span>💾 {esEdicion ? 'Actualizar Parada' : 'Guardar y Notificar'}</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

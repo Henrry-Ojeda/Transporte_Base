@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 9,
-  patch: 3,
-  tag: 'v3.9.3',
+  patch: 4,
+  tag: 'v3.9.4',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Notificaciones automáticas y sincronización reactiva en tiempo real para Choferes ante cambios de ruta o fincas por Administradores/Supervisores',
+  descripcion: 'Supervisión de Choferes activos con filtro y badges en Móvil, paridad completa en Receptoría y Timelapse con carga de litros directa para Administrador',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

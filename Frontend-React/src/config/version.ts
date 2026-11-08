@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 8,
+  minor: 9,
   patch: 1,
-  tag: 'v3.8.1',
+  tag: 'v3.9.1',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Sistema de Autorización Temporal de Rutas: Choferes no se auto-asignan rutas; panel de permisos para Admin/SuperAdmin en Móvil y Web, y revocación automática (1 solo uso) al entregar la ruta',
+  descripcion: 'Móvil Chofer: Se oculta el botón Registrar Parada Libre al recolectar todas las fincas asignadas; se habilita dinámicamente cuando el supervisor asigna una nueva finca',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

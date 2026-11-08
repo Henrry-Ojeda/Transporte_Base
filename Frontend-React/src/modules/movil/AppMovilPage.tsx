@@ -4112,6 +4112,7 @@ export const AppMovilPage: React.FC = () => {
         {tabActiva === 'principal' && (() => {
           const recCount = fincasDeMiRuta.filter((f) => f.recolectada).length;
           const pendientesCount = fincasDeMiRuta.length - recCount;
+          const todasFincasRecolectadas = (fincasDeMiRuta.length > 0 || todasLasParadas.length > 0) && pendientesCount === 0;
           const litrosDisponibles = Math.max(0, capacidad - totalLitrosCargados);
           const viajeBloqueadoPorReceptoria = Boolean(viajeActivo && (
             (viajeActivo.procesoActualId != null && viajeActivo.procesoActualId >= 2) ||
@@ -4727,6 +4728,81 @@ export const AppMovilPage: React.FC = () => {
                             Las fincas están protegidas. Solo Receptoría puede devolver el ticket para permitir registrar o editar cargas.
                           </div>
                         </div>
+                      </div>
+                    ) : todasFincasRecolectadas ? (
+                      <div>
+                        <div
+                          style={{
+                            background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
+                            border: '1.5px solid #86efac',
+                            borderRadius: '16px',
+                            padding: '12px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '10px',
+                              background: '#dcfce7',
+                              color: '#15803d',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '18px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <i className="fa-solid fa-circle-check"></i>
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 800, fontSize: '13px', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>Recolección en Campo Completada</span>
+                              <span style={{ fontSize: '10.5px', background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: '8px', fontWeight: 800, border: '1px solid #86efac' }}>
+                                {todasLasParadas.length} Fincas Hechas
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#15803d', marginTop: '2px', lineHeight: '1.3' }}>
+                              Has recogido todas las fincas asignadas. Procede a <strong>Receptoría</strong> o <strong>Planta</strong> para entregar la carga.
+                            </div>
+                          </div>
+                        </div>
+
+                        {esAdminReal && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (viajeActivo?.fecha) {
+                                setFormCarga((prev) => ({ ...prev, fecha: viajeActivo.fecha.split('T')[0] }));
+                              }
+                              setFincaFijadaParaModal(null);
+                              setModalRegistro(true);
+                            }}
+                            style={{
+                              width: '100%',
+                              marginTop: '8px',
+                              background: '#f8fafc',
+                              color: '#475569',
+                              border: '1.5px dashed #cbd5e1',
+                              borderRadius: '10px',
+                              padding: '8px 12px',
+                              fontSize: '11.5px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <i className="fa-solid fa-user-shield text-indigo-600"></i>
+                            <span>Admin/Supervisor: Agregar Finca Extra</span>
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <button

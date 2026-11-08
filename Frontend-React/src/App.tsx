@@ -89,7 +89,7 @@ const HomeRedirect: React.FC = () => {
   const tieneDispositivo = typeof window !== 'undefined' && Boolean(localStorage.getItem('movil_device_info'));
   
   if (rol === 'CHOFER' || tieneDispositivo) {
-    return <Navigate to="/app" replace />;
+    return <Navigate to="/movil" replace />;
   }
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -104,15 +104,15 @@ export const App: React.FC = () => {
         <BrowserRouter>
           <SessionMonitor />
           <Routes>
-          {/* Redirección raíz autónoma: choferes y móviles van a /app directamente (resiliente offline) */}
+          {/* Redirección raíz autónoma: choferes y móviles van a /movil directamente (resiliente offline) */}
           <Route index element={<HomeRedirect />} />
 
           {/* Ruta Pública de Login */}
           <Route path="/login" element={<LoginPage />} />
 
           {/* Terminal / App Móvil Offline para Conductores y Dispositivos Vinculados */}
+          <Route path="/movil" element={<AppMovilPage />} />
           <Route path="/app" element={<AppMovilPage />} />
-          <Route path="/movil" element={<Navigate to="/app" replace />} />
 
           {/* Rutas Protegidas dentro de MainLayout */}
           <Route

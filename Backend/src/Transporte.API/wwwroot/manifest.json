@@ -2,7 +2,7 @@
   "name": "Rutas de Transporte Móvil",
   "short_name": "Rutas Móvil",
   "description": "Terminal móvil para choferes y recolección offline de leche",
-  "start_url": "/app",
+  "start_url": "/movil",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",

@@ -629,7 +629,7 @@ namespace Transporte.Infrastructure.Repositories
                         "SELECT ISNULL(SUM(Litros), 0) FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @ticketId",
                         new { ticketId }, transaction);
 
-                    if (dto.RegistrarEntrega || (dto.CompaniaDestinoId.HasValue && dto.CompaniaDestinoId.Value > 0))
+                    if (dto.RegistrarEntrega)
                     {
                         int targetCompaniaId = (dto.CompaniaDestinoId.HasValue && dto.CompaniaDestinoId.Value > 0)
                             ? dto.CompaniaDestinoId.Value
@@ -8955,7 +8955,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                               OR (
                                   UPPER(ISNULL(cr.Estado, '')) NOT IN ('FINALIZADO', 'CERRADO') 
                                   AND ISNULL(cr.ProcesoActualId, 1) < 4
-                                  AND DATEDIFF(day, cr.Fecha, GETDATE()) <= 2
+                                  AND DATEDIFF(day, cr.Fecha, GETDATE()) <= 30
                               )
                           )
                       )

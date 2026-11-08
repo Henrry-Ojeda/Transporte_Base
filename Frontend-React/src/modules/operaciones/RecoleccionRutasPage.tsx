@@ -756,11 +756,11 @@ export const RecoleccionRutasPage: React.FC = () => {
   const [ocrMensaje, setOcrMensaje] = useState<string | null>(null);
 
   // Estados de Entrega Directa y Recepción para Choferes sin Teléfono (Hoja Física)
-  const [masivoRegistrarEntrega, setMasivoRegistrarEntrega] = useState(true);
+  const [masivoRegistrarEntrega, setMasivoRegistrarEntrega] = useState(false);
   const [masivoCompaniaId, setMasivoCompaniaId] = useState<number>(0);
   const [masivoLitrosRecibidos, setMasivoLitrosRecibidos] = useState<number | ''>('');
   const [masivoComprobantePesaje, setMasivoComprobantePesaje] = useState<string>('');
-  const [masivoFinalizarInmediato, setMasivoFinalizarInmediato] = useState(true);
+  const [masivoFinalizarInmediato, setMasivoFinalizarInmediato] = useState(false);
 
   const videoWebcamRef = useRef<HTMLVideoElement | null>(null);
   const canvasWebcamRef = useRef<HTMLCanvasElement | null>(null);
@@ -784,10 +784,10 @@ export const RecoleccionRutasPage: React.FC = () => {
       return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA');
     }) || companias[0];
     setMasivoCompaniaId(compDefault ? compDefault.id : 0);
-    setMasivoRegistrarEntrega(true);
+    setMasivoRegistrarEntrega(false);
     setMasivoLitrosRecibidos('');
     setMasivoComprobantePesaje('');
-    setMasivoFinalizarInmediato(true);
+    setMasivoFinalizarInmediato(false);
 
     setMasivoFilas([
       { idTemp: Math.random().toString(), fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, observacion: '' },
@@ -975,7 +975,7 @@ export const RecoleccionRutasPage: React.FC = () => {
         companiaDestinoId: masivoRegistrarEntrega ? (masivoCompaniaId || (companias[0]?.id || 5028)) : null,
         litrosRecibidosPlanta: masivoRegistrarEntrega ? litrosEfectivosRecibidos : null,
         observacionEntrega: masivoComprobantePesaje || '',
-        finalizarInmediato: masivoFinalizarInmediato,
+        finalizarInmediato: masivoRegistrarEntrega ? masivoFinalizarInmediato : false,
       };
       return operacionesApi.guardarRutasMasivo(payload);
     },
@@ -991,6 +991,9 @@ export const RecoleccionRutasPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['rutas-fincas-hoy'] });
       queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
       queryClient.invalidateQueries({ queryKey: ['rutas-despachos-hoy'] });
+      setFechaFiltro(masivoFecha);
+      setModoVista('viajes');
+      setFiltroEstadoTicket('activos');
       setModalRutasMasivo(false);
       setMasivoFilas([]);
       detenerCamara();
@@ -6459,10 +6462,12 @@ export const RecoleccionRutasPage: React.FC = () => {
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: masivoRegistrarEntrega ? '#065f46' : '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <i className="fa-solid fa-truck-ramp-box" style={{ color: '#10b981' }}></i>
-                        Registrar Entrega y Recepción del Viaje (Hoja de Ruta Física)
+                        Registrar también Entrega Final en Planta / Receptoría (Opcional)
                       </div>
                       <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '2px' }}>
-                        Completa el ciclo normal de recepción/entrega sin dejar el ticket para enviar a receptoría.
+                        {masivoRegistrarEntrega
+                          ? 'Se registrará la entrega directa a planta/receptoría cerrando el ciclo.'
+                          : 'Recomendado: El ticket se creará activo en "Control Rutas & Camiones" con sus fincas para continuar el proceso normal de entrega y recepción.'}
                       </div>
                     </div>
                   </label>

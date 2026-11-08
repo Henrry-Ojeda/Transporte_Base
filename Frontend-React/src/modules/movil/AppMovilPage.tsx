@@ -641,14 +641,45 @@ export const AppMovilPage: React.FC = () => {
         est !== 'CERRADO' &&
         est !== 'AUDITADO' &&
         est !== 'CUADRADO';
-      if (esActivo && v.usuarioId) {
-        if (!mapActivos.has(v.usuarioId)) {
+      if (esActivo) {
+        if (v.usuarioId && !mapActivos.has(v.usuarioId)) {
           mapActivos.set(v.usuarioId, v);
+        }
+        if (v.choferId && !mapActivos.has(v.choferId)) {
+          mapActivos.set(v.choferId, v);
+        }
+        const nom = (v.nombreConductor || v.choferNombre || '').trim().toLowerCase();
+        if (nom) {
+          const matchCh = choferesLista.find(
+            (c) => c.nombreCompleto && c.nombreCompleto.trim().toLowerCase() === nom
+          );
+          if (matchCh && !mapActivos.has(matchCh.id)) {
+            mapActivos.set(matchCh.id, v);
+          }
         }
       }
     });
     return mapActivos;
-  }, [viajesEnVivo]);
+  }, [viajesEnVivo, choferesLista]);
+
+  // Si el Admin entra a vista Chofer y el chofer seleccionado no tiene viaje activo pero otros sí, auto-seleccionar el primer activo
+  useEffect(() => {
+    if (esAdminReal && choferesConViajeActivo.size > 0) {
+      const tieneActivo = choferesConViajeActivo.has(choferSimuladoId);
+      if (!tieneActivo) {
+        const primerId = Array.from(choferesConViajeActivo.keys())[0];
+        if (primerId) {
+          setChoferSimuladoId(primerId);
+          try {
+            localStorage.setItem('movil_chofer_simulado_id', String(primerId));
+          } catch {}
+          cargarViajeActivo(primerId);
+          cargarDespachoActivo(primerId);
+          cargarEntregasChofer(primerId);
+        }
+      }
+    }
+  }, [esAdminReal, choferesConViajeActivo]);
   const [cargandoViajesEnVivo, setCargandoViajesEnVivo] = useState(false);
 
   // Estados para Módulo Administrador - Logística Móvil
@@ -689,7 +720,11 @@ export const AppMovilPage: React.FC = () => {
     codigo: string;
     color: string;
     descripcion: string;
+    fincasIds: number[];
   } | null>(null);
+  const [busquedaFincasNuevoCircuito, setBusquedaFincasNuevoCircuito] = useState('');
+  const [busquedaChoferSupervisar, setBusquedaChoferSupervisar] = useState('');
+  const [dropdownChoferSupervisarAbierto, setDropdownChoferSupervisarAbierto] = useState(false);
 
   const [modalAsignarFincasCircuito, setModalAsignarFincasCircuito] = useState<{
     open: boolean;
@@ -1106,8 +1141,12 @@ export const AppMovilPage: React.FC = () => {
       operacionesApi.getRutasLogistica().then((rutas: any) => {
         if (Array.isArray(rutas) && rutas.length > 0) setRutasLogisticas(rutas);
       }).catch(() => {});
+
+      if (esAdminReal) {
+        cargarDatosAdminEnVivo();
+      }
     }
-  }, [isOnline]);
+  }, [isOnline, esAdminReal]);
 
   // Si estamos en línea y el dispositivo está vinculado, refrescar fincas, entregas, perfil, viaje activo y despacho activo
   useEffect(() => {
@@ -1811,15 +1850,23 @@ export const AppMovilPage: React.FC = () => {
           nombre: modalCircuito.nombre.trim(),
           descripcion: modalCircuito.descripcion.trim() || undefined,
         });
-        toast.success('Circuito logístico actualizado');
+        if (Array.isArray(modalCircuito.fincasIds)) {
+          await operacionesApi.asignarFincasARuta(modalCircuito.id, modalCircuito.fincasIds);
+        }
+        toast.success('Circuito logístico y fincas actualizados correctamente');
       } else {
-        await operacionesApi.crearRutaLogistica({
+        const res = await operacionesApi.crearRutaLogistica({
           nombre: modalCircuito.nombre.trim(),
           descripcion: modalCircuito.descripcion.trim() || undefined,
         });
-        toast.success('Nuevo circuito logístico creado');
+        const nuevoId = res?.id || (res as any)?.data?.id;
+        if (nuevoId && Array.isArray(modalCircuito.fincasIds) && modalCircuito.fincasIds.length > 0) {
+          await operacionesApi.asignarFincasARuta(nuevoId, modalCircuito.fincasIds);
+        }
+        toast.success('Nuevo circuito logístico creado con sus fincas asociadas');
       }
       setModalCircuito(null);
+      setBusquedaFincasNuevoCircuito('');
       cargarDatosLogisticaAdmin(fechaLogistica);
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Error al guardar circuito');
@@ -4383,48 +4430,75 @@ export const AppMovilPage: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* Barra de Supervisión de Chofer (Exclusiva para Administrador / SuperAdmin) */}
               {esAdminReal && (() => {
-                const choferesActivosLista = choferesLista.filter(
+                // Filtrar choferes que tienen ruta o ticket activo actualmente
+                const choferesConViajeLista = choferesLista.filter(
                   (ch) => choferesConViajeActivo.has(ch.id) || choferesConViajeActivo.has((ch as any).usuarioId)
                 );
-                const listaEfectivaParaSelect =
-                  filtroChoferSupervisar === 'activos' && choferesActivosLista.length > 0
-                    ? choferesActivosLista
-                    : choferesLista;
+                // Por defecto o si el filtro es 'activos', solo se muestran los activos con viaje
+                const baseLista = filtroChoferSupervisar === 'activos'
+                  ? (choferesConViajeLista.length > 0 ? choferesConViajeLista : choferesLista.filter((c) => c.activo !== false))
+                  : choferesLista;
+
+                // Búsqueda en tiempo real por nombre, cédula, camión o ticket
+                const q = busquedaChoferSupervisar.trim().toLowerCase();
+                const listaFiltrada = baseLista.filter((ch) => {
+                  if (!q) return true;
+                  const nom = (ch.nombreCompleto || '').toLowerCase();
+                  const ced = (ch.cedula || '').toLowerCase();
+                  const v = choferesConViajeActivo.get(ch.id) || choferesConViajeActivo.get((ch as any).usuarioId);
+                  const tkt = v ? String(v.codigoTicket || v.id).toLowerCase() : '';
+                  const cam = v ? String(v.camionPlaca || '').toLowerCase() : '';
+                  return nom.includes(q) || ced.includes(q) || tkt.includes(q) || cam.includes(q);
+                });
+
+                // Chofer seleccionado actualmente
+                const choferSeleccionado = choferesLista.find(
+                  (c) => c.id === choferSimuladoId || (c as any).usuarioId === choferSimuladoId
+                );
+                const viajeDelSeleccionado = choferesConViajeActivo.get(choferSimuladoId) ||
+                  (choferSeleccionado ? choferesConViajeActivo.get((choferSeleccionado as any).usuarioId) : undefined);
+                const ltsSeleccionado = viajeDelSeleccionado
+                  ? (viajeDelSeleccionado.totalLitrosFinca || viajeDelSeleccionado.totalLitrosRecogidos || 0)
+                  : 0;
+
+                const seleccionarChofer = (nuevoId: number) => {
+                  setChoferSimuladoId(nuevoId);
+                  setDropdownChoferSupervisarAbierto(false);
+                  try {
+                    localStorage.setItem('movil_chofer_simulado_id', String(nuevoId));
+                  } catch {}
+                  cargarViajeActivo(nuevoId);
+                  cargarDespachoActivo(nuevoId);
+                  cargarEntregasChofer(nuevoId);
+                };
 
                 return (
                   <div
                     style={{
-                      background: '#fef3c7',
-                      border: '1.5px solid #fde047',
-                      borderRadius: '16px',
+                      background: '#fffbeb',
+                      border: '1.5px solid #fde68a',
+                      borderRadius: '18px',
                       padding: '12px 14px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '8px',
-                      boxShadow: '0 2px 10px rgba(217, 119, 6, 0.1)',
+                      boxShadow: '0 4px 14px rgba(217, 119, 6, 0.08)',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#92400e', fontWeight: 900 }}>
                         <i className="fa-solid fa-user-gear text-amber-600"></i>
                         <span>Supervisando Chofer:</span>
+                        <span style={{ fontSize: '10.5px', background: '#dcfce7', color: '#15803d', padding: '2px 7px', borderRadius: '6px', fontWeight: 800 }}>
+                          {choferesConViajeLista.length} Activo(s)
+                        </span>
                       </div>
 
-                      {/* Chips de Filtro Rápido: Solo Activos vs Todos */}
+                      {/* Filtro: Solo Activos vs Todos */}
                       <div style={{ display: 'flex', gap: '4px' }}>
                         <button
                           type="button"
-                          onClick={() => {
-                            setFiltroChoferSupervisar('activos');
-                            if (choferesActivosLista.length > 0 && !choferesConViajeActivo.has(choferSimuladoId)) {
-                              const primerActivo = choferesActivosLista[0].id;
-                              setChoferSimuladoId(primerActivo);
-                              localStorage.setItem('movil_chofer_simulado_id', String(primerActivo));
-                              cargarViajeActivo(primerActivo);
-                              cargarDespachoActivo(primerActivo);
-                              cargarEntregasChofer(primerActivo);
-                            }
-                          }}
+                          onClick={() => setFiltroChoferSupervisar('activos')}
                           style={{
                             background: filtroChoferSupervisar === 'activos' ? '#16a34a' : '#ffffff',
                             color: filtroChoferSupervisar === 'activos' ? '#ffffff' : '#15803d',
@@ -4436,7 +4510,7 @@ export const AppMovilPage: React.FC = () => {
                             cursor: 'pointer',
                           }}
                         >
-                          🟢 Con Viaje ({choferesActivosLista.length})
+                          🟢 Solo Activos ({choferesConViajeLista.length})
                         </button>
                         <button
                           type="button"
@@ -4457,44 +4531,169 @@ export const AppMovilPage: React.FC = () => {
                       </div>
                     </div>
 
-                    <select
-                      value={choferSimuladoId}
-                      onChange={(e) => {
-                        const nuevoId = Number(e.target.value);
-                        setChoferSimuladoId(nuevoId);
-                        localStorage.setItem('movil_chofer_simulado_id', String(nuevoId));
-                        cargarViajeActivo(nuevoId);
-                        cargarDespachoActivo(nuevoId);
-                        cargarEntregasChofer(nuevoId);
-                      }}
+                    {/* Botón Selector Desplegable con Información del Chofer */}
+                    <button
+                      type="button"
+                      onClick={() => setDropdownChoferSupervisarAbierto((prev) => !prev)}
                       style={{
                         width: '100%',
                         background: '#ffffff',
-                        border: '1.5px solid #d97706',
-                        borderRadius: '10px',
-                        padding: '8px 12px',
-                        fontSize: '13px',
-                        fontWeight: 800,
-                        color: '#78350f',
-                        outline: 'none',
+                        border: dropdownChoferSupervisarAbierto ? '2px solid #d97706' : '1.5px solid #d97706',
+                        borderRadius: '12px',
+                        padding: '10px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
                       }}
                     >
-                      {listaEfectivaParaSelect.length > 0 ? (
-                        listaEfectivaParaSelect.map((ch) => {
-                          const vActivo = choferesConViajeActivo.get(ch.id) || choferesConViajeActivo.get((ch as any).usuarioId);
-                          const lts = vActivo ? (vActivo.totalLitrosFinca || vActivo.totalLitrosRecogidos || 0) : 0;
-                          return (
-                            <option key={ch.id} value={ch.id}>
-                              {vActivo
-                                ? `🟢 ${ch.nombreCompleto} — Ticket #${vActivo.codigoTicket || vActivo.id} (${lts.toLocaleString()} L)`
-                                : `⚪ ${ch.nombreCompleto} (#${ch.id}) — Sin viaje`}
-                            </option>
-                          );
-                        })
-                      ) : (
-                        <option value={13}>Julio Atencio (#13)</option>
-                      )}
-                    </select>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                        <span
+                          style={{
+                            width: '12px',
+                            height: '12px',
+                            borderRadius: '50%',
+                            background: viajeDelSeleccionado ? '#16a34a' : '#94a3b8',
+                            boxShadow: viajeDelSeleccionado ? '0 0 6px rgba(22, 163, 74, 0.6)' : 'none',
+                            flexShrink: 0,
+                          }}
+                        ></span>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {choferSeleccionado?.nombreCompleto || 'Seleccionar Chofer Activo'}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            {viajeDelSeleccionado ? (
+                              <span style={{ color: '#15803d', fontWeight: 800 }}>
+                                Ticket #{viajeDelSeleccionado.codigoTicket || viajeDelSeleccionado.id} • {ltsSeleccionado.toLocaleString()} L
+                                {viajeDelSeleccionado.camionPlaca ? ` • 🚛 ${viajeDelSeleccionado.camionPlaca}` : ''}
+                              </span>
+                            ) : (
+                              <span>Sin viaje activo</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <i
+                        className={`fa-solid ${dropdownChoferSupervisarAbierto ? 'fa-chevron-up' : 'fa-chevron-down'}`}
+                        style={{ color: '#d97706', fontSize: '13px', marginLeft: '8px' }}
+                      ></i>
+                    </button>
+
+                    {/* Menú Desplegable con Buscador Integrado */}
+                    {dropdownChoferSupervisarAbierto && (
+                      <div
+                        style={{
+                          background: '#ffffff',
+                          borderRadius: '14px',
+                          border: '1.5px solid #fed7aa',
+                          boxShadow: '0 8px 24px rgba(217, 119, 6, 0.15)',
+                          padding: '10px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                          marginTop: '4px',
+                        }}
+                      >
+                        {/* Buscador de Chofer */}
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            type="text"
+                            placeholder="🔍 Buscar chofer, ticket o camión..."
+                            value={busquedaChoferSupervisar}
+                            onChange={(e) => setBusquedaChoferSupervisar(e.target.value)}
+                            autoFocus
+                            style={{
+                              width: '100%',
+                              padding: '8px 30px 8px 10px',
+                              borderRadius: '8px',
+                              border: '1px solid #cbd5e1',
+                              fontSize: '12px',
+                              outline: 'none',
+                            }}
+                          />
+                          {busquedaChoferSupervisar && (
+                            <button
+                              type="button"
+                              onClick={() => setBusquedaChoferSupervisar('')}
+                              style={{
+                                position: 'absolute',
+                                right: '8px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                background: 'none',
+                                border: 'none',
+                                color: '#94a3b8',
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Lista de Choferes Activos Filtrados */}
+                        <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {listaFiltrada.length > 0 ? (
+                            listaFiltrada.map((ch) => {
+                              const v = choferesConViajeActivo.get(ch.id) || choferesConViajeActivo.get((ch as any).usuarioId);
+                              const esSel = ch.id === choferSimuladoId;
+                              const lts = v ? (v.totalLitrosFinca || v.totalLitrosRecogidos || 0) : 0;
+                              return (
+                                <div
+                                  key={ch.id}
+                                  onClick={() => seleccionarChofer(ch.id)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '8px 10px',
+                                    borderRadius: '8px',
+                                    background: esSel ? '#fef3c7' : '#f8fafc',
+                                    border: esSel ? '1.5px solid #f59e0b' : '1px solid #f1f5f9',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                    <span
+                                      style={{
+                                        width: '10px',
+                                        height: '10px',
+                                        borderRadius: '50%',
+                                        background: v ? '#16a34a' : '#cbd5e1',
+                                        flexShrink: 0,
+                                      }}
+                                    ></span>
+                                    <div style={{ minWidth: 0 }}>
+                                      <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {ch.nombreCompleto}
+                                      </div>
+                                      <div style={{ fontSize: '10.5px', color: v ? '#15803d' : '#64748b' }}>
+                                        {v ? (
+                                          `🟢 Ticket #${v.codigoTicket || v.id} • ${lts.toLocaleString()} L${v.camionPlaca ? ` • ${v.camionPlaca}` : ''}`
+                                        ) : (
+                                          'Sin ticket activo'
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {esSel && (
+                                    <i className="fa-solid fa-check text-amber-600" style={{ fontSize: '13px' }}></i>
+                                  )}
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div style={{ padding: '12px', textAlign: 'center', fontSize: '11.5px', color: '#94a3b8' }}>
+                              No se encontraron choferes activos con "{busquedaChoferSupervisar}".
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -10539,6 +10738,7 @@ export const AppMovilPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
+                    setBusquedaFincasNuevoCircuito('');
                     setModalCircuito({
                       open: true,
                       esEdicion: false,
@@ -10546,6 +10746,7 @@ export const AppMovilPage: React.FC = () => {
                       codigo: '',
                       color: '#2563eb',
                       descripcion: '',
+                      fincasIds: [],
                     });
                   }}
                   style={{
@@ -10675,6 +10876,8 @@ export const AppMovilPage: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => {
+                                setBusquedaFincasNuevoCircuito('');
+                                const fIds = Array.isArray(ruta.fincas) ? ruta.fincas.map((f: any) => f.fincaId || f.id) : [];
                                 setModalCircuito({
                                   open: true,
                                   esEdicion: true,
@@ -10683,6 +10886,7 @@ export const AppMovilPage: React.FC = () => {
                                   codigo: ruta.codigo || '',
                                   color: '#2563eb',
                                   descripcion: ruta.descripcion || '',
+                                  fincasIds: fIds,
                                 });
                               }}
                               style={{
@@ -12845,143 +13049,370 @@ export const AppMovilPage: React.FC = () => {
         );
       })()}
 
-      {/* MODAL CREAR / EDITAR CIRCUITO LOGÍSTICO */}
-      {modalCircuito?.open && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(15, 23, 42, 0.75)',
-            backdropFilter: 'blur(5px)',
-            padding: '16px',
-          }}
-        >
+      {/* MODAL CREAR / EDITAR CIRCUITO LOGÍSTICO (CON ASIGNACIÓN DE FINCAS) */}
+      {modalCircuito?.open && (() => {
+        const totalLtsEst = (modalCircuito.fincasIds || []).reduce((acc, fid) => {
+          const p = fincasPromedio.find((fp) => fp.fincaId === fid);
+          return acc + (p?.promedioLitros || 0);
+        }, 0);
+
+        const qFinca = busquedaFincasNuevoCircuito.trim().toLowerCase();
+        const fincasFiltradas = fincas
+          .filter((f) => {
+            if (!qFinca) return true;
+            const n = (f.nombre || '').toLowerCase();
+            const c = (f.codigo || '').toLowerCase();
+            const p = (f.propietarioNombre || '').toLowerCase();
+            return n.includes(qFinca) || c.includes(qFinca) || p.includes(qFinca);
+          })
+          .sort((a, b) => {
+            const selA = (modalCircuito.fincasIds || []).includes(a.id) ? 1 : 0;
+            const selB = (modalCircuito.fincasIds || []).includes(b.id) ? 1 : 0;
+            if (selA !== selB) return selB - selA;
+            return (a.nombre || '').localeCompare(b.nombre || '');
+          });
+
+        return (
           <div
             style={{
-              width: '100%',
-              maxWidth: '420px',
-              background: '#ffffff',
-              borderRadius: '20px',
-              padding: '20px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(5px)',
+              padding: '12px',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
-                {modalCircuito.esEdicion ? 'Editar Circuito Logístico' : 'Nuevo Circuito Logístico'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalCircuito(null)}
-                style={{ background: 'none', border: 'none', fontSize: '18px', color: '#64748b', cursor: 'pointer' }}
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '480px',
+                maxHeight: '92vh',
+                display: 'flex',
+                flexDirection: 'column',
+                background: '#ffffff',
+                borderRadius: '22px',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Header Modal */}
+              <div
+                style={{
+                  padding: '16px 20px',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: '#f8fafc',
+                }}
               >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleGuardarCircuitoMovil} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
-                  Nombre del Circuito / Ruta *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej: Ruta 1 - Sur, Circuito Carora..."
-                  value={modalCircuito.nombre}
-                  onChange={(e) => setModalCircuito((prev) => prev ? { ...prev, nombre: e.target.value } : null)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    border: '1.5px solid #cbd5e1',
-                    fontSize: '13px',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
-                  Código o Abreviatura
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ej: RUTA-01"
-                  value={modalCircuito.codigo}
-                  onChange={(e) => setModalCircuito((prev) => prev ? { ...prev, codigo: e.target.value } : null)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    border: '1.5px solid #cbd5e1',
-                    fontSize: '13px',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
-                  Descripción o Zonas
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Ej: Comprende fincas de la zona baja..."
-                  value={modalCircuito.descripcion}
-                  onChange={(e) => setModalCircuito((prev) => prev ? { ...prev, descripcion: e.target.value } : null)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    border: '1.5px solid #cbd5e1',
-                    fontSize: '13px',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <div>
+                  <span style={{ fontSize: '10.5px', fontWeight: 900, color: '#0d9488', textTransform: 'uppercase' }}>
+                    {modalCircuito.esEdicion ? 'Modificar Circuito' : 'Nueva Ruta Logística'}
+                  </span>
+                  <h3 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
+                    {modalCircuito.esEdicion ? 'Editar Circuito Logístico' : 'Crear Circuito con Fincas'}
+                  </h3>
+                </div>
                 <button
                   type="button"
                   onClick={() => setModalCircuito(null)}
                   style={{
-                    flex: 1,
-                    padding: '10px',
-                    borderRadius: '10px',
-                    border: '1px solid #cbd5e1',
-                    background: '#f8fafc',
-                    color: '#64748b',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  style={{
-                    flex: 1,
-                    padding: '10px',
-                    borderRadius: '10px',
+                    background: '#e2e8f0',
                     border: 'none',
-                    background: '#0d9488',
-                    color: '#ffffff',
-                    fontWeight: 900,
+                    borderRadius: '50%',
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     cursor: 'pointer',
+                    color: '#475569',
+                    fontSize: '14px',
                   }}
                 >
-                  Guardar Circuito
+                  ✕
                 </button>
               </div>
-            </form>
+
+              {/* Formulario con Scroll */}
+              <form
+                onSubmit={handleGuardarCircuitoMovil}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: '16px 20px',
+                  gap: '12px',
+                }}
+              >
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                    Nombre del Circuito / Ruta *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: Ruta 1 - Sur, Circuito Carora..."
+                    value={modalCircuito.nombre}
+                    onChange={(e) => setModalCircuito((prev) => (prev ? { ...prev, nombre: e.target.value } : null))}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '13px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                      Código / Abreviatura
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej: RUTA-01"
+                      value={modalCircuito.codigo}
+                      onChange={(e) => setModalCircuito((prev) => (prev ? { ...prev, codigo: e.target.value } : null))}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #cbd5e1',
+                        fontSize: '13px',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                      Descripción Breve
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Fincas zona baja"
+                      value={modalCircuito.descripcion}
+                      onChange={(e) => setModalCircuito((prev) => (prev ? { ...prev, descripcion: e.target.value } : null))}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #cbd5e1',
+                        fontSize: '13px',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* SECCIÓN DE FINCAS DEL CIRCUITO */}
+                <div style={{ borderTop: '1.5px solid #e2e8f0', paddingTop: '12px', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <i className="fa-solid fa-cow text-teal-600"></i>
+                      <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>
+                        Fincas del Circuito
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: '6px', fontWeight: 800 }}>
+                        {modalCircuito.fincasIds?.length || 0} Fincas
+                      </span>
+                      {totalLtsEst > 0 && (
+                        <span style={{ fontSize: '11px', background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '2px 8px', borderRadius: '6px', fontWeight: 800 }}>
+                          ~{totalLtsEst.toLocaleString()} L
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Buscador de fincas */}
+                  <div style={{ position: 'relative', marginBottom: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="Buscar finca por nombre o productor..."
+                      value={busquedaFincasNuevoCircuito}
+                      onChange={(e) => setBusquedaFincasNuevoCircuito(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px 8px 32px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #cbd5e1',
+                        fontSize: '12px',
+                        outline: 'none',
+                      }}
+                    />
+                    <i
+                      className="fa-solid fa-magnifying-glass"
+                      style={{ position: 'absolute', left: '10px', top: '10px', color: '#94a3b8', fontSize: '12px' }}
+                    ></i>
+                  </div>
+
+                  {/* Botones de selección rápida */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '11px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idsVisibles = fincasFiltradas.map((f) => f.id);
+                        setModalCircuito((prev) =>
+                          prev
+                            ? { ...prev, fincasIds: Array.from(new Set([...(prev.fincasIds || []), ...idsVisibles])) }
+                            : null
+                        );
+                      }}
+                      style={{
+                        background: '#f0fdf4',
+                        color: '#16a34a',
+                        border: '1px solid #bbf7d0',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ✓ Marcar Visibles
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalCircuito((prev) => (prev ? { ...prev, fincasIds: [] } : null))}
+                      style={{
+                        background: '#fef2f2',
+                        color: '#dc2626',
+                        border: '1px solid #fecaca',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ✕ Desmarcar Todas
+                    </button>
+                  </div>
+
+                  {/* Lista de Fincas con Checkbox */}
+                  <div
+                    style={{
+                      maxHeight: '220px',
+                      overflowY: 'auto',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '12px',
+                      padding: '4px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                    }}
+                  >
+                    {fincasFiltradas.length > 0 ? (
+                      fincasFiltradas.map((f) => {
+                        const sel = (modalCircuito.fincasIds || []).includes(f.id);
+                        const promedio = fincasPromedio.find((p) => p.fincaId === f.id)?.promedioLitros;
+                        return (
+                          <div
+                            key={f.id}
+                            onClick={() => {
+                              setModalCircuito((prev) => {
+                                if (!prev) return null;
+                                const cur = prev.fincasIds || [];
+                                const exists = cur.includes(f.id);
+                                return {
+                                  ...prev,
+                                  fincasIds: exists ? cur.filter((id) => id !== f.id) : [...cur, f.id],
+                                };
+                              });
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              background: sel ? '#f0fdf4' : '#ffffff',
+                              border: sel ? '1px solid #bbf7d0' : '1px solid #f1f5f9',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                              <input
+                                type="checkbox"
+                                checked={sel}
+                                onChange={() => {}}
+                                style={{ width: '16px', height: '16px', accentColor: '#0d9488' }}
+                              />
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: '12.5px', fontWeight: 800, color: sel ? '#115e59' : '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {f.nombre}
+                                </div>
+                                <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                                  {f.codigo ? `${f.codigo} • ` : ''}{f.propietarioNombre || 'Productor'}
+                                </div>
+                              </div>
+                            </div>
+                            {promedio && promedio > 0 ? (
+                              <span style={{ fontSize: '11px', fontWeight: 800, color: '#0d9488', background: '#f0fdf4', padding: '2px 6px', borderRadius: '4px', flexShrink: 0 }}>
+                                ~{promedio.toLocaleString()} L
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div style={{ padding: '16px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>
+                        No se encontraron fincas con "{busquedaFincasNuevoCircuito}".
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer Modal con Botones */}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+                  <button
+                    type="button"
+                    onClick={() => setModalCircuito(null)}
+                    style={{
+                      flex: 1,
+                      padding: '11px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#64748b',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    style={{
+                      flex: 1,
+                      padding: '11px',
+                      borderRadius: '12px',
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #0d9488, #0f766e)',
+                      color: '#ffffff',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      boxShadow: '0 4px 12px rgba(13, 148, 136, 0.25)',
+                    }}
+                  >
+                    {modalCircuito.esEdicion ? 'Guardar Cambios' : 'Crear Circuito con Fincas'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL ASIGNAR FINCAS A CIRCUITO MAESTRO */}
       {modalAsignarFincasCircuito?.open && (

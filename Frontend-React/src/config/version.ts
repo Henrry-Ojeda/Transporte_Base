@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 9,
-  patch: 5,
-  tag: 'v3.9.5',
+  patch: 6,
+  tag: 'v3.9.6',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Prevención estricta de duplicados en asignación de rutas, sincronización bidireccional al agregar/quitar fincas y notificación en tiempo real al chofer',
+  descripcion: 'Móvil Admin: Modal de circuito con asignación y búsqueda de fincas integradas; selector de chofer activo en tiempo real con buscador integrado',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

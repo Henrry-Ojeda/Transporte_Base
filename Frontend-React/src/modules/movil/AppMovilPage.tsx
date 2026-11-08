@@ -978,7 +978,7 @@ export const AppMovilPage: React.FC = () => {
 
   // Consultar notificaciones en tiempo real cada 12s cuando está autenticado y online
   useEffect(() => {
-    if (!dispositivo || !isOnline) return;
+    if ((!dispositivo && !authUser) || !isOnline) return;
 
     // Solicitar permiso de notificaciones push nativas si el navegador lo permite
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
@@ -1672,7 +1672,7 @@ export const AppMovilPage: React.FC = () => {
       return;
     }
 
-    // Asegurar que ninguna finca que ya recolectó leche en esta ruta pueda ser eliminada
+    // Asegurar que ninguna finca que ya recolectó leche en esta ruta pueda ser eliminada (Blindaje)
     const planActual = planificaciones.find((p) => p.id === modalPlanificar.id);
     const controlAsociado = planActual?.controlRutaId
       ? viajesEnVivo.find((v) => v.id === planActual.controlRutaId)
@@ -1707,28 +1707,21 @@ export const AppMovilPage: React.FC = () => {
 
       const res = await operacionesApi.guardarPlanificacionChofer(dto);
 
-      // Notificación instantánea directa al chofer asignado
-      try {
-        await notificacionesApi.enviarNotificacion({
-          usuarioId: modalPlanificar.conductorId,
-          tipo: 'RUTA_ASIGNADA',
-          titulo: modalPlanificar.esEdicion ? '📋 Recorrido Actualizado por Supervisor' : '🚛 Nueva Ruta Asignada',
-          mensaje: modalPlanificar.esEdicion
-            ? `Tu recorrido fue actualizado: ahora tienes ${fincasFinales.length} fincas asignadas.`
-            : `Se te ha asignado una nueva ruta con ${fincasFinales.length} fincas asignadas.`,
-          fechaOperativa: fechaLogistica,
-          referenciaId: modalPlanificar.id,
-        });
-      } catch {}
+      // Sincronizar paradas en el ticket si existe
+      const ticketIdRef = planActual?.controlRutaId || controlAsociado?.id;
+      if (ticketIdRef) {
+        try {
+          await operacionesApi.modificarFincasTicket(ticketIdRef, fincasFinales);
+        } catch {}
+      }
 
       toast.success(res.message || 'Planificación guardada exitosamente');
       setModalPlanificar(null);
-      cargarDatosLogisticaAdmin(fechaLogistica);
-      cargarDatosAdminEnVivo();
-      // Si el usuario actual es o simula a este chofer, recargar su vista activa de inmediato
-      if (choferEfectivoId === modalPlanificar.conductorId) {
-        cargarViajeActivo();
-      }
+      await cargarDatosLogisticaAdmin(fechaLogistica);
+      await cargarDatosAdminEnVivo();
+
+      // Recargar la vista activa del chofer en tiempo real
+      await cargarViajeActivo(modalPlanificar.conductorId);
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Error al guardar planificación');
     }
@@ -10291,7 +10284,21 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {planificaciones.map((plan) => {
+                    {(() => {
+                    const planificacionesUnicas = (() => {
+                      const map = new Map<string, PlanificacionRutaChoferDto>();
+                      planificaciones.forEach((p) => {
+                        const k = p.controlRutaId
+                          ? `ticket_${p.controlRutaId}`
+                          : `cam_${p.camionId}_chof_${p.conductorId}_${(p.fecha || '').split('T')[0]}`;
+                        if (!map.has(k)) {
+                          map.set(k, p);
+                        }
+                      });
+                      return Array.from(map.values());
+                    })();
+
+                    return planificacionesUnicas.map((plan) => {
                       const fincaIds = getFincasIdsDePlan(plan);
                       const cantFincas = fincaIds.length;
                       const cap = plan.capacidadCamionLitros || 6000;
@@ -10519,7 +10526,8 @@ export const AppMovilPage: React.FC = () => {
                           </div>
                         </div>
                       );
-                    })}
+                    });
+                  })()}
                   </div>
                 )}
               </div>

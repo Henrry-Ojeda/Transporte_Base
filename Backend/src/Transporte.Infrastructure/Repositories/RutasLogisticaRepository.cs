@@ -497,10 +497,31 @@ namespace Transporte.Infrastructure.Repositories
                     new { dto.ConductorId, dto.RutaLogisticaId, usuarioId, ticketIdEfectivo });
             }
 
-            // 2. Guardar o actualizar la Planificación ligada al Ticket
+            // 2. Guardar o actualizar la Planificación ligada al Ticket (PREVINIENDO DUPLICADOS)
             int planId;
+            int? planExistenteId = null;
+
             if (dto.Id.HasValue && dto.Id.Value > 0)
             {
+                var existe = await connection.ExecuteScalarAsync<int?>(
+                    "SELECT TOP 1 Id FROM TB_PLANIFICACION_RUTAS_CHOFERES WHERE Id = @Id", new { Id = dto.Id.Value });
+                if (existe.HasValue) planExistenteId = existe.Value;
+            }
+
+            if (!planExistenteId.HasValue)
+            {
+                // Buscar si ya existe una planificación para este Ticket o para (Fecha, CamionId, ConductorId)
+                planExistenteId = await connection.ExecuteScalarAsync<int?>(@"
+                    SELECT TOP 1 Id FROM TB_PLANIFICACION_RUTAS_CHOFERES 
+                    WHERE ControlRutaId = @ticketIdEfectivo
+                       OR (CAST(Fecha AS DATE) = CAST(@Fecha AS DATE) AND CamionId = @CamionId AND ConductorId = @ConductorId)
+                    ORDER BY Activo DESC, Id DESC",
+                    new { ticketIdEfectivo, Fecha = dto.Fecha.Date, dto.CamionId, dto.ConductorId });
+            }
+
+            if (planExistenteId.HasValue && planExistenteId.Value > 0)
+            {
+                planId = planExistenteId.Value;
                 var sqlUpdate = @"
                     UPDATE TB_PLANIFICACION_RUTAS_CHOFERES
                     SET Fecha = @Fecha,
@@ -515,12 +536,13 @@ namespace Transporte.Infrastructure.Repositories
                         PorcentajeOcupacion = @PorcentajeOcupacion,
                         Observacion = @Observacion,
                         ControlRutaId = @ticketIdEfectivo,
+                        Activo = 1,
                         ModifiedAt = GETDATE(),
                         ModifiedBy = @usuarioId
-                    WHERE Id = @Id";
-                var affected = await connection.ExecuteAsync(sqlUpdate, new
+                    WHERE Id = @planId";
+                await connection.ExecuteAsync(sqlUpdate, new
                 {
-                    Id = dto.Id.Value,
+                    planId,
                     Fecha = dto.Fecha.Date,
                     dto.CamionId,
                     dto.ConductorId,
@@ -535,37 +557,6 @@ namespace Transporte.Infrastructure.Repositories
                     ticketIdEfectivo,
                     usuarioId
                 });
-
-                if (affected == 0)
-                {
-                    // Si el ID era virtual (venía de un ticket directo), insertamos la fila
-                    var sqlInsert = @"
-                        INSERT INTO TB_PLANIFICACION_RUTAS_CHOFERES
-                        (Fecha, CamionId, ConductorId, RutaLogisticaId, RutasIds, FincasIds, TotalFincas, LitrosEstimados, CapacidadCamionLitros, PorcentajeOcupacion, Observacion, ControlRutaId, Activo, CreatedAt, CreatedBy)
-                        VALUES
-                        (@Fecha, @CamionId, @ConductorId, @RutaLogisticaId, @RutasIds, @FincasIds, @TotalFincas, @LitrosEstimados, @CapacidadCamionLitros, @PorcentajeOcupacion, @Observacion, @ticketIdEfectivo, 1, GETDATE(), @usuarioId);
-                        SELECT CAST(SCOPE_IDENTITY() AS INT);";
-                    planId = await connection.ExecuteScalarAsync<int>(sqlInsert, new
-                    {
-                        Fecha = dto.Fecha.Date,
-                        dto.CamionId,
-                        dto.ConductorId,
-                        dto.RutaLogisticaId,
-                        dto.RutasIds,
-                        FincasIds = fincasIdsStr,
-                        TotalFincas = totalFincas,
-                        dto.LitrosEstimados,
-                        CapacidadCamionLitros = capacidad,
-                        PorcentajeOcupacion = porcentaje,
-                        dto.Observacion,
-                        ticketIdEfectivo,
-                        usuarioId
-                    });
-                }
-                else
-                {
-                    planId = dto.Id.Value;
-                }
             }
             else
             {
@@ -593,6 +584,16 @@ namespace Transporte.Infrastructure.Repositories
                 });
             }
 
+            // Desactivar estrictamente cualquier otro registro duplicado para el mismo Ticket o (Fecha, Camion, Conductor)
+            await connection.ExecuteAsync(@"
+                UPDATE TB_PLANIFICACION_RUTAS_CHOFERES
+                SET Activo = 0, ModifiedAt = GETDATE(), ModifiedBy = @usuarioId
+                WHERE Id <> @planId AND (
+                    ControlRutaId = @ticketIdEfectivo 
+                    OR (CAST(Fecha AS DATE) = CAST(@Fecha AS DATE) AND CamionId = @CamionId AND ConductorId = @ConductorId)
+                )",
+                new { planId, ticketIdEfectivo, Fecha = dto.Fecha.Date, dto.CamionId, dto.ConductorId, usuarioId });
+
             // 3. Sincronización UNIFICADA con TB_RUTAS_RECOLECCION (Regla de Blindaje de Leche)
             try
             {
@@ -605,7 +606,7 @@ namespace Transporte.Infrastructure.Repositories
 
                 // Regla de Blindaje:
                 // - Finca con Litros > 0: NUNCA se borra ni se desasigna (queda protegida en el ticket).
-                // - Finca con Litros == 0: Si el admin la quitó de la planificación, se remueve limpiamente.
+                // - Finca con Litros == 0 o NULL: Si el admin la quitó de la planificación, se remueve limpiamente.
                 foreach (var parada in paradasExistentes)
                 {
                     if ((parada.Litros ?? 0) > 0)
@@ -636,43 +637,36 @@ namespace Transporte.Infrastructure.Repositories
                 {
                     if (!fincasExistentesIds.Contains(fId))
                     {
-                        var sqlInsertParada = @"
+                        await connection.ExecuteAsync(@"
                             INSERT INTO TB_RUTAS_RECOLECCION
                             (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, ControlRutaId, TipoLeche, CreatedAt, CreatedBy)
                             VALUES
-                            (@cicloIdEfectivo, @Fecha, @FincaId, @ConductorId, 0, 0, @ticketIdEfectivo, 'VACA', GETDATE(), @usuarioId)";
-                        await connection.ExecuteAsync(sqlInsertParada, new
-                        {
-                            cicloIdEfectivo,
-                            Fecha = dto.Fecha.Date,
-                            FincaId = fId,
-                            ConductorId = dto.ConductorId,
-                            ticketIdEfectivo,
-                            usuarioId
-                        });
+                            (@cicloIdEfectivo, @Fecha, @fId, @ConductorId, 0, 0, @ticketIdEfectivo, 'VACA', GETDATE(), @usuarioId)",
+                            new { cicloIdEfectivo, Fecha = dto.Fecha.Date, fId, dto.ConductorId, ticketIdEfectivo, usuarioId });
                     }
                 }
 
-                // Si alguna finca blindada fue preservada, reflejar la lista final en TB_PLANIFICACION_RUTAS_CHOFERES
-                if (fincasSeleccionadas.Count != totalFincas)
-                {
-                    var fincasFinalesStr = string.Join(",", fincasSeleccionadas);
-                    await connection.ExecuteAsync(@"
-                        UPDATE TB_PLANIFICACION_RUTAS_CHOFERES
-                        SET FincasIds = @fincasFinalesStr,
-                            TotalFincas = @totalFincas
-                        WHERE Id = @planId",
-                        new { fincasFinalesStr, totalFincas = fincasSeleccionadas.Count, planId });
-                }
+                // Asegurar que FincasIds en la planificación refleje las fincas reales
+                var fincasAjustadasStr = string.Join(",", fincasSeleccionadas.Distinct());
+                await connection.ExecuteAsync(@"
+                    UPDATE TB_PLANIFICACION_RUTAS_CHOFERES
+                    SET FincasIds = @fincasAjustadasStr, TotalFincas = @totalFincas
+                    WHERE Id = @planId",
+                    new { fincasAjustadasStr, totalFincas = fincasSeleccionadas.Distinct().Count(), planId });
 
-                // 4. Notificar al Chofer en App Móvil
+                // 4. Notificación automática directa al Chofer en App Móvil
                 if (dto.ConductorId > 0)
                 {
-                    bool esEdicion = dto.Id.HasValue && dto.Id.Value > 0;
-                    string tituloNotif = esEdicion ? "📋 Recorrido Actualizado por Supervisor" : "🚛 Nuevo Ticket / Ruta Asignada";
-                    string mensajeNotif = esEdicion
-                        ? $"Tu recorrido fue actualizado: ahora tienes {fincasSeleccionadas.Count} fincas asignadas."
-                        : $"Se te ha asignado el Ticket #{ticketIdEfectivo} para el {dto.Fecha:dd/MM/yyyy} con {fincasSeleccionadas.Count} fincas en recorrido.";
+                    var camionPlaca = await connection.ExecuteScalarAsync<string?>(
+                        "SELECT Placa FROM TB_CAMIONES WHERE Id = @CamionId", new { dto.CamionId }) ?? "cisterna";
+
+                    string tituloNotif = (dto.Id.HasValue && dto.Id.Value > 0)
+                        ? "📋 Recorrido Actualizado por Supervisor"
+                        : "🚛 Nueva Ruta Asignada";
+
+                    string mensajeNotif = (dto.Id.HasValue && dto.Id.Value > 0)
+                        ? $"Tu recorrido fue actualizado: ahora tienes {fincasSeleccionadas.Count} fincas asignadas en el camión {camionPlaca}."
+                        : $"Se te asignó una nueva ruta con {fincasSeleccionadas.Count} fincas en el camión {camionPlaca}.";
 
                     await connection.ExecuteAsync(@"
                         IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'TB_NOTIFICACIONES_MOVIL')
@@ -777,7 +771,7 @@ namespace Transporte.Infrastructure.Repositories
                             INSERT INTO TB_NOTIFICACIONES_MOVIL 
                             (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
                             VALUES 
-                            (@conductorId, 'RUTA_ASIGNADA', '📋 Fincas Modificadas en tu Ruta', 
+                            (@conductorId, 'RUTA_ASIGNADA', '📋 Recorrido Actualizado por Supervisor', 
                              @mensaje, @fecha, @controlRutaId, 0, GETDATE());
                         END",
                         new 

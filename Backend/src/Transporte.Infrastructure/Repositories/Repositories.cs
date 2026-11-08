@@ -10979,7 +10979,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             {
                 existentes = await connection.QueryAsync<dynamic>(
                     @"SELECT r.Id AS RutaId, r.ControlRutaId, r.Fecha, r.FincaId, r.Litros, r.EsAcida, r.TipoLeche, r.UsuarioId AS RutaChoferId,
-                             cr.Id AS TicketId, cr.CodigoTicket, cr.UsuarioId AS TicketChoferId, cr.Estado AS TicketEstado
+                             cr.Id AS TicketId, CAST(cr.Id AS VARCHAR(50)) AS CodigoTicket, cr.UsuarioId AS TicketChoferId, cr.Estado AS TicketEstado
                       FROM TB_RUTAS_RECOLECCION r
                       LEFT JOIN TB_CONTROL_RUTAS cr ON r.ControlRutaId = cr.Id
                       WHERE CAST(r.Fecha AS DATE) IN @fechas AND r.FincaId IN @fincasIds",
@@ -11170,13 +11170,13 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 // Crear el Ticket en TB_CONTROL_RUTAS (En estado ABIERTO para que SuperAdmin lo verifique y finalice)
                 var sqlInsertTicket = @"
                     INSERT INTO TB_CONTROL_RUTAS
-                    (Fecha, UsuarioId, CamionId, CicloId, TotalLitrosFinca, TotalLitrosReceptoria, DiferenciaLitros, PorcentajeMerma, Estado, ProcesoActualId, Observacion, CreatedAt, CreatedBy)
-                    VALUES (@fechaGrupo, @conductorId, @camionId, @cicloId, 0, 0, 0, 0, 'ABIERTO', 1, '[CARGA_EXCEL] Ticket generado por Importación Masiva', GETDATE(), @usuarioId);
+                    (Fecha, UsuarioId, CicloId, TotalLitrosFinca, TotalLitrosReceptoria, DiferenciaLitros, PorcentajeMerma, Estado, ProcesoActualId, Observacion, CreatedAt, CreatedBy)
+                    VALUES (@fechaGrupo, @conductorId, @cicloId, 0, 0, 0, 0, 'ABIERTO', 1, '[CARGA_EXCEL] Ticket generado por Importación Masiva', GETDATE(), @usuarioId);
                     SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
                 long ticketId = await connection.ExecuteScalarAsync<long>(sqlInsertTicket, new
                 {
-                    fechaGrupo, conductorId, camionId, cicloId, usuarioId
+                    fechaGrupo, conductorId, cicloId, usuarioId
                 });
 
                 if (ticketId <= 0) continue;

@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 2,
-  minor: 2,
+  minor: 3,
   patch: 1,
-  tag: 'v2.2.1',
+  tag: 'v2.3.1',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Modo Offline Resiliente, Control Botón Atrás Android y Visualización Dinámica de Litros',
+  descripcion: 'Selector Gasoil/Gasolina Móvil y Web, Paridad Estricta de Fincas Recolectadas y Orden Cronológico de Recolección',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

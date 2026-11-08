@@ -845,6 +845,12 @@ export const AppMovilPage: React.FC = () => {
         if (Array.isArray(paradas)) {
           setParadasViajeActivo(paradas);
           try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradas)); } catch {}
+          // Limpiar de cargas locales cualquier carga ya sincronizada para evitar discrepancias de conteo
+          setCargas((prev) => {
+            const soloPendientes = prev.filter((c) => !c.synced);
+            try { localStorage.setItem('movil_cargas_local', JSON.stringify(soloPendientes)); } catch {}
+            return soloPendientes;
+          });
         }
       } else if (v && esCerrado) {
         // Solo si el servidor confirmó explícitamente que el ticket fue cerrado
@@ -2007,28 +2013,33 @@ export const AppMovilPage: React.FC = () => {
         hora: p.horaRecoleccion || p.hora || (p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Confirmada'),
         synced: true,
         origen: 'Servidor',
+        createdAt: p.createdAt || p.CreatedAt || p.fecha,
+        modifiedAt: p.modifiedAt || p.ModifiedAt,
       });
     });
 
-    // 2. Cargas locales en el teléfono aún pendientes de sincronizar
-    cargas.filter((c) => !c.synced).forEach((c) => {
-      lista.push({
-        localId: c.localId,
-        fincaId: Number(c.fincaId || 0),
-        fincaNombre: c.fincaNombre,
-        litros: Number(c.litros) || 0,
-        tipoLeche: c.tipoLeche,
-        esAcida: c.esAcida,
-        esDiferido: c.esDiferido,
-        temperatura: c.temperatura,
-        hora: c.hora,
-        synced: false,
-        origen: 'Teléfono',
+    // 2. Cargas locales en el teléfono aún pendientes de sincronizar (del viaje actual)
+    cargas
+      .filter((c) => !c.synced && (!c.serverTicketId || Number(c.serverTicketId) === Number(viajeActivo?.id)))
+      .forEach((c) => {
+        lista.push({
+          localId: c.localId,
+          fincaId: Number(c.fincaId || 0),
+          fincaNombre: c.fincaNombre,
+          litros: Number(c.litros) || 0,
+          tipoLeche: c.tipoLeche,
+          esAcida: c.esAcida,
+          esDiferido: c.esDiferido,
+          temperatura: c.temperatura,
+          hora: c.hora,
+          synced: false,
+          origen: 'Teléfono',
+          createdAt: c.fecha || new Date().toISOString(),
+        });
       });
-    });
 
     return lista;
-  }, [paradasViajeActivo, cargas]);
+  }, [paradasViajeActivo, cargas, viajeActivo]);
 
   const rutasActivasIds = useMemo(() => {
     if (!viajeActivo) return [];
@@ -2085,7 +2096,12 @@ export const AppMovilPage: React.FC = () => {
         (Number(p.fincaId) > 0 && Number(p.fincaId) === f.id) ||
         (p.fincaNombre && f.nombre && p.fincaNombre.trim().toLowerCase() === f.nombre.trim().toLowerCase())
       );
-      const cargaLocal = cargas.find((c) => Number(c.fincaId) === f.id);
+      // Solo cargas locales pendientes de sincronizar que pertenezcan a este viaje
+      const cargaLocal = cargas.find((c) =>
+        Number(c.fincaId) === f.id &&
+        !c.synced &&
+        (!c.serverTicketId || Number(c.serverTicketId) === Number(viajeActivo.id))
+      );
 
       let lts = 0;
       if (cargaLocal && Number(cargaLocal.litros) > 0) {
@@ -2094,6 +2110,7 @@ export const AppMovilPage: React.FC = () => {
         lts = paradasDeFinca.reduce((acc, p) => acc + (Number(p.litros) || 0), 0);
       }
 
+      // REGLA MAESTRA: Una finca es RECOLECTADA estrictamente si tiene litros recolectados (> 0)
       const esRec = lts > 0;
       const paradaConLitros = paradasDeFinca.filter((p) => (Number(p.litros) || 0) > 0);
       const parada = paradaConLitros.length > 0 
@@ -2122,12 +2139,35 @@ export const AppMovilPage: React.FC = () => {
         horaRecogida,
       };
     }).sort((a, b) => {
-      // 3.- Se va ordenando de primero con litros: las recolectadas arriba
-      if (a.litrosRecolectados > 0 && b.litrosRecolectados === 0) return -1;
-      if (a.litrosRecolectados === 0 && b.litrosRecolectados > 0) return 1;
-      if (a.litrosRecolectados > 0 && b.litrosRecolectados > 0) {
-        return b.litrosRecolectados - a.litrosRecolectados;
+      // 1. Las fincas recolectadas (> 0 Lts) se ubican de primero
+      const recA = a.recolectada && a.litrosRecolectados > 0;
+      const recB = b.recolectada && b.litrosRecolectados > 0;
+      if (recA && !recB) return -1;
+      if (!recA && recB) return 1;
+
+      // 2. Entre las recolectadas: Ordenar por FECHA Y HORA DE REGISTRO DE LECHE (más reciente arriba)
+      if (recA && recB) {
+        const timeA = new Date(
+          (a.parada as any)?.modifiedAt ||
+          (a.parada as any)?.createdAt ||
+          (a.parada as any)?.CreatedAt ||
+          (a.parada as any)?.fecha ||
+          a.horaRecogida ||
+          0
+        ).getTime();
+        const timeB = new Date(
+          (b.parada as any)?.modifiedAt ||
+          (b.parada as any)?.createdAt ||
+          (b.parada as any)?.CreatedAt ||
+          (b.parada as any)?.fecha ||
+          b.horaRecogida ||
+          0
+        ).getTime();
+        if (timeA !== timeB) return timeB - timeA;
+        return (Number(b.parada?.id) || 0) - (Number(a.parada?.id) || 0);
       }
+
+      // 3. Las pendientes por orden alfabético
       return a.nombre.localeCompare(b.nombre);
     });
   }, [viajeActivo, rutasActivasIds, fincas, todasLasParadas, cargas]);
@@ -6779,7 +6819,7 @@ export const AppMovilPage: React.FC = () => {
                 </span>
               </div>
               <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 4px 0' }}>
-                Registro de Combustible (Gasoil)
+                Registro de Combustible ({formCombustible.tipoCombustible === 'GASOLINA' ? 'Gasolina' : 'Gasoil'})
               </h2>
               <p style={{ margin: 0, fontSize: '12px', color: '#ffe4e6' }}>
                 Registra la recarga de tu camión desde Bomba comercial o patio interno La Matera.
@@ -6802,6 +6842,58 @@ export const AppMovilPage: React.FC = () => {
             >
               <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
                 Datos de la Recarga
+              </div>
+
+              {/* Selector Tipo de Combustible: Gasoil vs Gasolina */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
+                  Tipo de Combustible *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setFormCombustible((prev) => ({ ...prev, tipoCombustible: 'GASOIL' }))}
+                    style={{
+                      padding: '12px 10px',
+                      borderRadius: '12px',
+                      border: formCombustible.tipoCombustible === 'GASOIL' ? '2px solid #0284c7' : '1px solid #cbd5e1',
+                      background: formCombustible.tipoCombustible === 'GASOIL' ? '#f0f9ff' : '#f8fafc',
+                      color: formCombustible.tipoCombustible === 'GASOIL' ? '#0369a1' : '#475569',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <i className="fa-solid fa-oil-well text-base"></i>
+                    <span>Gasoil (Diésel)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormCombustible((prev) => ({ ...prev, tipoCombustible: 'GASOLINA' }))}
+                    style={{
+                      padding: '12px 10px',
+                      borderRadius: '12px',
+                      border: formCombustible.tipoCombustible === 'GASOLINA' ? '2px solid #ea580c' : '1px solid #cbd5e1',
+                      background: formCombustible.tipoCombustible === 'GASOLINA' ? '#fff7ed' : '#f8fafc',
+                      color: formCombustible.tipoCombustible === 'GASOLINA' ? '#c2410c' : '#475569',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <i className="fa-solid fa-gas-pump text-base"></i>
+                    <span>Gasolina</span>
+                  </button>
+                </div>
               </div>
 
               {/* Selector de Origen: Bomba vs Matera */}
@@ -7115,8 +7207,21 @@ export const AppMovilPage: React.FC = () => {
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
-                          ⛽ {h.litros || (h as any).Litros || 0} Lts Gasoil
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>⛽ {h.litros || (h as any).Litros || 0} Lts</span>
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              fontWeight: 900,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              background: (h.tipoCombustible || (h as any).TipoCombustible || 'GASOIL').toUpperCase().includes('GASOLINA') ? '#fff7ed' : '#eff6ff',
+                              color: (h.tipoCombustible || (h as any).TipoCombustible || 'GASOIL').toUpperCase().includes('GASOLINA') ? '#c2410c' : '#1d4ed8',
+                              border: (h.tipoCombustible || (h as any).TipoCombustible || 'GASOIL').toUpperCase().includes('GASOLINA') ? '1px solid #fed7aa' : '1px solid #bfdbfe',
+                            }}
+                          >
+                            {(h.tipoCombustible || (h as any).TipoCombustible || 'GASOIL').toUpperCase().includes('GASOLINA') ? 'GASOLINA' : 'GASOIL'}
+                          </span>
                         </div>
                         <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '2px' }}>
                           {h.fecha ? new Date(h.fecha).toLocaleDateString() : 'Hoy'}
@@ -11457,10 +11562,10 @@ export const AppMovilPage: React.FC = () => {
                 </select>
               </div>
 
-              {/* Chofer */}
+              {/* Conductor */}
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                  Chofer / Conductor
+                  Conductor Asignado
                 </label>
                 <select
                   value={modalNuevoDespachoSalida.conductorId}
@@ -11471,17 +11576,17 @@ export const AppMovilPage: React.FC = () => {
                   }
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px', background: '#ffffff', fontWeight: 700 }}
                 >
-                  <option value={0}>-- Selecciona Chofer --</option>
-                  {choferesLista.map((ch) => (
-                    <option key={ch.id} value={ch.id}>
-                      {ch.nombreCompleto}
+                  <option value={0}>-- Sin Conductor Específico --</option>
+                  {(choferesLista || []).map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombreCompleto || c.nombre}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Litros y Tipo de Leche */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+              {/* Litros & Tipo Leche */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
                     Litros Despachados *

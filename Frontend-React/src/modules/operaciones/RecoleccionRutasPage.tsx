@@ -1609,8 +1609,22 @@ export const RecoleccionRutasPage: React.FC = () => {
       }
 
       return true;
+    }).sort((a: any, b: any) => {
+      const ltsA = Number(a.litros || a.Litros || 0);
+      const ltsB = Number(b.litros || b.Litros || 0);
+      const recA = ltsA > 0;
+      const recB = ltsB > 0;
+      if (recA && !recB) return -1;
+      if (!recA && recB) return 1;
+      if (recA && recB) {
+        const timeA = new Date(a.createdAt || a.CreatedAt || a.fecha || 0).getTime();
+        const timeB = new Date(b.createdAt || b.CreatedAt || b.fecha || 0).getTime();
+        if (timeA !== timeB) return timeB - timeA;
+        return (Number(b.id) || 0) - (Number(a.id) || 0);
+      }
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
     });
-  }, [recolecciones, filtroDetalleFincaId, filtroDetalleChoferId, conductores]);
+  }, [recolecciones, filtroDetalleFincaId, filtroDetalleChoferId, conductores, fechaFiltro, esChofer, user]);
 
   // Totales generales para Detalle por Fincas (calculados según los filtros aplicados)
   const totalesRecoleccion = useMemo(() => {
@@ -2928,11 +2942,29 @@ export const RecoleccionRutasPage: React.FC = () => {
                       (p.conductorId === item.conductorId || (item as any).choferId === p.conductorId))
                 );
 
-                const fincasTicket = esRuta
+                const fincasTicketRaw = esRuta
                   ? (Array.isArray(fincasTicketsMap[item.id])
                       ? fincasTicketsMap[item.id]
                       : recolecciones.filter((r) => r.controlRutaId != null && Number(r.controlRutaId) === Number(item.id)))
                   : [];
+
+                const fincasTicket = [...fincasTicketRaw].sort((a: any, b: any) => {
+                  const ltsA = Number(a.litros ?? a.Litros ?? 0);
+                  const ltsB = Number(b.litros ?? b.Litros ?? 0);
+                  const recA = ltsA > 0;
+                  const recB = ltsB > 0;
+                  if (recA && !recB) return -1;
+                  if (!recA && recB) return 1;
+                  if (recA && recB) {
+                    const timeA = new Date(a.createdAt || a.CreatedAt || a.fecha || 0).getTime();
+                    const timeB = new Date(b.createdAt || b.CreatedAt || b.fecha || 0).getTime();
+                    if (timeA !== timeB) return timeB - timeA;
+                    return (Number(b.id) || 0) - (Number(a.id) || 0);
+                  }
+                  const nomA = a.fincaNombre || a.FincaNombre || a.finca || '';
+                  const nomB = b.fincaNombre || b.FincaNombre || b.finca || '';
+                  return nomA.localeCompare(nomB);
+                });
 
                 const cantParadas = fincasTicket.length > 0 ? fincasTicket.length : (item.totalFincas || 0);
                 const sumFincasLts = fincasTicket.reduce((acc, f: any) => acc + Number(f.litros ?? f.Litros ?? 0), 0);

@@ -51,3 +51,4 @@ updated = updated.replace(/tipoUltimoCambio:\s*'[^']+'/, `tipoUltimoCambio: '${t
 fs.writeFileSync(versionFilePath, updated, 'utf-8');
 
 console.log(`Versión actualizada exitosamente a ${newTag} (${tipo})`);
+

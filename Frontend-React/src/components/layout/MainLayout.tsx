@@ -7,7 +7,7 @@ export const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="app-shell" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="app-shell" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#f8fafc' }}>
       {/* Header Superior Fijo */}
       <Header onToggleSidebar={() => setSidebarOpen((prev) => !prev)} />
 
@@ -30,10 +30,10 @@ export const MainLayout: React.FC = () => {
       )}
 
       {/* Contenedor Principal: Sidebar + Main Content */}
-      <div className="main-layout" id="mainLayoutWrapper">
+      <div className="main-layout" id="mainLayoutWrapper" style={{ backgroundColor: '#f8fafc' }}>
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-        <main className="content-area main-content" id="mainContainer">
+        <main className="content-area main-content" id="mainContainer" style={{ backgroundColor: '#f8fafc' }}>
           <Outlet />
         </main>
       </div>

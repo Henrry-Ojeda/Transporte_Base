@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 2,
-  patch: 2,
-  tag: 'v3.2.2',
+  patch: 3,
+  tag: 'v3.2.3',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO',
-  descripcion: 'Restauración del fondo claro corporativo original (#f8fafc) en el cascarón HTML de la Web',
+  descripcion: 'Restauración explícita del fondo gris perla (#f8fafc) en MainLayout y ContentArea para toda la plataforma Web',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

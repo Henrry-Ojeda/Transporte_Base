@@ -10714,6 +10714,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
         Task<IEnumerable<ControlCompaniaDto>> ObtenerTodosAsync(DateTime? fecha = null, DateTime? fechaInicio = null, DateTime? fechaFin = null, string? estado = null, int? usuarioId = null, int? companiaId = null);
         Task<ControlCompaniaDto?> ObtenerPorIdAsync(long id);
         Task<ControlCompaniaDto?> ObtenerTicketActivoChoferAsync(int choferId);
+        Task<IEnumerable<ControlCompaniaDto>> ObtenerTicketsActivosChoferAsync(int choferId, long? controlRutaId = null);
         Task<long> CrearDespachoAsync(CrearControlCompaniaDto dto, int creadoPor);
         Task<bool> ValidarYFinalizarEntregaAsync(long id, ValidarEntregaCompaniaDto dto, int modificadoPor);
         Task<bool> EditarDespachoAsync(long id, EditarControlCompaniaDto dto, int modificadoPor);
@@ -10862,6 +10863,42 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 ORDER BY cc.Id DESC";
 
             return await connection.QueryFirstOrDefaultAsync<ControlCompaniaDto>(query, new { choferId });
+        }
+
+        public async Task<IEnumerable<ControlCompaniaDto>> ObtenerTicketsActivosChoferAsync(int choferId, long? controlRutaId = null)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            var query = @"
+                SELECT 
+                    cc.Id,
+                    cc.Fecha,
+                    cc.UsuarioId,
+                    u.NombreCompleto AS NombreConductor,
+                    cc.CompaniaId,
+                    c.Nombre AS NombreCompania,
+                    cc.CicloId,
+                    cc.LitrosDespachados,
+                    cc.LitrosRecibidosCompania,
+                    cc.DiferenciaLitros,
+                    cc.PorcentajeMerma,
+                    cc.Estado,
+                    cc.TipoLeche,
+                    cc.Observacion,
+                    cc.FechaSalida,
+                    cc.FechaEntrega,
+                    cc.ControlRutaId,
+                    cc.FotoReciboUrl,
+                    cc.CreatedAt
+                FROM TB_CONTROL_COMPANIAS cc
+                LEFT JOIN TB_USUARIOS u ON cc.UsuarioId = u.Id
+                LEFT JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
+                WHERE (
+                    (cc.UsuarioId = @choferId AND cc.Estado IN ('EN VIA', 'EN_TRANSITO', 'PENDIENTE'))
+                    " + (controlRutaId.HasValue && controlRutaId.Value > 0 ? " OR (cc.ControlRutaId = @controlRutaId AND cc.Estado IN ('EN VIA', 'EN_TRANSITO', 'PENDIENTE')) " : "") + @"
+                )
+                ORDER BY cc.Id ASC";
+
+            return await connection.QueryAsync<ControlCompaniaDto>(query, new { choferId, controlRutaId });
         }
 
         public async Task<long> CrearDespachoAsync(CrearControlCompaniaDto dto, int creadoPor)

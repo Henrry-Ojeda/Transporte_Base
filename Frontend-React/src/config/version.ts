@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 4,
+  minor: 5,
   patch: 1,
-  tag: 'v3.4.1',
+  tag: 'v3.5.1',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Backend & Frontend: resolución de conflicto FK y contrato DTO en despacho directo a receptoría y compañías',
+  descripcion: 'Móvil & Web: bloqueo de edición de fincas en viajes recepcionados, ocultamiento de botones despacho/traspaso, soporte multi-ticket y confirmación exclusiva a compañías externas',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

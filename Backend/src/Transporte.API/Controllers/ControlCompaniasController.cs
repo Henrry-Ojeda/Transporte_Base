@@ -103,6 +103,21 @@ namespace Transporte.API.Controllers
         }
 
         /// <summary>
+        /// Obtiene la lista de todos los tickets activos en estado 'EN VIA' asignados al chofer o al viaje en curso.
+        /// </summary>
+        [HttpGet("chofer-activos")]
+        public async Task<IActionResult> ObtenerTicketsActivosChofer([FromQuery] int? choferId = null, [FromQuery] long? controlRutaId = null)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var rol = (User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER").ToUpper();
+            bool esAdmin = rol.Contains("ADMIN") || rol == "SUPERADMIN" || rol == "SUPERVISOR";
+            int idBusqueda = (esAdmin && choferId.HasValue && choferId.Value > 0) ? choferId.Value : userId;
+
+            var tickets = await _controlCompaniasRepository.ObtenerTicketsActivosChoferAsync(idBusqueda, controlRutaId);
+            return Ok(tickets ?? Enumerable.Empty<ControlCompaniaDto>());
+        }
+
+        /// <summary>
         /// Registra un nuevo despacho / ticket de salida hacia una compañía (Estado 'EN VIA').
         /// </summary>
         [HttpPost]

@@ -276,6 +276,18 @@ export const operacionesApi = {
     }
   },
 
+  getTicketsActivosDespachoChofer: async (choferId?: number, controlRutaId?: number): Promise<DespachoCompaniaDto[]> => {
+    try {
+      const params: Record<string, any> = {};
+      if (choferId) params.choferId = choferId;
+      if (controlRutaId) params.controlRutaId = controlRutaId;
+      const res = await apiClient.get<DespachoCompaniaDto[]>('/control-companias/chofer-activos', { params });
+      return Array.isArray(res.data) ? res.data : [];
+    } catch {
+      return [];
+    }
+  },
+
   getDespachosCompanias: async (fecha?: string, companiaId?: number, fechaInicio?: string, fechaFin?: string, usuarioId?: number): Promise<DespachoCompaniaDto[]> => {
     const params: Record<string, any> = {};
 

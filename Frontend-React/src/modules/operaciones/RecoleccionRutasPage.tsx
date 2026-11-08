@@ -1866,8 +1866,19 @@ export const RecoleccionRutasPage: React.FC = () => {
       .map((id: number) => rutasLogistica.find((r) => r.id === id)?.nombre || `Ruta #${id}`)
       .join(', ');
 
+    const estaEnReceptoria = Boolean(
+      (viajeTimelapse.procesoActualId != null && viajeTimelapse.procesoActualId >= 2) ||
+      (viajeTimelapse.litrosEntregadosCompania != null && Number(viajeTimelapse.litrosEntregadosCompania) > 0) ||
+      (viajeTimelapse.totalLitrosReceptoria != null && Number(viajeTimelapse.totalLitrosReceptoria) > 0) ||
+      viajeTimelapse.estado === 'EN_RECEPTORIA' ||
+      viajeTimelapse.estado === 'RECEPCIONADO' ||
+      viajeTimelapse.estado === 'CAMINO A COMPAÑIA' ||
+      viajeTimelapse.estado === 'POR VERIFICACIÓN'
+    );
+
     return {
       esFinalizado,
+      estaEnReceptoria,
       tieneRuta,
       rutaNombre: nombresRutas || viajeTimelapse.rutaLogisticaNombre || (tieneRuta ? `Ruta #${viajeTimelapse.rutaLogisticaId}` : 'Modo Libre (Sin Ruta)'),
       chofer: viajeTimelapse.choferNombre || viajeTimelapse.nombreConductor || 'Sin Asignar',
@@ -3117,7 +3128,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                               Destino: {item.nombreCompania}
                             </div>
                           )}
-                          {esRuta && !esFinalizado && esAdminOSup && (
+                          {esRuta && !esFinalizado && !estaEnReceptoriaOCompania && esAdminOSup && (
                             <div style={{ marginTop: '7px' }}>
                               <button
                                 type="button"
@@ -3143,6 +3154,28 @@ export const RecoleccionRutasPage: React.FC = () => {
                               >
                                 <i className="fa-solid fa-pen-to-square"></i> Modificar Fincas de la Ruta
                               </button>
+                            </div>
+                          )}
+                          {esRuta && !esFinalizado && estaEnReceptoriaOCompania && (
+                            <div style={{ marginTop: '7px' }}>
+                              <span
+                                className="badge"
+                                style={{
+                                  background: '#fffbeb',
+                                  color: '#92400e',
+                                  border: '1px solid #fde68a',
+                                  fontWeight: 800,
+                                  fontSize: '10px',
+                                  padding: '2px 8px',
+                                  borderRadius: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                                title="Ticket en Receptoría: fincas bloqueadas en modo sólo lectura hasta que Receptoría devuelva el ticket"
+                              >
+                                <i className="fa-solid fa-lock"></i> Fincas Bloqueadas (En Receptoría)
+                              </span>
                             </div>
                           )}
                         </div>
@@ -3913,6 +3946,25 @@ export const RecoleccionRutasPage: React.FC = () => {
                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#94a3b8', display: 'inline-block' }}></span>
                     FINALIZADO
                   </span>
+                ) : timelapseData.estaEnReceptoria ? (
+                  <span
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      border: '1px solid #f59e0b',
+                      color: '#fbbf24',
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                    title="Ticket despachado hacia Receptoría: fincas en modo solo lectura"
+                  >
+                    <i className="fa-solid fa-lock text-[11px]"></i>
+                    EN RECEPTORÍA (SOLO LECTURA)
+                  </span>
                 ) : (
                   <span
                     style={{
@@ -4229,42 +4281,61 @@ export const RecoleccionRutasPage: React.FC = () => {
                                   </span>
                                 )}
 
-                                {/* BOTÓN AGREGAR LITROS DIRECTO EN LA FINCA */}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (viajeTimelapse) {
-                                      setViajeActivo(viajeTimelapse);
-                                    }
-                                    setFormFinca({
-                                      fincaId: f.id,
-                                      litros: '',
-                                      tipoLeche: (f.tipoLeche as any) || 'VACA',
-                                      esAcida: false,
-                                      esDiferido: false,
-                                      fecha: viajeTimelapse?.fecha ? viajeTimelapse.fecha.split('T')[0] : (fechaFiltro || hoyStr),
-                                      observacion: '',
-                                      fotoComprobante: '',
-                                    });
-                                    setModalRegistroFinca(true);
-                                  }}
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                                    color: '#ffffff',
-                                    border: 'none',
-                                    borderRadius: '7px',
-                                    padding: '4px 12px',
-                                    fontSize: '11.5px',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    boxShadow: '0 2px 6px rgba(16,185,129,0.3)',
-                                  }}
-                                >
-                                  <i className="fa-solid fa-plus-circle"></i> Agregar Litros
-                                </button>
+                                {/* BOTÓN AGREGAR LITROS DIRECTO EN LA FINCA (O BADGE SI ESTÁ EN RECEPTORÍA) */}
+                                {timelapseData.estaEnReceptoria ? (
+                                  <span
+                                    style={{
+                                      fontSize: '11px',
+                                      color: '#b45309',
+                                      background: '#fef3c7',
+                                      border: '1px solid #fde68a',
+                                      padding: '2px 8px',
+                                      borderRadius: '6px',
+                                      fontWeight: 800,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    <i className="fa-solid fa-lock text-[10px]"></i> Bloqueado en Receptoría
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (viajeTimelapse) {
+                                        setViajeActivo(viajeTimelapse);
+                                      }
+                                      setFormFinca({
+                                        fincaId: f.id,
+                                        litros: '',
+                                        tipoLeche: (f.tipoLeche as any) || 'VACA',
+                                        esAcida: false,
+                                        esDiferido: false,
+                                        fecha: viajeTimelapse?.fecha ? viajeTimelapse.fecha.split('T')[0] : (fechaFiltro || hoyStr),
+                                        observacion: '',
+                                        fotoComprobante: '',
+                                      });
+                                      setModalRegistroFinca(true);
+                                    }}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                      color: '#ffffff',
+                                      border: 'none',
+                                      borderRadius: '7px',
+                                      padding: '4px 12px',
+                                      fontSize: '11.5px',
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                      boxShadow: '0 2px 6px rgba(16,185,129,0.3)',
+                                    }}
+                                  >
+                                    <i className="fa-solid fa-plus-circle"></i> Agregar Litros
+                                  </button>
+                                )}
                               </div>
 
                               <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginTop: '2px' }}>

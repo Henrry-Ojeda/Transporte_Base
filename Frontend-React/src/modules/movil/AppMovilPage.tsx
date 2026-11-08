@@ -215,7 +215,7 @@ export const AppMovilPage: React.FC = () => {
   });
   const [cargandoViaje, setCargandoViaje] = useState(false);
 
-  // Despacho Activo a Planta / Receptoría (TB_CONTROL_COMPANIAS, ej. #20566 hacia COLONA)
+  // Despachos Activos a Planta / Receptoría / Compañías (TB_CONTROL_COMPANIAS, ej. #20567 RECEPTORIA y #20568 PABLO MARIN)
   const [despachoActivo, setDespachoActivo] = useState<DespachoCompaniaDto | null>(() => {
     try {
       const saved = localStorage.getItem('movil_despacho_activo');
@@ -224,16 +224,37 @@ export const AppMovilPage: React.FC = () => {
       return null;
     }
   });
+  const [despachosActivos, setDespachosActivos] = useState<DespachoCompaniaDto[]>(() => {
+    try {
+      const saved = localStorage.getItem('movil_despachos_activos');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [cargandoDespacho, setCargandoDespacho] = useState(false);
 
-  // Persistir despacho activo en LocalStorage
+  // Helper para identificar si un despacho es hacia Receptoría / Planta
+  const esDestinoReceptoria = (d: DespachoCompaniaDto | null | undefined): boolean => {
+    if (!d) return false;
+    if (Number(d.companiaId) === 5028) return true;
+    const nom = (d.nombreCompania || (d as any).companiaNombre || '').toUpperCase();
+    return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA');
+  };
+
+  // Persistir despachos activos en LocalStorage
   useEffect(() => {
     if (despachoActivo) {
       localStorage.setItem('movil_despacho_activo', JSON.stringify(despachoActivo));
     } else {
       localStorage.removeItem('movil_despacho_activo');
     }
-  }, [despachoActivo]);
+    if (despachosActivos && despachosActivos.length > 0) {
+      localStorage.setItem('movil_despachos_activos', JSON.stringify(despachosActivos));
+    } else {
+      localStorage.removeItem('movil_despachos_activos');
+    }
+  }, [despachoActivo, despachosActivos]);
 
   // Lista de Choferes disponibles para supervisión / simulación y logística
   const [choferesLista, setChoferesLista] = useState<ChoferDto[]>([]);
@@ -937,22 +958,32 @@ export const AppMovilPage: React.FC = () => {
     if (!idBusqueda) return;
     setCargandoDespacho(true);
     try {
-      // 1. Consultar ticket activo de despacho en TB_CONTROL_COMPANIAS
-      let t = await operacionesApi.getTicketActivoDespachoChofer(idBusqueda);
-      if (!t || !t.id) {
-        // Fallback: buscar en la lista general de despachos por usuario o nombre
-        const all = await operacionesApi.getDespachosCompanias(undefined, undefined, undefined, undefined, idBusqueda);
-        const enVia = (all || []).find((d: any) => {
-          const uId = Number(d.usuarioId || d.choferId || d.conductorId);
-          const est = String(d.estado || '').toUpperCase();
-          const nombreD = (d.nombreConductor || d.choferNombre || '').toLowerCase();
-          const nombreTarget = (choferEfectivoNombre || dispositivo?.nombreCompleto || '').toLowerCase();
-          return (uId === idBusqueda || (nombreTarget && nombreD.length > 2 && nombreD.includes(nombreTarget))) &&
-            (est === 'EN VIA' || est === 'EN_TRANSITO' || est === 'PENDIENTE');
-        });
-        if (enVia) t = enVia;
+      // 1. Consultar todos los tickets activos de despacho del chofer y viaje en curso
+      const activos = await operacionesApi.getTicketsActivosDespachoChofer(idBusqueda, viajeActivo?.id);
+      if (Array.isArray(activos) && activos.length > 0) {
+        setDespachosActivos(activos);
+        setDespachoActivo(activos[0]);
+      } else {
+        // Fallback al endpoint legacy
+        let t = await operacionesApi.getTicketActivoDespachoChofer(idBusqueda);
+        if (!t || !t.id) {
+          // Fallback: buscar en la lista general de despachos por usuario o nombre
+          const all = await operacionesApi.getDespachosCompanias(undefined, undefined, undefined, undefined, idBusqueda);
+          const enVia = (all || []).filter((d: any) => {
+            const uId = Number(d.usuarioId || d.choferId || d.conductorId);
+            const est = String(d.estado || '').toUpperCase();
+            const nombreD = (d.nombreConductor || d.choferNombre || '').toLowerCase();
+            const nombreTarget = (choferEfectivoNombre || dispositivo?.nombreCompleto || '').toLowerCase();
+            return (uId === idBusqueda || (nombreTarget && nombreD.length > 2 && nombreD.includes(nombreTarget))) &&
+              (est === 'EN VIA' || est === 'EN_TRANSITO' || est === 'PENDIENTE');
+          });
+          setDespachosActivos(enVia);
+          setDespachoActivo(enVia.length > 0 ? enVia[0] : null);
+        } else {
+          setDespachosActivos([t]);
+          setDespachoActivo(t);
+        }
       }
-      setDespachoActivo(t && t.id ? t : null);
     } catch (err) {
       console.warn('No se pudo sincronizar el despacho activo con el servidor:', err);
     } finally {
@@ -967,15 +998,31 @@ export const AppMovilPage: React.FC = () => {
     setCargandoEntregas(true);
     try {
       const allDespachos = await operacionesApi.getDespachosCompanias(fEfectiva, undefined, undefined, undefined, idBusqueda);
-      const misDespachos = (allDespachos || []).filter((d: any) => {
+      
+      // Consultar también los despachos activos del chofer / viaje para asegurar que siempre aparezcan en la bandeja
+      const activosViaje = await operacionesApi.getTicketsActivosDespachoChofer(idBusqueda, viajeActivo?.id);
+
+      const unificadosMap = new Map<number, DespachoCompaniaDto>();
+      (allDespachos || []).forEach((d: any) => {
+        if (d.id) unificadosMap.set(d.id, d);
+      });
+      (activosViaje || []).forEach((d: any) => {
+        if (d.id) unificadosMap.set(d.id, d);
+      });
+
+      const misDespachos = Array.from(unificadosMap.values()).filter((d: any) => {
         const uId = Number(d.usuarioId || d.choferId || d.conductorId);
         const nombreD = (d.nombreConductor || d.choferNombre || '').toLowerCase();
         const nombreTarget = (choferEfectivoNombre || dispositivo?.nombreCompleto || '').toLowerCase();
         const coincideId = uId === idBusqueda;
         const coincideNombre = Boolean(nombreTarget && nombreD.length > 2 && nombreD.includes(nombreTarget));
         const coincideCamion = Boolean(dispositivo?.camionId && d.camionId === dispositivo.camionId);
-        const perteneceAlChofer = coincideId || coincideNombre || coincideCamion;
+        const coincideViaje = Boolean(viajeActivo?.id && d.controlRutaId === viajeActivo.id);
+        const perteneceAlChofer = coincideId || coincideNombre || coincideCamion || coincideViaje;
         if (!perteneceAlChofer) return false;
+
+        // Si coincide con el viaje activo, mostrarlo prioritariamente en la bandeja
+        if (coincideViaje) return true;
 
         // Filtrar estrictamente por el día seleccionado
         if (fEfectiva && d.fecha) {
@@ -3834,6 +3881,19 @@ export const AppMovilPage: React.FC = () => {
           const recCount = fincasDeMiRuta.filter((f) => f.recolectada).length;
           const pendientesCount = fincasDeMiRuta.length - recCount;
           const litrosDisponibles = Math.max(0, capacidad - totalLitrosCargados);
+          const viajeBloqueadoPorReceptoria = Boolean(viajeActivo && (
+            (viajeActivo.procesoActualId != null && viajeActivo.procesoActualId >= 2) ||
+            (viajeActivo.litrosEntregadosCompania != null && Number(viajeActivo.litrosEntregadosCompania) > 0) ||
+            (viajeActivo.totalLitrosReceptoria != null && Number(viajeActivo.totalLitrosReceptoria) > 0) ||
+            viajeActivo.estado === 'EN_RECEPTORIA' ||
+            viajeActivo.estado === 'RECEPCIONADO' ||
+            viajeActivo.estado === 'CAMINO A COMPAÑIA' ||
+            viajeActivo.estado === 'POR VERIFICACIÓN' ||
+            viajeActivo.estado === 'FINALIZADO'
+          ));
+          const listaDespachosDashboard = (despachosActivos && despachosActivos.length > 0)
+            ? despachosActivos
+            : (despachoActivo ? [despachoActivo] : []);
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -3928,44 +3988,21 @@ export const AppMovilPage: React.FC = () => {
                   ¡Hola, {choferEfectivoNombre.split(' ')[0]}!
                 </h2>
                 <p style={{ margin: 0, fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
-                  {despachoActivo
-                    ? `Despacho #${despachoActivo.id} en viaje a ${despachoActivo.nombreCompania || 'Planta'}`
+                  {listaDespachosDashboard.length > 0
+                    ? `${listaDespachosDashboard.length} despacho(s) activo(s) hacia Planta / Receptoría / Compañías`
                     : viajeActivo
                     ? `Ticket #${viajeActivo.codigoTicket || viajeActivo.id} en curso`
                     : 'Listo para iniciar recolección en ruta'}
                 </p>
               </div>
 
-              {/* TARJETA DE TICKET ACTIVO DE DESPACHO / RECEPTORÍA (Ej. #20566) */}
-              {despachoActivo && (
-                <div
-                  style={{
-                    background: 'linear-gradient(135deg, #faf5ff 0%, #ffffff 100%)',
-                    borderRadius: '20px',
-                    padding: '16px 18px',
-                    border: '1.5px solid #c084fc',
-                    boxShadow: '0 6px 20px rgba(168, 85, 247, 0.12)',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '16px', fontWeight: 900, color: '#6b21a8' }}>
-                        <i className="fa-solid fa-truck-fast mr-1 text-purple-600"></i> Despacho #{despachoActivo.id}
-                      </span>
-                      <span
-                        style={{
-                          background: '#f3e8ff',
-                          color: '#7e22ce',
-                          fontSize: '10.5px',
-                          fontWeight: 800,
-                          padding: '2px 8px',
-                          borderRadius: '6px',
-                          border: '1px solid #d8b4fe',
-                        }}
-                      >
-                        ● {despachoActivo.estado || 'EN VÍA'}
-                      </span>
-                    </div>
+              {/* TARJETAS DE TICKETS ACTIVOS DE DESPACHO / RECEPTORÍA / COMPAÑÍAS */}
+              {listaDespachosDashboard.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+                    <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#6b21a8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <i className="fa-solid fa-truck-fast text-purple-600"></i> Despachos en Curso ({listaDespachosDashboard.length})
+                    </span>
                     <button
                       type="button"
                       onClick={() => cargarDespachoActivo()}
@@ -3980,93 +4017,154 @@ export const AppMovilPage: React.FC = () => {
                         color: '#7e22ce',
                         cursor: 'pointer',
                       }}
-                      title="Actualizar despacho"
+                      title="Actualizar despachos"
                     >
                       <i className={`fa-solid fa-rotate ${cargandoDespacho ? 'fa-spin' : ''}`}></i>
                     </button>
                   </div>
 
-                  <div style={{ fontSize: '13px', color: '#1e293b', marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                      <i className="fa-solid fa-building-wheat text-purple-600"></i>
-                      <strong>Destino: {despachoActivo.nombreCompania || despachoActivo.companiaNombre || 'Planta / Receptoría'}</strong>
-                    </div>
-                    <div style={{ fontSize: '11.5px', color: '#64748b' }}>
-                      Conductor: <strong>{despachoActivo.nombreConductor || choferEfectivoNombre}</strong> • Fecha: {despachoActivo.fecha ? despachoActivo.fecha.split('T')[0] : ''}
-                    </div>
-                  </div>
+                  {listaDespachosDashboard.map((despItem) => {
+                    const esRecep = esDestinoReceptoria(despItem);
+                    return (
+                      <div
+                        key={despItem.id}
+                        style={{
+                          background: 'linear-gradient(135deg, #faf5ff 0%, #ffffff 100%)',
+                          borderRadius: '20px',
+                          padding: '16px 18px',
+                          border: esRecep ? '1.5px solid #86efac' : '1.5px solid #c084fc',
+                          boxShadow: '0 6px 20px rgba(168, 85, 247, 0.12)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '15px', fontWeight: 900, color: esRecep ? '#15803d' : '#6b21a8' }}>
+                              <i className={`fa-solid ${esRecep ? 'fa-building-wheat text-emerald-600' : 'fa-building-circle-check text-purple-600'} mr-1`}></i>
+                              Despacho #{despItem.id}
+                            </span>
+                            <span
+                              style={{
+                                background: esRecep ? '#dcfce7' : '#f3e8ff',
+                                color: esRecep ? '#15803d' : '#7e22ce',
+                                fontSize: '10.5px',
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                border: esRecep ? '1px solid #bbf7d0' : '1px solid #d8b4fe',
+                              }}
+                            >
+                              ● {despItem.estado || 'EN VÍA'}
+                            </span>
+                          </div>
+                        </div>
 
-                  {/* Estadísticas de Despacho */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '12px' }}>
-                    <div style={{ background: '#f5f3ff', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #ddd6fe' }}>
-                      <span style={{ fontSize: '10px', color: '#6b21a8', fontWeight: 800, textTransform: 'uppercase' }}>Litros Despachados</span>
-                      <div style={{ fontSize: '16px', fontWeight: 900, color: '#7e22ce', marginTop: '2px' }}>
-                        {Number(despachoActivo.litrosDespachados || 0).toLocaleString()} L
+                        <div style={{ fontSize: '13px', color: '#1e293b', marginBottom: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                            <i className="fa-solid fa-location-dot text-indigo-600"></i>
+                            <strong>Destino: {despItem.nombreCompania || despItem.companiaNombre || (esRecep ? 'RECEPTORÍA' : 'Compañía')}</strong>
+                          </div>
+                          <div style={{ fontSize: '11.5px', color: '#64748b' }}>
+                            Conductor: <strong>{despItem.nombreConductor || choferEfectivoNombre}</strong> • Fecha: {despItem.fecha ? despItem.fecha.split('T')[0] : ''}
+                          </div>
+                        </div>
+
+                        {/* Estadísticas de Despacho */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                          <div style={{ background: '#f5f3ff', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #ddd6fe' }}>
+                            <span style={{ fontSize: '10px', color: '#6b21a8', fontWeight: 800, textTransform: 'uppercase' }}>Litros Despachados</span>
+                            <div style={{ fontSize: '16px', fontWeight: 900, color: '#7e22ce', marginTop: '2px' }}>
+                              {Number(despItem.litrosDespachados || 0).toLocaleString()} L
+                            </div>
+                          </div>
+                          <div style={{ background: '#f8fafc', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+                            <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Tipo Leche</span>
+                            <div style={{ fontSize: '14px', fontWeight: 800, color: '#334155', marginTop: '3px' }}>
+                              {despItem.tipoLeche || 'VACA'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Acciones de Entrega: Receptoría NO confirma chofer; Compañía SÍ confirma */}
+                        {esRecep ? (
+                          <div
+                            style={{
+                              background: '#ecfdf5',
+                              border: '1.5px solid #a7f3d0',
+                              borderRadius: '12px',
+                              padding: '10px 14px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                            }}
+                          >
+                            <i className="fa-solid fa-hourglass-half text-emerald-600 text-lg"></i>
+                            <div>
+                              <div style={{ fontWeight: 800, fontSize: '12.5px', color: '#065f46' }}>
+                                ⏳ Pendiente por Recepcionar en Planta
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#047857' }}>
+                                La comprobación y descarga la procesa directamente el personal de Receptoría.
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalConfirmarDespachoChofer(despItem);
+                              setFormConfirmacionDespacho({
+                                litrosRecibidos: despItem.litrosDespachados || '',
+                                observacion: '',
+                                fotoReciboUrl: despItem.fotoReciboUrl || '',
+                              });
+                            }}
+                            style={{
+                              width: '100%',
+                              background: 'linear-gradient(135deg, #10b981, #059669)',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: '12px',
+                              padding: '11px',
+                              fontSize: '13px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                            }}
+                          >
+                            <i className="fa-solid fa-clipboard-check"></i>
+                            <span>Confirmar Entrega en Planta & Subir Recibo</span>
+                          </button>
+                        )}
                       </div>
-                    </div>
-                    <div style={{ background: '#f8fafc', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
-                      <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Tipo Leche</span>
-                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#334155', marginTop: '3px' }}>
-                        {despachoActivo.tipoLeche || 'VACA'}
-                      </div>
-                    </div>
-                  </div>
+                    );
+                  })}
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModalConfirmarDespachoChofer(despachoActivo);
-                        setFormConfirmacionDespacho({
-                          litrosRecibidos: despachoActivo.litrosDespachados || '',
-                          observacion: '',
-                          fotoReciboUrl: despachoActivo.fotoReciboUrl || '',
-                        });
-                      }}
-                      style={{
-                        width: '100%',
-                        background: 'linear-gradient(135deg, #10b981, #059669)',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '12px',
-                        padding: '11px',
-                        fontSize: '13px',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
-                      }}
-                    >
-                      <i className="fa-solid fa-clipboard-check"></i>
-                      <span>Confirmar Entrega en Planta & Subir Recibo</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setTabActiva('entregas')}
-                      style={{
-                        width: '100%',
-                        background: '#ffffff',
-                        color: '#7e22ce',
-                        border: '1px solid #d8b4fe',
-                        borderRadius: '12px',
-                        padding: '9px',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <i className="fa-solid fa-list-check"></i>
-                      <span>Ir a Bandeja de Entregas</span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTabActiva('entregas')}
+                    style={{
+                      width: '100%',
+                      background: '#ffffff',
+                      color: '#7e22ce',
+                      border: '1px solid #d8b4fe',
+                      borderRadius: '12px',
+                      padding: '9px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <i className="fa-solid fa-list-check"></i>
+                    <span>Ir a Bandeja de Entregas</span>
+                  </button>
                 </div>
               )}
 
@@ -4153,35 +4251,74 @@ export const AppMovilPage: React.FC = () => {
 
                   {/* Acciones Rápidas del Viaje */}
                   <div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (viajeActivo?.fecha) {
-                          setFormCarga((prev) => ({ ...prev, fecha: viajeActivo.fecha.split('T')[0] }));
-                        }
-                        setFincaFijadaParaModal(null);
-                        setModalRegistro(true);
-                      }}
-                      style={{
-                        width: '100%',
-                        background: 'linear-gradient(135deg, #10b981, #059669)',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '14px',
-                        padding: '12px 16px',
-                        fontSize: '14px',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        boxShadow: '0 4px 14px rgba(16, 185, 129, 0.28)',
-                      }}
-                    >
-                      <i className="fa-solid fa-plus text-sm"></i>
-                      <span>+ Registrar Parada Libre en Finca</span>
-                    </button>
+                    {viajeBloqueadoPorReceptoria ? (
+                      <div
+                        style={{
+                          background: '#fffbeb',
+                          border: '1.5px solid #fde68a',
+                          borderRadius: '14px',
+                          padding: '12px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '10px',
+                            background: '#fef3c7',
+                            color: '#b45309',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '16px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <i className="fa-solid fa-lock"></i>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 800, fontSize: '13px', color: '#92400e' }}>
+                            Ticket en Receptoría (Solo Lectura)
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#a16207', marginTop: '2px', lineHeight: '1.3' }}>
+                            Las fincas están protegidas. Solo Receptoría puede devolver el ticket para permitir registrar o editar cargas.
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (viajeActivo?.fecha) {
+                            setFormCarga((prev) => ({ ...prev, fecha: viajeActivo.fecha.split('T')[0] }));
+                          }
+                          setFincaFijadaParaModal(null);
+                          setModalRegistro(true);
+                        }}
+                        style={{
+                          width: '100%',
+                          background: 'linear-gradient(135deg, #10b981, #059669)',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '14px',
+                          padding: '12px 16px',
+                          fontSize: '14px',
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          boxShadow: '0 4px 14px rgba(16, 185, 129, 0.28)',
+                        }}
+                      >
+                        <i className="fa-solid fa-plus text-sm"></i>
+                        <span>+ Registrar Parada Libre en Finca</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : !despachoActivo ? (
@@ -4519,28 +4656,39 @@ export const AppMovilPage: React.FC = () => {
                                   <div style={{ fontSize: '15px', fontWeight: 900, color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                                     +{f.litrosRecolectados.toLocaleString()} L
                                   </div>
+                                  {viajeBloqueadoPorReceptoria && (
+                                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>
+                                      <i className="fa-solid fa-lock text-[9.5px] mr-1"></i>Bloqueado
+                                    </div>
+                                  )}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => abrirCargaParaFinca(f)}
-                                  style={{
-                                    background: '#ffffff',
-                                    border: '1px solid #86efac',
-                                    color: '#16a34a',
-                                    borderRadius: '8px',
-                                    padding: '6px 10px',
-                                    fontSize: '11.5px',
-                                    fontWeight: 800,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                  }}
-                                >
-                                  <i className="fa-solid fa-pen"></i>
-                                  <span>Modificar</span>
-                                </button>
+                                {!viajeBloqueadoPorReceptoria && (
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirCargaParaFinca(f)}
+                                    style={{
+                                      background: '#ffffff',
+                                      border: '1px solid #86efac',
+                                      color: '#16a34a',
+                                      borderRadius: '8px',
+                                      padding: '6px 10px',
+                                      fontSize: '11.5px',
+                                      fontWeight: 800,
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    <i className="fa-solid fa-pen"></i>
+                                    <span>Modificar</span>
+                                  </button>
+                                )}
                               </>
+                            ) : viajeBloqueadoPorReceptoria ? (
+                              <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', fontWeight: 600 }}>
+                                Sin recolectar
+                              </span>
                             ) : (
                               <button
                                 type="button"
@@ -4572,63 +4720,102 @@ export const AppMovilPage: React.FC = () => {
                   )}
 
                   {/* Botones de Acción Móvil: Receptoría/Compañía y Traspaso */}
-                  {viajeActivo && totalLitrosCargados > 0 && (
-                    <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <button
-                          type="button"
-                          onClick={handleAbrirEntregaDirecta}
-                          style={{
-                            background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '14px',
-                            padding: '12px 10px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '4px',
-                            boxShadow: '0 6px 16px rgba(16, 185, 129, 0.35)',
-                            transition: 'transform 0.15s ease',
-                          }}
-                        >
-                          <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
-                            <i className="fa-solid fa-building-circle-check"></i>
-                          </div>
-                          <span style={{ fontSize: '13px', fontWeight: 900, marginTop: '2px' }}>Receptoría / Planta</span>
-                          <span style={{ fontSize: '10.5px', color: '#d1fae5', fontWeight: 600 }}>Entregar o Distribuir</span>
-                        </button>
+                  {(() => {
+                    const litrosYaEntregados = Number(
+                      (viajeActivo as any)?._litrosEntregados ||
+                      (viajeActivo as any)?.litrosEntregadosCompania ||
+                      viajeActivo?.totalLitrosEntregados ||
+                      viajeActivo?.totalLitrosReceptoria ||
+                      0
+                    );
+                    const litrosRestantes = Math.max(0, totalLitrosCargados - litrosYaEntregados);
+                    const puedeDespachar = viajeActivo && totalLitrosCargados > 0 && !viajeBloqueadoPorReceptoria && litrosRestantes > 0;
 
-                        <button
-                          type="button"
-                          onClick={handleAbrirTraspasoMovil}
+                    if (puedeDespachar) {
+                      return (
+                        <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <button
+                              type="button"
+                              onClick={handleAbrirEntregaDirecta}
+                              style={{
+                                background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '14px',
+                                padding: '12px 10px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px',
+                                boxShadow: '0 6px 16px rgba(16, 185, 129, 0.35)',
+                                transition: 'transform 0.15s ease',
+                              }}
+                            >
+                              <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+                                <i className="fa-solid fa-building-circle-check"></i>
+                              </div>
+                              <span style={{ fontSize: '13px', fontWeight: 900, marginTop: '2px' }}>Receptoría / Planta</span>
+                              <span style={{ fontSize: '10.5px', color: '#d1fae5', fontWeight: 600 }}>Entregar o Distribuir</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleAbrirTraspasoMovil}
+                              style={{
+                                background: 'linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '14px',
+                                padding: '12px 10px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px',
+                                boxShadow: '0 6px 16px rgba(13, 148, 136, 0.35)',
+                                transition: 'transform 0.15s ease',
+                              }}
+                            >
+                              <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+                                <i className="fa-solid fa-right-left"></i>
+                              </div>
+                              <span style={{ fontSize: '13px', fontWeight: 900, marginTop: '2px' }}>Traspaso</span>
+                              <span style={{ fontSize: '10.5px', color: '#ccfbf1', fontWeight: 600 }}>Transferir Carga</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (viajeActivo && (viajeBloqueadoPorReceptoria || (totalLitrosCargados > 0 && litrosRestantes <= 0))) {
+                      return (
+                        <div
                           style={{
-                            background: 'linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '14px',
-                            padding: '12px 10px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '4px',
-                            boxShadow: '0 6px 16px rgba(13, 148, 136, 0.35)',
-                            transition: 'transform 0.15s ease',
+                            marginTop: '16px',
+                            background: '#f8fafc',
+                            border: '1.5px solid #e2e8f0',
+                            borderRadius: '16px',
+                            padding: '14px 16px',
+                            textAlign: 'center',
                           }}
                         >
-                          <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
-                            <i className="fa-solid fa-right-left"></i>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                            <i className="fa-solid fa-circle-check text-emerald-600"></i>
+                            <span>Carga Despachada / En Receptoría</span>
                           </div>
-                          <span style={{ fontSize: '13px', fontWeight: 900, marginTop: '2px' }}>Traspaso</span>
-                          <span style={{ fontSize: '10.5px', color: '#ccfbf1', fontWeight: 600 }}>Transferir Carga</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                          <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: '#64748b' }}>
+                            El volumen del camión ya fue entregado a Planta / Compañías. Opciones de despacho finalizadas.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })()}
                 </div>
               )}
             </div>
@@ -4830,6 +5017,16 @@ export const AppMovilPage: React.FC = () => {
               const recCount = fincasDeMiRuta.filter((f) => f.recolectada).length;
               const pendientesCount = fincasDeMiRuta.length - recCount;
               const pct = Math.round((recCount / fincasDeMiRuta.length) * 100);
+              const ticketEnReceptoria = Boolean(viajeActivo && (
+                (viajeActivo.procesoActualId != null && viajeActivo.procesoActualId >= 2) ||
+                (viajeActivo.litrosEntregadosCompania != null && Number(viajeActivo.litrosEntregadosCompania) > 0) ||
+                (viajeActivo.totalLitrosReceptoria != null && Number(viajeActivo.totalLitrosReceptoria) > 0) ||
+                viajeActivo.estado === 'EN_RECEPTORIA' ||
+                viajeActivo.estado === 'RECEPCIONADO' ||
+                viajeActivo.estado === 'CAMINO A COMPAÑIA' ||
+                viajeActivo.estado === 'POR VERIFICACIÓN' ||
+                viajeActivo.estado === 'FINALIZADO'
+              ));
 
               const fincasAMostrar = fincasDeMiRuta.filter((f) => {
                 if (filtroCircuito === 'pendientes') return !f.recolectada;
@@ -5046,25 +5243,36 @@ export const AppMovilPage: React.FC = () => {
                                     <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', animation: 'titilarPuntoPulso 1.5s infinite' }}></span>
                                     +{f.litrosRecolectados.toLocaleString()} L
                                   </span>
+                                  {ticketEnReceptoria && (
+                                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700, textAlign: 'right' }}>
+                                      <i className="fa-solid fa-lock text-[9px] mr-1"></i>Bloqueado
+                                    </div>
+                                  )}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => abrirCargaParaFinca(f)}
-                                  style={{
-                                    background: '#ffffff',
-                                    border: '1px solid #86efac',
-                                    color: '#16a34a',
-                                    borderRadius: '8px',
-                                    padding: '5px 8px',
-                                    fontSize: '11px',
-                                    fontWeight: 800,
-                                    cursor: 'pointer',
-                                  }}
-                                  title="Modificar litros"
-                                >
-                                  <i className="fa-solid fa-pen"></i>
-                                </button>
+                                {!ticketEnReceptoria && (
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirCargaParaFinca(f)}
+                                    style={{
+                                      background: '#ffffff',
+                                      border: '1px solid #86efac',
+                                      color: '#16a34a',
+                                      borderRadius: '8px',
+                                      padding: '5px 8px',
+                                      fontSize: '11px',
+                                      fontWeight: 800,
+                                      cursor: 'pointer',
+                                    }}
+                                    title="Modificar litros"
+                                  >
+                                    <i className="fa-solid fa-pen"></i>
+                                  </button>
+                                )}
                               </div>
+                            ) : ticketEnReceptoria ? (
+                              <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', fontWeight: 600 }}>
+                                Sin recolectar
+                              </span>
                             ) : (
                               <button
                                 type="button"
@@ -5456,38 +5664,63 @@ export const AppMovilPage: React.FC = () => {
 
                       {/* Botones de Acción de Entrega (Chofer) */}
                       {est !== 'FINALIZADO' && est !== 'CERRADO' ? (
-                        <div style={{ marginTop: '12px' }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setModalConfirmarDespachoChofer(d);
-                              setFormConfirmacionDespacho({
-                                litrosRecibidos: d.litrosDespachados || '',
-                                observacion: '',
-                                fotoReciboUrl: d.fotoReciboUrl || '',
-                              });
-                            }}
+                        esDestinoReceptoria(d) ? (
+                          <div
                             style={{
-                              width: '100%',
-                              background: 'linear-gradient(135deg, #10b981, #059669)',
-                              color: '#ffffff',
-                              border: 'none',
+                              marginTop: '12px',
+                              background: '#ecfdf5',
+                              border: '1.5px solid #a7f3d0',
                               borderRadius: '12px',
-                              padding: '11px 16px',
-                              fontWeight: 800,
-                              fontSize: '13px',
+                              padding: '10px 14px',
                               display: 'flex',
                               alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '8px',
-                              boxShadow: '0 3px 10px rgba(16,185,129,0.25)',
-                              cursor: 'pointer',
+                              gap: '10px',
                             }}
                           >
-                            <i className="fa-solid fa-clipboard-check"></i>
-                            Confirmar Entrega en Planta & Subir Recibo
-                          </button>
-                        </div>
+                            <i className="fa-solid fa-hourglass-half text-emerald-600 text-lg"></i>
+                            <div>
+                              <div style={{ fontWeight: 800, fontSize: '12.5px', color: '#065f46' }}>
+                                ⏳ Pendiente por Recepcionar en Planta
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#047857' }}>
+                                La comprobación y descarga de este ticket la gestiona el personal de Receptoría.
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: '12px' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setModalConfirmarDespachoChofer(d);
+                                setFormConfirmacionDespacho({
+                                  litrosRecibidos: d.litrosDespachados || '',
+                                  observacion: '',
+                                  fotoReciboUrl: d.fotoReciboUrl || '',
+                                });
+                              }}
+                              style={{
+                                width: '100%',
+                                background: 'linear-gradient(135deg, #10b981, #059669)',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: '12px',
+                                padding: '11px 16px',
+                                fontWeight: 800,
+                                fontSize: '13px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                                boxShadow: '0 3px 10px rgba(16,185,129,0.25)',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <i className="fa-solid fa-clipboard-check"></i>
+                              Confirmar Entrega en Planta & Subir Recibo
+                            </button>
+                          </div>
+                        )
                       ) : (
                         d.fotoReciboUrl && (
                           <div style={{ marginTop: '10px' }}>

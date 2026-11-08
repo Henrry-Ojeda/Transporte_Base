@@ -329,7 +329,7 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
   };
 
   // Guardar asignación
-  const handleGuardar = (e: React.FormEvent) => {
+  const handleGuardar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formCamionId) {
       Swal.fire({ icon: 'warning', title: 'Camión requerido', text: 'Por favor seleccione el camión cisterna.' });
@@ -342,6 +342,44 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
     if (formFincasSeleccionadas.length === 0) {
       Swal.fire({ icon: 'warning', title: 'Sin fincas seleccionadas', text: 'Debe seleccionar al menos una finca para este camión.' });
       return;
+    }
+
+    // REGLA: Si dos choferes tienen o intentan confirmar la misma finca, se requiere confirmación explícita
+    const fincasDuplicadas = formFincasSeleccionadas.filter((fId) => fincasAsignadasEnFecha.has(fId));
+    if (fincasDuplicadas.length > 0) {
+      const itemsList = fincasDuplicadas
+        .map((fId) => {
+          const fObj = fincasPromedios.find((f) => getFincaId(f) === fId);
+          const asig = fincasAsignadasEnFecha.get(fId)!;
+          const nom = fObj?.fincaNombre || (fObj as any)?.FincaNombre || `Finca #${fId}`;
+          return `<li><strong>${nom}</strong>: ya está asignada a <em>${asig.camionPlaca} (${asig.choferNombre})</em></li>`;
+        })
+        .join('');
+
+      const result = await Swal.fire({
+        title: '⚠️ Fincas compartidas entre choferes',
+        html: `
+          <div style="text-align: left; font-size: 13px; line-height: 1.6;">
+            <p>Las siguientes fincas seleccionadas ya están asignadas a otro camión hoy:</p>
+            <ul style="background: #fffbeb; border: 1.5px solid #fde68a; border-radius: 8px; padding: 10px 18px; margin: 12px 0;">
+              ${itemsList}
+            </ul>
+            <p style="color: #b45309; font-weight: 700; margin-bottom: 0;">
+              ¿Desea confirmar y mantener esta asignación compartida para ambos choferes?
+            </p>
+          </div>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#2563eb',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Sí, confirmar asignación',
+        cancelButtonText: 'Cancelar y revisar',
+      });
+
+      if (!result.isConfirmed) {
+        return;
+      }
     }
 
     const dto: GuardarPlanificacionRutaChoferDto = {

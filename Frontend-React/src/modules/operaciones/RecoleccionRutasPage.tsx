@@ -1507,7 +1507,20 @@ export const RecoleccionRutasPage: React.FC = () => {
       ? fincasTicketsMap[viajeTimelapse.id]
       : recolecciones.filter((r) => r.controlRutaId != null && Number(r.controlRutaId) === Number(viajeTimelapse.id));
 
-    const visitadas = [...paradasDelTicket]
+    // Identificar planificación asociada a este ticket
+    const planCorrespondiente = planificaciones.find(
+      (p) =>
+        p.controlRutaId === viajeTimelapse.id ||
+        (p.camionId === viajeTimelapse.camionId &&
+          (p.conductorId === viajeTimelapse.usuarioId || (viajeTimelapse as any).choferId === p.conductorId))
+    );
+
+    // REGLA FUNDAMENTAL: Solo las paradas con LITROS > 0 son RECOLECTADAS (VERDE)
+    const paradasRecolectadas = paradasDelTicket.filter(
+      (item) => Number(item.litros || (item as any).Litros || (item as any).litrosLeche || 0) > 0
+    );
+
+    const visitadas = [...paradasRecolectadas]
       .sort((a, b) => {
         const timeA = new Date(a.createdAt || (a as any).CreatedAt || a.fecha).getTime();
         const timeB = new Date(b.createdAt || (b as any).CreatedAt || b.fecha).getTime();
@@ -1535,10 +1548,44 @@ export const RecoleccionRutasPage: React.FC = () => {
       };
     });
 
-    let pendientes: FincaDto[] = [];
-    if (tieneRuta && !esFinalizado) {
-      const idsVisitadas = new Set(visitadas.map((v) => v.fincaId || (v as any).FincaId));
-      pendientes = fincas.filter((f) => f.rutaId && parsedRutasActivas.includes(f.rutaId) && !idsVisitadas.has(f.id));
+    const idsRecolectadas = new Set(visitadas.map((v) => Number(v.fincaId || (v as any).FincaId)));
+
+    // REGLA FUNDAMENTAL: PARADAS PENDIENTES (GRIS CON BOTÓN AGREGAR LITROS)
+    // Solo deben mostrarse las fincas asignadas a ESTE ticket.
+    // Las fincas que se sacaron de la planificación NO deben aparecer aquí (quedan libres para otro chofer).
+    let pendientes: any[] = [];
+    if (!esFinalizado) {
+      if (planCorrespondiente && Array.isArray(planCorrespondiente.listaFincasIds) && planCorrespondiente.listaFincasIds.length > 0) {
+        // Ticket con planificación: SOLO las fincas del plan que aún no tienen litros
+        pendientes = planCorrespondiente.listaFincasIds
+          .filter((fId) => !idsRecolectadas.has(fId))
+          .map((fId) => {
+            const fObj = fincas.find((f) => f.id === fId);
+            const pEnTicket = paradasDelTicket.find((p) => Number(p.fincaId || (p as any).FincaId) === fId);
+            return {
+              id: fId,
+              nombre: fObj?.nombre || pEnTicket?.fincaNombre || `Finca #${fId}`,
+              propietario: fObj?.propietario || fObj?.propietarioNombre || pEnTicket?.propietarioNombre || 'No especificado',
+              promedioLitrosDiarios: fObj?.promedioLitrosDiarios || (fObj as any)?.promedioLitros || 0,
+              tipoLeche: fObj?.tipoLeche || pEnTicket?.tipoLeche || 'VACA',
+            };
+          });
+      } else if (paradasDelTicket.length > 0) {
+        // Ticket con paradas en TB_RUTAS_RECOLECCION: las que tienen litros == 0
+        pendientes = paradasDelTicket
+          .filter((p) => Number(p.litros || (p as any).Litros || (p as any).litrosLeche || 0) <= 0 && !idsRecolectadas.has(Number(p.fincaId || (p as any).FincaId)))
+          .map((p) => {
+            const fId = Number(p.fincaId || (p as any).FincaId);
+            const fObj = fincas.find((f) => f.id === fId);
+            return {
+              id: fId,
+              nombre: p.fincaNombre || fObj?.nombre || `Finca #${fId}`,
+              propietario: p.propietarioNombre || fObj?.propietario || 'No especificado',
+              promedioLitrosDiarios: fObj?.promedioLitrosDiarios || (fObj as any)?.promedioLitros || 0,
+              tipoLeche: p.tipoLeche || fObj?.tipoLeche || 'VACA',
+            };
+          });
+      }
     }
 
     const totalLitrosCalculado = paradasConIntervalo.length > 0 ? paradasConIntervalo[paradasConIntervalo.length - 1].acumulado : 0;
@@ -1562,7 +1609,7 @@ export const RecoleccionRutasPage: React.FC = () => {
       pendientes: esFinalizado ? [] : pendientes,
       totalParadasEstimadas: paradasConIntervalo.length + (esFinalizado ? 0 : pendientes.length),
     };
-  }, [viajeTimelapse, fincasTicketsMap, recolecciones, fincas, camiones]);
+  }, [viajeTimelapse, fincasTicketsMap, recolecciones, fincas, camiones, planificaciones]);
 
   const abrirTimelapse = async (viaje: ControlRutaDto) => {
     setViajeTimelapse(viaje);
@@ -4474,7 +4521,7 @@ export const RecoleccionRutasPage: React.FC = () => {
 
             {/* FORMULARIO */}
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
                 if (!formFinca.fincaId || formFinca.fincaId <= 0) {
                   toast.error('Seleccione una finca ganadera');
@@ -4484,6 +4531,50 @@ export const RecoleccionRutasPage: React.FC = () => {
                   toast.error('Ingrese una cantidad válida de litros');
                   return;
                 }
+
+                // REGLA: Si dos choferes tienen o intentan confirmar la misma finca, se requiere confirmación explícita
+                const fechaTarget = (viajeActivo.fecha ? viajeActivo.fecha.split('T')[0] : (formFinca.fecha || hoyStr));
+                const fincaYaConfirmada = recolecciones.find((r) =>
+                  Number(r.fincaId) === Number(formFinca.fincaId) &&
+                  Number(r.litros || (r as any).Litros || 0) > 0 &&
+                  (r.fecha || '').split('T')[0] === fechaTarget &&
+                  Number(r.controlRutaId) !== Number(viajeActivo.id)
+                );
+
+                if (fincaYaConfirmada) {
+                  const nombreChoferOtro = (fincaYaConfirmada as any).choferNombre || (fincaYaConfirmada as any).conductorNombre || (fincaYaConfirmada as any).usuarioNombre || `Chofer #${(fincaYaConfirmada as any).usuarioId || ''}`;
+                  const litrosOtro = Number(fincaYaConfirmada.litros || (fincaYaConfirmada as any).Litros || 0);
+                  const fincaObj = fincas.find((f) => f.id === Number(formFinca.fincaId));
+                  const nombreFinca = fincaObj?.nombre || fincaYaConfirmada.fincaNombre || `Finca #${formFinca.fincaId}`;
+
+                  const result = await Swal.fire({
+                    title: '⚠️ Finca ya confirmada en otra ruta',
+                    html: `
+                      <div style="text-align: left; font-size: 13px; line-height: 1.6;">
+                        <p>La finca <strong>${nombreFinca}</strong> ya tiene recolección confirmada hoy con otro camión / chofer:</p>
+                        <div style="background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 8px; padding: 10px 14px; margin: 12px 0;">
+                          <div>👤 <strong>Chofer:</strong> ${nombreChoferOtro}</div>
+                          <div>🎫 <strong>Ticket:</strong> #${fincaYaConfirmada.controlRutaId}</div>
+                          <div>🥛 <strong>Litros Confirmados:</strong> ${litrosOtro.toLocaleString()} Lts</div>
+                        </div>
+                        <p style="color: #b91c1c; font-weight: 700; margin-bottom: 0;">
+                          ¿Está seguro que desea confirmar y agregar litros a esta misma finca para este chofer?
+                        </p>
+                      </div>
+                    `,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#d97706',
+                    cancelButtonColor: '#64748b',
+                    confirmButtonText: 'Sí, confirmar y agregar',
+                    cancelButtonText: 'Cancelar',
+                  });
+
+                  if (!result.isConfirmed) {
+                    return;
+                  }
+                }
+
                 guardarRecoleccionModalMutation.mutate(formFinca);
               }}
               className="flex flex-col flex-1 overflow-hidden"

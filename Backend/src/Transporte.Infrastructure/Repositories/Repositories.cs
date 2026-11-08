@@ -374,12 +374,13 @@ namespace Transporte.Infrastructure.Repositories
             }
 
             int nuevaRutaId;
-            var paradaPendienteId = await connection.ExecuteScalarAsync<int?>(@"
+            var paradaExistenteId = await connection.ExecuteScalarAsync<int?>(@"
                 SELECT TOP 1 Id FROM TB_RUTAS_RECOLECCION 
-                WHERE ControlRutaId = @ticketId AND FincaId = @fincaId AND (Litros = 0 OR Litros IS NULL)
-                ORDER BY Id ASC", new { ticketId, fincaId = dto.FincaId });
+                WHERE ControlRutaId = @ticketId AND FincaId = @fincaId 
+                ORDER BY CASE WHEN Litros = 0 OR Litros IS NULL THEN 0 ELSE 1 END ASC, Id DESC", 
+                new { ticketId, fincaId = dto.FincaId });
 
-            if (paradaPendienteId.HasValue)
+            if (paradaExistenteId.HasValue)
             {
                 var sqlUpdate = @"
                     UPDATE TB_RUTAS_RECOLECCION
@@ -390,10 +391,17 @@ namespace Transporte.Infrastructure.Repositories
                         TasaDolarBsAplicada = @tasaActual,
                         UuidLocal = @uuidLocal,
                         Observacion = @observacion,
-                        FotoComprobante = @fotoComprobante,
+                        FotoComprobante = ISNULL(@fotoComprobante, FotoComprobante),
                         ModifiedAt = GETDATE(),
                         ModifiedBy = @conductorId
-                    WHERE Id = @paradaPendienteId";
+                    WHERE Id = @paradaExistenteId;
+
+                    -- Limpieza preventiva de duplicados accidentales de la misma finca en el ticket
+                    DELETE FROM TB_RUTAS_RECOLECCION 
+                    WHERE ControlRutaId = @ticketId 
+                      AND FincaId = @fincaId 
+                      AND Id != @paradaExistenteId;";
+
                 await connection.ExecuteAsync(sqlUpdate, new
                 {
                     litros = dto.Litros,
@@ -405,9 +413,11 @@ namespace Transporte.Infrastructure.Repositories
                     observacion = dto.Observacion,
                     fotoComprobante = dto.FotoComprobante,
                     conductorId = choferEfectivo,
-                    paradaPendienteId = paradaPendienteId.Value
+                    ticketId,
+                    fincaId = dto.FincaId,
+                    paradaExistenteId = paradaExistenteId.Value
                 });
-                nuevaRutaId = paradaPendienteId.Value;
+                nuevaRutaId = paradaExistenteId.Value;
             }
             else
             {
@@ -8976,14 +8986,15 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             string tipoLecheEfectivo = string.IsNullOrWhiteSpace(dto.TipoLeche) ? "VACA" : dto.TipoLeche.ToUpper();
             bool esDiferidoEfectivo = dto.EsDiferido;
 
-            // Unificación: Si la finca ya fue pre-asignada en la planificación con Litros = 0, se actualiza esa parada
-            var paradaPendienteId = await connection.ExecuteScalarAsync<long?>(@"
+            // Unificación Anti-Duplicados: Si la finca ya existe en este viaje/ticket (tenga 0 litros o litros previos), se actualiza
+            var paradaExistenteId = await connection.ExecuteScalarAsync<long?>(@"
                 SELECT TOP 1 Id FROM TB_RUTAS_RECOLECCION 
-                WHERE ControlRutaId = @controlRutaId AND FincaId = @fincaId AND (Litros = 0 OR Litros IS NULL)
-                ORDER BY Id ASC", new { controlRutaId = dto.ControlRutaId, fincaId = dto.FincaId });
+                WHERE ControlRutaId = @controlRutaId AND FincaId = @fincaId 
+                ORDER BY CASE WHEN Litros = 0 OR Litros IS NULL THEN 0 ELSE 1 END ASC, Id DESC", 
+                new { controlRutaId = dto.ControlRutaId, fincaId = dto.FincaId });
 
             long nuevaRutaId;
-            if (paradaPendienteId.HasValue)
+            if (paradaExistenteId.HasValue)
             {
                 var sqlUpdateRuta = @"
                     UPDATE TB_RUTAS_RECOLECCION
@@ -8994,10 +9005,17 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         PrecioLitroUSDAplicado = @precioAplicado,
                         TasaDolarBsAplicada = @tasaActual,
                         Observacion = @observacion,
-                        FotoComprobante = @fotoComprobante,
+                        FotoComprobante = ISNULL(@fotoComprobante, FotoComprobante),
                         ModifiedAt = GETDATE(),
                         ModifiedBy = @usuarioId
-                    WHERE Id = @paradaPendienteId";
+                    WHERE Id = @paradaExistenteId;
+
+                    -- Limpieza preventiva de duplicados accidentales de la misma finca en el ticket
+                    DELETE FROM TB_RUTAS_RECOLECCION 
+                    WHERE ControlRutaId = @controlRutaId 
+                      AND FincaId = @fincaId 
+                      AND Id != @paradaExistenteId;";
+
                 await connection.ExecuteAsync(sqlUpdateRuta, new
                 {
                     litros = dto.Litros,
@@ -9009,9 +9027,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     observacion = dto.Observacion,
                     fotoComprobante = dto.FotoComprobante,
                     usuarioId,
-                    paradaPendienteId = paradaPendienteId.Value
+                    controlRutaId = dto.ControlRutaId,
+                    fincaId = dto.FincaId,
+                    paradaExistenteId = paradaExistenteId.Value
                 });
-                nuevaRutaId = paradaPendienteId.Value;
+                nuevaRutaId = paradaExistenteId.Value;
             }
             else
             {

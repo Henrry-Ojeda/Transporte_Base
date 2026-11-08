@@ -2715,8 +2715,8 @@ export const AppMovilPage: React.FC = () => {
       <div
         style={{
           minHeight: '100vh',
-          background: 'linear-gradient(180deg, #090d16 0%, #0f172a 50%, #1e293b 100%)',
-          color: '#ffffff',
+          background: 'linear-gradient(180deg, #f8fafc 0%, #edf2f7 50%, #e2e8f0 100%)',
+          color: '#0f172a',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -2729,12 +2729,11 @@ export const AppMovilPage: React.FC = () => {
           style={{
             width: '100%',
             maxWidth: '430px',
-            background: 'rgba(30, 41, 59, 0.9)',
-            backdropFilter: 'blur(16px)',
+            background: '#ffffff',
             borderRadius: '24px',
-            padding: '30px 22px',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+            padding: '32px 24px',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 20px 45px -10px rgba(15, 23, 42, 0.1)',
             textAlign: 'center',
           }}
         >
@@ -2751,16 +2750,16 @@ export const AppMovilPage: React.FC = () => {
               margin: '0 auto 16px auto',
               fontSize: '32px',
               color: '#ffffff',
-              boxShadow: '0 10px 25px rgba(2, 132, 199, 0.4)',
+              boxShadow: '0 10px 25px rgba(2, 132, 199, 0.35)',
             }}
           >
             <i className="fa-solid fa-truck-droplet"></i>
           </div>
 
-          <h1 style={{ fontSize: '21px', fontWeight: 900, margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>
+          <h1 style={{ fontSize: '21px', fontWeight: 900, margin: '0 0 4px 0', letterSpacing: '-0.5px', color: '#0f172a' }}>
             {nombreEmpresaActual}
           </h1>
-          <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 14px 0', fontWeight: 600 }}>
+          <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 14px 0', fontWeight: 600 }}>
             Sistema Móvil de Gestión & Recolección de Leche
           </p>
 
@@ -2770,9 +2769,9 @@ export const AppMovilPage: React.FC = () => {
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
-                background: 'rgba(56, 189, 248, 0.15)',
-                color: '#38bdf8',
-                border: '1px solid rgba(56, 189, 248, 0.35)',
+                background: '#e0f2fe',
+                color: '#0284c7',
+                border: '1px solid #bae6fd',
                 padding: '3px 12px',
                 borderRadius: '16px',
                 fontSize: '11px',
@@ -2788,12 +2787,12 @@ export const AppMovilPage: React.FC = () => {
           <div
             style={{
               marginBottom: '18px',
-              background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.2), rgba(30, 41, 59, 0.8))',
-              border: '1.5px solid rgba(56, 189, 248, 0.35)',
+              background: 'linear-gradient(135deg, #f0f9ff 0%, #f0fdf4 100%)',
+              border: '1.5px solid #bae6fd',
               borderRadius: '18px',
               padding: '16px',
               textAlign: 'left',
-              boxShadow: '0 8px 20px rgba(0, 0, 0, 0.3)',
+              boxShadow: '0 4px 15px rgba(2, 132, 199, 0.08)',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
@@ -2802,8 +2801,8 @@ export const AppMovilPage: React.FC = () => {
                   width: '36px',
                   height: '36px',
                   borderRadius: '10px',
-                  background: 'rgba(56, 189, 248, 0.25)',
-                  color: '#38bdf8',
+                  background: '#dbeafe',
+                  color: '#0284c7',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -2814,15 +2813,15 @@ export const AppMovilPage: React.FC = () => {
                 <i className="fa-solid fa-mobile-screen-button"></i>
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.5px' }}>
+                <div style={{ fontSize: '10px', color: '#0284c7', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.5px' }}>
                   Paso 1: Instalación
                 </div>
-                <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#f8fafc' }}>
+                <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
                   Descarga la App de {nombreEmpresaActual}
                 </div>
               </div>
             </div>
-            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 12px 0', lineHeight: 1.4 }}>
+            <p style={{ fontSize: '12px', color: '#475569', margin: '0 0 12px 0', lineHeight: 1.4 }}>
               Instala la aplicación en tu teléfono para recolectar leche sin internet y sincronizar con la central.
             </p>
             <button
@@ -2853,8 +2852,8 @@ export const AppMovilPage: React.FC = () => {
           {/* Tarjeta 2: Formulario de Vinculación (6 Dígitos por defecto) */}
           <div
             style={{
-              background: 'rgba(15, 23, 42, 0.7)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: '#f8fafc',
+              border: '1.5px solid #e2e8f0',
               borderRadius: '18px',
               padding: '18px 16px',
               marginBottom: '16px',
@@ -2864,13 +2863,13 @@ export const AppMovilPage: React.FC = () => {
             {modoLogin === 'codigo' ? (
               /* MODO POR DEFECTO: CÓDIGO DE 6 DÍGITOS */
               <form onSubmit={handleVincular}>
-                <div style={{ fontSize: '11px', color: '#38bdf8', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.8px', marginBottom: '4px' }}>
+                <div style={{ fontSize: '11px', color: '#0284c7', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.8px', marginBottom: '4px' }}>
                   Paso 2: Conectar Teléfono
                 </div>
-                <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#f8fafc', margin: '0 0 6px 0' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>
                   Ingresa tu Código de 6 Dígitos
                 </h3>
-                <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 16px 0', lineHeight: 1.4 }}>
+                <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 16px 0', lineHeight: 1.4 }}>
                   Escribe el código numérico asignado por tu supervisor o la central para activar tu terminal.
                 </p>
 
@@ -2887,16 +2886,16 @@ export const AppMovilPage: React.FC = () => {
                     style={{
                       width: '100%',
                       height: '60px',
-                      background: '#090d16',
+                      background: '#ffffff',
                       border: '2px solid #0284c7',
                       borderRadius: '16px',
-                      color: '#38bdf8',
+                      color: '#0284c7',
                       fontSize: '30px',
                       fontWeight: 900,
                       letterSpacing: '8px',
                       textAlign: 'center',
                       outline: 'none',
-                      boxShadow: '0 0 20px rgba(2, 132, 199, 0.25)',
+                      boxShadow: '0 4px 15px rgba(2, 132, 199, 0.15)',
                     }}
                     required
                   />
@@ -2912,13 +2911,13 @@ export const AppMovilPage: React.FC = () => {
                     background:
                       codigoInput.trim().length >= 6
                         ? 'linear-gradient(135deg, #10b981, #059669)'
-                        : 'rgba(255, 255, 255, 0.1)',
+                        : '#cbd5e1',
                     color: '#ffffff',
                     border: 'none',
                     fontSize: '15px',
                     fontWeight: 800,
                     cursor: codigoInput.trim().length >= 6 ? 'pointer' : 'not-allowed',
-                    boxShadow: codigoInput.trim().length >= 6 ? '0 8px 20px rgba(16, 185, 129, 0.4)' : 'none',
+                    boxShadow: codigoInput.trim().length >= 6 ? '0 8px 20px rgba(16, 185, 129, 0.35)' : 'none',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -2943,13 +2942,13 @@ export const AppMovilPage: React.FC = () => {
               /* MODO SECUNDARIO: LOGIN CON USUARIO Y CONTRASEÑA */
               <form onSubmit={handleLoginUsuario} style={{ textAlign: 'left' }}>
                 <div style={{ textAlign: 'center', marginBottom: '14px' }}>
-                  <div style={{ fontSize: '11px', color: '#38bdf8', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.8px', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '11px', color: '#0284c7', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.8px', marginBottom: '4px' }}>
                     Acceso Administrativo
                   </div>
-                  <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#f8fafc', margin: '0 0 4px 0' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0' }}>
                     Iniciar con Usuario y Clave
                   </h3>
-                  <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0 }}>
+                  <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
                     Exclusivo para Supervisores, Taller y Administradores.
                   </p>
                 </div>
@@ -2962,7 +2961,7 @@ export const AppMovilPage: React.FC = () => {
                       fontWeight: 800,
                       letterSpacing: '0.8px',
                       textTransform: 'uppercase',
-                      color: '#38bdf8',
+                      color: '#0284c7',
                       marginBottom: '6px',
                     }}
                   >
@@ -2978,10 +2977,10 @@ export const AppMovilPage: React.FC = () => {
                     style={{
                       width: '100%',
                       height: '46px',
-                      background: '#090d16',
-                      border: '1.5px solid #334155',
+                      background: '#ffffff',
+                      border: '1.5px solid #cbd5e1',
                       borderRadius: '12px',
-                      color: '#ffffff',
+                      color: '#0f172a',
                       fontSize: '14.5px',
                       padding: '0 14px',
                       outline: 'none',
@@ -2998,7 +2997,7 @@ export const AppMovilPage: React.FC = () => {
                       fontWeight: 800,
                       letterSpacing: '0.8px',
                       textTransform: 'uppercase',
-                      color: '#38bdf8',
+                      color: '#0284c7',
                       marginBottom: '6px',
                     }}
                   >
@@ -3013,10 +3012,10 @@ export const AppMovilPage: React.FC = () => {
                       style={{
                         width: '100%',
                         height: '46px',
-                        background: '#090d16',
-                        border: '1.5px solid #334155',
+                        background: '#ffffff',
+                        border: '1.5px solid #cbd5e1',
                         borderRadius: '12px',
-                        color: '#ffffff',
+                        color: '#0f172a',
                         fontSize: '14.5px',
                         padding: '0 44px 0 14px',
                         outline: 'none',
@@ -3033,7 +3032,7 @@ export const AppMovilPage: React.FC = () => {
                         transform: 'translateY(-50%)',
                         background: 'transparent',
                         border: 'none',
-                        color: '#94a3b8',
+                        color: '#64748b',
                         cursor: 'pointer',
                         fontSize: '15px',
                         padding: '4px',
@@ -3054,13 +3053,13 @@ export const AppMovilPage: React.FC = () => {
                     background:
                       loginUsername.trim() && loginPassword.trim()
                         ? 'linear-gradient(135deg, #0284c7, #2563eb)'
-                        : 'rgba(255, 255, 255, 0.1)',
+                        : '#cbd5e1',
                     color: '#ffffff',
                     border: 'none',
                     fontSize: '14.5px',
                     fontWeight: 800,
                     cursor: loginUsername.trim() && loginPassword.trim() ? 'pointer' : 'not-allowed',
-                    boxShadow: loginUsername.trim() && loginPassword.trim() ? '0 8px 20px rgba(37, 99, 235, 0.4)' : 'none',
+                    boxShadow: loginUsername.trim() && loginPassword.trim() ? '0 8px 20px rgba(37, 99, 235, 0.35)' : 'none',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -3091,7 +3090,7 @@ export const AppMovilPage: React.FC = () => {
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#38bdf8',
+                color: '#0284c7',
                 fontSize: '12px',
                 fontWeight: 700,
                 cursor: 'pointer',
@@ -3117,14 +3116,14 @@ export const AppMovilPage: React.FC = () => {
 
           {/* Botón inferior si desea cambiar de empresa */}
           {empresaGuardada && (
-            <div style={{ marginTop: '18px', paddingTop: '14px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+            <div style={{ marginTop: '18px', paddingTop: '14px', borderTop: '1px solid #e2e8f0' }}>
               <button
                 type="button"
                 onClick={handleDesvincular}
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  color: '#94a3b8',
+                  color: '#64748b',
                   fontSize: '11.5px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -3271,13 +3270,14 @@ export const AppMovilPage: React.FC = () => {
       {/* Header Fijo Superior */}
       <header
         style={{
-          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-          color: '#ffffff',
-          padding: '14px 16px',
+          background: '#ffffff',
+          color: '#0f172a',
+          padding: '12px 16px',
           position: 'sticky',
           top: 0,
           zIndex: 100,
-          boxShadow: '0 4px 15px rgba(15, 23, 42, 0.25)',
+          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.05)',
+          borderBottom: '1px solid #e2e8f0',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
@@ -3288,36 +3288,36 @@ export const AppMovilPage: React.FC = () => {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '4px',
-                  background: isOnline ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.25)',
-                  color: isOnline ? '#34d399' : '#fbbf24',
+                  background: isOnline ? '#ecfdf5' : '#fef3c7',
+                  color: isOnline ? '#059669' : '#d97706',
                   padding: '2px 8px',
                   borderRadius: '20px',
                   fontSize: '10.5px',
                   fontWeight: 800,
-                  border: isOnline ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)',
+                  border: isOnline ? '1px solid #a7f3d0' : '1px solid #fde68a',
                 }}
               >
                 <i className={`fa-solid ${isOnline ? 'fa-signal' : 'fa-plane'}`}></i>
                 {isOnline ? 'En Línea' : 'Offline'}
               </span>
-              <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
                 {dispositivo.empresaNombre}
               </span>
               <span
                 style={{
-                  background: 'rgba(56, 189, 248, 0.2)',
-                  color: '#38bdf8',
+                  background: '#e0f2fe',
+                  color: '#0284c7',
                   padding: '1px 6px',
                   borderRadius: '6px',
                   fontSize: '10px',
                   fontWeight: 800,
-                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  border: '1px solid #bae6fd',
                 }}
               >
                 {APP_VERSION}
               </span>
             </div>
-            <h2 style={{ fontSize: '15.5px', fontWeight: 800, margin: '3px 0 0 0', color: '#ffffff' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 900, margin: '3px 0 0 0', color: '#0f172a' }}>
               {dispositivo.nombreCompleto}
             </h2>
           </div>
@@ -3330,9 +3330,9 @@ export const AppMovilPage: React.FC = () => {
               title="Notificaciones de Rutas y Salidas"
               style={{
                 position: 'relative',
-                background: noLeidasCount > 0 ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.1)',
-                border: noLeidasCount > 0 ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.15)',
-                color: noLeidasCount > 0 ? '#fca5a5' : '#e2e8f0',
+                background: noLeidasCount > 0 ? '#fee2e2' : '#f8fafc',
+                border: noLeidasCount > 0 ? '1px solid #fca5a5' : '1px solid #e2e8f0',
+                color: noLeidasCount > 0 ? '#ef4444' : '#64748b',
                 width: '34px',
                 height: '34px',
                 borderRadius: '8px',
@@ -3360,8 +3360,8 @@ export const AppMovilPage: React.FC = () => {
                     alignItems: 'center',
                     justifyContent: 'center',
                     padding: '0 4px',
-                    border: '1.5px solid #0f172a',
-                    boxShadow: '0 2px 5px rgba(239,68,68,0.5)',
+                    border: '1.5px solid #ffffff',
+                    boxShadow: '0 2px 5px rgba(239,68,68,0.3)',
                   }}
                 >
                   {noLeidasCount > 9 ? '9+' : noLeidasCount}
@@ -3374,9 +3374,9 @@ export const AppMovilPage: React.FC = () => {
               onClick={handleForzarRecarga}
               title="Recargar última versión"
               style={{
-                background: 'rgba(56, 189, 248, 0.2)',
-                border: '1px solid rgba(56, 189, 248, 0.4)',
-                color: '#38bdf8',
+                background: '#e0f2fe',
+                border: '1px solid #bae6fd',
+                color: '#0284c7',
                 width: '34px',
                 height: '34px',
                 borderRadius: '8px',
@@ -3391,16 +3391,16 @@ export const AppMovilPage: React.FC = () => {
             {dispositivo.placaCamion && (
               <span
                 style={{
-                  background: 'rgba(255, 255, 255, 0.12)',
-                  color: '#e2e8f0',
+                  background: '#f1f5f9',
+                  color: '#1e293b',
                   padding: '5px 9px',
                   borderRadius: '8px',
                   fontSize: '11.5px',
                   fontWeight: 800,
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  border: '1px solid #cbd5e1',
                 }}
               >
-                <i className="fa-solid fa-truck mr-1 text-sky-400"></i>
+                <i className="fa-solid fa-truck mr-1 text-sky-600"></i>
                 {dispositivo.placaCamion}
               </span>
             )}
@@ -3409,9 +3409,9 @@ export const AppMovilPage: React.FC = () => {
               onClick={handleCerrarSesion}
               title="Cerrar Sesión (Mantener Empresa)"
               style={{
-                background: 'rgba(245, 158, 11, 0.2)',
-                border: '1px solid rgba(245, 158, 11, 0.4)',
-                color: '#fbbf24',
+                background: '#fef3c7',
+                border: '1px solid #fde68a',
+                color: '#d97706',
                 width: '34px',
                 height: '34px',
                 borderRadius: '8px',
@@ -3432,7 +3432,7 @@ export const AppMovilPage: React.FC = () => {
             style={{
               marginTop: '10px',
               paddingTop: '8px',
-              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              borderTop: '1px solid #f1f5f9',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -3440,17 +3440,17 @@ export const AppMovilPage: React.FC = () => {
               overflowX: 'auto',
             }}
           >
-            <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <i className="fa-solid fa-layer-group text-sky-400"></i>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <i className="fa-solid fa-layer-group text-sky-600"></i>
               <span>VISTA:</span>
             </div>
-            <div style={{ display: 'flex', gap: '4px', background: 'rgba(0,0,0,0.3)', padding: '3px', borderRadius: '10px' }}>
+            <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '3px', borderRadius: '10px' }}>
               <button
                 type="button"
                 onClick={() => cambiarModo('CHOFER')}
                 style={{
                   background: modoActivo === 'CHOFER' ? '#10b981' : 'transparent',
-                  color: modoActivo === 'CHOFER' ? '#ffffff' : '#94a3b8',
+                  color: modoActivo === 'CHOFER' ? '#ffffff' : '#64748b',
                   border: 'none',
                   borderRadius: '7px',
                   padding: '4px 10px',
@@ -3460,7 +3460,7 @@ export const AppMovilPage: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '4px',
-                  boxShadow: modoActivo === 'CHOFER' ? '0 2px 6px rgba(16, 185, 129, 0.4)' : 'none',
+                  boxShadow: modoActivo === 'CHOFER' ? '0 2px 6px rgba(16, 185, 129, 0.3)' : 'none',
                 }}
               >
                 <i className="fa-solid fa-truck"></i> Chofer
@@ -3470,7 +3470,7 @@ export const AppMovilPage: React.FC = () => {
                 onClick={() => cambiarModo('ADMIN')}
                 style={{
                   background: modoActivo === 'ADMIN' ? '#2563eb' : 'transparent',
-                  color: modoActivo === 'ADMIN' ? '#ffffff' : '#94a3b8',
+                  color: modoActivo === 'ADMIN' ? '#ffffff' : '#64748b',
                   border: 'none',
                   borderRadius: '7px',
                   padding: '4px 10px',
@@ -3480,7 +3480,7 @@ export const AppMovilPage: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '4px',
-                  boxShadow: modoActivo === 'ADMIN' ? '0 2px 6px rgba(37, 99, 235, 0.4)' : 'none',
+                  boxShadow: modoActivo === 'ADMIN' ? '0 2px 6px rgba(37, 99, 235, 0.3)' : 'none',
                 }}
               >
                 <i className="fa-solid fa-tower-broadcast"></i> Admin
@@ -3490,7 +3490,7 @@ export const AppMovilPage: React.FC = () => {
                 onClick={() => cambiarModo('TALLER')}
                 style={{
                   background: modoActivo === 'TALLER' ? '#ea580c' : 'transparent',
-                  color: modoActivo === 'TALLER' ? '#ffffff' : '#94a3b8',
+                  color: modoActivo === 'TALLER' ? '#ffffff' : '#64748b',
                   border: 'none',
                   borderRadius: '7px',
                   padding: '4px 10px',
@@ -3500,7 +3500,7 @@ export const AppMovilPage: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '4px',
-                  boxShadow: modoActivo === 'TALLER' ? '0 2px 6px rgba(234, 88, 12, 0.4)' : 'none',
+                  boxShadow: modoActivo === 'TALLER' ? '0 2px 6px rgba(234, 88, 12, 0.3)' : 'none',
                 }}
               >
                 <i className="fa-solid fa-wrench"></i> Taller
@@ -3510,7 +3510,7 @@ export const AppMovilPage: React.FC = () => {
                 onClick={() => cambiarModo('RECEPTORIA')}
                 style={{
                   background: modoActivo === 'RECEPTORIA' ? '#4f46e5' : 'transparent',
-                  color: modoActivo === 'RECEPTORIA' ? '#ffffff' : '#94a3b8',
+                  color: modoActivo === 'RECEPTORIA' ? '#ffffff' : '#64748b',
                   border: 'none',
                   borderRadius: '7px',
                   padding: '4px 10px',
@@ -3520,7 +3520,7 @@ export const AppMovilPage: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '4px',
-                  boxShadow: modoActivo === 'RECEPTORIA' ? '0 2px 6px rgba(79, 70, 229, 0.4)' : 'none',
+                  boxShadow: modoActivo === 'RECEPTORIA' ? '0 2px 6px rgba(79, 70, 229, 0.3)' : 'none',
                 }}
               >
                 <i className="fa-solid fa-warehouse"></i> Recept
@@ -3534,9 +3534,10 @@ export const AppMovilPage: React.FC = () => {
       {!esInstalada && (
         <div
           style={{
-            background: 'linear-gradient(90deg, #065f46, #047857)',
+            background: 'linear-gradient(90deg, #ecfdf5, #f0fdf4)',
+            borderBottom: '1px solid #a7f3d0',
             padding: '8px 16px',
-            color: '#ffffff',
+            color: '#065f46',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -3545,21 +3546,22 @@ export const AppMovilPage: React.FC = () => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <i className="fa-solid fa-mobile-screen text-emerald-300"></i>
+            <i className="fa-solid fa-mobile-screen text-emerald-600"></i>
             <span>Instala la app en tu pantalla para abrirla directo</span>
           </div>
           <button
             type="button"
             onClick={handleInstalarApp}
             style={{
-              background: '#ffffff',
-              color: '#065f46',
+              background: '#059669',
+              color: '#ffffff',
               border: 'none',
               padding: '3px 10px',
               borderRadius: '6px',
               fontSize: '11px',
               fontWeight: 800,
               cursor: 'pointer',
+              boxShadow: '0 2px 4px rgba(5, 150, 105, 0.25)',
             }}
           >
             Instalar
@@ -3641,23 +3643,23 @@ export const AppMovilPage: React.FC = () => {
               {/* Tarjeta de Bienvenida y Turno */}
               <div
                 style={{
-                  background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                  background: 'linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%)',
                   borderRadius: '20px',
                   padding: '16px 18px',
-                  color: '#ffffff',
-                  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.15)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  color: '#0f172a',
+                  boxShadow: '0 4px 16px rgba(2, 132, 199, 0.08)',
+                  border: '1.5px solid #bae6fd',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <div style={{ fontSize: '11px', color: '#0284c7', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     Turno de Operación • {new Date().toLocaleDateString('es-VE', { weekday: 'short', day: 'numeric', month: 'short' })}
                   </div>
                   <span
                     style={{
-                      background: 'rgba(56, 189, 248, 0.15)',
-                      color: '#38bdf8',
-                      border: '1px solid rgba(56, 189, 248, 0.3)',
+                      background: '#e0f2fe',
+                      color: '#0369a1',
+                      border: '1px solid #7dd3fc',
                       padding: '2px 8px',
                       borderRadius: '8px',
                       fontSize: '11px',
@@ -3667,10 +3669,10 @@ export const AppMovilPage: React.FC = () => {
                     🚛 {dispositivo?.placaCamion || 'Cisterna'}
                   </span>
                 </div>
-                <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 4px 0', letterSpacing: '-0.3px' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 4px 0', letterSpacing: '-0.3px', color: '#0f172a' }}>
                   ¡Hola, {choferEfectivoNombre.split(' ')[0]}!
                 </h2>
-                <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1' }}>
+                <p style={{ margin: 0, fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
                   {despachoActivo
                     ? `Despacho #${despachoActivo.id} en viaje a ${despachoActivo.nombreCompania || 'Planta'}`
                     : viajeActivo
@@ -6045,11 +6047,12 @@ export const AppMovilPage: React.FC = () => {
             {/* Tarjeta de Identidad */}
             <div
               style={{
-                background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+                background: 'linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%)',
                 borderRadius: '18px',
                 padding: '20px',
-                color: '#ffffff',
-                boxShadow: '0 6px 20px rgba(15, 23, 42, 0.2)',
+                color: '#0f172a',
+                boxShadow: '0 4px 16px rgba(2, 132, 199, 0.08)',
+                border: '1.5px solid #bae6fd',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -6070,14 +6073,14 @@ export const AppMovilPage: React.FC = () => {
                   {dispositivo.nombreCompleto.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800 }}>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
                     {dispositivo.nombreCompleto}
                   </h3>
-                  <div style={{ fontSize: '12px', color: '#38bdf8', marginTop: '2px' }}>
+                  <div style={{ fontSize: '12px', color: '#0284c7', marginTop: '2px', fontWeight: 700 }}>
                     @{dispositivo.username} • <span style={{ textTransform: 'uppercase' }}>{dispositivo.rol}</span>
                   </div>
                   {dispositivo.placaCamion && (
-                    <div style={{ fontSize: '12px', color: '#34d399', marginTop: '2px', fontWeight: 700 }}>
+                    <div style={{ fontSize: '12px', color: '#059669', marginTop: '2px', fontWeight: 700 }}>
                       <i className="fa-solid fa-truck mr-1"></i> Cisterna: {dispositivo.placaCamion} ({capacidad.toLocaleString()} L)
                     </div>
                   )}
@@ -6089,12 +6092,12 @@ export const AppMovilPage: React.FC = () => {
             {esAdminReal && (
               <div
                 style={{
-                  background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                  background: '#ffffff',
                   borderRadius: '18px',
                   padding: '20px',
-                  color: '#ffffff',
-                  boxShadow: '0 8px 25px rgba(15, 23, 42, 0.25)',
-                  border: '1.5px solid rgba(56, 189, 248, 0.35)',
+                  color: '#0f172a',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.05)',
+                  border: '1.5px solid #e2e8f0',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
@@ -6104,8 +6107,8 @@ export const AppMovilPage: React.FC = () => {
                         width: '38px',
                         height: '38px',
                         borderRadius: '10px',
-                        background: 'rgba(56, 189, 248, 0.2)',
-                        color: '#38bdf8',
+                        background: '#e0f2fe',
+                        color: '#0284c7',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -6115,10 +6118,10 @@ export const AppMovilPage: React.FC = () => {
                       <i className="fa-solid fa-layer-group"></i>
                     </div>
                     <div>
-                      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 900, color: '#f8fafc' }}>
+                      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>
                         Modo de la Aplicación Móvil
                       </h4>
-                      <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
+                      <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>
                         Acceso SuperAdmin: Alterna libremente entre los 3 entornos
                       </p>
                     </div>
@@ -6127,22 +6130,22 @@ export const AppMovilPage: React.FC = () => {
                     style={{
                       background:
                         modoActivo === 'ADMIN'
-                          ? 'rgba(37, 99, 235, 0.3)'
+                          ? '#eff6ff'
                           : modoActivo === 'TALLER'
-                          ? 'rgba(234, 88, 12, 0.3)'
-                          : 'rgba(16, 185, 129, 0.3)',
+                          ? '#fff7ed'
+                          : '#ecfdf5',
                       color:
                         modoActivo === 'ADMIN'
-                          ? '#60a5fa'
+                          ? '#2563eb'
                           : modoActivo === 'TALLER'
-                          ? '#fb923c'
-                          : '#4ade80',
+                          ? '#ea580c'
+                          : '#059669',
                       border: `1px solid ${
                         modoActivo === 'ADMIN'
-                          ? '#3b82f6'
+                          ? '#93c5fd'
                           : modoActivo === 'TALLER'
-                          ? '#f97316'
-                          : '#22c55e'
+                          ? '#fdba74'
+                          : '#86efac'
                       }`,
                       fontSize: '11px',
                       fontWeight: 900,
@@ -6165,8 +6168,8 @@ export const AppMovilPage: React.FC = () => {
                       gap: '12px',
                       padding: '12px 14px',
                       borderRadius: '14px',
-                      border: modoActivo === 'CHOFER' ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.1)',
-                      background: modoActivo === 'CHOFER' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255,255,255,0.03)',
+                      border: modoActivo === 'CHOFER' ? '2px solid #10b981' : '1px solid #e2e8f0',
+                      background: modoActivo === 'CHOFER' ? '#ecfdf5' : '#ffffff',
                       cursor: 'pointer',
                       textAlign: 'left',
                       transition: 'all 0.2s',
@@ -6177,8 +6180,8 @@ export const AppMovilPage: React.FC = () => {
                         width: '42px',
                         height: '42px',
                         borderRadius: '12px',
-                        background: modoActivo === 'CHOFER' ? '#22c55e' : 'rgba(255,255,255,0.1)',
-                        color: '#ffffff',
+                        background: modoActivo === 'CHOFER' ? '#10b981' : '#f1f5f9',
+                        color: modoActivo === 'CHOFER' ? '#ffffff' : '#64748b',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -6190,14 +6193,14 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#ffffff' }}>
+                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
                           1. Módulo Chofer / Conductor
                         </span>
                         {modoActivo === 'CHOFER' && (
-                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#4ade80' }}>✓ ACTIVO</span>
+                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#059669' }}>✓ ACTIVO</span>
                         )}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                         Recolección en finca, rutas, entregas a plantas y reporte de averías.
                       </div>
                     </div>
@@ -6213,8 +6216,8 @@ export const AppMovilPage: React.FC = () => {
                       gap: '12px',
                       padding: '12px 14px',
                       borderRadius: '14px',
-                      border: modoActivo === 'ADMIN' ? '2px solid #3b82f6' : '1px solid rgba(255,255,255,0.1)',
-                      background: modoActivo === 'ADMIN' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.03)',
+                      border: modoActivo === 'ADMIN' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                      background: modoActivo === 'ADMIN' ? '#eff6ff' : '#ffffff',
                       cursor: 'pointer',
                       textAlign: 'left',
                       transition: 'all 0.2s',
@@ -6225,8 +6228,8 @@ export const AppMovilPage: React.FC = () => {
                         width: '42px',
                         height: '42px',
                         borderRadius: '12px',
-                        background: modoActivo === 'ADMIN' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-                        color: '#ffffff',
+                        background: modoActivo === 'ADMIN' ? '#2563eb' : '#f1f5f9',
+                        color: modoActivo === 'ADMIN' ? '#ffffff' : '#64748b',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -6238,14 +6241,14 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#ffffff' }}>
+                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
                           2. Módulo Administrador
                         </span>
                         {modoActivo === 'ADMIN' && (
-                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#60a5fa' }}>✓ ACTIVO</span>
+                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#2563eb' }}>✓ ACTIVO</span>
                         )}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                         Supervisión En Vivo de camiones, logística de rutas y reportes.
                       </div>
                     </div>
@@ -6261,8 +6264,8 @@ export const AppMovilPage: React.FC = () => {
                       gap: '12px',
                       padding: '12px 14px',
                       borderRadius: '14px',
-                      border: modoActivo === 'TALLER' ? '2px solid #f97316' : '1px solid rgba(255,255,255,0.1)',
-                      background: modoActivo === 'TALLER' ? 'rgba(249, 115, 22, 0.15)' : 'rgba(255,255,255,0.03)',
+                      border: modoActivo === 'TALLER' ? '2px solid #ea580c' : '1px solid #e2e8f0',
+                      background: modoActivo === 'TALLER' ? '#fff7ed' : '#ffffff',
                       cursor: 'pointer',
                       textAlign: 'left',
                       transition: 'all 0.2s',
@@ -6273,8 +6276,8 @@ export const AppMovilPage: React.FC = () => {
                         width: '42px',
                         height: '42px',
                         borderRadius: '12px',
-                        background: modoActivo === 'TALLER' ? '#f97316' : 'rgba(255,255,255,0.1)',
-                        color: '#ffffff',
+                        background: modoActivo === 'TALLER' ? '#ea580c' : '#f1f5f9',
+                        color: modoActivo === 'TALLER' ? '#ffffff' : '#64748b',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -6286,14 +6289,14 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#ffffff' }}>
+                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
                           3. Módulo Taller & Flota
                         </span>
                         {modoActivo === 'TALLER' && (
-                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#fb923c' }}>✓ ACTIVO</span>
+                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#ea580c' }}>✓ ACTIVO</span>
                         )}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                         Estado de camiones (Activo, Inactivo, Mantenimiento) y reparaciones.
                       </div>
                     </div>
@@ -6309,8 +6312,8 @@ export const AppMovilPage: React.FC = () => {
                       gap: '12px',
                       padding: '12px 14px',
                       borderRadius: '14px',
-                      border: modoActivo === 'RECEPTORIA' ? '2px solid #6366f1' : '1px solid rgba(255,255,255,0.1)',
-                      background: modoActivo === 'RECEPTORIA' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255,255,255,0.03)',
+                      border: modoActivo === 'RECEPTORIA' ? '2px solid #4f46e5' : '1px solid #e2e8f0',
+                      background: modoActivo === 'RECEPTORIA' ? '#eef2ff' : '#ffffff',
                       cursor: 'pointer',
                       textAlign: 'left',
                       transition: 'all 0.2s',
@@ -6321,8 +6324,8 @@ export const AppMovilPage: React.FC = () => {
                         width: '42px',
                         height: '42px',
                         borderRadius: '12px',
-                        background: modoActivo === 'RECEPTORIA' ? '#6366f1' : 'rgba(255,255,255,0.1)',
-                        color: '#ffffff',
+                        background: modoActivo === 'RECEPTORIA' ? '#4f46e5' : '#f1f5f9',
+                        color: modoActivo === 'RECEPTORIA' ? '#ffffff' : '#64748b',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -6334,14 +6337,14 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#ffffff' }}>
+                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
                           4. Módulo Receptoría
                         </span>
                         {modoActivo === 'RECEPTORIA' && (
-                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#a5b4fc' }}>✓ ACTIVO</span>
+                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#4f46e5' }}>✓ ACTIVO</span>
                         )}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                         Entrada de leche de campo, verificación con merma y tickets de salida a plantas.
                       </div>
                     </div>
@@ -7878,11 +7881,11 @@ export const AppMovilPage: React.FC = () => {
             {/* Header En Vivo */}
             <div
               style={{
-                background: 'linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)',
+                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
                 borderRadius: '18px',
                 padding: '18px 20px',
                 color: '#ffffff',
-                boxShadow: '0 8px 25px rgba(30, 58, 138, 0.3)',
+                boxShadow: '0 8px 25px rgba(2, 132, 199, 0.25)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

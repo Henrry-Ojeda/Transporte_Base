@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 1,
-  patch: 1,
-  tag: 'v3.1.1',
+  patch: 2,
+  tag: 'v3.1.2',
   ultimaActualizacion: '2026-11-08',
-  tipoUltimoCambio: 'ESTRUCTURA',
-  descripcion: 'Arquitectura de Base de Datos Local IndexedDB y Motor de Sincronización Bidireccional Multi-Rol (Chofer, Taller, Receptoría, Admin/SuperAdmin)',
+  tipoUltimoCambio: 'DISEÑO',
+  descripcion: 'Diseño Claro Corporativo en App Móvil (Fondo blanco/azul, eliminación de tema oscuro en bienvenida, cabecera y tarjetas)',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

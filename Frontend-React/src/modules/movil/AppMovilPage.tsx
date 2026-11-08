@@ -162,9 +162,25 @@ export const AppMovilPage: React.FC = () => {
     }
   });
 
-  // Despachos / Entregas Asignadas
+  // Despachos / Entregas Asignadas (Filtradas por Día y Chofer)
   const [entregas, setEntregas] = useState<DespachoCompaniaDto[]>([]);
   const [cargandoEntregas, setCargandoEntregas] = useState(false);
+  const [filtroFechaEntregas, setFiltroFechaEntregas] = useState<string>(() => new Date().toISOString().split('T')[0]);
+
+  // Estado para animar/titilar finca cuando se ingresan litros
+  const [fincaRecienActualizadaId, setFincaRecienActualizadaId] = useState<number | null>(null);
+
+  const cambiarDiaEntregas = (offset: number) => {
+    try {
+      const baseStr = filtroFechaEntregas || new Date().toISOString().split('T')[0];
+      const [y, m, d] = baseStr.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setDate(dt.getDate() + offset);
+      const nuevaFecha = dt.toISOString().split('T')[0];
+      setFiltroFechaEntregas(nuevaFecha);
+      cargarEntregasChofer(undefined, nuevaFecha);
+    } catch {}
+  };
 
   // Viaje / Ticket Activo Asignado al Chofer (creado por Supervisor/Admin o por el chofer)
   const [viajeActivo, setViajeActivo] = useState<ControlRutaDto | null>(() => {
@@ -821,20 +837,29 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
-  const cargarEntregasChofer = async (idTarget?: number) => {
+  const cargarEntregasChofer = async (idTarget?: number, fechaTarget?: string) => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
+    const fEfectiva = fechaTarget || filtroFechaEntregas || hoyStr;
     setCargandoEntregas(true);
     try {
-      const allDespachos = await operacionesApi.getDespachosCompanias(undefined, undefined, undefined, undefined, idBusqueda);
+      const allDespachos = await operacionesApi.getDespachosCompanias(fEfectiva, undefined, undefined, undefined, idBusqueda);
       const misDespachos = (allDespachos || []).filter((d: any) => {
         const uId = Number(d.usuarioId || d.choferId || d.conductorId);
         const nombreD = (d.nombreConductor || d.choferNombre || '').toLowerCase();
         const nombreTarget = (choferEfectivoNombre || dispositivo?.nombreCompleto || '').toLowerCase();
         const coincideId = uId === idBusqueda;
-        const coincideNombre = nombreTarget && nombreD.length > 2 && nombreD.includes(nombreTarget);
+        const coincideNombre = Boolean(nombreTarget && nombreD.length > 2 && nombreD.includes(nombreTarget));
         const coincideCamion = Boolean(dispositivo?.camionId && d.camionId === dispositivo.camionId);
-        return coincideId || coincideNombre || coincideCamion;
+        const perteneceAlChofer = coincideId || coincideNombre || coincideCamion;
+        if (!perteneceAlChofer) return false;
+
+        // Filtrar estrictamente por el día seleccionado
+        if (fEfectiva && d.fecha) {
+          const dFechaStr = String(d.fecha).split('T')[0];
+          return dFechaStr === fEfectiva;
+        }
+        return true;
       });
       setEntregas(misDespachos);
     } catch (err) {
@@ -2104,6 +2129,13 @@ export const AppMovilPage: React.FC = () => {
     });
     setBusquedaFinca('');
 
+    // Activar efecto visual TITILAR para esta finca al ingresar litros
+    const fincaIdNum = Number(formCarga.fincaId);
+    setFincaRecienActualizadaId(fincaIdNum);
+    setTimeout(() => {
+      setFincaRecienActualizadaId((prev) => (prev === fincaIdNum ? null : prev));
+    }, 10000);
+
     toast.success(`Carga de ${litrosNum.toLocaleString()} L guardada en el teléfono`);
 
     if (isOnline) {
@@ -2791,6 +2823,27 @@ export const AppMovilPage: React.FC = () => {
         paddingBottom: '90px',
       }}
     >
+      {/* Estilos para animación de Titilar al ingresar litros en fincas */}
+      <style>{`
+        @keyframes titilarFincaVerde {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.85);
+            border-color: #10b981 !important;
+            transform: scale(1);
+          }
+          50% {
+            box-shadow: 0 0 18px 6px rgba(16, 185, 129, 0.5);
+            border-color: #059669 !important;
+            background-color: #ecfdf5 !important;
+            transform: scale(1.02);
+          }
+        }
+        @keyframes titilarPuntoPulso {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.25; transform: scale(1.35); }
+        }
+      `}</style>
+
       {/* Header Fijo Superior */}
       <header
         style={{
@@ -3642,7 +3695,9 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {fincasDeMiRuta.map((f, idx) => (
+                      {fincasDeMiRuta.map((f, idx) => {
+                        const estaTitilando = fincaRecienActualizadaId === f.id;
+                        return (
                         <div
                           key={f.id}
                           style={{
@@ -3654,6 +3709,8 @@ export const AppMovilPage: React.FC = () => {
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             gap: '10px',
+                            animation: estaTitilando ? 'titilarFincaVerde 1.2s infinite ease-in-out' : 'none',
+                            transition: 'all 0.3s ease',
                           }}
                         >
                           <div style={{ flex: 1 }}>
@@ -3677,11 +3734,30 @@ export const AppMovilPage: React.FC = () => {
                               <span style={{ fontSize: '13px', fontWeight: 800, color: f.recolectada ? '#15803d' : '#0f172a' }}>
                                 {f.nombre}
                               </span>
+                              {estaTitilando && (
+                                <span
+                                  style={{
+                                    fontSize: '9.5px',
+                                    fontWeight: 900,
+                                    background: '#10b981',
+                                    color: '#ffffff',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                    animation: 'titilarPuntoPulso 1s infinite',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                  }}
+                                >
+                                  ⚡ ¡LITROS INGRESADOS!
+                                </span>
+                              )}
                             </div>
                             <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', paddingLeft: '26px' }}>
                               {f.codigo ? `${f.codigo} • ` : ''}
                               {f.recolectada ? (
-                                <strong style={{ color: '#16a34a' }}>
+                                <strong style={{ color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#16a34a', display: 'inline-block', animation: 'titilarPuntoPulso 1.5s infinite' }}></span>
                                   ✓ Recolectada: {f.litrosRecolectados.toLocaleString()} L
                                 </strong>
                               ) : (
@@ -3733,7 +3809,8 @@ export const AppMovilPage: React.FC = () => {
                             )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
@@ -3769,113 +3846,6 @@ export const AppMovilPage: React.FC = () => {
                   )}
                 </div>
               )}
-
-              {/* Botones de Acceso Rápido (Cuadrícula 2x2) */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                <button
-                  type="button"
-                  onClick={() => setTabActiva('recoleccion')}
-                  style={{
-                    background: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '16px',
-                    padding: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-                    textAlign: 'left',
-                  }}
-                >
-                  <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#ecfdf5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', flexShrink: 0 }}>
-                    <i className="fa-solid fa-faucet-drip"></i>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>Recolección</div>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>{fincasDeMiRuta.length} fincas en ruta</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTabActiva('entregas')}
-                  style={{
-                    background: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '16px',
-                    padding: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-                    textAlign: 'left',
-                  }}
-                >
-                  <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#f5f3ff', color: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', flexShrink: 0 }}>
-                    <i className="fa-solid fa-warehouse"></i>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>Entregas</div>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>{entregas.length} asignadas</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTabActiva('reportes')}
-                  style={{
-                    background: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '16px',
-                    padding: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-                    textAlign: 'left',
-                  }}
-                >
-                  <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#f0f9ff', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', flexShrink: 0 }}>
-                    <i className="fa-solid fa-chart-pie"></i>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>Reportes</div>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>Resumen diario</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => sincronizarCargas()}
-                  disabled={sincronizando || !isOnline}
-                  style={{
-                    background: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '16px',
-                    padding: '14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    cursor: isOnline ? 'pointer' : 'not-allowed',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
-                    textAlign: 'left',
-                    opacity: isOnline ? 1 : 0.6,
-                  }}
-                >
-                  <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#f0f9ff', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', flexShrink: 0 }}>
-                    <i className={`fa-solid ${sincronizando ? 'fa-arrows-rotate fa-spin' : 'fa-cloud-arrow-up'}`}></i>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>Sincronizar</div>
-                    <div style={{ fontSize: '11px', color: pendientesSync.length > 0 ? '#b45309' : '#15803d', fontWeight: 700 }}>
-                      {pendientesSync.length > 0 ? `${pendientesSync.length} pendientes` : 'Al día'}
-                    </div>
-                  </div>
-                </button>
-              </div>
             </div>
           );
         })()}
@@ -4187,7 +4157,9 @@ export const AppMovilPage: React.FC = () => {
                         No hay fincas en esta vista
                       </div>
                     ) : (
-                      fincasAMostrar.map((f) => (
+                      fincasAMostrar.map((f) => {
+                        const estaTitilando = fincaRecienActualizadaId === f.id;
+                        return (
                         <div
                           key={f.id}
                           style={{
@@ -4200,6 +4172,8 @@ export const AppMovilPage: React.FC = () => {
                             justifyContent: 'space-between',
                             gap: '10px',
                             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                            animation: estaTitilando ? 'titilarFincaVerde 1.2s infinite ease-in-out' : 'none',
+                            transition: 'all 0.3s ease',
                           }}
                         >
                           <div style={{ flex: 1 }}>
@@ -4207,6 +4181,24 @@ export const AppMovilPage: React.FC = () => {
                               <span style={{ fontSize: '13.5px', fontWeight: 800, color: f.recolectada ? '#166534' : '#1e293b' }}>
                                 {f.recolectada ? '✓ ' : ''}{f.nombre}
                               </span>
+                              {estaTitilando && (
+                                <span
+                                  style={{
+                                    fontSize: '9.5px',
+                                    fontWeight: 900,
+                                    background: '#10b981',
+                                    color: '#ffffff',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                    animation: 'titilarPuntoPulso 1s infinite',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                  }}
+                                >
+                                  ⚡ ¡LITROS INGRESADOS!
+                                </span>
+                              )}
                               {f.recolectada ? (
                                 <span
                                   style={{
@@ -4217,8 +4209,12 @@ export const AppMovilPage: React.FC = () => {
                                     padding: '1px 6px',
                                     borderRadius: '5px',
                                     border: '1px solid #bbf7d0',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
                                   }}
                                 >
+                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'titilarPuntoPulso 1.5s infinite' }}></span>
                                   Recolectada
                                 </span>
                               ) : (
@@ -4246,7 +4242,8 @@ export const AppMovilPage: React.FC = () => {
                           <div>
                             {f.recolectada ? (
                               <div style={{ textAlign: 'right' }}>
-                                <span style={{ fontSize: '15px', fontWeight: 900, color: '#15803d' }}>
+                                <span style={{ fontSize: '15px', fontWeight: 900, color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', animation: 'titilarPuntoPulso 1.5s infinite' }}></span>
                                   +{f.litrosRecolectados.toLocaleString()} L
                                 </span>
                               </div>
@@ -4275,7 +4272,8 @@ export const AppMovilPage: React.FC = () => {
                             )}
                           </div>
                         </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -4401,14 +4399,17 @@ export const AppMovilPage: React.FC = () => {
           const listaEntregasEfectiva = (() => {
             const list = [...entregas];
             if (despachoActivo && !list.some((d: any) => d.id === despachoActivo.id)) {
-              list.unshift(despachoActivo);
+              const dFecha = despachoActivo.fecha ? String(despachoActivo.fecha).split('T')[0] : '';
+              if (!dFecha || !filtroFechaEntregas || dFecha === filtroFechaEntregas) {
+                list.unshift(despachoActivo);
+              }
             }
             return list;
           })();
 
           return (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div>
                 <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', margin: 0 }}>
                   Mis Entregas y Despachos
@@ -4438,6 +4439,116 @@ export const AppMovilPage: React.FC = () => {
                 <i className={`fa-solid fa-rotate mr-1 ${cargandoEntregas ? 'fa-spin' : ''}`}></i>
                 Actualizar
               </button>
+            </div>
+
+            {/* BARRA DE FILTRO POR DÍA PARA EL CHOFER (REQUERIMIENTO 3) */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '14px',
+                padding: '8px 12px',
+                marginBottom: '12px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => cambiarDiaEntregas(-1)}
+                  style={{
+                    background: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: '#334155',
+                  }}
+                  title="Día anterior"
+                >
+                  <i className="fa-solid fa-chevron-left" style={{ fontSize: '11px' }}></i>
+                </button>
+                <input
+                  type="date"
+                  value={filtroFechaEntregas}
+                  onChange={(e) => {
+                    const nueva = e.target.value;
+                    setFiltroFechaEntregas(nueva);
+                    cargarEntregasChofer(undefined, nueva);
+                  }}
+                  style={{
+                    height: '32px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    padding: '0 8px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#1e293b',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => cambiarDiaEntregas(1)}
+                  style={{
+                    background: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: '#334155',
+                  }}
+                  title="Día siguiente"
+                >
+                  <i className="fa-solid fa-chevron-right" style={{ fontSize: '11px' }}></i>
+                </button>
+              </div>
+
+              {filtroFechaEntregas !== hoyStr ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFiltroFechaEntregas(hoyStr);
+                    cargarEntregasChofer(undefined, hoyStr);
+                  }}
+                  style={{
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    color: '#1d4ed8',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Ir a Hoy
+                </button>
+              ) : (
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    color: '#16a34a',
+                    background: '#f0fdf4',
+                    border: '1px solid #bbf7d0',
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                  }}
+                >
+                  Hoy ({listaEntregasEfectiva.length})
+                </span>
+              )}
             </div>
 
             {cargandoEntregas ? (

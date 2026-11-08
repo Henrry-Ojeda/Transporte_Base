@@ -11620,11 +11620,21 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
     public class NotificacionesRepository : INotificacionesRepository
     {
         private readonly string _connectionString;
+        private readonly Transporte.Core.Interfaces.ITenantService? _tenantService;
         private static bool _tableEnsured = false;
 
-        public NotificacionesRepository(IConfiguration configuration)
+        public NotificacionesRepository(IConfiguration configuration, Transporte.Core.Interfaces.ITenantService? tenantService = null)
         {
-            _connectionString = configuration.GetConnectionString("DefaultConnection")!;
+            _tenantService = tenantService;
+            _connectionString = tenantService?.GetConnectionString() 
+                ?? configuration.GetConnectionString("DefaultConnection") 
+                ?? configuration.GetConnectionString("BD_TRANSPORTE")!;
+        }
+
+        private IDbConnection CreateConnection()
+        {
+            var connStr = _tenantService?.GetConnectionString() ?? _connectionString;
+            return new SqlConnection(connStr);
         }
 
         private async Task EnsureTableAsync(IDbConnection connection)
@@ -11656,7 +11666,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
         public async Task<IEnumerable<NotificacionMovilDto>> ObtenerMisNotificacionesAsync(int usuarioId, int limite = 30)
         {
-            using var connection = new SqlConnection(_connectionString);
+            using var connection = CreateConnection();
             await EnsureTableAsync(connection);
             var sql = @"
                 SELECT TOP (@limite)
@@ -11670,7 +11680,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
         public async Task<long> CrearNotificacionAsync(CrearNotificacionMovilDto dto)
         {
-            using var connection = new SqlConnection(_connectionString);
+            using var connection = CreateConnection();
             await EnsureTableAsync(connection);
             var sql = @"
                 INSERT INTO TB_NOTIFICACIONES_MOVIL (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
@@ -11682,7 +11692,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
         public async Task<bool> MarcarComoLeidaAsync(long id, int usuarioId)
         {
-            using var connection = new SqlConnection(_connectionString);
+            using var connection = CreateConnection();
             await EnsureTableAsync(connection);
             var sql = "UPDATE TB_NOTIFICACIONES_MOVIL SET Leido = 1 WHERE Id = @id AND UsuarioId = @usuarioId";
             var rows = await connection.ExecuteAsync(sql, new { id, usuarioId });
@@ -11691,7 +11701,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
         public async Task<bool> MarcarTodasComoLeidasAsync(int usuarioId)
         {
-            using var connection = new SqlConnection(_connectionString);
+            using var connection = CreateConnection();
             await EnsureTableAsync(connection);
             var sql = "UPDATE TB_NOTIFICACIONES_MOVIL SET Leido = 1 WHERE UsuarioId = @usuarioId AND Leido = 0";
             var rows = await connection.ExecuteAsync(sql, new { usuarioId });

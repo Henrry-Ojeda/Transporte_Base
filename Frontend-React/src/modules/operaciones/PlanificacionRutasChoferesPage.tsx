@@ -101,6 +101,17 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
     queryFn: () => operacionesApi.getPlanificacionesChoferes(fechaOperativa),
   });
 
+  // Filtro Estricto: Solo tickets y asignaciones activas (excluir finalizados/cerrados)
+  const esTicketActivo = (estado?: string) => {
+    if (!estado) return true;
+    const s = estado.toUpperCase();
+    return !s.includes('FINALIZ') && !s.includes('CERRAD') && !s.startsWith('4');
+  };
+
+  const planificacionesActivas = useMemo(() => {
+    return planificaciones.filter((p) => esTicketActivo(p.estadoTicket));
+  }, [planificaciones]);
+
   const { data: rutas = [] } = useQuery<RutaLogisticaDto[]>({
     queryKey: ['rutas-logistica'],
     queryFn: () => operacionesApi.getRutasLogistica(),
@@ -363,20 +374,20 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
     }
   };
 
-  // KPIs de la fecha
-  const kpiTotalCamiones = planificaciones.length;
-  const kpiTotalLitrosEstimados = planificaciones.reduce((acc, p) => acc + (p.litrosEstimados || 0), 0);
+  // KPIs de la fecha (Solo de Tickets / Asignaciones Activas)
+  const kpiTotalCamiones = planificacionesActivas.length;
+  const kpiTotalLitrosEstimados = planificacionesActivas.reduce((acc, p) => acc + (p.litrosEstimados || 0), 0);
   const kpiTotalFincas = useMemo(() => {
     const set = new Set<number>();
-    planificaciones.forEach((p) => (p.listaFincasIds || []).forEach((id) => set.add(id)));
+    planificacionesActivas.forEach((p) => (p.listaFincasIds || []).forEach((id) => set.add(id)));
     return set.size;
-  }, [planificaciones]);
+  }, [planificacionesActivas]);
 
   const kpiCapacidadPromedio = useMemo(() => {
-    if (planificaciones.length === 0) return 0;
-    const sumPcts = planificaciones.reduce((acc, p) => acc + (p.porcentajeOcupacion || 0), 0);
-    return Math.round(sumPcts / planificaciones.length);
-  }, [planificaciones]);
+    if (planificacionesActivas.length === 0) return 0;
+    const sumPcts = planificacionesActivas.reduce((acc, p) => acc + (p.porcentajeOcupacion || 0), 0);
+    return Math.round(sumPcts / planificacionesActivas.length);
+  }, [planificacionesActivas]);
 
   // Columnas para DataTable
   const columnas: ColumnDef<PlanificacionRutaChoferDto>[] = [
@@ -638,7 +649,7 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
       {/* CONTROLES DE VISTA */}
       <div className="flex items-center justify-between">
         <div className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
-          <span>Asignaciones de la Jornada ({planificaciones.length})</span>
+          <span>Asignaciones de la Jornada ({planificacionesActivas.length})</span>
         </div>
         <div className="flex items-center bg-slate-100 p-1 rounded-xl">
           <button
@@ -670,7 +681,7 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
           <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-3" />
           Cargando planificaciones de la fecha...
         </div>
-      ) : planificaciones.length === 0 ? (
+      ) : planificacionesActivas.length === 0 ? (
         <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-12 text-center">
           <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4">
             <Truck className="w-8 h-8" />
@@ -689,9 +700,9 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
           </button>
         </div>
       ) : vistaModo === 'tarjetas' ? (
-        /* VISTA DE TARJETAS DE CAMIÓN */
+        /* VISTA DE TARJETAS DE CAMIÓN (SOLO TICKETS ACTIVOS) */
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {planificaciones.map((plan) => {
+          {planificacionesActivas.map((plan) => {
             const pct = plan.porcentajeOcupacion || 0;
             const color = pct > 100 ? '#ef4444' : pct >= 90 ? '#f59e0b' : '#10b981';
             const fincasIds = plan.listaFincasIds || [];
@@ -895,7 +906,7 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
         /* VISTA DE TABLA CON DATATABLE (REGLA MAESTRA 2) */
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4">
           <DataTable
-            data={planificaciones}
+            data={planificacionesActivas}
             columns={columnas}
             searchPlaceholder="Buscar por placa, chofer, ruta u observación..."
             pageSizeDefault={10}

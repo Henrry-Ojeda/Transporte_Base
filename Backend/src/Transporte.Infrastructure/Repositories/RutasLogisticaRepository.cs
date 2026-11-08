@@ -257,7 +257,7 @@ namespace Transporte.Infrastructure.Repositories
 
                 // Sincronizar estado real del Ticket operativo
                 var ticketSql = @"
-                    SELECT TOP 1 cr.Id, cr.Estado, cr.TotalLitrosFinca
+                    SELECT TOP 1 cr.Id, cr.Estado, cr.TotalLitrosFinca, cr.ProcesoId
                     FROM TB_CONTROL_RUTAS cr
                     WHERE (cr.Id = @ControlRutaId OR (CAST(cr.Fecha AS DATE) = CAST(@Fecha AS DATE) AND cr.UsuarioId = @ConductorId))
                     ORDER BY cr.Id DESC";
@@ -271,7 +271,10 @@ namespace Transporte.Infrastructure.Repositories
                 if (ticketInfo != null)
                 {
                     item.ControlRutaId = (long)ticketInfo.Id;
-                    item.EstadoTicket = (string?)ticketInfo.Estado ?? "ABIERTO";
+                    string rawEst = (string?)ticketInfo.Estado ?? "ABIERTO";
+                    int procId = ticketInfo.ProcesoId != null ? Convert.ToInt32(ticketInfo.ProcesoId) : 1;
+                    bool esFin = procId >= 4 || rawEst.Contains("Finaliz", StringComparison.OrdinalIgnoreCase) || rawEst.Contains("Cerrad", StringComparison.OrdinalIgnoreCase) || rawEst.StartsWith("4");
+                    item.EstadoTicket = esFin ? "FINALIZADO" : rawEst;
                     item.LitrosRecolectadosReal = (int)(ticketInfo.TotalLitrosFinca ?? 0);
 
                     var fincasRecSql = @"
@@ -312,6 +315,8 @@ namespace Transporte.Infrastructure.Repositories
                     LEFT JOIN TB_CAMIONES cam ON cam.UsuarioId = cr.UsuarioId AND cam.Activo = 1
                     LEFT JOIN TB_RUTAS_LOGISTICA r ON cr.RutaLogisticaId = r.Id
                     WHERE CAST(cr.Fecha AS DATE) = CAST(@fecha AS DATE)
+                      AND ISNULL(cr.ProcesoId, 0) < 4
+                      AND (cr.Estado IS NULL OR (cr.Estado NOT LIKE '%Finaliz%' AND cr.Estado NOT LIKE '%Cerrad%' AND cr.Estado NOT LIKE '4%'))
                     ORDER BY cr.Id ASC";
 
                 var ticketsDirectos = await connection.QueryAsync<dynamic>(ticketsSinPlanSql, new { fecha = fecha.Date });
@@ -413,7 +418,14 @@ namespace Transporte.Infrastructure.Repositories
                 throw;
             }
 
-            return list;
+            // En Planificación operativa SOLO deben mostrarse los tickets y asignaciones ACTIVAS (excluir finalizados/cerrados)
+            return list.Where(p => 
+                p.EstadoTicket == null || 
+                (!p.EstadoTicket.Equals("FINALIZADO", StringComparison.OrdinalIgnoreCase) &&
+                 !p.EstadoTicket.Contains("Finaliz", StringComparison.OrdinalIgnoreCase) &&
+                 !p.EstadoTicket.Contains("Cerrad", StringComparison.OrdinalIgnoreCase) &&
+                 !p.EstadoTicket.StartsWith("4"))
+            ).ToList();
         }
 
         public async Task<int> GuardarPlanificacionChoferAsync(GuardarPlanificacionRutaChoferDto dto, int usuarioId)
@@ -645,10 +657,31 @@ namespace Transporte.Infrastructure.Repositories
                         WHERE Id = @planId",
                         new { fincasFinalesStr, totalFincas = fincasSeleccionadas.Count, planId });
                 }
+
+                // 4. Notificar al Chofer en App Móvil
+                if (dto.ConductorId > 0)
+                {
+                    await connection.ExecuteAsync(@"
+                        IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'TB_NOTIFICACIONES_MOVIL')
+                        BEGIN
+                            INSERT INTO TB_NOTIFICACIONES_MOVIL 
+                            (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
+                            VALUES 
+                            (@ConductorId, 'RUTA_ASIGNADA', '🚛 Nuevo Ticket / Ruta Asignada', 
+                             @mensaje, @Fecha, @ticketIdEfectivo, 0, GETDATE());
+                        END",
+                        new 
+                        { 
+                            dto.ConductorId, 
+                            mensaje = $"Se te ha asignado el Ticket #{ticketIdEfectivo} para el {dto.Fecha:dd/MM/yyyy} con {fincasSeleccionadas.Count} fincas en recorrido.",
+                            Fecha = dto.Fecha.Date,
+                            ticketIdEfectivo
+                        });
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[RutasLogisticaRepository] Error sincronizando paradas: {ex.Message}");
+                Console.WriteLine($"[RutasLogisticaRepository] Error sincronizando paradas o notificaciones: {ex.Message}");
             }
 
             return planId;
@@ -718,6 +751,31 @@ namespace Transporte.Infrastructure.Repositories
                     ModifiedBy = @usuarioId
                 WHERE ControlRutaId = @controlRutaId",
                 new { fincasStr, totalFincas = fincasSeleccionadas.Count, usuarioId, controlRutaId });
+
+            // Notificar al Chofer en App Móvil
+            try
+            {
+                if (conductorId > 0)
+                {
+                    await connection.ExecuteAsync(@"
+                        IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'TB_NOTIFICACIONES_MOVIL')
+                        BEGIN
+                            INSERT INTO TB_NOTIFICACIONES_MOVIL 
+                            (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
+                            VALUES 
+                            (@conductorId, 'RUTA_ASIGNADA', '📋 Fincas Modificadas en tu Ruta', 
+                             @mensaje, @fecha, @controlRutaId, 0, GETDATE());
+                        END",
+                        new 
+                        { 
+                            conductorId, 
+                            mensaje = $"Tu recorrido en Ticket #{controlRutaId} fue actualizado: ahora tienes {fincasSeleccionadas.Count} fincas asignadas.",
+                            fecha = fecha.Date,
+                            controlRutaId
+                        });
+                }
+            }
+            catch { /* Tolerante */ }
 
             return true;
         }

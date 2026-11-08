@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 3,
-  patch: 2,
-  tag: 'v3.3.2',
+  minor: 4,
+  patch: 1,
+  tag: 'v3.4.1',
   ultimaActualizacion: '2026-11-08',
-  tipoUltimoCambio: 'DISEÑO',
-  descripcion: 'Móvil: rediseño Mobile-First 100% táctil y apilado para Entrega Directa y Traspaso sin scroll horizontal',
+  tipoUltimoCambio: 'DISEÑO_LOGICA',
+  descripcion: 'Backend & Frontend: resolución de conflicto FK y contrato DTO en despacho directo a receptoría y compañías',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

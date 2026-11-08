@@ -29,5 +29,17 @@ export const notificacionesApi = {
     const res = await apiClient.put('/notificaciones/marcar-todas-leidas');
     return res.data;
   },
+
+  enviarNotificacion: async (dto: {
+    usuarioId: number;
+    tipo?: string;
+    titulo: string;
+    mensaje: string;
+    fechaOperativa?: string;
+    referenciaId?: number;
+  }): Promise<{ success: boolean; id?: number }> => {
+    const res = await apiClient.post('/notificaciones/enviar', dto);
+    return res.data;
+  },
 };
 

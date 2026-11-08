@@ -9286,6 +9286,22 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         OR UPPER(ISNULL(r.Nombre, '')) LIKE '%SUPERVIS%')
                       AND u.Activo = 1");
 
+                // Si la acción fue ejecutada por un Administrador/Supervisor (o alguien distinto al chofer), NOTIFICAR AL CHOFER
+                if (viaje.UsuarioId != null && (int)viaje.UsuarioId != usuarioId)
+                {
+                    await connection.ExecuteAsync(@"
+                        INSERT INTO TB_NOTIFICACIONES_MOVIL (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
+                        VALUES (@UsuarioId, 'FINCA_AGREGADA', @Titulo, @Mensaje, @FechaOperativa, @ReferenciaId, 0, GETDATE())",
+                        new
+                        {
+                            UsuarioId = (int)viaje.UsuarioId,
+                            Titulo = $"➕ Finca Agregada a tu Recorrido",
+                            Mensaje = $"Se ha incorporado la finca {nombreFinca} a tu recorrido en el Ticket #{ticketCodigo}.",
+                            FechaOperativa = fechaEfectiva,
+                            ReferenciaId = dto.ControlRutaId
+                        });
+                }
+
                 foreach (var destUserId in usuariosNotif)
                 {
                     await connection.ExecuteAsync(@"

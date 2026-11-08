@@ -848,6 +848,12 @@ export const AppMovilPage: React.FC = () => {
                 });
               } catch {}
             }
+
+            // AUTO-ACTUALIZACIÓN INMEDIATA:
+            // Al recibir una notificación (ej. ruta asignada, finca agregada, entrega confirmada),
+            // recargar automáticamente el viaje y las paradas activas del chofer sin requerir refresh manual
+            cargarViajeActivo();
+            cargarDespachoActivo();
           }
 
           setNotificaciones(data);
@@ -858,9 +864,19 @@ export const AppMovilPage: React.FC = () => {
     };
 
     pollingNotificaciones();
-    const interval = setInterval(pollingNotificaciones, 12000);
+    // Consultar cada 8 segundos para respuesta casi instantánea a cambios de ruta
+    const interval = setInterval(pollingNotificaciones, 8000);
     return () => clearInterval(interval);
   }, [dispositivo, isOnline]);
+
+  // Sincronización continua en segundo plano cada 20s para el Chofer (auto-actualización silenciosa)
+  useEffect(() => {
+    if (!dispositivo || !isOnline || modoActivo !== 'CHOFER') return;
+    const intervalAutoSync = setInterval(() => {
+      cargarViajeActivo();
+    }, 20000);
+    return () => clearInterval(intervalAutoSync);
+  }, [dispositivo, isOnline, modoActivo, viajeSeleccionadoId]);
 
   // Guardar cargas en LocalStorage cada vez que cambian
   useEffect(() => {
@@ -1506,9 +1522,29 @@ export const AppMovilPage: React.FC = () => {
       };
 
       const res = await operacionesApi.guardarPlanificacionChofer(dto);
+
+      // Notificación instantánea directa al chofer asignado
+      try {
+        await notificacionesApi.enviarNotificacion({
+          usuarioId: modalPlanificar.conductorId,
+          tipo: 'RUTA_ASIGNADA',
+          titulo: modalPlanificar.esEdicion ? '📋 Recorrido Actualizado por Supervisor' : '🚛 Nueva Ruta Asignada',
+          mensaje: modalPlanificar.esEdicion
+            ? `Tu recorrido fue actualizado: ahora tienes ${fincasFinales.length} fincas asignadas.`
+            : `Se te ha asignado una nueva ruta con ${fincasFinales.length} fincas asignadas.`,
+          fechaOperativa: fechaLogistica,
+          referenciaId: modalPlanificar.id,
+        });
+      } catch {}
+
       toast.success(res.message || 'Planificación guardada exitosamente');
       setModalPlanificar(null);
       cargarDatosLogisticaAdmin(fechaLogistica);
+      cargarDatosAdminEnVivo();
+      // Si el usuario actual es o simula a este chofer, recargar su vista activa de inmediato
+      if (choferEfectivoId === modalPlanificar.conductorId) {
+        cargarViajeActivo();
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Error al guardar planificación');
     }
@@ -1559,9 +1595,28 @@ export const AppMovilPage: React.FC = () => {
         } catch {}
       }
 
+      // Notificación instantánea directa al chofer sobre la finca agregada
+      const fincaObj = fincas.find((f) => f.id === fincaIdNueva);
+      const fincaNom = fincaObj?.nombre || `Finca #${fincaIdNueva}`;
+      try {
+        await notificacionesApi.enviarNotificacion({
+          usuarioId: plan.conductorId,
+          tipo: 'FINCA_AGREGADA',
+          titulo: '➕ Finca Agregada a tu Recorrido',
+          mensaje: `El Administrador agregó la finca "${fincaNom}" a tu recorrido en el camión ${plan.camionPlaca || 'cisterna'}.`,
+          fechaOperativa: plan.fecha ? plan.fecha.split('T')[0] : fechaLogistica,
+          referenciaId: plan.controlRutaId || plan.id,
+        });
+      } catch {}
+
       toast.success('Finca añadida exitosamente a la ruta');
       setModalAgregarFincaRapida(null);
       cargarDatosLogisticaAdmin(fechaLogistica);
+      cargarDatosAdminEnVivo();
+      // Si el usuario actual es o simula a este chofer, recargar su vista activa de inmediato
+      if (choferEfectivoId === plan.conductorId) {
+        cargarViajeActivo();
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Error al agregar finca');
     }

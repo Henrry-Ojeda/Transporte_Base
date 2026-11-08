@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 9,
-  patch: 2,
-  tag: 'v3.9.2',
+  patch: 3,
+  tag: 'v3.9.3',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Radar y Logística Móvil: Visualización de todos los tickets activos sin filtro restrictivo de fecha, distinción de litros/viajes de Hoy vs Días Anteriores, fincas seleccionadas y recogidas protegidas al inicio en Editar/Asignar y buscador interactivo en modal +Finca',
+  descripcion: 'Notificaciones automáticas y sincronización reactiva en tiempo real para Choferes ante cambios de ruta o fincas por Administradores/Supervisores',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

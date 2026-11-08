@@ -668,19 +668,26 @@ namespace Transporte.Infrastructure.Repositories
                 // 4. Notificar al Chofer en App Móvil
                 if (dto.ConductorId > 0)
                 {
+                    bool esEdicion = dto.Id.HasValue && dto.Id.Value > 0;
+                    string tituloNotif = esEdicion ? "📋 Recorrido Actualizado por Supervisor" : "🚛 Nuevo Ticket / Ruta Asignada";
+                    string mensajeNotif = esEdicion
+                        ? $"Tu recorrido fue actualizado: ahora tienes {fincasSeleccionadas.Count} fincas asignadas."
+                        : $"Se te ha asignado el Ticket #{ticketIdEfectivo} para el {dto.Fecha:dd/MM/yyyy} con {fincasSeleccionadas.Count} fincas en recorrido.";
+
                     await connection.ExecuteAsync(@"
                         IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'TB_NOTIFICACIONES_MOVIL')
                         BEGIN
                             INSERT INTO TB_NOTIFICACIONES_MOVIL 
                             (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
                             VALUES 
-                            (@ConductorId, 'RUTA_ASIGNADA', '🚛 Nuevo Ticket / Ruta Asignada', 
-                             @mensaje, @Fecha, @ticketIdEfectivo, 0, GETDATE());
+                            (@ConductorId, 'RUTA_ASIGNADA', @tituloNotif, 
+                             @mensajeNotif, @Fecha, @ticketIdEfectivo, 0, GETDATE());
                         END",
                         new 
                         { 
                             dto.ConductorId, 
-                            mensaje = $"Se te ha asignado el Ticket #{ticketIdEfectivo} para el {dto.Fecha:dd/MM/yyyy} con {fincasSeleccionadas.Count} fincas en recorrido.",
+                            tituloNotif,
+                            mensajeNotif,
                             Fecha = dto.Fecha.Date,
                             ticketIdEfectivo
                         });

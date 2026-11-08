@@ -1315,6 +1315,7 @@ export const RecoleccionRutasPage: React.FC = () => {
   const descargarPlantillaExcel = () => {
     const finca1 = fincas[0]?.nombre || 'Huesito';
     const finca2 = fincas[1]?.nombre || 'El paujil';
+    const finca3 = fincas[2]?.nombre || 'San Pedro';
     const conductorEj = conductores[0]?.nombreCompleto || 'Alfredy';
 
     const plantilla = [
@@ -1323,20 +1324,36 @@ export const RecoleccionRutasPage: React.FC = () => {
         FINCA: finca1,
         LITROS: 250,
         CONDUCTOR: conductorEj,
-        OBSERVACION: 'Ruta regular',
+        OBSERVACION: 'Ruta regular matutina',
         ACIDA: 'NO',
       },
       {
         FECHA: hoyStr,
-        FINCA: finca2,
+        FINCA: `${finca2} 🐃 BÚFALA`,
         LITROS: 180,
         CONDUCTOR: conductorEj,
-        OBSERVACION: 'Prueba de acidez conforme',
+        OBSERVACION: 'Leche de búfala con tanque separado',
+        ACIDA: 'NO',
+      },
+      {
+        FECHA: hoyStr,
+        FINCA: `${finca3} ÁCIDA ($0.6500)`,
+        LITROS: 120,
+        CONDUCTOR: conductorEj,
+        OBSERVACION: 'Leche ácida con precio acordado $0.6500',
         ACIDA: 'SI',
       },
     ];
 
     const ws = XLSX.utils.json_to_sheet(plantilla);
+    ws['!cols'] = [
+      { wch: 14 }, // FECHA
+      { wch: 30 }, // FINCA
+      { wch: 12 }, // LITROS
+      { wch: 22 }, // CONDUCTOR
+      { wch: 38 }, // OBSERVACION
+      { wch: 10 }, // ACIDA
+    ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Tickets_Recoleccion');
     XLSX.writeFile(wb, `Plantilla_Carga_Masiva_Tickets_${hoyStr}.xlsx`);
@@ -6615,7 +6632,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                       <span>{archivoExcelNombre ? `Archivo cargado: ${archivoExcelNombre}` : 'Selecciona o arrastra el archivo Excel (.xlsx, .xls, .csv)'}</span>
                     </div>
                     <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '4px' }}>
-                      Columnas requeridas: <b className="text-slate-800">FECHA</b>, <b className="text-slate-800">FINCA</b>, <b className="text-slate-800">LITROS</b>, <b className="text-slate-800">CONDUCTOR</b>, <b className="text-slate-800">OBSERVACION</b>, <b className="text-slate-800">ACIDA</b>
+                      Columnas aceptadas: <b className="text-slate-800">FECHA</b>, <b className="text-slate-800">FINCA</b>, <b className="text-slate-800">LITROS</b>, <b className="text-slate-800">CONDUCTOR</b>, <b className="text-slate-800">OBSERVACION</b>, <b className="text-slate-800">ACIDA</b> (el orden no afecta; detecta 🐃 Búfala, 🐄 Vaca y 🍋 Ácida).
                     </div>
                   </div>
 

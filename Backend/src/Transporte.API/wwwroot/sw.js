@@ -1,26 +1,33 @@
-// Service Worker para Rutas Móvil (Offline-First / PWA Ultra-Resiliente v2.2.1)
-const CACHE_NAME = 'rutas-movil-v2.2.1';
+// Service Worker para Rutas Móvil (Offline-First / PWA Ultra-Resiliente)
+const CACHE_NAME = 'rutas-movil-v2.4.1';
 const STATIC_ASSETS = [
-  '/',
-  '/app',
-  '/movil',
-  '/login',
-  '/index.html',
-  '/manifest.json',
-  '/favicon.svg',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
+  "/",
+  "/app",
+  "/movil",
+  "/login",
+  "/index.html",
+  "/manifest.json",
+  "/favicon.svg",
+  "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css",
+  "/assets/index-Bol94T-z.css",
+  "/assets/index-CaYPEYtT.js",
+  "/assets/rolldown-runtime-XKyaHtl9.js",
+  "/assets/vendor-excel-D_lWTlWp.js",
+  "/assets/vendor-query-DagBFWEK.js",
+  "/assets/vendor-react-Cb8NATuH.js",
+  "/assets/vendor-ui-Da3lwd0d.js"
 ];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      // Pre-cachear las rutas principales sin romper si alguna falla
+      // Pre-cachear las rutas principales y activos estáticos
       for (const asset of STATIC_ASSETS) {
         try {
           await cache.add(asset);
         } catch (err) {
-          console.warn('Pre-cache individual omitido:', asset, err);
+          console.warn('[SW] Pre-cache omitido para:', asset, err);
         }
       }
     })
@@ -63,53 +70,98 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Assets estáticos versionados de Vite (/assets/*): Cache-First con actualización en segundo plano
+  // 2. Assets estáticos versionados de Vite (/assets/*) y librerías externas (CDN)
   if (url.pathname.startsWith('/assets/') || url.hostname.includes('cdnjs') || url.hostname.includes('fonts')) {
     event.respondWith(
-      caches.match(req).then((cachedRes) => {
+      caches.match(req).then(async (cachedRes) => {
         if (cachedRes) {
           // Servir desde caché de inmediato y actualizar en segundo plano si hay red
-          fetch(req).then((netRes) => {
-            if (netRes && netRes.status === 200) {
-              const resClone = netRes.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
-            }
-          }).catch(() => {});
+          if (navigator.onLine) {
+            fetch(req).then((netRes) => {
+              if (netRes && netRes.status === 200) {
+                const resClone = netRes.clone();
+                caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
+              }
+            }).catch(() => {});
+          }
           return cachedRes;
         }
 
-        // Si no está en caché, traer de red y guardar en caché
-        return fetch(req).then((networkRes) => {
+        // Si no está en caché, intentar traer de red
+        try {
+          const networkRes = await fetch(req);
           if (networkRes && networkRes.status === 200) {
             const resClone = networkRes.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(req, resClone);
           }
           return networkRes;
-        }).catch(() => {
-          return new Response('Asset no disponible offline', { status: 503 });
-        });
+        } catch (err) {
+          // Fallback ultra-seguro para que el navegador jamás reciba un error 503 text/plain que aborte la app
+          const ext = url.pathname.split('.').pop()?.toLowerCase();
+          const cache = await caches.open(CACHE_NAME);
+          const allKeys = await cache.keys();
+
+          if (ext === 'js' || ext === 'mjs') {
+            // Buscar si hay algún JS del mismo chunk o bundle en caché
+            const chunkName = url.pathname.split('/').pop()?.split('-')[0];
+            const fallbackKey = allKeys.find((k) => k.url.includes(`/assets/${chunkName}-`) && k.url.endsWith('.js'));
+            if (fallbackKey) {
+              const res = await cache.match(fallbackKey);
+              if (res) return res;
+            }
+            return new Response('/* offline safe stub */\nexport default {};', {
+              status: 200,
+              headers: { 'Content-Type': 'application/javascript; charset=utf-8' },
+            });
+          }
+
+          if (ext === 'css') {
+            const fallbackCss = allKeys.find((k) => k.url.includes('/assets/') && k.url.endsWith('.css'));
+            if (fallbackCss) {
+              const res = await cache.match(fallbackCss);
+              if (res) return res;
+            }
+            return new Response('/* offline safe css */', {
+              status: 200,
+              headers: { 'Content-Type': 'text/css; charset=utf-8' },
+            });
+          }
+
+          return new Response('', { status: 200 });
+        }
       })
     );
     return;
   }
 
-  // 3. Documentos y Navegación SPA (/app, /movil, /, etc.): Network-First con Fallback Garantizado a index.html
+  // 3. Documentos y Navegación SPA (/app, /movil, /, etc.): Cache-First cuando no hay red (cero espera)
   if (req.mode === 'navigate' || req.destination === 'document' || req.headers.get('accept')?.includes('text/html')) {
     event.respondWith(
-      fetch(req)
-        .then((networkRes) => {
+      (async () => {
+        // Si el navegador reporta estar offline, responder desde caché DIRECTAMENTE sin esperar timeout de red
+        if (!navigator.onLine) {
+          const cache = await caches.open(CACHE_NAME);
+          const cached =
+            (await cache.match(req)) ||
+            (await cache.match('/app')) ||
+            (await cache.match('/index.html')) ||
+            (await cache.match('/'));
+          if (cached) return cached;
+        }
+
+        try {
+          const networkRes = await fetch(req);
           if (networkRes && networkRes.status === 200) {
             const resClone = networkRes.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(req, resClone);
-              cache.put('/index.html', resClone);
-              cache.put('/app', resClone);
-            });
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(req, resClone);
+            await cache.put('/index.html', resClone);
+            await cache.put('/app', resClone);
           }
           return networkRes;
-        })
-        .catch(async () => {
-          // Si no hay red, servir la SPA desde caché inmediatamente (previene pantalla en blanco)
+        } catch {
+          // Si falló la red, servir la SPA desde caché inmediatamente (previene pantalla en blanco)
           const cache = await caches.open(CACHE_NAME);
           const cachedPage =
             (await cache.match(req)) ||
@@ -119,11 +171,13 @@ self.addEventListener('fetch', (event) => {
 
           if (cachedPage) return cachedPage;
 
+          // Si de verdad no hay ninguna página guardada aún, mostrar terminal offline estilizada
           return new Response(
-            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rutas Móvil Offline</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#0f172a;color:#fff;text-align:center;padding:40px;font-family:sans-serif;"><h2>Rutas Móvil</h2><p>Iniciando en modo sin conexión...</p><script>window.location.reload();</script></body></html>',
-            { headers: { 'Content-Type': 'text/html' } }
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rutas Móvil</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#0f172a;color:#fff;text-align:center;padding:40px;font-family:sans-serif;"><h2>Rutas Móvil</h2><p>Iniciando terminal en modo sin conexión...</p><button onclick="window.location.reload()" style="background:#10b981;color:#fff;border:none;padding:12px 24px;border-radius:10px;font-weight:bold;cursor:pointer;">Abrir Terminal</button></body></html>',
+            { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
           );
-        })
+        }
+      })()
     );
     return;
   }

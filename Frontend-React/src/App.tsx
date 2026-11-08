@@ -81,13 +81,18 @@ setOnLogoutListener(() => {
   queryClient.clear();
 });
 
-// Redirección inteligente de raíz: choferes y móviles siempre a /app
+// Redirección inteligente de raíz: choferes y móviles siempre a /app directamente sin pasar por login
 const HomeRedirect: React.FC = () => {
   const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const rol = (user?.rol || '').toUpperCase();
   const tieneDispositivo = typeof window !== 'undefined' && Boolean(localStorage.getItem('movil_device_info'));
+  
   if (rol === 'CHOFER' || tieneDispositivo) {
     return <Navigate to="/app" replace />;
+  }
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
   }
   return <Navigate to="/dashboard" replace />;
 };
@@ -99,6 +104,9 @@ export const App: React.FC = () => {
         <BrowserRouter>
           <SessionMonitor />
           <Routes>
+          {/* Redirección raíz autónoma: choferes y móviles van a /app directamente (resiliente offline) */}
+          <Route index element={<HomeRedirect />} />
+
           {/* Ruta Pública de Login */}
           <Route path="/login" element={<LoginPage />} />
 
@@ -114,9 +122,6 @@ export const App: React.FC = () => {
               </ProtectedRoute>
             }
           >
-            {/* Redirección raíz según el rol */}
-            <Route index element={<HomeRedirect />} />
-
             {/* Operaciones */}
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/rutas" element={<RecoleccionRutasPage />} />

@@ -21,9 +21,9 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 2,
-  minor: 3,
+  minor: 4,
   patch: 1,
-  tag: 'v2.3.1',
+  tag: 'v2.4.1',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
   descripcion: 'Selector Gasoil/Gasolina Móvil y Web, Paridad Estricta de Fincas Recolectadas y Orden Cronológico de Recolección',

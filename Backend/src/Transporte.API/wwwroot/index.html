@@ -16,11 +16,18 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <title>Rutas de Leche — Sistema de Gestión y Liquidación</title>
+    
+    <style>html,body{color:#fff;background-color:#0f172a;min-height:100%;margin:0;padding:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;overflow-x:hidden}@keyframes pwaPulse{0%,to{opacity:.9;transform:scale(1)}50%{opacity:1;transform:scale(1.05)}}@keyframes pwaBar{0%{transform:translate(-100%)}to{transform:translate(200%)}}</style>
+
+    <!-- Fuentes asíncronas sin bloqueo de renderizado -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <script type="module" crossorigin src="/assets/index-DZGKh1q9.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onload="this.media='all'">
+    <noscript>
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    </noscript>
+    <script type="module" crossorigin src="/assets/index-CaYPEYtT.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-XKyaHtl9.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-query-DagBFWEK.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-react-Cb8NATuH.js">
@@ -29,13 +36,57 @@
     <link rel="stylesheet" crossorigin href="/assets/index-Bol94T-z.css">
   </head>
   <body>
-    <div id="root"></div>
+    <!-- App Shell Splash: Se muestra instantáneamente y React lo reemplaza al montar -->
+    <div id="root">
+      <div id="pwa-splash" style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; background: #0f172a;">
+        <div style="width: 76px; height: 76px; border-radius: 22px; background: rgba(16, 185, 129, 0.15); border: 2px solid #10b981; display: flex; align-items: center; justify-content: center; font-size: 36px; margin-bottom: 16px; animation: pwaPulse 2s infinite ease-in-out; box-shadow: 0 0 30px rgba(16, 185, 129, 0.25);">
+          🥛
+        </div>
+        <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 6px 0; color: #ffffff; letter-spacing: -0.3px;">
+          Rutas de Transporte
+        </h2>
+        <p id="pwa-splash-text" style="font-size: 13px; color: #94a3b8; margin: 0 0 22px 0;">
+          Iniciando terminal móvil...
+        </p>
+        <div style="width: 140px; height: 4px; background: #1e293b; border-radius: 999px; overflow: hidden; position: relative;">
+          <div style="width: 60px; height: 100%; background: #10b981; border-radius: 999px; position: absolute; animation: pwaBar 1.4s infinite ease-in-out;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Script de diagnóstico de arranque offline para prevenir pantallas blancas -->
+    <script>
+      window.addEventListener('error', function(e) {
+        console.warn('Startup Notice (tolerante):', e.message);
+        var txt = document.getElementById('pwa-splash-text');
+        if (txt) {
+          txt.innerHTML = 'Cargando memoria local offline...';
+        }
+      });
+    </script>
+
+
+    <!-- Registro inmediato de Service Worker -->
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch((err) => {
-            console.warn('SW registration failed:', err);
-          });
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then((reg) => {
+              // Si hay nueva versión esperando, actualizar
+              reg.onupdatefound = () => {
+                const installing = reg.installing;
+                if (installing) {
+                  installing.onstatechange = () => {
+                    if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                      console.log('[SW] Nueva versión de Rutas Móvil lista.');
+                    }
+                  };
+                }
+              };
+            })
+            .catch((err) => {
+              console.warn('[SW] Error registro:', err);
+            });
         });
       }
     </script>

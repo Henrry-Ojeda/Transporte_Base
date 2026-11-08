@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node scripts/inject-sw-assets.js",
     "build:dotnet": "set BUILD_DEST=wwwroot&& tsc && vite build",
     "preview": "vite preview",
     "version:diseno": "node scripts/bump-version.js diseno",

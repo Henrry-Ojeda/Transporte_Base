@@ -9,7 +9,7 @@ const STATIC_ASSETS = [
   "/manifest.json",
   "/favicon.svg",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css",
-  "/assets/index-CzswzGmh.js",
+  "/assets/index-0S-kMavJ.js",
   "/assets/index-DRH-GvPG.css",
   "/assets/rolldown-runtime-XKyaHtl9.js",
   "/assets/vendor-excel-D_lWTlWp.js",
@@ -48,8 +48,8 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Solo interceptar peticiones GET
-  if (req.method !== 'GET') {
+  // Solo interceptar peticiones HTTP / HTTPS y de método GET (ignorar extensiones chrome-extension, etc.)
+  if (req.method !== 'GET' || !url.protocol.startsWith('http')) {
     return;
   }
 
@@ -186,9 +186,9 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(req)
       .then((networkRes) => {
-        if (networkRes && networkRes.status === 200) {
+        if (networkRes && networkRes.status === 200 && req.url.startsWith('http')) {
           const resClone = networkRes.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone)).catch(() => {});
         }
         return networkRes;
       })

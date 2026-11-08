@@ -2240,16 +2240,19 @@ export const AppMovilPage: React.FC = () => {
     }
     try {
       const ticketId = modalVerificarLitros.ticket.id;
+      const t = modalVerificarLitros.ticket as any;
+      const esDespachoCompania = Boolean(t?.companiaId || t?.companiaNombre || t?.esDespachoCompania || t?.tipo === 'DESPACHO');
+
       let res: any;
-      try {
-        // 1. Intentar validar entrega de compañía/despacho (funciona con ID de compañía o con ControlRutaId)
+      if (esDespachoCompania) {
+        // Validación de entrega en compañía / cliente final
         res = await operacionesApi.validarEntregaCompania(ticketId, {
           litrosConfirmados: lts,
           litrosRecibidosCompania: lts,
           observaciones: modalVerificarLitros.observacion.trim(),
         });
-      } catch (errValidar: any) {
-        // 2. Si es una recepción directa de ruta en receptoría, invocar recibirEnReceptoria
+      } else {
+        // Recepción y conciliación de ruta recolectora en receptoría/planta
         res = await operacionesApi.recibirEnReceptoria(ticketId, {
           litrosRecibidos: lts,
           accion: 'DEJAR_EN_RECEPTORIA',
@@ -2263,7 +2266,7 @@ export const AppMovilPage: React.FC = () => {
         cargarDatosAdminEnVivo();
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al verificar litros');
+      toast.error(err.response?.data?.message || err.message || 'Error al verificar litros');
     }
   };
 

@@ -77,10 +77,11 @@ namespace Transporte.API.Multitenancy
                 connStr += ";Encrypt=False;";
             }
 
-            // Asegurar Connect Timeout rápido
+            // Asegurar Connect Timeout seguro de 30s para evitar fallos de conexión por handshake
+            connStr = System.Text.RegularExpressions.Regex.Replace(connStr, @"Connect(?:ion)? Timeout\s*=\s*\d+", "Connect Timeout=30", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             if (!connStr.Contains("Connect Timeout", StringComparison.OrdinalIgnoreCase) && !connStr.Contains("Connection Timeout", StringComparison.OrdinalIgnoreCase))
             {
-                connStr += ";Connect Timeout=3;";
+                connStr += ";Connect Timeout=30;";
             }
 
             if (!connStr.Contains("Pooling", StringComparison.OrdinalIgnoreCase))
@@ -200,7 +201,7 @@ namespace Transporte.API.Multitenancy
             string fallbackPass = (isVergel || isBase) ? "sql_HO_2026!" : "Campo_Verde_2026!";
 
             string sqlInstHost = IsRunningInDocker ? "sql_instancia" : "127.0.0.1";
-            string fallbackConn = $"Server=tcp:{sqlInstHost},1433;Database={fallbackDb};User Id={fallbackUser};Password={fallbackPass};TrustServerCertificate=True;Encrypt=False;Connect Timeout=5;Pooling=true;";
+            string fallbackConn = $"Server=tcp:{sqlInstHost},1433;Database={fallbackDb};User Id={fallbackUser};Password={fallbackPass};TrustServerCertificate=True;Encrypt=False;Connect Timeout=30;Pooling=true;";
 
             _currentTenant = new TenantInfo
             {

@@ -8373,10 +8373,25 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
         public ControlRutasRepository(IConfiguration configuration, Transporte.Core.Interfaces.ITenantService? tenantService = null)
         {
-            _connectionString = tenantService?.GetConnectionString() 
+            var raw = tenantService?.GetConnectionString() 
                 ?? configuration.GetConnectionString("DefaultConnection")
                 ?? configuration.GetConnectionString("BD_TRANSPORTE")
                 ?? "Server=localhost;Database=BD_TRANSPORTE;Trusted_Connection=True;TrustServerCertificate=True;";
+
+            if (File.Exists("/.dockerenv") || string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase))
+            {
+                raw = raw.Replace("84.247.178.194", "sql_instancia").Replace("127.0.0.1", "sql_instancia");
+            }
+            raw = System.Text.RegularExpressions.Regex.Replace(raw, @"Connect(?:ion)? Timeout\s*=\s*\d+", "Connect Timeout=30", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!raw.Contains("Connect Timeout", StringComparison.OrdinalIgnoreCase))
+            {
+                raw += ";Connect Timeout=30;";
+            }
+            if (!raw.Contains("Encrypt", StringComparison.OrdinalIgnoreCase))
+            {
+                raw += ";Encrypt=False;";
+            }
+            _connectionString = raw;
         }
 
         public async Task<IEnumerable<ControlRutaDto>> ObtenerControlesAsync(int usuarioId, string rol, DateTime? fecha = null, DateTime? fechaInicio = null, DateTime? fechaFin = null, int? cicloId = null)

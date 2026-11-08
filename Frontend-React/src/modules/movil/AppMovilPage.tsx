@@ -4569,56 +4569,62 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Botones de Receptoría/Compañía y Traspaso si ya recolectó */}
+                  {/* Botones de Acción Móvil: Receptoría/Compañía y Traspaso */}
                   {viajeActivo && totalLitrosCargados > 0 && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '14px' }}>
-                      <button
-                        type="button"
-                        onClick={handleAbrirEntregaDirecta}
-                        style={{
-                          width: '100%',
-                          background: 'linear-gradient(135deg, #059669, #10b981)',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: '12px',
-                          padding: '12px 6px',
-                          fontSize: '12.5px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)',
-                        }}
-                      >
-                        <i className="fa-solid fa-building-circle-check"></i>
-                        <span>Receptoría/Compañía</span>
-                      </button>
+                    <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <button
+                          type="button"
+                          onClick={handleAbrirEntregaDirecta}
+                          style={{
+                            background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '14px',
+                            padding: '12px 10px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            boxShadow: '0 6px 16px rgba(16, 185, 129, 0.35)',
+                            transition: 'transform 0.15s ease',
+                          }}
+                        >
+                          <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+                            <i className="fa-solid fa-building-circle-check"></i>
+                          </div>
+                          <span style={{ fontSize: '13px', fontWeight: 900, marginTop: '2px' }}>Receptoría / Planta</span>
+                          <span style={{ fontSize: '10.5px', color: '#d1fae5', fontWeight: 600 }}>Entregar o Distribuir</span>
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={handleAbrirTraspasoMovil}
-                        style={{
-                          width: '100%',
-                          background: 'linear-gradient(135deg, #0d9488, #14b8a6)',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: '12px',
-                          padding: '12px 6px',
-                          fontSize: '12.5px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          boxShadow: '0 4px 14px rgba(13, 148, 136, 0.3)',
-                        }}
-                      >
-                        <i className="fa-solid fa-right-left"></i>
-                        <span>Traspaso</span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={handleAbrirTraspasoMovil}
+                          style={{
+                            background: 'linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '14px',
+                            padding: '12px 10px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            boxShadow: '0 6px 16px rgba(13, 148, 136, 0.35)',
+                            transition: 'transform 0.15s ease',
+                          }}
+                        >
+                          <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+                            <i className="fa-solid fa-right-left"></i>
+                          </div>
+                          <span style={{ fontSize: '13px', fontWeight: 900, marginTop: '2px' }}>Traspaso</span>
+                          <span style={{ fontSize: '10.5px', color: '#ccfbf1', fontWeight: 600 }}>Transferir Carga</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -12076,7 +12082,7 @@ export const AppMovilPage: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL MÓVIL: ENTREGA DIRECTA A COMPAÑÍAS / RECEPTORÍA (1:1 V2_3_11_26)    */}
+      {/* MODAL MÓVIL: ENTREGA DIRECTA A COMPAÑÍAS / RECEPTORÍA (MOBILE-FIRST)       */}
       {/* ========================================================================= */}
       {modalEntregaDirecta && viajeActivo && (() => {
         const fincasT = paradasViajeActivo || [];
@@ -12088,6 +12094,7 @@ export const AppMovilPage: React.FC = () => {
         const sumaFilas = filasEntregaDirecta.reduce((acc, f) => acc + (Number(f.litros) || 0), 0);
         const ltsDisponibles = faltante > 0 ? faltante : totalCamion;
         const diferencia = ltsDisponibles - sumaFilas;
+        const pctProgreso = ltsDisponibles > 0 ? Math.min(100, Math.round((sumaFilas / ltsDisponibles) * 100)) : 0;
 
         const unificarLitros = () => {
           setFilasEntregaDirecta([
@@ -12123,302 +12130,420 @@ export const AppMovilPage: React.FC = () => {
             style={{
               position: 'fixed',
               inset: 0,
-              zIndex: 1200,
+              zIndex: 9999,
               display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-end',
               alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(15, 23, 42, 0.65)',
-              backdropFilter: 'blur(4px)',
-              padding: '12px',
+              background: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(6px)',
+              padding: '0',
             }}
           >
             <div
-              className="content-card"
               style={{
-                maxWidth: '740px',
+                maxWidth: '560px',
                 width: '100%',
-                maxHeight: '92vh',
+                maxHeight: '94vh',
                 display: 'flex',
                 flexDirection: 'column',
-                background: '#ffffff',
+                background: '#f8fafc',
                 color: '#0f172a',
-                borderRadius: '16px',
+                borderRadius: '24px 24px 0 0',
                 border: '1px solid #e2e8f0',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                borderBottom: 'none',
+                boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.35)',
                 overflow: 'hidden',
-                padding: 0,
               }}
             >
-              {/* Header gradiente verde esmeralda */}
+              {/* Header gradiente móvil con indicador de arrastre */}
               <div
                 style={{
-                  background: 'linear-gradient(135deg, #065f46, #059669, #10b981)',
+                  background: 'linear-gradient(135deg, #065f46 0%, #059669 50%, #10b981 100%)',
                   color: '#ffffff',
-                  padding: '16px 20px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
+                  padding: '12px 18px 16px 18px',
                   flexShrink: 0,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div
+                <div style={{ width: '40px', height: '4px', background: 'rgba(255,255,255,0.4)', borderRadius: '99px', margin: '0 auto 10px auto' }}></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '12px',
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '18px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="fa-solid fa-building-circle-check"></i>
+                    </div>
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em' }}>
+                        Entrega Directa / Receptoría
+                      </h2>
+                      <p style={{ margin: '1px 0 0 0', fontSize: '11.5px', color: '#d1fae5', fontWeight: 500 }}>
+                        Despacho a queseras o receptoría
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalEntregaDirecta(false)}
                     style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '12px',
-                      background: 'rgba(255, 255, 255, 0.2)',
                       color: '#ffffff',
+                      background: 'rgba(255,255,255,0.18)',
+                      border: 'none',
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      fontSize: '18px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '19px',
-                      boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+                      cursor: 'pointer',
                       flexShrink: 0,
                     }}
                   >
-                    <i className="fa-solid fa-building-circle-check"></i>
-                  </div>
-                  <div>
-                    <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em' }}>
-                      Entrega Directa a Compañías / Receptoría
-                    </h2>
-                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#d1fae5', fontWeight: 500 }}>
-                      Despacho directo o distribuido a una o varias queseras y receptoría
-                    </p>
-                  </div>
+                    &times;
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setModalEntregaDirecta(false)}
-                  style={{
-                    color: '#ffffff',
-                    background: 'rgba(255,255,255,0.15)',
-                    border: 'none',
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '8px',
-                    fontSize: '18px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    flexShrink: 0,
-                  }}
-                >
-                  &times;
-                </button>
               </div>
 
               <form
                 onSubmit={handleSubmitEntregaDirecta}
                 style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
               >
-                <div style={{ padding: '16px 20px', background: '#f8fafc', overflowY: 'auto', flex: 1 }}>
-                  {/* Subtexto del ticket */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', padding: '0 4px' }}>
-                    <span style={{ fontSize: '13px', color: '#334155', fontWeight: 700 }}>
-                      <i className="fa-solid fa-ticket" style={{ color: '#059669', marginRight: '6px' }}></i>
-                      Ticket #{viajeActivo.codigoTicket || viajeActivo.id} — Conductor: {viajeActivo.choferNombre || viajeActivo.nombreConductor || dispositivo?.nombreCompleto || 'Chofer'} ({viajeActivo.camionPlaca || dispositivo?.placaCamion || 'Cisterna'})
-                    </span>
-                  </div>
-
-                  {/* 3 Tarjetas de Métricas del Ticket */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
-                    <div style={{ background: '#ecfdf5', border: '1.5px solid #a7f3d0', borderBottomWidth: '3px', borderRadius: '10px', padding: '10px 8px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'block' }}>
-                        Total en Camión
-                      </span>
-                      <strong style={{ display: 'block', fontSize: '18px', fontWeight: 800, color: '#059669', marginTop: '2px' }}>
-                        {totalCamion.toLocaleString()} Lts
-                      </strong>
-                    </div>
-
-                    <div style={{ background: '#fdf4ff', border: '1.5px solid #f0abfc', borderBottomWidth: '3px', borderRadius: '10px', padding: '10px 8px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#86198f', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'block' }}>
-                        Ya Asignado
-                      </span>
-                      <strong style={{ display: 'block', fontSize: '18px', fontWeight: 800, color: '#9333ea', marginTop: '2px' }}>
-                        {yaAsignado.toLocaleString()} Lts
-                      </strong>
-                    </div>
-
-                    <div style={{ background: '#eff6ff', border: '1.5px solid #bfdbfe', borderBottomWidth: '3px', borderRadius: '10px', padding: '10px 8px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'block' }}>
-                        Falta Asignar
-                      </span>
-                      <strong style={{ display: 'block', fontSize: '18px', fontWeight: 800, color: '#2563eb', marginTop: '2px' }}>
-                        {faltante.toLocaleString()} Lts
-                      </strong>
-                    </div>
-                  </div>
-
-                  {/* SECCIÓN MULTI-COMPAÑÍAS */}
-                  <div style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '14px', marginBottom: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                      <label style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <i className="fa-solid fa-building" style={{ color: '#059669' }}></i> Destinos y Litros a Entregar
-                      </label>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <button
-                          type="button"
-                          onClick={unificarLitros}
-                          style={{ fontSize: '12px', padding: '6px 12px', border: '1.5px solid #c084fc', color: '#6b21a8', background: '#faf5ff', fontWeight: 700, borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s ease' }}
-                          title="Unificar todos los litros en un solo destino"
-                        >
-                          <i className="fa-solid fa-arrows-to-circle" style={{ color: '#9333ea' }}></i> Unificar Litros
-                        </button>
-                        <button
-                          type="button"
-                          onClick={agregarFila}
-                          style={{ fontSize: '12px', padding: '6px 12px', border: '1.5px solid #a7f3d0', color: '#065f46', background: '#ecfdf5', fontWeight: 700, borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s ease' }}
-                        >
-                          <i className="fa-solid fa-plus-circle" style={{ color: '#059669' }}></i> + Añadir Destino / Compañía
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
-                      <div style={{ minWidth: '480px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 130px 120px 38px', gap: '8px', padding: '0 6px 6px 6px', fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
-                          <span>Destino / Quesera / Receptoría</span>
-                          <span>Tipo de Leche</span>
-                          <span style={{ textAlign: 'right', paddingRight: '12px' }}>Litros</span>
-                          <span></span>
-                        </div>
-
-                        {/* Filas dinámicas */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          {filasEntregaDirecta.map((fila, idx) => (
-                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.8fr 130px 120px 38px', gap: '8px', alignItems: 'flex-end' }}>
-                              <div>
-                                {fila.origenServicio && (
-                                  <div style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    {fila.origenServicio === 'TRANSPORTE' && (
-                                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#7e22ce', background: '#faf5ff', border: '1px solid #d8b4fe', padding: '1px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                        <i className="fa-solid fa-truck"></i> SERVICIO TRANSPORTE {fila.origenFincasCount ? `(${fila.origenFincasCount} finca${fila.origenFincasCount > 1 ? 's' : ''})` : ''}
-                                      </span>
-                                    )}
-                                    {fila.origenServicio === 'ACIDA' && (
-                                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fca5a5', padding: '1px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                        <i className="fa-solid fa-flask"></i> LECHE ÁCIDA SEPARADA
-                                      </span>
-                                    )}
-                                    {fila.origenServicio === 'RUTA' && (
-                                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '1px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                        <i className="fa-solid fa-road"></i> SERVICIO RUTA {fila.origenFincasCount ? `(${fila.origenFincasCount} finca${fila.origenFincasCount > 1 ? 's' : ''})` : ''}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                                <CompaniaSelect
-                                  value={fila.companiaId}
-                                  onChange={(val) => actualizarFila(idx, 'companiaId', val)}
-                                  placeholder="-- Seleccionar Compañía --"
-                                />
-                              </div>
-                              <div>
-                                <select
-                                  value={fila.tipoLeche}
-                                  onChange={(e) => actualizarFila(idx, 'tipoLeche', e.target.value)}
-                                  style={{ width: '100%', height: '40px', fontSize: '12.5px', fontWeight: 700, borderRadius: '8px', border: '1.5px solid #cbd5e1', padding: '0 8px', background: '#ffffff', color: '#0f172a' }}
-                                >
-                                  <option value="VACA">🥛 Vaca</option>
-                                  <option value="BUFALA">🐃 Búfala</option>
-                                  <option value="ACIDA">🍋 Ácida</option>
-                                  <option value="BUFALA_ACIDA">🍋🐃 Búfala Ácida</option>
-                                </select>
-                              </div>
-                              <div style={{ position: 'relative' }}>
-                                <input
-                                  type="number"
-                                  value={fila.litros}
-                                  onChange={(e) => actualizarFila(idx, 'litros', e.target.value === '' ? '' : Number(e.target.value))}
-                                  placeholder="0"
-                                  min="1"
-                                  step="1"
-                                  required
-                                  style={{ width: '100%', height: '40px', fontSize: '14px', fontWeight: 800, textAlign: 'right', paddingRight: '36px', color: '#059669', borderRadius: '8px', border: '1.5px solid #cbd5e1', background: '#ffffff' }}
-                                />
-                                <span style={{ position: 'absolute', right: '10px', top: '10px', fontSize: '12px', fontWeight: 700, color: '#64748b', pointerEvents: 'none' }}>
-                                  Lts
-                                </span>
-                              </div>
-                              <div>
-                                {filasEntregaDirecta.length > 1 ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => removerFila(idx)}
-                                    style={{ width: '36px', height: '36px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                                    title="Eliminar este destino"
-                                  >
-                                    <i className="fa-solid fa-trash-can"></i>
-                                  </button>
-                                ) : (
-                                  <div style={{ width: '36px', height: '36px' }}></div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Balance Volumétrico Live */}
+                <div style={{ padding: '14px 16px', overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch' }}>
+                  {/* Tarjeta Resumen Móvil del Camión y KPIs */}
                   <div
                     style={{
-                      padding: '12px 16px',
-                      borderRadius: '10px',
-                      marginBottom: '16px',
+                      background: '#ffffff',
+                      borderRadius: '14px',
+                      padding: '12px 14px',
+                      border: '1.5px solid #e2e8f0',
+                      marginBottom: '12px',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <i className="fa-solid fa-truck text-emerald-600"></i>
+                        Ticket #{viajeActivo.codigoTicket || viajeActivo.id}
+                      </span>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#f1f5f9', padding: '2px 8px', borderRadius: '6px' }}>
+                        {viajeActivo.camionPlaca || dispositivo?.placaCamion || 'Cisterna'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', textAlign: 'center' }}>
+                      <div style={{ background: '#ecfdf5', borderRadius: '8px', padding: '6px 4px', border: '1px solid #a7f3d0' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 800, color: '#065f46', textTransform: 'uppercase', display: 'block' }}>Total Camión</span>
+                        <strong style={{ fontSize: '14.5px', fontWeight: 900, color: '#059669', display: 'block' }}>{totalCamion.toLocaleString()} L</strong>
+                      </div>
+                      <div style={{ background: '#faf5ff', borderRadius: '8px', padding: '6px 4px', border: '1px solid #e9d5ff' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 800, color: '#6b21a8', textTransform: 'uppercase', display: 'block' }}>Asignado</span>
+                        <strong style={{ fontSize: '14.5px', fontWeight: 900, color: '#7e22ce', display: 'block' }}>{sumaFilas.toLocaleString()} L</strong>
+                      </div>
+                      <div style={{ background: '#eff6ff', borderRadius: '8px', padding: '6px 4px', border: '1px solid #bfdbfe' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 800, color: '#1e40af', textTransform: 'uppercase', display: 'block' }}>Falta</span>
+                        <strong style={{ fontSize: '14.5px', fontWeight: 900, color: '#2563eb', display: 'block' }}>{Math.max(0, ltsDisponibles - sumaFilas).toLocaleString()} L</strong>
+                      </div>
+                    </div>
+
+                    {/* Barra de progreso de asignación */}
+                    <div style={{ marginTop: '8px', height: '6px', width: '100%', background: '#e2e8f0', borderRadius: '99px', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          height: '100%',
+                          width: `${pctProgreso}%`,
+                          background: diferencia === 0 ? '#10b981' : diferencia > 0 ? '#3b82f6' : '#ef4444',
+                          transition: 'width 0.3s ease',
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  {/* Acciones Superiores de Destinos */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '8px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>
+                      Destinos ({filasEntregaDirecta.length})
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={unificarLitros}
+                        style={{
+                          fontSize: '11.5px',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          border: '1.5px solid #c084fc',
+                          background: '#faf5ff',
+                          color: '#6b21a8',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <i className="fa-solid fa-arrows-to-circle text-purple-600"></i> Unificar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={agregarFila}
+                        style={{
+                          fontSize: '11.5px',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          border: '1.5px solid #a7f3d0',
+                          background: '#ecfdf5',
+                          color: '#065f46',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <i className="fa-solid fa-plus-circle text-emerald-600"></i> + Destino
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* TARJETAS MÓVILES DE DESTINO (Formulario Apilado Mobile-First, sin scroll horizontal) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+                    {filasEntregaDirecta.map((fila, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          background: '#ffffff',
+                          borderRadius: '14px',
+                          padding: '12px 14px',
+                          border: '1.5px solid #e2e8f0',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+                        }}
+                      >
+                        {/* Cabecera de la Tarjeta de Destino */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <div>
+                            {fila.origenServicio === 'RUTA' && (
+                              <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <i className="fa-solid fa-road"></i> SERVICIO RUTA {fila.origenFincasCount ? `(${fila.origenFincasCount} finca${fila.origenFincasCount > 1 ? 's' : ''})` : ''}
+                              </span>
+                            )}
+                            {fila.origenServicio === 'ACIDA' && (
+                              <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fca5a5', padding: '2px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <i className="fa-solid fa-flask"></i> LECHE ÁCIDA SEPARADA
+                              </span>
+                            )}
+                            {fila.origenServicio === 'TRANSPORTE' && (
+                              <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#7e22ce', background: '#faf5ff', border: '1px solid #d8b4fe', padding: '2px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <i className="fa-solid fa-truck"></i> SERVICIO TRANSPORTE {fila.origenFincasCount ? `(${fila.origenFincasCount} finca${fila.origenFincasCount > 1 ? 's' : ''})` : ''}
+                              </span>
+                            )}
+                            {!fila.origenServicio && (
+                              <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#475569', background: '#f1f5f9', padding: '2px 8px', borderRadius: '6px' }}>
+                                📍 Destino #{idx + 1}
+                              </span>
+                            )}
+                          </div>
+
+                          {filasEntregaDirecta.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removerFila(idx)}
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '8px',
+                                border: '1px solid #fee2e2',
+                                background: '#fef2f2',
+                                color: '#ef4444',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                              }}
+                              title="Eliminar este destino"
+                            >
+                              <i className="fa-solid fa-trash-can text-[11px]"></i>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Campo Compañía (Ancho Completo) */}
+                        <div style={{ marginBottom: '8px' }}>
+                          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#475569', marginBottom: '3px' }}>
+                            Quesera / Receptoría Destino *
+                          </label>
+                          <CompaniaSelect
+                            value={fila.companiaId}
+                            onChange={(val) => actualizarFila(idx, 'companiaId', val)}
+                            placeholder="-- Seleccionar Compañía o Planta --"
+                          />
+                        </div>
+
+                        {/* Fila 2: Tipo de Leche y Litros lado a lado */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '8px' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#475569', marginBottom: '3px' }}>
+                              Tipo de Leche
+                            </label>
+                            <select
+                              value={fila.tipoLeche}
+                              onChange={(e) => actualizarFila(idx, 'tipoLeche', e.target.value)}
+                              style={{
+                                width: '100%',
+                                height: '42px',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                borderRadius: '10px',
+                                border: '1.5px solid #cbd5e1',
+                                padding: '0 8px',
+                                background: '#ffffff',
+                                color: '#0f172a',
+                              }}
+                            >
+                              <option value="VACA">🥛 Vaca</option>
+                              <option value="BUFALA">🐃 Búfala</option>
+                              <option value="ACIDA">🍋 Ácida</option>
+                              <option value="BUFALA_ACIDA">🍋🐃 Búfala Ácida</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#475569', marginBottom: '3px' }}>
+                              Litros a Entregar *
+                            </label>
+                            <div style={{ position: 'relative' }}>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                value={fila.litros}
+                                onChange={(e) => actualizarFila(idx, 'litros', e.target.value === '' ? '' : Number(e.target.value))}
+                                placeholder="0"
+                                min="1"
+                                step="1"
+                                required
+                                style={{
+                                  width: '100%',
+                                  height: '42px',
+                                  fontSize: '15px',
+                                  fontWeight: 800,
+                                  textAlign: 'right',
+                                  paddingRight: '36px',
+                                  paddingLeft: '8px',
+                                  color: '#059669',
+                                  borderRadius: '10px',
+                                  border: '1.5px solid #cbd5e1',
+                                  background: '#ffffff',
+                                }}
+                              />
+                              <span style={{ position: 'absolute', right: '10px', top: '12px', fontSize: '11.5px', fontWeight: 800, color: '#64748b', pointerEvents: 'none' }}>
+                                Lts
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Semáforo de Balance Volumétrico */}
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '12px',
+                      marginBottom: '12px',
                       textAlign: 'center',
                       background: diferencia === 0 ? '#f0fdf4' : diferencia > 0 ? '#eff6ff' : '#fef2f2',
                       border: `1.5px solid ${diferencia === 0 ? '#86efac' : diferencia > 0 ? '#93c5fd' : '#fca5a5'}`,
                     }}
                   >
-                    <div style={{ fontSize: '15.5px', fontWeight: 800, color: diferencia === 0 ? '#15803d' : diferencia > 0 ? '#1d4ed8' : '#b91c1c' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: diferencia === 0 ? '#15803d' : diferencia > 0 ? '#1d4ed8' : '#b91c1c' }}>
                       {diferencia === 0
                         ? '✅ Total Distribuido con Precisión Exacta'
                         : diferencia > 0
-                        ? `ℹ️ Faltan ${diferencia.toLocaleString()} Lts por asignar del tanque`
-                        : `⚠️ Exceso de ${Math.abs(diferencia).toLocaleString()} Lts sobre el volumen disponible`}
+                        ? `ℹ️ Faltan ${diferencia.toLocaleString()} Lts por asignar`
+                        : `⚠️ Exceso de ${Math.abs(diferencia).toLocaleString()} Lts sobre el tanque`}
                     </div>
-                    <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#64748b' }}>
-                      Suma actual a despachar: {sumaFilas.toLocaleString()} Lts de {ltsDisponibles.toLocaleString()} Lts disponibles
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginTop: '2px' }}>
+                      Asignando {sumaFilas.toLocaleString()} Lts de {ltsDisponibles.toLocaleString()} Lts disponibles
                     </span>
                   </div>
 
-                  {/* Observaciones */}
+                  {/* Campo de Observación / Pesaje */}
                   <div>
-                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px', display: 'block' }}>
-                      <i className="fa-solid fa-comment-dots" style={{ color: '#64748b', marginRight: '4px' }}></i>
-                      Observación / Ticket de Pesaje Planta (Opcional)
+                    <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569', marginBottom: '4px', display: 'block' }}>
+                      <i className="fa-solid fa-receipt text-slate-500 mr-1"></i> Comprobante Planta / Observación
                     </label>
                     <input
                       type="text"
                       value={obsEntregaDirecta}
                       onChange={(e) => setObsEntregaDirecta(e.target.value)}
                       placeholder="Ej: Ticket #5829, recibido por Ing. Romero..."
-                      style={{ height: '42px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '13px', background: '#ffffff', color: '#0f172a', width: '100%', padding: '0 12px' }}
+                      style={{ height: '42px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px', background: '#ffffff', color: '#0f172a', width: '100%', padding: '0 12px' }}
                     />
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 20px', background: '#ffffff', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 16px 16px', flexShrink: 0 }}>
+                {/* Footer flotante para móvil */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 2fr',
+                    gap: '10px',
+                    padding: '12px 16px',
+                    background: '#ffffff',
+                    borderTop: '1px solid #e2e8f0',
+                    flexShrink: 0,
+                    boxShadow: '0 -4px 12px rgba(0,0,0,0.04)',
+                  }}
+                >
                   <button
                     type="button"
                     onClick={() => setModalEntregaDirecta(false)}
-                    style={{ height: '40px', padding: '0 18px', borderRadius: '8px', fontWeight: 600, border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', cursor: 'pointer' }}
+                    style={{
+                      height: '46px',
+                      borderRadius: '12px',
+                      fontWeight: 700,
+                      border: '1.5px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#475569',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                    }}
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={guardandoEntregaDirecta}
-                    style={{ background: 'linear-gradient(135deg, #059669, #10b981)', border: 'none', fontWeight: 700, padding: '0 22px', height: '40px', borderRadius: '8px', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(16,185,129,0.3)', cursor: 'pointer' }}
+                    style={{
+                      background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                      border: 'none',
+                      fontWeight: 900,
+                      height: '46px',
+                      borderRadius: '12px',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                    }}
                   >
-                    <i className="fa-solid fa-check-circle"></i> {guardandoEntregaDirecta ? 'Registrando...' : 'Registrar Entrega'}
+                    <i className="fa-solid fa-check-circle"></i>
+                    {guardandoEntregaDirecta ? 'Registrando...' : 'Registrar Entrega'}
                   </button>
                 </div>
               </form>
@@ -12428,7 +12553,7 @@ export const AppMovilPage: React.FC = () => {
       })()}
 
       {/* ========================================================================= */}
-      {/* MODAL MÓVIL: TRASPASO DE LECHE A OTRO CHOFER (1:1 RecoleccionRutasPage)   */}
+      {/* MODAL MÓVIL: TRASPASO DE LECHE A OTRO CHOFER (MOBILE-FIRST)               */}
       {/* ========================================================================= */}
       {modalTraspasoMovil && viajeActivo && (() => {
         const fincasT = paradasViajeActivo || [];
@@ -12452,106 +12577,129 @@ export const AppMovilPage: React.FC = () => {
             style={{
               position: 'fixed',
               inset: 0,
-              zIndex: 1200,
+              zIndex: 9999,
               display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-end',
               alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(15, 23, 42, 0.65)',
-              backdropFilter: 'blur(4px)',
-              padding: '12px',
+              background: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(6px)',
+              padding: '0',
             }}
           >
             <div
-              className="content-card"
               style={{
-                maxWidth: '540px',
+                maxWidth: '560px',
                 width: '100%',
-                maxHeight: '92vh',
+                maxHeight: '94vh',
                 display: 'flex',
                 flexDirection: 'column',
-                borderRadius: '16px',
-                border: '1.5px solid #0d948840',
-                boxShadow: '0 20px 45px rgba(13, 148, 136, 0.2)',
+                borderRadius: '24px 24px 0 0',
+                border: '1px solid #ccfbf1',
+                borderBottom: 'none',
+                boxShadow: '0 -10px 40px rgba(13, 148, 136, 0.25)',
                 overflow: 'hidden',
-                padding: 0,
-                background: '#ffffff',
+                background: '#f8fafc',
               }}
             >
-              {/* Header gradiente teal */}
+              {/* Header gradiente teal móvil con indicador de arrastre */}
               <div
                 style={{
-                  background: 'linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%)',
-                  borderBottom: '1px solid #99f6e4',
-                  padding: '16px 20px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
+                  background: 'linear-gradient(135deg, #115e59 0%, #0d9488 60%, #14b8a6 100%)',
+                  padding: '12px 18px 16px 18px',
+                  color: '#ffffff',
                   flexShrink: 0,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div
+                <div style={{ width: '40px', height: '4px', background: 'rgba(255,255,255,0.4)', borderRadius: '99px', margin: '0 auto 10px auto' }}></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div
+                      style={{
+                        background: 'rgba(255,255,255,0.2)',
+                        color: '#ffffff',
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '17px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="fa-solid fa-right-left"></i>
+                    </div>
+                    <div>
+                      <h2 style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                        Traspaso de Leche a Otro Chofer
+                      </h2>
+                      <p style={{ fontSize: '11.5px', color: '#ccfbf1', margin: '1px 0 0 0' }}>
+                        Transferir volumen recolectado
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalTraspasoMovil(false)}
                     style={{
-                      background: '#0d9488',
                       color: '#ffffff',
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '10px',
+                      background: 'rgba(255,255,255,0.18)',
+                      border: 'none',
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      fontSize: '18px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '18px',
-                      boxShadow: '0 4px 10px rgba(13, 148, 136, 0.3)',
+                      cursor: 'pointer',
                       flexShrink: 0,
                     }}
                   >
-                    <i className="fa-solid fa-right-left"></i>
-                  </div>
-                  <div>
-                    <h2 style={{ fontSize: '17px', fontWeight: 800, color: '#115e59', margin: 0 }}>
-                      Traspaso de Leche a Otro Chofer
-                    </h2>
-                    <p style={{ fontSize: '12px', color: '#0f766e', margin: '2px 0 0 0' }}>
-                      Transferir carga recolectada a otro conductor / viaje
-                    </p>
-                  </div>
+                    &times;
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setModalTraspasoMovil(false)}
-                  style={{ color: '#0f766e', fontSize: '24px', background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1 }}
-                >
-                  &times;
-                </button>
               </div>
 
               <form
                 onSubmit={handleSubmitTraspasoMovil}
                 style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
               >
-                <div style={{ padding: '18px 20px', background: '#ffffff', overflowY: 'auto', flex: 1 }}>
-                  {/* RESUMEN DEL TICKET ORIGEN */}
-                  <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '12px 16px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ padding: '14px 16px', overflowY: 'auto', flex: 1, WebkitOverflowScrolling: 'touch' }}>
+                  {/* Resumen Ticket Origen */}
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '14px',
+                      padding: '12px 14px',
+                      marginBottom: '12px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
                     <div>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Ticket Origen:</span>
-                      <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
+                      <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>Ticket Origen:</span>
+                      <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a', marginTop: '1px' }}>
                         #{viajeActivo.codigoTicket || viajeActivo.id} - {viajeActivo.choferNombre || viajeActivo.nombreConductor || dispositivo?.nombreCompleto || 'Chofer'}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Volumen Disponible:</span>
-                      <div style={{ fontSize: '18px', fontWeight: 900, color: '#0d9488', marginTop: '2px' }}>
-                        {(ltsDisponibles > 0 ? ltsDisponibles : totalCamion).toLocaleString()} Lts
+                      <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>Disponible:</span>
+                      <div style={{ fontSize: '16px', fontWeight: 900, color: '#0d9488', marginTop: '1px' }}>
+                        {(ltsDisponibles > 0 ? ltsDisponibles : totalCamion).toLocaleString()} L
                       </div>
                     </div>
                   </div>
 
-                  {/* SELECTOR DE MODO: EXISTENTE VS NUEVO */}
-                  <div style={{ marginBottom: '16px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
-                      <i className="fa-solid fa-layer-group" style={{ color: '#0d9488', marginRight: '4px' }}></i> Modo de Asignación del Ticket Destino:
+                  {/* Selector de Modo: Existente vs Nuevo */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#334155', marginBottom: '5px', display: 'block' }}>
+                      Modo de Traspaso:
                     </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', background: '#e2e8f0', padding: '3px', borderRadius: '12px' }}>
                       <button
                         type="button"
                         onClick={() => setModoTraspasoMovil('EXISTENTE')}
@@ -12559,19 +12707,19 @@ export const AppMovilPage: React.FC = () => {
                           height: '36px',
                           fontSize: '12px',
                           fontWeight: 800,
-                          borderRadius: '8px',
+                          borderRadius: '10px',
                           background: modoTraspasoMovil === 'EXISTENTE' ? '#0d9488' : 'transparent',
                           color: modoTraspasoMovil === 'EXISTENTE' ? '#ffffff' : '#475569',
                           border: 'none',
                           cursor: 'pointer',
-                          transition: 'all 0.2s',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: '6px',
+                          boxShadow: modoTraspasoMovil === 'EXISTENTE' ? '0 2px 6px rgba(13,148,136,0.3)' : 'none',
                         }}
                       >
-                        <i className="fa-solid fa-ticket"></i> Ticket Ya Creado
+                        <i className="fa-solid fa-ticket"></i> Ticket Existente
                       </button>
                       <button
                         type="button"
@@ -12580,140 +12728,180 @@ export const AppMovilPage: React.FC = () => {
                           height: '36px',
                           fontSize: '12px',
                           fontWeight: 800,
-                          borderRadius: '8px',
+                          borderRadius: '10px',
                           background: modoTraspasoMovil === 'NUEVO' ? '#0d9488' : 'transparent',
                           color: modoTraspasoMovil === 'NUEVO' ? '#ffffff' : '#475569',
                           border: 'none',
                           cursor: 'pointer',
-                          transition: 'all 0.2s',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: '6px',
+                          boxShadow: modoTraspasoMovil === 'NUEVO' ? '0 2px 6px rgba(13,148,136,0.3)' : 'none',
                         }}
                       >
-                        <i className="fa-solid fa-plus-circle"></i> Crear Ticket Automático
+                        <i className="fa-solid fa-plus-circle"></i> Nuevo Ticket
                       </button>
                     </div>
                   </div>
 
-                  {/* SECCIÓN MODO 1: TICKET YA CREADO */}
-                  {modoTraspasoMovil === 'EXISTENTE' ? (
-                    <div style={{ marginBottom: '16px' }}>
-                      <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
-                        <i className="fa-solid fa-ticket-simple" style={{ color: '#0d9488' }}></i> Seleccionar Ticket de Destino *
-                      </label>
-                      <select
-                        value={formTraspasoMovil.ticketDestinoId}
-                        onChange={(e) => setFormTraspasoMovil({ ...formTraspasoMovil, ticketDestinoId: Number(e.target.value) })}
-                        style={{ width: '100%', height: '42px', fontSize: '13px', fontWeight: 700, color: '#0f172a', borderRadius: '8px', border: '1.5px solid #cbd5e1', padding: '0 10px', background: '#ffffff' }}
-                        required
-                      >
-                        <option value="0">-- Seleccione Cisterna / Viaje Destino --</option>
-                        {viajesDisponiblesTraspaso.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            Ticket #{t.codigoTicket || t.id} — {t.choferNombre || t.nombreConductor} ({t.camionPlaca || 'Cisterna'})
-                          </option>
-                        ))}
-                      </select>
-                      <small style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                        Selecciona el viaje abierto del chofer receptor que recibirá los litros.
-                      </small>
-                    </div>
-                  ) : (
-                    /* SECCIÓN MODO 2: CREAR NUEVO TICKET AUTOMÁTICAMENTE */
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '10px' }}>
+                  {/* Sección Destino */}
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '14px',
+                      padding: '12px 14px',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    {modoTraspasoMovil === 'EXISTENTE' ? (
+                      <div>
+                        <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#334155', marginBottom: '4px', display: 'block' }}>
+                          Ticket Destino de la Flota *
+                        </label>
+                        <select
+                          value={formTraspasoMovil.ticketDestinoId}
+                          onChange={(e) => setFormTraspasoMovil({ ...formTraspasoMovil, ticketDestinoId: Number(e.target.value) })}
+                          style={{
+                            width: '100%',
+                            height: '42px',
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            color: '#0f172a',
+                            borderRadius: '10px',
+                            border: '1.5px solid #cbd5e1',
+                            padding: '0 10px',
+                            background: '#ffffff',
+                          }}
+                          required
+                        >
+                          <option value="0">-- Seleccionar Viaje / Cisterna Destino --</option>
+                          {viajesDisponiblesTraspaso.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              Ticket #{t.codigoTicket || t.id} — {t.choferNombre || t.nombreConductor} ({t.camionPlaca || 'Cisterna'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div>
-                          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
-                            <i className="fa-solid fa-user-check" style={{ color: '#0d9488' }}></i> Chofer de Destino *
+                          <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#334155', marginBottom: '4px', display: 'block' }}>
+                            Chofer Receptor *
                           </label>
                           <ChoferSelect
                             value={traspasoChoferDestinoId}
                             onChange={(val) => setTraspasoChoferDestinoId(val)}
-                            placeholder="-- Seleccionar Conductor --"
+                            placeholder="-- Seleccionar Chofer Destino --"
                           />
                         </div>
                         <div>
-                          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
-                            <i className="fa-solid fa-calendar-day" style={{ color: '#0d9488' }}></i> Fecha del Ticket
+                          <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#334155', marginBottom: '4px', display: 'block' }}>
+                            Fecha del Ticket
                           </label>
                           <input
                             type="date"
                             value={traspasoFechaDestino}
                             onChange={(e) => setTraspasoFechaDestino(e.target.value)}
-                            style={{ width: '100%', height: '42px', fontSize: '13px', fontWeight: 700, borderRadius: '8px', border: '1.5px solid #cbd5e1', padding: '0 10px', background: '#ffffff' }}
+                            style={{ width: '100%', height: '42px', fontSize: '13px', fontWeight: 700, borderRadius: '10px', border: '1.5px solid #cbd5e1', padding: '0 10px', background: '#ffffff' }}
                           />
                         </div>
                       </div>
-                      <small style={{ fontSize: '11px', color: '#0d9488', fontWeight: 600, marginTop: '6px', display: 'block' }}>
-                        ✨ Se creará automáticamente un nuevo ticket en estado ABIERTO para el chofer seleccionado.
-                      </small>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
-                  {/* VOLUMEN A TRASPASAR */}
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', margin: 0 }}>
-                        <i className="fa-solid fa-faucet-drip" style={{ color: '#0d9488' }}></i> Litros a Traspasar *
+                  {/* Volumen a Traspasar */}
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '14px',
+                      padding: '12px 14px',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#334155', margin: 0 }}>
+                        Litros a Traspasar *
                       </label>
                       <button
                         type="button"
                         onClick={() => setFormTraspasoMovil({ ...formTraspasoMovil, litrosTraspaso: ltsDisponibles > 0 ? ltsDisponibles : totalCamion })}
-                        style={{ fontSize: '11px', fontWeight: 800, color: '#0d9488', background: '#f0fdfa', border: '1px solid #99f6e4', padding: '2px 8px', borderRadius: '6px', cursor: 'pointer' }}
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          color: '#0d9488',
+                          background: '#f0fdfa',
+                          border: '1px solid #99f6e4',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                        }}
                       >
-                        Traspasar Todo el Tanque
+                        ⚡ Todo el Tanque
                       </button>
                     </div>
                     <div style={{ position: 'relative' }}>
                       <input
                         type="number"
+                        inputMode="numeric"
                         value={formTraspasoMovil.litrosTraspaso}
                         onChange={(e) => setFormTraspasoMovil({ ...formTraspasoMovil, litrosTraspaso: e.target.value === '' ? '' : Number(e.target.value) })}
                         min="1"
                         step="1"
                         required
-                        style={{ width: '100%', height: '44px', fontSize: '17px', fontWeight: 800, color: '#0d9488', background: '#f0fdfa', border: '2px solid #5eead4', paddingRight: '48px', paddingLeft: '12px', borderRadius: '8px' }}
+                        style={{
+                          width: '100%',
+                          height: '44px',
+                          fontSize: '16px',
+                          fontWeight: 800,
+                          color: '#0d9488',
+                          background: '#f0fdfa',
+                          border: '2px solid #5eead4',
+                          paddingRight: '46px',
+                          paddingLeft: '12px',
+                          borderRadius: '10px',
+                        }}
                       />
-                      <span style={{ position: 'absolute', right: '14px', top: '12px', fontSize: '13px', fontWeight: 800, color: '#0d9488', pointerEvents: 'none' }}>
+                      <span style={{ position: 'absolute', right: '14px', top: '12px', fontSize: '12.5px', fontWeight: 800, color: '#0d9488', pointerEvents: 'none' }}>
                         Lts
                       </span>
                     </div>
                   </div>
 
-                  {/* OBSERVACIÓN */}
-                  <div style={{ marginBottom: '16px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
-                      <i className="fa-solid fa-comment-dots" style={{ color: '#64748b' }}></i> Nota / Motivo del Traspaso (Opcional)
+                  {/* Observación */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#334155', marginBottom: '4px', display: 'block' }}>
+                      Motivo / Observación del Traspaso
                     </label>
                     <input
                       type="text"
                       value={formTraspasoMovil.observacion}
                       onChange={(e) => setFormTraspasoMovil({ ...formTraspasoMovil, observacion: e.target.value })}
-                      placeholder="Ej: Traspaso de leche para completar viaje de despacho..."
-                      style={{ width: '100%', height: '40px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', padding: '0 12px', background: '#ffffff' }}
+                      placeholder="Ej: Traspaso para completar viaje a planta..."
+                      style={{ width: '100%', height: '42px', fontSize: '13px', borderRadius: '10px', border: '1.5px solid #cbd5e1', padding: '0 12px', background: '#ffffff' }}
                     />
                   </div>
 
-                  {/* DIAGRAMA VISUAL DE TRAZABILIDAD DEL TRASPASO */}
-                  <div style={{ background: '#f0fdfa', border: '1.5px dashed #5eead4', borderRadius: '12px', padding: '12px 14px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f766e', textTransform: 'uppercase', marginBottom: '6px' }}>
-                      <i className="fa-solid fa-route"></i> Flujo del Traspaso Logístico:
+                  {/* Diagrama de Trazabilidad */}
+                  <div style={{ background: '#f0fdfa', border: '1.5px dashed #5eead4', borderRadius: '12px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#0f766e', textTransform: 'uppercase', marginBottom: '4px' }}>
+                      <i className="fa-solid fa-route mr-1"></i> Flujo del Traspaso:
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '12px' }}>
-                      <div style={{ flex: 1, background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #ccfbf1', textAlign: 'center' }}>
-                        <span style={{ display: 'block', fontSize: '10.5px', color: '#64748b' }}>ORIGEN</span>
-                        <strong style={{ color: '#0f172a', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <div style={{ flex: 1, background: '#ffffff', padding: '6px 8px', borderRadius: '8px', border: '1px solid #ccfbf1', textAlign: 'center' }}>
+                        <span style={{ display: 'block', fontSize: '10px', color: '#64748b' }}>ORIGEN</span>
+                        <strong style={{ color: '#0f172a', fontSize: '11.5px' }}>
                           {viajeActivo.choferNombre || viajeActivo.nombreConductor || dispositivo?.nombreCompleto || 'Chofer'}
                         </strong>
                       </div>
-                      <div style={{ color: '#0d9488', fontSize: '16px', fontWeight: 900 }}>
+                      <div style={{ color: '#0d9488', fontSize: '15px', fontWeight: 900 }}>
                         <i className="fa-solid fa-arrow-right-long"></i>
                       </div>
-                      <div style={{ flex: 1, background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #ccfbf1', textAlign: 'center' }}>
-                        <span style={{ display: 'block', fontSize: '10.5px', color: '#64748b' }}>DESTINO</span>
-                        <strong style={{ color: '#0d9488', fontSize: '12px' }}>
+                      <div style={{ flex: 1, background: '#ffffff', padding: '6px 8px', borderRadius: '8px', border: '1px solid #ccfbf1', textAlign: 'center' }}>
+                        <span style={{ display: 'block', fontSize: '10px', color: '#64748b' }}>DESTINO</span>
+                        <strong style={{ color: '#0d9488', fontSize: '11.5px' }}>
                           {previewDestinoNombre}
                         </strong>
                       </div>
@@ -12721,20 +12909,56 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 16px 16px', flexShrink: 0 }}>
+                {/* Footer flotante */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 2fr',
+                    gap: '10px',
+                    padding: '12px 16px',
+                    background: '#ffffff',
+                    borderTop: '1px solid #e2e8f0',
+                    flexShrink: 0,
+                    boxShadow: '0 -4px 12px rgba(0,0,0,0.04)',
+                  }}
+                >
                   <button
                     type="button"
                     onClick={() => setModalTraspasoMovil(false)}
-                    style={{ height: '40px', padding: '0 18px', fontWeight: 600, border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', borderRadius: '8px', cursor: 'pointer' }}
+                    style={{
+                      height: '46px',
+                      borderRadius: '12px',
+                      fontWeight: 700,
+                      border: '1.5px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#475569',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                    }}
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={guardandoTraspaso}
-                    style={{ background: 'linear-gradient(135deg, #0d9488, #059669)', border: 'none', fontWeight: 800, padding: '0 22px', height: '40px', color: '#fff', borderRadius: '8px', boxShadow: '0 4px 14px rgba(13,148,136,0.3)', display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                    style={{
+                      background: 'linear-gradient(135deg, #0d9488 0%, #059669 100%)',
+                      border: 'none',
+                      fontWeight: 900,
+                      height: '46px',
+                      color: '#fff',
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 14px rgba(13,148,136,0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                    }}
                   >
-                    <i className="fa-solid fa-right-left"></i> {guardandoTraspaso ? 'Traspasando...' : 'Confirmar Traspaso'}
+                    <i className="fa-solid fa-right-left"></i>
+                    {guardandoTraspaso ? 'Traspasando...' : 'Confirmar Traspaso'}
                   </button>
                 </div>
               </form>

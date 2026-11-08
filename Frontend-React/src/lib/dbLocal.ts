@@ -560,3 +560,4 @@ class LocalDatabase {
 }
 
 export const dbLocal = new LocalDatabase();
+

@@ -132,8 +132,8 @@ export const AppMovilPage: React.FC = () => {
     }
   });
 
-  // Modo de Login (cuando !dispositivo): 'credenciales' (Usuario y Contraseña) o 'codigo' (6 dígitos)
-  const [modoLogin, setModoLogin] = useState<'credenciales' | 'codigo'>('credenciales');
+  // Modo de Login (cuando !dispositivo): 'codigo' (6 dígitos por defecto) o 'credenciales' (Usuario y Contraseña)
+  const [modoLogin, setModoLogin] = useState<'credenciales' | 'codigo'>('codigo');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [mostrarPassword, setMostrarPassword] = useState(false);
@@ -286,26 +286,6 @@ export const AppMovilPage: React.FC = () => {
   const authUser = useAuthStore((s) => s.user);
   const authToken = useAuthStore((s) => s.token);
   const authEmpresa = authUser?.empresaNombre;
-
-  // Auto-vincular terminal si el usuario ya está autenticado en la sesión web
-  useEffect(() => {
-    if (!dispositivo && authUser && authToken) {
-      const disp: DispositivoMovilData = {
-        token: authToken,
-        empresaCodigo: 'EMPRESA',
-        empresaNombre: authEmpresa || empresaGuardada || 'Transporte de Leche',
-        id: authUser.id,
-        username: authUser.username,
-        nombreCompleto: authUser.nombreCompleto || authUser.username,
-        rol: (authUser.rol || 'SUPERADMIN').toUpperCase(),
-        permisos: authUser.permisos || [],
-        modulosHabilitados: [],
-        capacidadTanqueLitros: 6000,
-      };
-      setDispositivo(disp);
-      localStorage.setItem('movil_device_info', JSON.stringify(disp));
-    }
-  }, [dispositivo, authUser, authToken, authEmpresa]);
 
   // Fecha de hoy por defecto
   const hoyStr = new Date().toISOString().split('T')[0];
@@ -802,16 +782,16 @@ export const AppMovilPage: React.FC = () => {
     }
   }, [isOnline]);
 
-  // Si estamos en línea y hay conexión, refrescar fincas, entregas, perfil, viaje activo y despacho activo
+  // Si estamos en línea y el dispositivo está vinculado, refrescar fincas, entregas, perfil, viaje activo y despacho activo
   useEffect(() => {
-    if (isOnline) {
+    if (isOnline && dispositivo) {
       cargarFincasServidor();
       cargarEntregasChofer();
       cargarPerfilServidor();
       cargarViajeActivo();
       cargarDespachoActivo();
     }
-  }, [choferEfectivoId, isOnline]);
+  }, [choferEfectivoId, isOnline, dispositivo]);
 
   const cargarFincasServidor = async () => {
     try {
@@ -2709,6 +2689,12 @@ export const AppMovilPage: React.FC = () => {
   // VISTA 1: DISPOSITIVO NO VINCULADO (ACTIVACIÓN NEUTRA)
   // =========================================================================
   if (!dispositivo) {
+    const nombreEmpresaActual = empresaGuardada || (
+      typeof window !== 'undefined' && window.location.hostname.includes('campoverde')
+        ? 'Lácteos Campo Verde'
+        : 'Transporte Vergel & Carrillo'
+    );
+
     return (
       <div
         style={{
@@ -2726,26 +2712,27 @@ export const AppMovilPage: React.FC = () => {
         <div
           style={{
             width: '100%',
-            maxWidth: '420px',
-            background: 'rgba(30, 41, 59, 0.85)',
+            maxWidth: '430px',
+            background: 'rgba(30, 41, 59, 0.9)',
             backdropFilter: 'blur(16px)',
             borderRadius: '24px',
-            padding: '32px 24px',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+            padding: '30px 22px',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
             textAlign: 'center',
           }}
         >
+          {/* Logo / Cabecera */}
           <div
             style={{
-              width: '76px',
-              height: '76px',
+              width: '74px',
+              height: '74px',
               borderRadius: '22px',
               background: 'linear-gradient(135deg, #0284c7, #2563eb)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              margin: '0 auto 20px auto',
+              margin: '0 auto 16px auto',
               fontSize: '32px',
               color: '#ffffff',
               boxShadow: '0 10px 25px rgba(2, 132, 199, 0.4)',
@@ -2754,10 +2741,14 @@ export const AppMovilPage: React.FC = () => {
             <i className="fa-solid fa-truck-droplet"></i>
           </div>
 
-          <h1 style={{ fontSize: '22px', fontWeight: 800, margin: '0 0 6px 0', letterSpacing: '-0.5px' }}>
-            Rutas & Transporte Móvil
+          <h1 style={{ fontSize: '21px', fontWeight: 900, margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>
+            {nombreEmpresaActual}
           </h1>
-          <div style={{ marginBottom: '14px' }}>
+          <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 14px 0', fontWeight: 600 }}>
+            Sistema Móvil de Gestión & Recolección de Leche
+          </p>
+
+          <div style={{ marginBottom: '18px' }}>
             <span
               style={{
                 display: 'inline-flex',
@@ -2768,7 +2759,7 @@ export const AppMovilPage: React.FC = () => {
                 border: '1px solid rgba(56, 189, 248, 0.35)',
                 padding: '3px 12px',
                 borderRadius: '16px',
-                fontSize: '11.5px',
+                fontSize: '11px',
                 fontWeight: 800,
                 letterSpacing: '0.5px',
               }}
@@ -2776,28 +2767,26 @@ export const AppMovilPage: React.FC = () => {
               <i className="fa-solid fa-code-branch"></i> Versión {APP_VERSION}
             </span>
           </div>
-          {/* Tarjeta de Base de Datos / Empresa Conectada (Fija, sin selector manual) */}
-          {empresaGuardada ? (
-            <div
-              style={{
-                marginBottom: '18px',
-                background: 'rgba(15, 23, 42, 0.7)',
-                border: '1px solid rgba(56, 189, 248, 0.25)',
-                borderRadius: '16px',
-                padding: '12px 16px',
-                textAlign: 'left',
-                boxShadow: '0 4px 15px rgba(0, 0, 0, 0.25)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-              }}
-            >
+
+          {/* Tarjeta 1: Descarga / Instalación de la Aplicación Oficial */}
+          <div
+            style={{
+              marginBottom: '18px',
+              background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.2), rgba(30, 41, 59, 0.8))',
+              border: '1.5px solid rgba(56, 189, 248, 0.35)',
+              borderRadius: '18px',
+              padding: '16px',
+              textAlign: 'left',
+              boxShadow: '0 8px 20px rgba(0, 0, 0, 0.3)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
               <div
                 style={{
-                  width: '38px',
-                  height: '38px',
+                  width: '36px',
+                  height: '36px',
                   borderRadius: '10px',
-                  background: 'rgba(14, 165, 233, 0.2)',
+                  background: 'rgba(56, 189, 248, 0.25)',
                   color: '#38bdf8',
                   display: 'flex',
                   alignItems: 'center',
@@ -2806,354 +2795,330 @@ export const AppMovilPage: React.FC = () => {
                   flexShrink: 0,
                 }}
               >
-                <i className="fa-solid fa-building"></i>
+                <i className="fa-solid fa-mobile-screen-button"></i>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.5px' }}>
-                  Base de Datos Conectada
+                  Paso 1: Instalación
                 </div>
-                <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {empresaGuardada}
+                <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#f8fafc' }}>
+                  Descarga la App de {nombreEmpresaActual}
                 </div>
               </div>
             </div>
-          ) : (
-            <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 20px 0', lineHeight: '1.4' }}>
-              Ingresa el código numérico de 6 dígitos para verificar de qué base de datos proviene y conectar este teléfono.
+            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 12px 0', lineHeight: 1.4 }}>
+              Instala la aplicación en tu teléfono para recolectar leche sin internet y sincronizar con la central.
             </p>
-          )}
-
-          {/* Si tiene empresa guardada, muestra las opciones de acceso (Usuario/Clave o Código) */}
-          {empresaGuardada && (
-            <div
+            <button
+              type="button"
+              onClick={handleInstalarApp}
               style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '6px',
-                marginBottom: '20px',
-                background: 'rgba(15, 23, 42, 0.6)',
-                padding: '4px',
-                borderRadius: '14px',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
+                width: '100%',
+                padding: '11px 14px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                color: '#ffffff',
+                border: 'none',
+                fontWeight: 800,
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 15px rgba(2, 132, 199, 0.35)',
               }}
             >
-              <button
-                type="button"
-                onClick={() => setModoLogin('credenciales')}
-                style={{
-                  padding: '9px 6px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: modoLogin === 'credenciales' ? 'linear-gradient(135deg, #0284c7, #2563eb)' : 'transparent',
-                  color: modoLogin === 'credenciales' ? '#ffffff' : '#94a3b8',
-                  fontWeight: 800,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <i className="fa-solid fa-user-lock"></i>
-                <span>Usuario y Clave</span>
-              </button>
+              <i className="fa-solid fa-download"></i>
+              <span>{esInstalada ? 'App Ya Instalada en este Teléfono' : 'Instalar / Agregar a Inicio'}</span>
+            </button>
+          </div>
 
-              <button
-                type="button"
-                onClick={() => setModoLogin('codigo')}
-                style={{
-                  padding: '9px 6px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: modoLogin === 'codigo' ? 'linear-gradient(135deg, #0284c7, #2563eb)' : 'transparent',
-                  color: modoLogin === 'codigo' ? '#ffffff' : '#94a3b8',
-                  fontWeight: 800,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <i className="fa-solid fa-key"></i>
-                <span>Código 6 Dígitos</span>
-              </button>
-            </div>
-          )}
+          {/* Tarjeta 2: Formulario de Vinculación (6 Dígitos por defecto) */}
+          <div
+            style={{
+              background: 'rgba(15, 23, 42, 0.7)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '18px',
+              padding: '18px 16px',
+              marginBottom: '16px',
+              textAlign: 'center',
+            }}
+          >
+            {modoLogin === 'codigo' ? (
+              /* MODO POR DEFECTO: CÓDIGO DE 6 DÍGITOS */
+              <form onSubmit={handleVincular}>
+                <div style={{ fontSize: '11px', color: '#38bdf8', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.8px', marginBottom: '4px' }}>
+                  Paso 2: Conectar Teléfono
+                </div>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#f8fafc', margin: '0 0 6px 0' }}>
+                  Ingresa tu Código de 6 Dígitos
+                </h3>
+                <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 16px 0', lineHeight: 1.4 }}>
+                  Escribe el código numérico asignado por tu supervisor o la central para activar tu terminal.
+                </p>
 
-          {/* MODO 1: LOGIN CON USUARIO Y CONTRASEÑA */}
-          {empresaGuardada && modoLogin === 'credenciales' ? (
-            <form onSubmit={handleLoginUsuario} style={{ textAlign: 'left' }}>
-              <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 16px 0', lineHeight: '1.4', textAlign: 'center' }}>
-                Ingresa con tu usuario y contraseña de {empresaGuardada}.
-              </p>
-
-              <div style={{ marginBottom: '14px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    letterSpacing: '0.8px',
-                    textTransform: 'uppercase',
-                    color: '#38bdf8',
-                    marginBottom: '6px',
-                  }}
-                >
-                  Usuario
-                </label>
-                <input
-                  type="text"
-                  value={loginUsername}
-                  onChange={(e) => setLoginUsername(e.target.value)}
-                  placeholder="ej: chofer1"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  style={{
-                    width: '100%',
-                    height: '48px',
-                    background: '#0f172a',
-                    border: '1.5px solid #334155',
-                    borderRadius: '12px',
-                    color: '#ffffff',
-                    fontSize: '15px',
-                    padding: '0 14px',
-                    outline: 'none',
-                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3)',
-                  }}
-                  required
-                />
-              </div>
-
-              <div style={{ marginBottom: '22px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    letterSpacing: '0.8px',
-                    textTransform: 'uppercase',
-                    color: '#38bdf8',
-                    marginBottom: '6px',
-                  }}
-                >
-                  Contraseña
-                </label>
-                <div style={{ position: 'relative' }}>
+                <div style={{ marginBottom: '18px' }}>
                   <input
-                    type={mostrarPassword ? 'text' : 'password'}
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="••••••••"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={7}
+                    value={codigoInput}
+                    onChange={(e) => setCodigoInput(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000 000"
+                    autoFocus
                     style={{
                       width: '100%',
-                      height: '48px',
-                      background: '#0f172a',
-                      border: '1.5px solid #334155',
-                      borderRadius: '12px',
-                      color: '#ffffff',
-                      fontSize: '15px',
-                      padding: '0 44px 0 14px',
+                      height: '60px',
+                      background: '#090d16',
+                      border: '2px solid #0284c7',
+                      borderRadius: '16px',
+                      color: '#38bdf8',
+                      fontSize: '30px',
+                      fontWeight: 900,
+                      letterSpacing: '8px',
+                      textAlign: 'center',
                       outline: 'none',
-                      boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3)',
+                      boxShadow: '0 0 20px rgba(2, 132, 199, 0.25)',
                     }}
                     required
                   />
-                  <button
-                    type="button"
-                    onClick={() => setMostrarPassword(!mostrarPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '12px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#94a3b8',
-                      cursor: 'pointer',
-                      fontSize: '15px',
-                      padding: '4px',
-                    }}
-                  >
-                    <i className={`fa-solid ${mostrarPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
-                  </button>
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                disabled={iniciandoLogin || !loginUsername.trim() || !loginPassword.trim()}
-                style={{
-                  width: '100%',
-                  height: '50px',
-                  borderRadius: '14px',
-                  background:
-                    loginUsername.trim() && loginPassword.trim()
-                      ? 'linear-gradient(135deg, #0284c7, #2563eb)'
-                      : 'rgba(255, 255, 255, 0.1)',
-                  color: '#ffffff',
-                  border: 'none',
-                  fontSize: '15px',
-                  fontWeight: 800,
-                  cursor: loginUsername.trim() && loginPassword.trim() ? 'pointer' : 'not-allowed',
-                  boxShadow: loginUsername.trim() && loginPassword.trim() ? '0 8px 20px rgba(37, 99, 235, 0.4)' : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                {iniciandoLogin ? (
-                  <>
-                    <i className="fa-solid fa-circle-notch fa-spin"></i>
-                    <span>Iniciando Sesión...</span>
-                  </>
-                ) : (
-                  <>
-                    <i className="fa-solid fa-right-to-bracket"></i>
-                    <span>Iniciar Sesión</span>
-                  </>
-                )}
-              </button>
-            </form>
-          ) : (
-            /* MODO 2: VINCULACIÓN CON CÓDIGO DE 6 DÍGITOS */
-            <form onSubmit={handleVincular}>
-              <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 20px 0', lineHeight: '1.4' }}>
-                Ingresa el código numérico suministrado por tu administrador para vincular este teléfono.
-              </p>
-
-              <div style={{ marginBottom: '22px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    letterSpacing: '1px',
-                    textTransform: 'uppercase',
-                    color: '#38bdf8',
-                    marginBottom: '10px',
-                  }}
-                >
-                  Código de Vinculación
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={7}
-                  value={codigoInput}
-                  onChange={(e) => setCodigoInput(e.target.value)}
-                  placeholder="000 000"
+                <button
+                  type="submit"
+                  disabled={vinculando || codigoInput.trim().length < 6}
                   style={{
                     width: '100%',
-                    height: '62px',
-                    background: '#0f172a',
-                    border: '2px solid #334155',
-                    borderRadius: '16px',
-                    color: '#38bdf8',
-                    fontSize: '32px',
-                    fontWeight: 900,
-                    letterSpacing: '8px',
-                    textAlign: 'center',
-                    outline: 'none',
-                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.4)',
+                    height: '50px',
+                    borderRadius: '14px',
+                    background:
+                      codigoInput.trim().length >= 6
+                        ? 'linear-gradient(135deg, #10b981, #059669)'
+                        : 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '15px',
+                    fontWeight: 800,
+                    cursor: codigoInput.trim().length >= 6 ? 'pointer' : 'not-allowed',
+                    boxShadow: codigoInput.trim().length >= 6 ? '0 8px 20px rgba(16, 185, 129, 0.4)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    transition: 'all 0.2s ease',
                   }}
-                  required
-                />
-              </div>
+                >
+                  {vinculando ? (
+                    <>
+                      <i className="fa-solid fa-circle-notch fa-spin"></i>
+                      <span>Verificando Código...</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="fa-solid fa-key"></i>
+                      <span>Vincular y Comenzar</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            ) : (
+              /* MODO SECUNDARIO: LOGIN CON USUARIO Y CONTRASEÑA */
+              <form onSubmit={handleLoginUsuario} style={{ textAlign: 'left' }}>
+                <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '11px', color: '#38bdf8', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.8px', marginBottom: '4px' }}>
+                    Acceso Administrativo
+                  </div>
+                  <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#f8fafc', margin: '0 0 4px 0' }}>
+                    Iniciar con Usuario y Clave
+                  </h3>
+                  <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0 }}>
+                    Exclusivo para Supervisores, Taller y Administradores.
+                  </p>
+                </div>
 
-              <button
-                type="submit"
-                disabled={vinculando || codigoInput.trim().length < 6}
-                style={{
-                  width: '100%',
-                  height: '52px',
-                  borderRadius: '14px',
-                  background:
-                    codigoInput.trim().length >= 6
-                      ? 'linear-gradient(135deg, #0284c7, #2563eb)'
-                      : 'rgba(255, 255, 255, 0.1)',
-                  color: '#ffffff',
-                  border: 'none',
-                  fontSize: '15px',
-                  fontWeight: 800,
-                  cursor: codigoInput.trim().length >= 6 ? 'pointer' : 'not-allowed',
-                  boxShadow: codigoInput.trim().length >= 6 ? '0 8px 20px rgba(37, 99, 235, 0.4)' : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                {vinculando ? (
-                  <>
-                    <i className="fa-solid fa-circle-notch fa-spin"></i>
-                    <span>Verificando...</span>
-                  </>
-                ) : (
-                  <>
-                    <i className="fa-solid fa-mobile-screen-button"></i>
-                    <span>Vincular y Entrar</span>
-                  </>
-                )}
-              </button>
-            </form>
-          )}
+                <div style={{ marginBottom: '14px' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      letterSpacing: '0.8px',
+                      textTransform: 'uppercase',
+                      color: '#38bdf8',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    Usuario
+                  </label>
+                  <input
+                    type="text"
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    placeholder="ej: chofer1"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    style={{
+                      width: '100%',
+                      height: '46px',
+                      background: '#090d16',
+                      border: '1.5px solid #334155',
+                      borderRadius: '12px',
+                      color: '#ffffff',
+                      fontSize: '14.5px',
+                      padding: '0 14px',
+                      outline: 'none',
+                    }}
+                    required
+                  />
+                </div>
 
-          {/* Botón inferior para desvincular la empresa y conectar a otra */}
+                <div style={{ marginBottom: '18px' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      letterSpacing: '0.8px',
+                      textTransform: 'uppercase',
+                      color: '#38bdf8',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    Contraseña
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={mostrarPassword ? 'text' : 'password'}
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="••••••••"
+                      style={{
+                        width: '100%',
+                        height: '46px',
+                        background: '#090d16',
+                        border: '1.5px solid #334155',
+                        borderRadius: '12px',
+                        color: '#ffffff',
+                        fontSize: '14.5px',
+                        padding: '0 44px 0 14px',
+                        outline: 'none',
+                      }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMostrarPassword(!mostrarPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        fontSize: '15px',
+                        padding: '4px',
+                      }}
+                    >
+                      <i className={`fa-solid ${mostrarPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={iniciandoLogin || !loginUsername.trim() || !loginPassword.trim()}
+                  style={{
+                    width: '100%',
+                    height: '48px',
+                    borderRadius: '12px',
+                    background:
+                      loginUsername.trim() && loginPassword.trim()
+                        ? 'linear-gradient(135deg, #0284c7, #2563eb)'
+                        : 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '14.5px',
+                    fontWeight: 800,
+                    cursor: loginUsername.trim() && loginPassword.trim() ? 'pointer' : 'not-allowed',
+                    boxShadow: loginUsername.trim() && loginPassword.trim() ? '0 8px 20px rgba(37, 99, 235, 0.4)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  {iniciandoLogin ? (
+                    <>
+                      <i className="fa-solid fa-circle-notch fa-spin"></i>
+                      <span>Iniciando Sesión...</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="fa-solid fa-right-to-bracket"></i>
+                      <span>Iniciar Sesión</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+
+          {/* Enlace para alternar entre Código de 6 Dígitos y Usuario/Clave */}
+          <div style={{ marginTop: '10px' }}>
+            <button
+              type="button"
+              onClick={() => setModoLogin(modoLogin === 'credenciales' ? 'codigo' : 'credenciales')}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#38bdf8',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                textDecoration: 'underline',
+              }}
+            >
+              {modoLogin === 'credenciales' ? (
+                <>
+                  <i className="fa-solid fa-arrow-left"></i>
+                  <span>Volver a ingreso con Código de 6 Dígitos</span>
+                </>
+              ) : (
+                <>
+                  <i className="fa-solid fa-user-gear"></i>
+                  <span>¿Eres administrador o supervisor? Ingresar con Usuario y Clave</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Botón inferior si desea cambiar de empresa */}
           {empresaGuardada && (
-            <div style={{ marginTop: '22px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+            <div style={{ marginTop: '18px', paddingTop: '14px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
               <button
                 type="button"
                 onClick={handleDesvincular}
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  color: '#f87171',
-                  fontSize: '12px',
-                  fontWeight: 700,
+                  color: '#94a3b8',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
                 }}
               >
-                <i className="fa-solid fa-link-slash"></i>
-                <span>Desvincular Teléfono / Conectar a Otra Empresa</span>
-              </button>
-            </div>
-          )}
-
-          {!esInstalada && (
-            <div style={{ marginTop: '16px' }}>
-              <button
-                type="button"
-                onClick={handleInstalarApp}
-                style={{
-                  width: '100%',
-                  height: '48px',
-                  borderRadius: '14px',
-                  background: 'rgba(16, 185, 129, 0.15)',
-                  border: '1.5px solid rgba(16, 185, 129, 0.4)',
-                  color: '#34d399',
-                  fontSize: '13.5px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                }}
-              >
-                <i className="fa-solid fa-download"></i>
-                <span>Descargar / Instalar en mi Teléfono</span>
+                <i className="fa-solid fa-rotate"></i>
+                <span>Cambiar de Base de Datos ({empresaGuardada})</span>
               </button>
             </div>
           )}

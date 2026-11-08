@@ -26,6 +26,8 @@ import type {
 } from '@/types';
 import { dbLocal } from '@/lib/dbLocal';
 import { syncEngine } from '@/lib/syncEngine';
+import { CompaniaSelect } from '@/components/selectors/CompaniaSelect';
+import { ChoferSelect } from '@/components/selectors/ChoferSelect';
 
 interface DispositivoMovilData {
   token: string;
@@ -514,6 +516,39 @@ export const AppMovilPage: React.FC = () => {
   const [busquedaFinca, setBusquedaFinca] = useState('');
   const [fotoReciboVerModal, setFotoReciboVerModal] = useState<string | null>(null);
   const inputFotoReciboRef = useRef<HTMLInputElement | null>(null);
+
+  // =========================================================================
+  // ESTADOS MODAL ENTREGA DIRECTA A COMPAÑÍAS / RECEPTORÍA (1:1 V2_3_11_26)
+  // =========================================================================
+  interface FilaEntregaDirectaMovil {
+    companiaId: number;
+    litros: number | string;
+    tipoLeche: string;
+    origenServicio?: 'RUTA' | 'TRANSPORTE' | 'ACIDA';
+    origenFincasCount?: number;
+  }
+  const [modalEntregaDirecta, setModalEntregaDirecta] = useState(false);
+  const [filasEntregaDirecta, setFilasEntregaDirecta] = useState<FilaEntregaDirectaMovil[]>([
+    { companiaId: 0, litros: '', tipoLeche: 'VACA' },
+  ]);
+  const [obsEntregaDirecta, setObsEntregaDirecta] = useState('');
+  const [guardandoEntregaDirecta, setGuardandoEntregaDirecta] = useState(false);
+  const [listaCompaniasMovil, setListaCompaniasMovil] = useState<CompaniaDto[]>([]);
+
+  // =========================================================================
+  // ESTADOS MODAL TRASPASO DE LECHE A OTRO CHOFER (1:1 RecoleccionRutasPage)
+  // =========================================================================
+  const [modalTraspasoMovil, setModalTraspasoMovil] = useState(false);
+  const [modoTraspasoMovil, setModoTraspasoMovil] = useState<'EXISTENTE' | 'NUEVO'>('EXISTENTE');
+  const [formTraspasoMovil, setFormTraspasoMovil] = useState({
+    ticketDestinoId: 0,
+    litrosTraspaso: 0 as number | string,
+    observacion: '',
+  });
+  const [traspasoChoferDestinoId, setTraspasoChoferDestinoId] = useState<number>(0);
+  const [traspasoFechaDestino, setTraspasoFechaDestino] = useState<string>(hoyStr);
+  const [guardandoTraspaso, setGuardandoTraspaso] = useState(false);
+  const [viajesDisponiblesTraspaso, setViajesDisponiblesTraspaso] = useState<ControlRutaDto[]>([]);
 
   const comprimirImagenMovil = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -2611,6 +2646,315 @@ export const AppMovilPage: React.FC = () => {
   };
 
   // =========================================================================
+  // HANDLERS: ENTREGA DIRECTA A COMPAÑÍAS / RECEPTORÍA (1:1 V2_3_11_26)
+  // =========================================================================
+  const handleAbrirEntregaDirecta = async () => {
+    if (!viajeActivo) {
+      toast.error('No hay un viaje o ticket activo seleccionado');
+      return;
+    }
+
+    // 1. Obtener lista fresca de compañías si no están en memoria
+    let comps = listaCompaniasMovil;
+    if (!comps || comps.length === 0) {
+      try {
+        comps = await catalogosApi.getCompanias(true);
+        if (Array.isArray(comps)) {
+          setListaCompaniasMovil(comps);
+        }
+      } catch (err) {
+        console.warn('Error al cargar compañías para entrega directa:', err);
+      }
+    }
+    if (!comps || comps.length === 0) {
+      comps = companiasReceptoria || [];
+    }
+
+    // 2. Cargar paradas del ticket si no están o asegurar sincronización
+    let fincasT = paradasViajeActivo;
+    if (!fincasT || fincasT.length === 0) {
+      try {
+        const resParadas = await operacionesApi.getFincasViaje(viajeActivo.id);
+        if (Array.isArray(resParadas)) {
+          fincasT = resParadas;
+          setParadasViajeActivo(resParadas);
+        }
+      } catch (err) {
+        console.warn('Error al cargar paradas del viaje:', err);
+      }
+    }
+
+    const totalCamion = ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos || 0) > 0
+      ? ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos)
+      : (fincasT || []).reduce((a: number, f: any) => a + Number(f.litros || f.Litros || 0), 0);
+    const yaAsignado = (viajeActivo as any)._litrosEntregados || (viajeActivo as any).litrosEntregadosCompania || viajeActivo.totalLitrosEntregados || 0;
+    const faltante = Math.max(0, totalCamion - yaAsignado);
+
+    // Identificar compañía receptoría y transporte por defecto
+    const compRecep = (comps || []).find((c) => {
+      const nom = (c.nombre || '').toUpperCase();
+      return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA');
+    });
+
+    const compTranspDefault = (comps || []).find((c) => {
+      const nom = (c.nombre || '').toUpperCase();
+      const ts = Number((c as any).tipoServicioId || 1);
+      return ts === 2 || nom.includes('COLONA');
+    }) || (comps || []).find((c) => {
+      const nom = (c.nombre || '').toUpperCase();
+      return !nom.includes('RECEPTORIA') && !nom.includes('RECEPTORÍA');
+    });
+
+    // Detectar si alguna finca del ticket tiene compañía asignada
+    let compTicketTranspId: number | undefined = undefined;
+    const fincaConCompTransp = (fincasT || []).find(
+      (x: any) => Number(x.tipoServicioId || x.TipoServicioId) === 2 && (x.companiaId || x.CompaniaId)
+    );
+    if (fincaConCompTransp) {
+      compTicketTranspId = Number(fincaConCompTransp.companiaId || fincaConCompTransp.CompaniaId);
+    }
+    if (!compTicketTranspId && compTranspDefault) {
+      compTicketTranspId = compTranspDefault.id;
+    }
+
+    // Agrupar por destino (Compañía), tipo de leche y origen (Ruta vs Transporte vs Ácida)
+    const destinosAgrupados: Record<string, FilaEntregaDirectaMovil> = {};
+
+    if (fincasT && fincasT.length > 0) {
+      fincasT.forEach((f: any) => {
+        const rawTipo = (f.tipoLeche || f.TipoLeche || 'VACA').toUpperCase();
+        const isBuf = rawTipo.includes('BUFAL');
+        const obs = (f.observacion || f.Observacion || '').toUpperCase();
+        const esAcida =
+          f.esAcida === true ||
+          f.EsAcida === true ||
+          f.esAcida === 1 ||
+          f.EsAcida === 1 ||
+          String(f.esAcida).toLowerCase() === 'true' ||
+          String(f.EsAcida).toLowerCase() === 'true' ||
+          rawTipo.includes('ACID') ||
+          rawTipo.includes('ÁCID') ||
+          rawTipo.includes('MALA') ||
+          obs.includes('[ACIDA]') ||
+          obs.includes('[LECHE ÁCIDA]') ||
+          obs.includes('[LECHE ACIDA]') ||
+          obs.includes('ÁCIDA') ||
+          obs.includes('ACIDA') ||
+          obs.includes('MALA');
+
+        const tipo = esAcida ? (isBuf ? 'BUFALA_ACIDA' : 'ACIDA') : (isBuf ? 'BUFALA' : 'VACA');
+        const lts = Number(f.litros || f.Litros || 0);
+        const tipoServ = Number(f.tipoServicioId || f.TipoServicioId || 1);
+        const compFincaId = Number(f.companiaId || f.CompaniaId) || 0;
+
+        let targetCompId: number = 0;
+        let origenServ: 'RUTA' | 'TRANSPORTE' | 'ACIDA' = 'RUTA';
+
+        if (esAcida) {
+          origenServ = 'ACIDA';
+          targetCompId = compRecep ? compRecep.id : (compFincaId || (comps[0]?.id || 0));
+        } else if (tipoServ === 1) {
+          origenServ = 'RUTA';
+          targetCompId = compRecep ? compRecep.id : (compFincaId || (comps[0]?.id || 0));
+        } else {
+          // tipoServ === 2 (TRANSPORTE)
+          origenServ = 'TRANSPORTE';
+          targetCompId = compFincaId || compTicketTranspId || (comps[0]?.id || 0);
+        }
+
+        const key = `${targetCompId}_${tipo}_${origenServ}`;
+        if (!destinosAgrupados[key]) {
+          destinosAgrupados[key] = {
+            companiaId: targetCompId,
+            litros: 0,
+            tipoLeche: tipo,
+            origenServicio: origenServ,
+            origenFincasCount: 0,
+          };
+        }
+        destinosAgrupados[key].litros = Number(destinosAgrupados[key].litros) + lts;
+        destinosAgrupados[key].origenFincasCount = (destinosAgrupados[key].origenFincasCount || 0) + 1;
+      });
+    }
+
+    const filas = Object.values(destinosAgrupados).filter((d) => Number(d.litros) > 0);
+
+    if (filas.length > 0) {
+      setFilasEntregaDirecta(filas);
+    } else {
+      setFilasEntregaDirecta([
+        {
+          companiaId: (viajeActivo as any).companiaDestinoId || compRecep?.id || (comps.length > 0 ? comps[0].id : 0),
+          litros: faltante > 0 ? faltante : totalCamion,
+          tipoLeche: 'VACA',
+          origenServicio: 'RUTA',
+        },
+      ]);
+    }
+
+    setObsEntregaDirecta('');
+    setModalEntregaDirecta(true);
+  };
+
+  const handleSubmitEntregaDirecta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!viajeActivo) return;
+
+    if (filasEntregaDirecta.length === 0) {
+      toast.error('Agregue al menos un destino');
+      return;
+    }
+    for (let i = 0; i < filasEntregaDirecta.length; i++) {
+      const fila = filasEntregaDirecta[i];
+      if (!fila.companiaId || Number(fila.companiaId) <= 0) {
+        toast.error(`Seleccione la compañía en el renglón #${i + 1}`);
+        return;
+      }
+      if (!fila.litros || Number(fila.litros) <= 0) {
+        toast.error(`Ingrese litros válidos en el renglón #${i + 1}`);
+        return;
+      }
+    }
+
+    setGuardandoEntregaDirecta(true);
+    try {
+      const primeraFila = filasEntregaDirecta[0] || { companiaId: 0, litros: 0, tipoLeche: 'VACA' };
+      const resp = await operacionesApi.enviarACompania(viajeActivo.id, {
+        companiaId: Number(primeraFila.companiaId),
+        litrosDespachados: Number(primeraFila.litros || 0),
+        observacion: obsEntregaDirecta,
+        destinos: filasEntregaDirecta.map((f) => ({
+          companiaId: Number(f.companiaId),
+          litros: Number(f.litros || 0),
+          tipoLeche: f.tipoLeche || 'VACA',
+        })),
+      });
+
+      await Swal.fire({
+        icon: 'success',
+        title: '¡Entrega Registrada Exitosamente!',
+        text: resp?.message || 'Se registraron los despachos a compañía correctamente.',
+        confirmButtonColor: '#059669',
+        timer: 2800,
+        showConfirmButton: false,
+      });
+
+      setModalEntregaDirecta(false);
+      await cargarViajeActivo();
+      await cargarDespachoActivo();
+      await cargarEntregasChofer();
+      setTabActiva('entregas');
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al despachar a compañía / receptoría');
+    } finally {
+      setGuardandoEntregaDirecta(false);
+    }
+  };
+
+  // =========================================================================
+  // HANDLERS: TRASPASO DE LECHE A OTRO CHOFER (1:1 RecoleccionRutasPage)
+  // =========================================================================
+  const handleAbrirTraspasoMovil = async () => {
+    if (!viajeActivo) {
+      toast.error('No hay un viaje o ticket activo seleccionado');
+      return;
+    }
+
+    let fincasT = paradasViajeActivo;
+    if (!fincasT || fincasT.length === 0) {
+      try {
+        const resParadas = await operacionesApi.getFincasViaje(viajeActivo.id);
+        if (Array.isArray(resParadas)) {
+          fincasT = resParadas;
+          setParadasViajeActivo(resParadas);
+        }
+      } catch (err) {
+        console.warn('Error al cargar paradas:', err);
+      }
+    }
+
+    const totalCamion = ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos || 0) > 0
+      ? ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos)
+      : (fincasT || []).reduce((a: number, f: any) => a + Number(f.litros || f.Litros || 0), 0);
+    const yaAsignado = (viajeActivo as any)._litrosEntregados || (viajeActivo as any).litrosEntregadosCompania || viajeActivo.totalLitrosEntregados || 0;
+    const ltsDisponibles = Math.max(0, totalCamion - yaAsignado);
+
+    // Cargar viajes del día para tickets destino
+    try {
+      const fBusqueda = viajeActivo.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
+      const viajesHoy = await operacionesApi.getControles(fBusqueda);
+      const otrosViajes = Array.isArray(viajesHoy) ? viajesHoy.filter((v) => v.id !== viajeActivo.id && v.estado !== 'FINALIZADO') : [];
+      setViajesDisponiblesTraspaso(otrosViajes);
+    } catch (err) {
+      console.warn('Error al cargar viajes para traspaso:', err);
+    }
+
+    setModoTraspasoMovil('EXISTENTE');
+    setFormTraspasoMovil({
+      ticketDestinoId: 0,
+      litrosTraspaso: ltsDisponibles > 0 ? ltsDisponibles : totalCamion,
+      observacion: '',
+    });
+    setTraspasoChoferDestinoId(0);
+    setTraspasoFechaDestino(viajeActivo.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr);
+    setModalTraspasoMovil(true);
+  };
+
+  const handleSubmitTraspasoMovil = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!viajeActivo) return;
+
+    if (modoTraspasoMovil === 'EXISTENTE') {
+      if (!formTraspasoMovil.ticketDestinoId || Number(formTraspasoMovil.ticketDestinoId) <= 0) {
+        toast.error('Seleccione un viaje / cisterna destino');
+        return;
+      }
+    } else {
+      if (!traspasoChoferDestinoId || Number(traspasoChoferDestinoId) <= 0) {
+        toast.error('Seleccione el conductor de destino');
+        return;
+      }
+    }
+
+    if (!formTraspasoMovil.litrosTraspaso || Number(formTraspasoMovil.litrosTraspaso) <= 0) {
+      toast.error('Ingrese litros válidos a transferir');
+      return;
+    }
+
+    setGuardandoTraspaso(true);
+    try {
+      const payload: any = {
+        litrosTraspaso: Number(formTraspasoMovil.litrosTraspaso),
+        observacion: formTraspasoMovil.observacion,
+      };
+      if (modoTraspasoMovil === 'EXISTENTE') {
+        payload.ticketDestinoId = Number(formTraspasoMovil.ticketDestinoId);
+      } else {
+        payload.choferDestinoId = Number(traspasoChoferDestinoId);
+        payload.fechaDestino = traspasoFechaDestino;
+      }
+
+      const res = await operacionesApi.traspasarLeche(viajeActivo.id, payload);
+
+      await Swal.fire({
+        icon: 'success',
+        title: '¡Traspaso Realizado!',
+        text: res?.message || 'Se transfirieron los litros exitosamente.',
+        confirmButtonColor: '#0d9488',
+        timer: 2800,
+        showConfirmButton: false,
+      });
+
+      setModalTraspasoMovil(false);
+      await cargarViajeActivo();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al realizar el traspaso');
+    } finally {
+      setGuardandoTraspaso(false);
+    }
+  };
+
+  // =========================================================================
   // VISTA 1: DISPOSITIVO NO VINCULADO (ACTIVACIÓN NEUTRA)
   // =========================================================================
   if (!dispositivo) {
@@ -4225,35 +4569,57 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Botón Finalizar Recolección si ya recolectó */}
+                  {/* Botones de Receptoría/Compañía y Traspaso si ya recolectó */}
                   {viajeActivo && totalLitrosCargados > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        toast.success('Recolección completada. Revisa tu entrega de leche en la pestaña Entregas.');
-                        setTabActiva('entregas');
-                      }}
-                      style={{
-                        width: '100%',
-                        marginTop: '14px',
-                        background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '12px',
-                        padding: '12px',
-                        fontSize: '13px',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: '0 4px 14px rgba(79, 70, 229, 0.3)',
-                      }}
-                    >
-                      <i className="fa-solid fa-warehouse"></i>
-                      <span>Finalizar Recolección y Despachar a Receptoría</span>
-                    </button>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '14px' }}>
+                      <button
+                        type="button"
+                        onClick={handleAbrirEntregaDirecta}
+                        style={{
+                          width: '100%',
+                          background: 'linear-gradient(135deg, #059669, #10b981)',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '12px',
+                          padding: '12px 6px',
+                          fontSize: '12.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)',
+                        }}
+                      >
+                        <i className="fa-solid fa-building-circle-check"></i>
+                        <span>Receptoría/Compañía</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleAbrirTraspasoMovil}
+                        style={{
+                          width: '100%',
+                          background: 'linear-gradient(135deg, #0d9488, #14b8a6)',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '12px',
+                          padding: '12px 6px',
+                          fontSize: '12.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          boxShadow: '0 4px 14px rgba(13, 148, 136, 0.3)',
+                        }}
+                      >
+                        <i className="fa-solid fa-right-left"></i>
+                        <span>Traspaso</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -11708,6 +12074,674 @@ export const AppMovilPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL MÓVIL: ENTREGA DIRECTA A COMPAÑÍAS / RECEPTORÍA (1:1 V2_3_11_26)    */}
+      {/* ========================================================================= */}
+      {modalEntregaDirecta && viajeActivo && (() => {
+        const fincasT = paradasViajeActivo || [];
+        const totalCamion = ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos || 0) > 0
+          ? ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos)
+          : fincasT.reduce((a: number, f: any) => a + Number(f.litros || f.Litros || 0), 0);
+        const yaAsignado = (viajeActivo as any)._litrosEntregados || (viajeActivo as any).litrosEntregadosCompania || viajeActivo.totalLitrosEntregados || 0;
+        const faltante = Math.max(0, totalCamion - yaAsignado);
+        const sumaFilas = filasEntregaDirecta.reduce((acc, f) => acc + (Number(f.litros) || 0), 0);
+        const ltsDisponibles = faltante > 0 ? faltante : totalCamion;
+        const diferencia = ltsDisponibles - sumaFilas;
+
+        const unificarLitros = () => {
+          setFilasEntregaDirecta([
+            {
+              companiaId: filasEntregaDirecta[0]?.companiaId || (listaCompaniasMovil[0]?.id || 0),
+              litros: ltsDisponibles,
+              tipoLeche: 'VACA',
+            },
+          ]);
+        };
+
+        const agregarFila = () => {
+          setFilasEntregaDirecta([
+            ...filasEntregaDirecta,
+            { companiaId: listaCompaniasMovil[0]?.id || 0, litros: '', tipoLeche: 'VACA' },
+          ]);
+        };
+
+        const removerFila = (index: number) => {
+          if (filasEntregaDirecta.length > 1) {
+            setFilasEntregaDirecta(filasEntregaDirecta.filter((_, i) => i !== index));
+          }
+        };
+
+        const actualizarFila = (index: number, campo: keyof FilaEntregaDirectaMovil, valor: any) => {
+          const nuevas = [...filasEntregaDirecta];
+          nuevas[index] = { ...nuevas[index], [campo]: valor };
+          setFilasEntregaDirecta(nuevas);
+        };
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1200,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(4px)',
+              padding: '12px',
+            }}
+          >
+            <div
+              className="content-card"
+              style={{
+                maxWidth: '740px',
+                width: '100%',
+                maxHeight: '92vh',
+                display: 'flex',
+                flexDirection: 'column',
+                background: '#ffffff',
+                color: '#0f172a',
+                borderRadius: '16px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                overflow: 'hidden',
+                padding: 0,
+              }}
+            >
+              {/* Header gradiente verde esmeralda */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, #065f46, #059669, #10b981)',
+                  color: '#ffffff',
+                  padding: '16px 20px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
+                    style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '12px',
+                      background: 'rgba(255, 255, 255, 0.2)',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '19px',
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <i className="fa-solid fa-building-circle-check"></i>
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em' }}>
+                      Entrega Directa a Compañías / Receptoría
+                    </h2>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#d1fae5', fontWeight: 500 }}>
+                      Despacho directo o distribuido a una o varias queseras y receptoría
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalEntregaDirecta(false)}
+                  style={{
+                    color: '#ffffff',
+                    background: 'rgba(255,255,255,0.15)',
+                    border: 'none',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    fontSize: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    flexShrink: 0,
+                  }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              <form
+                onSubmit={handleSubmitEntregaDirecta}
+                style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
+              >
+                <div style={{ padding: '16px 20px', background: '#f8fafc', overflowY: 'auto', flex: 1 }}>
+                  {/* Subtexto del ticket */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', padding: '0 4px' }}>
+                    <span style={{ fontSize: '13px', color: '#334155', fontWeight: 700 }}>
+                      <i className="fa-solid fa-ticket" style={{ color: '#059669', marginRight: '6px' }}></i>
+                      Ticket #{viajeActivo.codigoTicket || viajeActivo.id} — Conductor: {viajeActivo.choferNombre || viajeActivo.nombreConductor || dispositivo?.nombreCompleto || 'Chofer'} ({viajeActivo.camionPlaca || dispositivo?.placaCamion || 'Cisterna'})
+                    </span>
+                  </div>
+
+                  {/* 3 Tarjetas de Métricas del Ticket */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{ background: '#ecfdf5', border: '1.5px solid #a7f3d0', borderBottomWidth: '3px', borderRadius: '10px', padding: '10px 8px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'block' }}>
+                        Total en Camión
+                      </span>
+                      <strong style={{ display: 'block', fontSize: '18px', fontWeight: 800, color: '#059669', marginTop: '2px' }}>
+                        {totalCamion.toLocaleString()} Lts
+                      </strong>
+                    </div>
+
+                    <div style={{ background: '#fdf4ff', border: '1.5px solid #f0abfc', borderBottomWidth: '3px', borderRadius: '10px', padding: '10px 8px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#86198f', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'block' }}>
+                        Ya Asignado
+                      </span>
+                      <strong style={{ display: 'block', fontSize: '18px', fontWeight: 800, color: '#9333ea', marginTop: '2px' }}>
+                        {yaAsignado.toLocaleString()} Lts
+                      </strong>
+                    </div>
+
+                    <div style={{ background: '#eff6ff', border: '1.5px solid #bfdbfe', borderBottomWidth: '3px', borderRadius: '10px', padding: '10px 8px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'block' }}>
+                        Falta Asignar
+                      </span>
+                      <strong style={{ display: 'block', fontSize: '18px', fontWeight: 800, color: '#2563eb', marginTop: '2px' }}>
+                        {faltante.toLocaleString()} Lts
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* SECCIÓN MULTI-COMPAÑÍAS */}
+                  <div style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '14px', marginBottom: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                      <label style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <i className="fa-solid fa-building" style={{ color: '#059669' }}></i> Destinos y Litros a Entregar
+                      </label>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={unificarLitros}
+                          style={{ fontSize: '12px', padding: '6px 12px', border: '1.5px solid #c084fc', color: '#6b21a8', background: '#faf5ff', fontWeight: 700, borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                          title="Unificar todos los litros en un solo destino"
+                        >
+                          <i className="fa-solid fa-arrows-to-circle" style={{ color: '#9333ea' }}></i> Unificar Litros
+                        </button>
+                        <button
+                          type="button"
+                          onClick={agregarFila}
+                          style={{ fontSize: '12px', padding: '6px 12px', border: '1.5px solid #a7f3d0', color: '#065f46', background: '#ecfdf5', fontWeight: 700, borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                        >
+                          <i className="fa-solid fa-plus-circle" style={{ color: '#059669' }}></i> + Añadir Destino / Compañía
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
+                      <div style={{ minWidth: '480px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 130px 120px 38px', gap: '8px', padding: '0 6px 6px 6px', fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
+                          <span>Destino / Quesera / Receptoría</span>
+                          <span>Tipo de Leche</span>
+                          <span style={{ textAlign: 'right', paddingRight: '12px' }}>Litros</span>
+                          <span></span>
+                        </div>
+
+                        {/* Filas dinámicas */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {filasEntregaDirecta.map((fila, idx) => (
+                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.8fr 130px 120px 38px', gap: '8px', alignItems: 'flex-end' }}>
+                              <div>
+                                {fila.origenServicio && (
+                                  <div style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {fila.origenServicio === 'TRANSPORTE' && (
+                                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#7e22ce', background: '#faf5ff', border: '1px solid #d8b4fe', padding: '1px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                        <i className="fa-solid fa-truck"></i> SERVICIO TRANSPORTE {fila.origenFincasCount ? `(${fila.origenFincasCount} finca${fila.origenFincasCount > 1 ? 's' : ''})` : ''}
+                                      </span>
+                                    )}
+                                    {fila.origenServicio === 'ACIDA' && (
+                                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fca5a5', padding: '1px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                        <i className="fa-solid fa-flask"></i> LECHE ÁCIDA SEPARADA
+                                      </span>
+                                    )}
+                                    {fila.origenServicio === 'RUTA' && (
+                                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '1px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                        <i className="fa-solid fa-road"></i> SERVICIO RUTA {fila.origenFincasCount ? `(${fila.origenFincasCount} finca${fila.origenFincasCount > 1 ? 's' : ''})` : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                <CompaniaSelect
+                                  value={fila.companiaId}
+                                  onChange={(val) => actualizarFila(idx, 'companiaId', val)}
+                                  placeholder="-- Seleccionar Compañía --"
+                                />
+                              </div>
+                              <div>
+                                <select
+                                  value={fila.tipoLeche}
+                                  onChange={(e) => actualizarFila(idx, 'tipoLeche', e.target.value)}
+                                  style={{ width: '100%', height: '40px', fontSize: '12.5px', fontWeight: 700, borderRadius: '8px', border: '1.5px solid #cbd5e1', padding: '0 8px', background: '#ffffff', color: '#0f172a' }}
+                                >
+                                  <option value="VACA">🥛 Vaca</option>
+                                  <option value="BUFALA">🐃 Búfala</option>
+                                  <option value="ACIDA">🍋 Ácida</option>
+                                  <option value="BUFALA_ACIDA">🍋🐃 Búfala Ácida</option>
+                                </select>
+                              </div>
+                              <div style={{ position: 'relative' }}>
+                                <input
+                                  type="number"
+                                  value={fila.litros}
+                                  onChange={(e) => actualizarFila(idx, 'litros', e.target.value === '' ? '' : Number(e.target.value))}
+                                  placeholder="0"
+                                  min="1"
+                                  step="1"
+                                  required
+                                  style={{ width: '100%', height: '40px', fontSize: '14px', fontWeight: 800, textAlign: 'right', paddingRight: '36px', color: '#059669', borderRadius: '8px', border: '1.5px solid #cbd5e1', background: '#ffffff' }}
+                                />
+                                <span style={{ position: 'absolute', right: '10px', top: '10px', fontSize: '12px', fontWeight: 700, color: '#64748b', pointerEvents: 'none' }}>
+                                  Lts
+                                </span>
+                              </div>
+                              <div>
+                                {filasEntregaDirecta.length > 1 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => removerFila(idx)}
+                                    style={{ width: '36px', height: '36px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                    title="Eliminar este destino"
+                                  >
+                                    <i className="fa-solid fa-trash-can"></i>
+                                  </button>
+                                ) : (
+                                  <div style={{ width: '36px', height: '36px' }}></div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Balance Volumétrico Live */}
+                  <div
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: '10px',
+                      marginBottom: '16px',
+                      textAlign: 'center',
+                      background: diferencia === 0 ? '#f0fdf4' : diferencia > 0 ? '#eff6ff' : '#fef2f2',
+                      border: `1.5px solid ${diferencia === 0 ? '#86efac' : diferencia > 0 ? '#93c5fd' : '#fca5a5'}`,
+                    }}
+                  >
+                    <div style={{ fontSize: '15.5px', fontWeight: 800, color: diferencia === 0 ? '#15803d' : diferencia > 0 ? '#1d4ed8' : '#b91c1c' }}>
+                      {diferencia === 0
+                        ? '✅ Total Distribuido con Precisión Exacta'
+                        : diferencia > 0
+                        ? `ℹ️ Faltan ${diferencia.toLocaleString()} Lts por asignar del tanque`
+                        : `⚠️ Exceso de ${Math.abs(diferencia).toLocaleString()} Lts sobre el volumen disponible`}
+                    </div>
+                    <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#64748b' }}>
+                      Suma actual a despachar: {sumaFilas.toLocaleString()} Lts de {ltsDisponibles.toLocaleString()} Lts disponibles
+                    </span>
+                  </div>
+
+                  {/* Observaciones */}
+                  <div>
+                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '5px', display: 'block' }}>
+                      <i className="fa-solid fa-comment-dots" style={{ color: '#64748b', marginRight: '4px' }}></i>
+                      Observación / Ticket de Pesaje Planta (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={obsEntregaDirecta}
+                      onChange={(e) => setObsEntregaDirecta(e.target.value)}
+                      placeholder="Ej: Ticket #5829, recibido por Ing. Romero..."
+                      style={{ height: '42px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '13px', background: '#ffffff', color: '#0f172a', width: '100%', padding: '0 12px' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 20px', background: '#ffffff', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 16px 16px', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => setModalEntregaDirecta(false)}
+                    style={{ height: '40px', padding: '0 18px', borderRadius: '8px', fontWeight: 600, border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', cursor: 'pointer' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={guardandoEntregaDirecta}
+                    style={{ background: 'linear-gradient(135deg, #059669, #10b981)', border: 'none', fontWeight: 700, padding: '0 22px', height: '40px', borderRadius: '8px', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(16,185,129,0.3)', cursor: 'pointer' }}
+                  >
+                    <i className="fa-solid fa-check-circle"></i> {guardandoEntregaDirecta ? 'Registrando...' : 'Registrar Entrega'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL MÓVIL: TRASPASO DE LECHE A OTRO CHOFER (1:1 RecoleccionRutasPage)   */}
+      {/* ========================================================================= */}
+      {modalTraspasoMovil && viajeActivo && (() => {
+        const fincasT = paradasViajeActivo || [];
+        const totalCamion = ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos || 0) > 0
+          ? ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos)
+          : fincasT.reduce((a: number, f: any) => a + Number(f.litros || f.Litros || 0), 0);
+        const yaAsignado = (viajeActivo as any)._litrosEntregados || (viajeActivo as any).litrosEntregadosCompania || viajeActivo.totalLitrosEntregados || 0;
+        const ltsDisponibles = Math.max(0, totalCamion - yaAsignado);
+
+        const previewDestinoNombre = (() => {
+          if (modoTraspasoMovil === 'EXISTENTE') {
+            const dest = viajesDisponiblesTraspaso.find((t) => t.id === Number(formTraspasoMovil.ticketDestinoId));
+            return dest ? `Ticket #${dest.codigoTicket || dest.id} - ${dest.choferNombre || dest.nombreConductor}` : 'Seleccionar Ticket Destino';
+          } else {
+            return traspasoChoferDestinoId ? `Chofer ID #${traspasoChoferDestinoId}` : 'Seleccionar Conductor';
+          }
+        })();
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1200,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(4px)',
+              padding: '12px',
+            }}
+          >
+            <div
+              className="content-card"
+              style={{
+                maxWidth: '540px',
+                width: '100%',
+                maxHeight: '92vh',
+                display: 'flex',
+                flexDirection: 'column',
+                borderRadius: '16px',
+                border: '1.5px solid #0d948840',
+                boxShadow: '0 20px 45px rgba(13, 148, 136, 0.2)',
+                overflow: 'hidden',
+                padding: 0,
+                background: '#ffffff',
+              }}
+            >
+              {/* Header gradiente teal */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%)',
+                  borderBottom: '1px solid #99f6e4',
+                  padding: '16px 20px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
+                    style={{
+                      background: '#0d9488',
+                      color: '#ffffff',
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '18px',
+                      boxShadow: '0 4px 10px rgba(13, 148, 136, 0.3)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <i className="fa-solid fa-right-left"></i>
+                  </div>
+                  <div>
+                    <h2 style={{ fontSize: '17px', fontWeight: 800, color: '#115e59', margin: 0 }}>
+                      Traspaso de Leche a Otro Chofer
+                    </h2>
+                    <p style={{ fontSize: '12px', color: '#0f766e', margin: '2px 0 0 0' }}>
+                      Transferir carga recolectada a otro conductor / viaje
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalTraspasoMovil(false)}
+                  style={{ color: '#0f766e', fontSize: '24px', background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1 }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              <form
+                onSubmit={handleSubmitTraspasoMovil}
+                style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
+              >
+                <div style={{ padding: '18px 20px', background: '#ffffff', overflowY: 'auto', flex: 1 }}>
+                  {/* RESUMEN DEL TICKET ORIGEN */}
+                  <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '12px 16px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Ticket Origen:</span>
+                      <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
+                        #{viajeActivo.codigoTicket || viajeActivo.id} - {viajeActivo.choferNombre || viajeActivo.nombreConductor || dispositivo?.nombreCompleto || 'Chofer'}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Volumen Disponible:</span>
+                      <div style={{ fontSize: '18px', fontWeight: 900, color: '#0d9488', marginTop: '2px' }}>
+                        {(ltsDisponibles > 0 ? ltsDisponibles : totalCamion).toLocaleString()} Lts
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SELECTOR DE MODO: EXISTENTE VS NUEVO */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                      <i className="fa-solid fa-layer-group" style={{ color: '#0d9488', marginRight: '4px' }}></i> Modo de Asignación del Ticket Destino:
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setModoTraspasoMovil('EXISTENTE')}
+                        style={{
+                          height: '36px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          borderRadius: '8px',
+                          background: modoTraspasoMovil === 'EXISTENTE' ? '#0d9488' : 'transparent',
+                          color: modoTraspasoMovil === 'EXISTENTE' ? '#ffffff' : '#475569',
+                          border: 'none',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <i className="fa-solid fa-ticket"></i> Ticket Ya Creado
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModoTraspasoMovil('NUEVO')}
+                        style={{
+                          height: '36px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          borderRadius: '8px',
+                          background: modoTraspasoMovil === 'NUEVO' ? '#0d9488' : 'transparent',
+                          color: modoTraspasoMovil === 'NUEVO' ? '#ffffff' : '#475569',
+                          border: 'none',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <i className="fa-solid fa-plus-circle"></i> Crear Ticket Automático
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* SECCIÓN MODO 1: TICKET YA CREADO */}
+                  {modoTraspasoMovil === 'EXISTENTE' ? (
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                        <i className="fa-solid fa-ticket-simple" style={{ color: '#0d9488' }}></i> Seleccionar Ticket de Destino *
+                      </label>
+                      <select
+                        value={formTraspasoMovil.ticketDestinoId}
+                        onChange={(e) => setFormTraspasoMovil({ ...formTraspasoMovil, ticketDestinoId: Number(e.target.value) })}
+                        style={{ width: '100%', height: '42px', fontSize: '13px', fontWeight: 700, color: '#0f172a', borderRadius: '8px', border: '1.5px solid #cbd5e1', padding: '0 10px', background: '#ffffff' }}
+                        required
+                      >
+                        <option value="0">-- Seleccione Cisterna / Viaje Destino --</option>
+                        {viajesDisponiblesTraspaso.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            Ticket #{t.codigoTicket || t.id} — {t.choferNombre || t.nombreConductor} ({t.camionPlaca || 'Cisterna'})
+                          </option>
+                        ))}
+                      </select>
+                      <small style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                        Selecciona el viaje abierto del chofer receptor que recibirá los litros.
+                      </small>
+                    </div>
+                  ) : (
+                    /* SECCIÓN MODO 2: CREAR NUEVO TICKET AUTOMÁTICAMENTE */
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '10px' }}>
+                        <div>
+                          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                            <i className="fa-solid fa-user-check" style={{ color: '#0d9488' }}></i> Chofer de Destino *
+                          </label>
+                          <ChoferSelect
+                            value={traspasoChoferDestinoId}
+                            onChange={(val) => setTraspasoChoferDestinoId(val)}
+                            placeholder="-- Seleccionar Conductor --"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                            <i className="fa-solid fa-calendar-day" style={{ color: '#0d9488' }}></i> Fecha del Ticket
+                          </label>
+                          <input
+                            type="date"
+                            value={traspasoFechaDestino}
+                            onChange={(e) => setTraspasoFechaDestino(e.target.value)}
+                            style={{ width: '100%', height: '42px', fontSize: '13px', fontWeight: 700, borderRadius: '8px', border: '1.5px solid #cbd5e1', padding: '0 10px', background: '#ffffff' }}
+                          />
+                        </div>
+                      </div>
+                      <small style={{ fontSize: '11px', color: '#0d9488', fontWeight: 600, marginTop: '6px', display: 'block' }}>
+                        ✨ Se creará automáticamente un nuevo ticket en estado ABIERTO para el chofer seleccionado.
+                      </small>
+                    </div>
+                  )}
+
+                  {/* VOLUMEN A TRASPASAR */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', margin: 0 }}>
+                        <i className="fa-solid fa-faucet-drip" style={{ color: '#0d9488' }}></i> Litros a Traspasar *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setFormTraspasoMovil({ ...formTraspasoMovil, litrosTraspaso: ltsDisponibles > 0 ? ltsDisponibles : totalCamion })}
+                        style={{ fontSize: '11px', fontWeight: 800, color: '#0d9488', background: '#f0fdfa', border: '1px solid #99f6e4', padding: '2px 8px', borderRadius: '6px', cursor: 'pointer' }}
+                      >
+                        Traspasar Todo el Tanque
+                      </button>
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="number"
+                        value={formTraspasoMovil.litrosTraspaso}
+                        onChange={(e) => setFormTraspasoMovil({ ...formTraspasoMovil, litrosTraspaso: e.target.value === '' ? '' : Number(e.target.value) })}
+                        min="1"
+                        step="1"
+                        required
+                        style={{ width: '100%', height: '44px', fontSize: '17px', fontWeight: 800, color: '#0d9488', background: '#f0fdfa', border: '2px solid #5eead4', paddingRight: '48px', paddingLeft: '12px', borderRadius: '8px' }}
+                      />
+                      <span style={{ position: 'absolute', right: '14px', top: '12px', fontSize: '13px', fontWeight: 800, color: '#0d9488', pointerEvents: 'none' }}>
+                        Lts
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* OBSERVACIÓN */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px', display: 'block' }}>
+                      <i className="fa-solid fa-comment-dots" style={{ color: '#64748b' }}></i> Nota / Motivo del Traspaso (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={formTraspasoMovil.observacion}
+                      onChange={(e) => setFormTraspasoMovil({ ...formTraspasoMovil, observacion: e.target.value })}
+                      placeholder="Ej: Traspaso de leche para completar viaje de despacho..."
+                      style={{ width: '100%', height: '40px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1', padding: '0 12px', background: '#ffffff' }}
+                    />
+                  </div>
+
+                  {/* DIAGRAMA VISUAL DE TRAZABILIDAD DEL TRASPASO */}
+                  <div style={{ background: '#f0fdfa', border: '1.5px dashed #5eead4', borderRadius: '12px', padding: '12px 14px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f766e', textTransform: 'uppercase', marginBottom: '6px' }}>
+                      <i className="fa-solid fa-route"></i> Flujo del Traspaso Logístico:
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '12px' }}>
+                      <div style={{ flex: 1, background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #ccfbf1', textAlign: 'center' }}>
+                        <span style={{ display: 'block', fontSize: '10.5px', color: '#64748b' }}>ORIGEN</span>
+                        <strong style={{ color: '#0f172a', fontSize: '12px' }}>
+                          {viajeActivo.choferNombre || viajeActivo.nombreConductor || dispositivo?.nombreCompleto || 'Chofer'}
+                        </strong>
+                      </div>
+                      <div style={{ color: '#0d9488', fontSize: '16px', fontWeight: 900 }}>
+                        <i className="fa-solid fa-arrow-right-long"></i>
+                      </div>
+                      <div style={{ flex: 1, background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #ccfbf1', textAlign: 'center' }}>
+                        <span style={{ display: 'block', fontSize: '10.5px', color: '#64748b' }}>DESTINO</span>
+                        <strong style={{ color: '#0d9488', fontSize: '12px' }}>
+                          {previewDestinoNombre}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 16px 16px', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => setModalTraspasoMovil(false)}
+                    style={{ height: '40px', padding: '0 18px', fontWeight: 600, border: '1px solid #cbd5e1', background: '#ffffff', color: '#475569', borderRadius: '8px', cursor: 'pointer' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={guardandoTraspaso}
+                    style={{ background: 'linear-gradient(135deg, #0d9488, #059669)', border: 'none', fontWeight: 800, padding: '0 22px', height: '40px', color: '#fff', borderRadius: '8px', boxShadow: '0 4px 14px rgba(13,148,136,0.3)', display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                  >
+                    <i className="fa-solid fa-right-left"></i> {guardandoTraspaso ? 'Traspasando...' : 'Confirmar Traspaso'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

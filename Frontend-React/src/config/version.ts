@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 2,
-  patch: 3,
-  tag: 'v3.2.3',
+  minor: 3,
+  patch: 1,
+  tag: 'v3.3.1',
   ultimaActualizacion: '2026-11-08',
-  tipoUltimoCambio: 'DISEÑO',
-  descripcion: 'Restauración explícita del fondo gris perla (#f8fafc) en MainLayout y ContentArea para toda la plataforma Web',
+  tipoUltimoCambio: 'DISEÑO_LOGICA',
+  descripcion: 'Móvil: incorporación de botones y modales independientes para Receptoría/Compañía (multi-destino 1:1) y Traspaso de leche',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

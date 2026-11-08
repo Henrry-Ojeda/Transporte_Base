@@ -770,7 +770,7 @@ export const RecoleccionRutasPage: React.FC = () => {
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
 
   const abrirModalRutasMasivo = (ticket?: any) => {
-    const tkt = ticket || viajeActivo || null;
+    const tkt = ticket || null;
     setMasivoControlRutaId(tkt ? tkt.id : null);
     setMasivoFecha(tkt?.fecha ? tkt.fecha.split('T')[0] : (fechaFiltro || hoyStr));
     setMasivoConductorId(tkt ? (tkt.usuarioId || tkt.conductorId || 0) : 0);
@@ -1442,7 +1442,6 @@ export const RecoleccionRutasPage: React.FC = () => {
           est !== 'CANCELADO' &&
           estP !== 'CERRADO' &&
           estP !== 'FINALIZADO' &&
-          v.procesoActualId !== 3 &&
           v.procesoActualId !== 4
         );
       });
@@ -5971,7 +5970,10 @@ export const RecoleccionRutasPage: React.FC = () => {
                   </label>
                   <ChoferSelect
                     value={masivoConductorId || undefined}
-                    onChange={(val) => setMasivoConductorId(Number(val) || 0)}
+                    onChange={(val) => {
+                      setMasivoConductorId(Number(val) || 0);
+                      setMasivoControlRutaId(null);
+                    }}
                     placeholder="-- SELECCIONAR CONDUCTOR --"
                   />
                 </div>

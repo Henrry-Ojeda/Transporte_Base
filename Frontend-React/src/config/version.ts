@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 7,
-  patch: 1,
-  tag: 'v3.7.1',
+  patch: 2,
+  tag: 'v3.7.2',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Web Carga Masiva: Flujo completo de entrega y recepción directa para choferes sin teléfono (hoja de ruta física) con destino, pesaje romana y cierre automático sin dejar tickets pendientes de receptoría',
+  descripcion: 'Web Carga Masiva: Desacople estricto de ticket al cambiar chofer, protección backend contra asignación cruzada de tickets, y preservación de tickets en Receptoría en vista activa',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

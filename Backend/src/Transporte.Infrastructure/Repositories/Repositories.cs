@@ -519,6 +519,18 @@ namespace Transporte.Infrastructure.Repositories
                 }
 
                 long? ticketId = dto.ControlRutaId;
+                if (ticketId.HasValue)
+                {
+                    // Validar estrictamente que el ticket pertenezca al conductor seleccionado
+                    var ownerId = await connection.ExecuteScalarAsync<int?>(
+                        "SELECT UsuarioId FROM TB_CONTROL_RUTAS WHERE Id = @ticketId", new { ticketId = ticketId.Value }, transaction);
+                    if (ownerId != choferEfectivo)
+                    {
+                        // El ticket enviado pertenece a otro chofer; desacoplar para crear/buscar el ticket propio de choferEfectivo
+                        ticketId = null;
+                    }
+                }
+
                 if (!ticketId.HasValue)
                 {
                     ticketId = await connection.ExecuteScalarAsync<long?>(

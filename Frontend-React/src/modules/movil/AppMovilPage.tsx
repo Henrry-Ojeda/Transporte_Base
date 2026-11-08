@@ -47,6 +47,7 @@ interface DispositivoMovilData {
 
 interface CargaOffline {
   localId: string;
+  dbLocalId?: number;
   fecha: string;
   hora: string;
   fincaId: number;
@@ -514,6 +515,31 @@ export const AppMovilPage: React.FC = () => {
   const authToken = useAuthStore((s) => s.token);
   const authEmpresa = authUser?.empresaNombre;
 
+  // Auto-sintetizar dispositivo si el usuario ya inició sesión en la plataforma
+  useEffect(() => {
+    if (!dispositivo && authUser && authToken) {
+      const dispData: DispositivoMovilData = {
+        token: authToken,
+        empresaCodigo: (authUser as any).empresaCodigo || 'EMPRESA',
+        empresaNombre: authUser.empresaNombre || 'Transporte',
+        id: authUser.id,
+        username: authUser.username,
+        nombreCompleto: authUser.nombreCompleto,
+        rol: authUser.rol,
+        permisoCrearViaje: (authUser as any).permisoCrearViaje ?? false,
+        camionId: (authUser as any).camionId,
+        placaCamion: (authUser as any).placaCamion,
+        capacidadTanqueLitros: (authUser as any).capacidadTanqueLitros || 6000,
+        permisos: authUser.permisos || [],
+        modulosHabilitados: (authUser as any).modulosHabilitados || [],
+      };
+      setDispositivo(dispData);
+      try {
+        localStorage.setItem('movil_device_info', JSON.stringify(dispData));
+      } catch {}
+    }
+  }, [authUser, authToken, dispositivo]);
+
   // Fecha de hoy por defecto
   const hoyStr = new Date().toISOString().split('T')[0];
 
@@ -853,8 +879,8 @@ export const AppMovilPage: React.FC = () => {
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          const maxWidth = 1200;
-          const maxHeight = 1200;
+          const maxWidth = 800;
+          const maxHeight = 800;
           let width = img.width;
           let height = img.height;
           if (width > height) {
@@ -877,7 +903,7 @@ export const AppMovilPage: React.FC = () => {
             return;
           }
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.82));
+          resolve(canvas.toDataURL('image/jpeg', 0.65));
         };
         img.onerror = reject;
         img.src = e.target?.result as string;
@@ -1091,9 +1117,25 @@ export const AppMovilPage: React.FC = () => {
     return () => clearInterval(intervalAutoSync);
   }, [dispositivo, isOnline, modoActivo, viajeSeleccionadoId]);
 
-  // Guardar cargas en LocalStorage cada vez que cambian
+  // Helper para persistencia segura de cargas locales tolerante a cuota de localStorage
+  const guardarCargasLocalSeguro = (listaCargas: CargaOffline[]) => {
+    try {
+      localStorage.setItem('movil_cargas_local', JSON.stringify(listaCargas));
+    } catch (e) {
+      console.warn('Quota de localStorage excedida por fotos, guardando versión ligera en localStorage:', e);
+      try {
+        const cargasLigeras = listaCargas.map((c) => ({
+          ...c,
+          fotoRecibo: c.fotoRecibo ? (c.fotoRecibo.length > 500 ? '[EN_INDEXEDDB]' : c.fotoRecibo) : undefined,
+        }));
+        localStorage.setItem('movil_cargas_local', JSON.stringify(cargasLigeras));
+      } catch {}
+    }
+  };
+
+  // Guardar cargas en LocalStorage cada vez que cambian (con protección anti-quota)
   useEffect(() => {
-    localStorage.setItem('movil_cargas_local', JSON.stringify(cargas));
+    guardarCargasLocalSeguro(cargas);
   }, [cargas]);
 
   // Auto-sincronización automática cuando se recupera o detecta conexión a internet
@@ -1148,14 +1190,16 @@ export const AppMovilPage: React.FC = () => {
     }
   }, [isOnline, esAdminReal]);
 
-  // Si estamos en línea y el dispositivo está vinculado, refrescar fincas, entregas, perfil, viaje activo y despacho activo
+  // Refrescar fincas, entregas, perfil, viaje activo y despacho activo (soporta online y offline sin interrupciones)
   useEffect(() => {
-    if (isOnline && dispositivo) {
-      cargarFincasServidor();
-      cargarEntregasChofer();
-      cargarPerfilServidor();
+    if (dispositivo) {
+      if (isOnline) {
+        cargarFincasServidor();
+        cargarPerfilServidor();
+      }
       cargarViajeActivo();
       cargarDespachoActivo();
+      cargarEntregasChofer();
     }
   }, [choferEfectivoId, isOnline, dispositivo]);
 
@@ -1293,15 +1337,24 @@ export const AppMovilPage: React.FC = () => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
 
-    // Si no hay red disponible, recuperar de LocalStorage
-    if (!navigator.onLine) {
+    // Si no hay red disponible, recuperar de LocalStorage inmediatamente
+    if (!navigator.onLine || !isOnline) {
       try {
-        const savedList = localStorage.getItem('movil_viajes_chofer');
-        if (savedList) setViajesChofer(JSON.parse(savedList));
-        const savedV = localStorage.getItem('movil_viaje_activo');
-        if (savedV) setViajeActivo(JSON.parse(savedV));
+        const savedList = localStorage.getItem(`movil_viajes_chofer_${idBusqueda}`) || localStorage.getItem('movil_viajes_chofer');
+        if (savedList) {
+          const listParsed = JSON.parse(savedList);
+          if (Array.isArray(listParsed)) setViajesChofer(listParsed);
+        }
+        const savedV = localStorage.getItem(`movil_viaje_activo_${idBusqueda}`) || localStorage.getItem('movil_viaje_activo');
+        if (savedV) {
+          const vParsed = JSON.parse(savedV);
+          if (vParsed && vParsed.id) setViajeActivo(vParsed);
+        }
         const savedP = localStorage.getItem('movil_paradas_activo');
-        if (savedP) setParadasViajeActivo(JSON.parse(savedP));
+        if (savedP) {
+          const pParsed = JSON.parse(savedP);
+          if (Array.isArray(pParsed)) setParadasViajeActivo(pParsed);
+        }
       } catch {}
       return;
     }
@@ -1321,7 +1374,10 @@ export const AppMovilPage: React.FC = () => {
       }
 
       setViajesChofer(lista);
-      try { localStorage.setItem('movil_viajes_chofer', JSON.stringify(lista)); } catch {}
+      try {
+        localStorage.setItem('movil_viajes_chofer', JSON.stringify(lista));
+        localStorage.setItem(`movil_viajes_chofer_${idBusqueda}`, JSON.stringify(lista));
+      } catch {}
 
       // 2. Determinar cuál viaje seleccionar
       let targetV: ControlRutaDto | null = null;
@@ -1349,6 +1405,7 @@ export const AppMovilPage: React.FC = () => {
         try {
           localStorage.setItem('movil_viaje_seleccionado_id', String(targetV.id));
           localStorage.setItem('movil_viaje_activo', JSON.stringify(targetV));
+          localStorage.setItem(`movil_viaje_activo_${idBusqueda}`, JSON.stringify(targetV));
         } catch {}
 
         if (targetV.camionId || targetV.camionPlaca) {
@@ -1379,7 +1436,7 @@ export const AppMovilPage: React.FC = () => {
           try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradas)); } catch {}
           setCargas((prev) => {
             const soloPendientes = prev.filter((c) => !c.synced);
-            try { localStorage.setItem('movil_cargas_local', JSON.stringify(soloPendientes)); } catch {}
+            guardarCargasLocalSeguro(soloPendientes);
             return soloPendientes;
           });
         }
@@ -1410,12 +1467,23 @@ export const AppMovilPage: React.FC = () => {
         }).catch(() => {});
       }
     } catch (err) {
-      console.warn('No se pudo sincronizar viajes activos con el servidor (manteniendo local):', err);
+      console.warn('No se pudo sincronizar viajes activos con el servidor (recuperando de caché local):', err);
       try {
-        const savedV = localStorage.getItem('movil_viaje_activo');
-        if (savedV && !viajeActivo) setViajeActivo(JSON.parse(savedV));
+        const savedList = localStorage.getItem(`movil_viajes_chofer_${idBusqueda}`) || localStorage.getItem('movil_viajes_chofer');
+        if (savedList) {
+          const listParsed = JSON.parse(savedList);
+          if (Array.isArray(listParsed) && listParsed.length > 0) setViajesChofer(listParsed);
+        }
+        const savedV = localStorage.getItem(`movil_viaje_activo_${idBusqueda}`) || localStorage.getItem('movil_viaje_activo');
+        if (savedV) {
+          const vParsed = JSON.parse(savedV);
+          if (vParsed && vParsed.id) setViajeActivo(vParsed);
+        }
         const savedP = localStorage.getItem('movil_paradas_activo');
-        if (savedP && (!paradasViajeActivo || paradasViajeActivo.length === 0)) setParadasViajeActivo(JSON.parse(savedP));
+        if (savedP) {
+          const pParsed = JSON.parse(savedP);
+          if (Array.isArray(pParsed) && pParsed.length > 0) setParadasViajeActivo(pParsed);
+        }
       } catch {}
     } finally {
       setCargandoViaje(false);
@@ -1426,6 +1494,18 @@ export const AppMovilPage: React.FC = () => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
     const targetRutaId = controlRutaIdTarget || viajeActivo?.id;
+
+    // Si no hay red disponible, recuperar de LocalStorage inmediatamente
+    if (!navigator.onLine || !isOnline) {
+      try {
+        const savedD = localStorage.getItem('movil_despacho_activo');
+        if (savedD) setDespachoActivo(JSON.parse(savedD));
+        const savedDs = localStorage.getItem('movil_despachos_activos');
+        if (savedDs) setDespachosActivos(JSON.parse(savedDs));
+      } catch {}
+      return;
+    }
+
     setCargandoDespacho(true);
     try {
       // 1. Consultar todos los tickets activos de despacho del chofer y viaje en curso
@@ -1433,6 +1513,10 @@ export const AppMovilPage: React.FC = () => {
       if (Array.isArray(activos) && activos.length > 0) {
         setDespachosActivos(activos);
         setDespachoActivo(activos[0]);
+        try {
+          localStorage.setItem('movil_despacho_activo', JSON.stringify(activos[0]));
+          localStorage.setItem('movil_despachos_activos', JSON.stringify(activos));
+        } catch {}
       } else {
         // Fallback al endpoint legacy
         let t = await operacionesApi.getTicketActivoDespachoChofer(idBusqueda);
@@ -1449,13 +1533,27 @@ export const AppMovilPage: React.FC = () => {
           });
           setDespachosActivos(enVia);
           setDespachoActivo(enVia.length > 0 ? enVia[0] : null);
+          try {
+            if (enVia.length > 0) localStorage.setItem('movil_despacho_activo', JSON.stringify(enVia[0]));
+            localStorage.setItem('movil_despachos_activos', JSON.stringify(enVia));
+          } catch {}
         } else {
           setDespachosActivos([t]);
           setDespachoActivo(t);
+          try {
+            localStorage.setItem('movil_despacho_activo', JSON.stringify(t));
+            localStorage.setItem('movil_despachos_activos', JSON.stringify([t]));
+          } catch {}
         }
       }
     } catch (err) {
-      console.warn('No se pudo sincronizar el despacho activo con el servidor:', err);
+      console.warn('No se pudo sincronizar el despacho activo con el servidor (recuperando de caché local):', err);
+      try {
+        const savedD = localStorage.getItem('movil_despacho_activo');
+        if (savedD) setDespachoActivo(JSON.parse(savedD));
+        const savedDs = localStorage.getItem('movil_despachos_activos');
+        if (savedDs) setDespachosActivos(JSON.parse(savedDs));
+      } catch {}
     } finally {
       setCargandoDespacho(false);
     }
@@ -1465,6 +1563,16 @@ export const AppMovilPage: React.FC = () => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
     const fEfectiva = fechaTarget || filtroFechaEntregas || hoyStr;
+
+    // Si no hay red disponible, recuperar de LocalStorage inmediatamente
+    if (!navigator.onLine || !isOnline) {
+      try {
+        const savedE = localStorage.getItem('movil_entregas_chofer');
+        if (savedE) setEntregas(JSON.parse(savedE));
+      } catch {}
+      return;
+    }
+
     setCargandoEntregas(true);
     try {
       const allDespachos = await operacionesApi.getDespachosCompanias(fEfectiva, undefined, undefined, undefined, idBusqueda);
@@ -1502,8 +1610,15 @@ export const AppMovilPage: React.FC = () => {
         return true;
       });
       setEntregas(misDespachos);
+      try {
+        localStorage.setItem('movil_entregas_chofer', JSON.stringify(misDespachos));
+      } catch {}
     } catch (err) {
-      console.warn('No se pudieron obtener entregas del servidor:', err);
+      console.warn('No se pudieron obtener entregas del servidor (recuperando de caché local):', err);
+      try {
+        const savedE = localStorage.getItem('movil_entregas_chofer');
+        if (savedE) setEntregas(JSON.parse(savedE));
+      } catch {}
     } finally {
       setCargandoEntregas(false);
     }
@@ -3124,11 +3239,13 @@ export const AppMovilPage: React.FC = () => {
       nuevasCargas = [nuevaCarga, ...cargas];
     }
     setCargas(nuevasCargas);
-    try { localStorage.setItem('movil_cargas_local', JSON.stringify(nuevasCargas)); } catch {}
+    guardarCargasLocalSeguro(nuevasCargas);
 
-    // Persistencia Robusta en IndexedDB Local
+    // Persistencia Robusta en IndexedDB Local (sin límite de tamaño por fotos)
     const codEmpresa = dispositivo?.empresaCodigo || 'EMPRESA';
+    const idLocalPrevio = idxExistente >= 0 ? cargas[idxExistente]?.dbLocalId : undefined;
     dbLocal.guardarRecoleccion({
+      idLocal: idLocalPrevio,
       empresaCodigo: codEmpresa,
       ticketId: viajeActivo?.id || 0,
       fincaId: Number(formCarga.fincaId),
@@ -3143,6 +3260,18 @@ export const AppMovilPage: React.FC = () => {
       observaciones: formCarga.observacion,
       fechaRegistro: new Date().toISOString(),
       estadoSync: 'PENDIENTE',
+    }).then((nuevoIdLocal) => {
+      if (nuevoIdLocal) {
+        setCargas((prev) => {
+          const upd = prev.map((c) =>
+            c.localId === nuevaCarga.localId || Number(c.fincaId) === Number(formCarga.fincaId)
+              ? { ...c, dbLocalId: nuevoIdLocal }
+              : c
+          );
+          guardarCargasLocalSeguro(upd);
+          return upd;
+        });
+      }
     }).catch((err) => console.warn('Error guardando en IndexedDB (tolerante):', err));
 
     // 6.- Actualizar inmediatamente las paradas locales para que el móvil las visualice sin wifi
@@ -3220,11 +3349,11 @@ export const AppMovilPage: React.FC = () => {
       }
 
       // 2. Marcar estado local como sincronizado
-      setCargas((prev) => prev.map((c) => ({ ...c, synced: true })));
-      try {
-        const cargasLoc = JSON.parse(localStorage.getItem('movil_cargas_local') || '[]');
-        localStorage.setItem('movil_cargas_local', JSON.stringify(cargasLoc.map((c: any) => ({ ...c, synced: true }))));
-      } catch {}
+      setCargas((prev) => {
+        const actualizadas = prev.map((c) => ({ ...c, synced: true }));
+        guardarCargasLocalSeguro(actualizadas);
+        return actualizadas;
+      });
 
       // 3. Actualizar paradas consolidadas y viaje activo desde la central
       await cargarViajeActivo();

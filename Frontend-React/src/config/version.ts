@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 9,
-  patch: 7,
-  tag: 'v3.9.7',
+  patch: 8,
+  tag: 'v3.9.8',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Receptoría Móvil: Conciliación y verificación de litros compatible con ControlRutaId y ControlCompaniaId; soporte para recibirEnReceptoria y sincronización total de estado a Finalizado',
+  descripcion: 'Modo Offline Móvil: Hidratación inmediata de viajes, turnos y paradas sin conexión; optimización y compresión de fotos con tolerancia a cuota de localStorage e IndexedDB resiliente',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

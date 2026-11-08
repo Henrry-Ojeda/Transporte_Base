@@ -1047,12 +1047,19 @@ export const RecoleccionRutasPage: React.FC = () => {
 
   const parseFechaExcel = (val: any): string => {
     if (!val) return '';
-    if (typeof val === 'number') {
-      const date = new Date(Math.round((val - 25569) * 86400 * 1000));
-      return date.toISOString().split('T')[0];
-    }
     const str = String(val).trim();
+
+    // 1. Número serial de Excel (número o string numérico: ej. 46323 o "46323")
+    const num = Number(str);
+    if (!isNaN(num) && num > 30000 && num < 75000) {
+      const date = new Date(Math.round((num - 25569) * 86400 * 1000));
+      return !isNaN(date.getTime()) ? date.toISOString().split('T')[0] : '';
+    }
+
+    // 2. Formato YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+    // 3. Formato DD/MM/YYYY o DD-MM-YYYY o YYYY/MM/DD
     const parts = str.split(/[/.-]/);
     if (parts.length === 3) {
       if (parts[0].length === 4) {
@@ -1060,7 +1067,15 @@ export const RecoleccionRutasPage: React.FC = () => {
       }
       return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
     }
-    return str;
+
+    // 4. Intentar Date estándar
+    const parsed = Date.parse(str);
+    if (!isNaN(parsed)) {
+      const d = new Date(parsed);
+      return !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : '';
+    }
+
+    return '';
   };
 
   const parseCondicionesEspecialesExcel = (fincaRaw: string, obsRaw: string = '') => {

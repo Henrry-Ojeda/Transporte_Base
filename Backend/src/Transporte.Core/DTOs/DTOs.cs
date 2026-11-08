@@ -1556,9 +1556,97 @@ namespace Transporte.Core.DTOs
     // =====================================================================
     // DTOs PARA CARGA MASIVA DE TICKETS DESDE EXCEL (SUPER ADMIN)
     // =====================================================================
+    public class FlexibleDateTimeNullableConverter : System.Text.Json.Serialization.JsonConverter<DateTime?>
+    {
+        public override DateTime? Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+        {
+            if (reader.TokenType == System.Text.Json.JsonTokenType.Null) return null;
+            if (reader.TokenType == System.Text.Json.JsonTokenType.Number)
+            {
+                if (reader.TryGetDouble(out double num) && num > 30000 && num < 75000)
+                {
+                    return DateTime.FromOADate(num);
+                }
+                return null;
+            }
+            if (reader.TokenType == System.Text.Json.JsonTokenType.String)
+            {
+                var str = reader.GetString()?.Trim();
+                if (string.IsNullOrWhiteSpace(str)) return null;
+
+                if (double.TryParse(str, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double serial) && serial > 30000 && serial < 75000)
+                {
+                    return DateTime.FromOADate(serial);
+                }
+
+                if (DateTime.TryParse(str, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime dtIso))
+                {
+                    return dtIso;
+                }
+
+                if (DateTime.TryParse(str, out DateTime dtLocal))
+                {
+                    return dtLocal;
+                }
+            }
+            return null;
+        }
+
+        public override void Write(System.Text.Json.Utf8JsonWriter writer, DateTime? value, System.Text.Json.JsonSerializerOptions options)
+        {
+            if (value.HasValue)
+                writer.WriteStringValue(value.Value.ToString("yyyy-MM-dd"));
+            else
+                writer.WriteNullValue();
+        }
+    }
+
+    public class FlexibleDateTimeConverter : System.Text.Json.Serialization.JsonConverter<DateTime>
+    {
+        public override DateTime Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+        {
+            if (reader.TokenType == System.Text.Json.JsonTokenType.Number)
+            {
+                if (reader.TryGetDouble(out double num) && num > 30000 && num < 75000)
+                {
+                    return DateTime.FromOADate(num);
+                }
+                return default;
+            }
+            if (reader.TokenType == System.Text.Json.JsonTokenType.String)
+            {
+                var str = reader.GetString()?.Trim();
+                if (string.IsNullOrWhiteSpace(str)) return default;
+
+                if (double.TryParse(str, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double serial) && serial > 30000 && serial < 75000)
+                {
+                    return DateTime.FromOADate(serial);
+                }
+
+                if (DateTime.TryParse(str, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime dtIso))
+                {
+                    return dtIso;
+                }
+
+                if (DateTime.TryParse(str, out DateTime dtLocal))
+                {
+                    return dtLocal;
+                }
+            }
+            return default;
+        }
+
+        public override void Write(System.Text.Json.Utf8JsonWriter writer, DateTime value, System.Text.Json.JsonSerializerOptions options)
+        {
+            writer.WriteStringValue(value.ToString("yyyy-MM-dd"));
+        }
+    }
+
     public class FilaValidarExcelDto
     {
         public int Index { get; set; }
+
+        [System.Text.Json.Serialization.JsonConverter(typeof(FlexibleDateTimeNullableConverter))]
         public DateTime? Fecha { get; set; }
         public int FincaId { get; set; }
         public string? FincaNombre { get; set; }
@@ -1603,6 +1691,7 @@ namespace Transporte.Core.DTOs
 
     public class FilaEjecutarExcelDto
     {
+        [System.Text.Json.Serialization.JsonConverter(typeof(FlexibleDateTimeConverter))]
         public DateTime Fecha { get; set; }
         public int FincaId { get; set; }
         public int ConductorId { get; set; }

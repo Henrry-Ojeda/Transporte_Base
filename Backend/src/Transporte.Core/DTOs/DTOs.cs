@@ -116,6 +116,13 @@ namespace Transporte.Core.DTOs
         public int? ConductorId { get; set; }
         public long? ControlRutaId { get; set; }
         public List<RegistrarRutaItemMasivoDto> Items { get; set; } = new();
+
+        // Soporte para completar flujo de entrega y recepción directa (choferes sin teléfono)
+        public bool RegistrarEntrega { get; set; } = false;
+        public int? CompaniaDestinoId { get; set; }
+        public int? LitrosRecibidosPlanta { get; set; }
+        public string? ObservacionEntrega { get; set; }
+        public bool FinalizarInmediato { get; set; } = true;
     }
 
     public class RutaItemOcrDto

@@ -613,13 +613,105 @@ namespace Transporte.Infrastructure.Repositories
 
                 if (ticketId.HasValue)
                 {
-                    await connection.ExecuteAsync(@"
-                        UPDATE TB_CONTROL_RUTAS
-                        SET TotalLitrosFinca = (SELECT ISNULL(SUM(Litros), 0) FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @ticketId),
-                            ModifiedAt = GETDATE(),
-                            ModifiedBy = @choferEfectivo
-                        WHERE Id = @ticketId",
-                        new { ticketId, choferEfectivo }, transaction);
+                    int totalLitrosFinca = await connection.ExecuteScalarAsync<int>(
+                        "SELECT ISNULL(SUM(Litros), 0) FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @ticketId",
+                        new { ticketId }, transaction);
+
+                    if (dto.RegistrarEntrega || (dto.CompaniaDestinoId.HasValue && dto.CompaniaDestinoId.Value > 0))
+                    {
+                        int targetCompaniaId = (dto.CompaniaDestinoId.HasValue && dto.CompaniaDestinoId.Value > 0)
+                            ? dto.CompaniaDestinoId.Value
+                            : 5028;
+
+                        var existeComp = await connection.ExecuteScalarAsync<int>(
+                            "SELECT COUNT(1) FROM TB_COMPANIAS WHERE Id = @targetCompaniaId", new { targetCompaniaId }, transaction);
+                        if (existeComp == 0)
+                        {
+                            targetCompaniaId = await connection.ExecuteScalarAsync<int>(
+                                "SELECT TOP 1 Id FROM TB_COMPANIAS WHERE UPPER(Nombre) LIKE '%RECEPTOR%' OR Activo = 1 ORDER BY Id ASC", transaction: transaction);
+                        }
+
+                        int litrosDespacho = totalLitrosFinca;
+                        int litrosRecibidos = (dto.LitrosRecibidosPlanta.HasValue && dto.LitrosRecibidosPlanta.Value > 0)
+                            ? dto.LitrosRecibidosPlanta.Value
+                            : totalLitrosFinca;
+                        int dif = totalLitrosFinca - litrosRecibidos;
+                        decimal merma = totalLitrosFinca > 0 ? Math.Round((Math.Abs(dif) * 100.0m) / totalLitrosFinca, 2) : 0.0m;
+                        bool esFinalizado = dto.FinalizarInmediato;
+                        string estadoDespacho = esFinalizado ? "FINALIZADO" : "EN VIA";
+                        int procesoId = esFinalizado ? 4 : 3;
+                        string estadoTicket = esFinalizado ? "FINALIZADO" : "RECEPCIONADO";
+                        string obsDespacho = string.IsNullOrWhiteSpace(dto.ObservacionEntrega)
+                            ? "Entrega y recepción registrada mediante Carga Masiva (Hoja de ruta física)."
+                            : dto.ObservacionEntrega.Trim();
+
+                        var ccExistenteId = await connection.ExecuteScalarAsync<long?>(
+                            "SELECT TOP 1 Id FROM TB_CONTROL_COMPANIAS WHERE ControlRutaId = @ticketId", new { ticketId }, transaction);
+
+                        if (ccExistenteId.HasValue)
+                        {
+                            await connection.ExecuteAsync(@"
+                                UPDATE TB_CONTROL_COMPANIAS
+                                SET CompaniaId = @targetCompaniaId,
+                                    LitrosDespachados = @litrosDespacho,
+                                    LitrosRecibidosCompania = @litrosRecibidos,
+                                    DiferenciaLitros = @dif,
+                                    PorcentajeMerma = @merma,
+                                    Estado = @estadoDespacho,
+                                    Observacion = @obsDespacho,
+                                    FechaSalida = ISNULL(FechaSalida, GETDATE()),
+                                    FechaLlegada = CASE WHEN @estadoDespacho = 'FINALIZADO' THEN GETDATE() ELSE FechaLlegada END,
+                                    ModifiedAt = GETDATE(),
+                                    ModifiedBy = @choferEfectivo
+                                WHERE Id = @ccId",
+                                new { targetCompaniaId, litrosDespacho, litrosRecibidos, dif, merma, estadoDespacho, obsDespacho, ccId = ccExistenteId.Value, choferEfectivo }, transaction);
+                        }
+                        else
+                        {
+                            await connection.ExecuteAsync(@"
+                                INSERT INTO TB_CONTROL_COMPANIAS 
+                                (Fecha, UsuarioId, CompaniaId, CicloId, LitrosDespachados, LitrosRecibidosCompania, DiferenciaLitros, PorcentajeMerma, Estado, TipoLeche, Observacion, ControlRutaId, FechaSalida, FechaLlegada, CreatedAt, CreatedBy)
+                                VALUES 
+                                (@fechaRuta, @choferEfectivo, @targetCompaniaId, @cicloId, @litrosDespacho, @litrosRecibidos, @dif, @merma, @estadoDespacho, 'VACA', @obsDespacho, @ticketId, GETDATE(), CASE WHEN @estadoDespacho = 'FINALIZADO' THEN GETDATE() ELSE NULL END, GETDATE(), @choferEfectivo)",
+                                new { fechaRuta, choferEfectivo, targetCompaniaId, cicloId, litrosDespacho, litrosRecibidos, dif, merma, estadoDespacho, obsDespacho, ticketId }, transaction);
+                        }
+
+                        await connection.ExecuteAsync(@"
+                            UPDATE TB_CONTROL_RUTAS
+                            SET TotalLitrosFinca = @totalLitrosFinca,
+                                TotalLitrosReceptoria = @litrosRecibidos,
+                                LitrosEntregadosCompania = @litrosRecibidos,
+                                DiferenciaLitros = @dif,
+                                DiferenciaReceptoria = @dif,
+                                DiferenciaCompania = @dif,
+                                MermaTotalLitros = @dif,
+                                PorcentajeMerma = @merma,
+                                Estado = @estadoTicket,
+                                ProcesoActualId = @procesoId,
+                                TipoDestino = 'COMPANIA_DIRECTA',
+                                CompaniaDestinoId = @targetCompaniaId,
+                                FechaEntregaCompania = GETDATE(),
+                                FechaLlegadaReceptoria = GETDATE(),
+                                ModifiedAt = GETDATE(),
+                                ModifiedBy = @choferEfectivo
+                            WHERE Id = @ticketId",
+                            new { totalLitrosFinca, litrosRecibidos, dif, merma, estadoTicket, procesoId, targetCompaniaId, ticketId, choferEfectivo }, transaction);
+
+                        await connection.ExecuteAsync(@"
+                            INSERT INTO TB_HISTORIAL_PROCESOS_TICKET (ControlRutaId, ProcesoId, FechaCambio, CambiadoPor, Observacion)
+                            VALUES (@ticketId, @procesoId, GETDATE(), @choferEfectivo, @obsHistorial)",
+                            new { ticketId, procesoId, choferEfectivo, obsHistorial = $"Entrega masiva directa a destino ({estadoTicket})" }, transaction);
+                    }
+                    else
+                    {
+                        await connection.ExecuteAsync(@"
+                            UPDATE TB_CONTROL_RUTAS
+                            SET TotalLitrosFinca = @totalLitrosFinca,
+                                ModifiedAt = GETDATE(),
+                                ModifiedBy = @choferEfectivo
+                            WHERE Id = @ticketId",
+                            new { totalLitrosFinca, ticketId, choferEfectivo }, transaction);
+                    }
                 }
 
                 transaction.Commit();

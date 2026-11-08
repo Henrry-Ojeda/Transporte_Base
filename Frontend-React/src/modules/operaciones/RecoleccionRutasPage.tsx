@@ -755,6 +755,13 @@ export const RecoleccionRutasPage: React.FC = () => {
   const [isOcrLoading, setIsOcrLoading] = useState(false);
   const [ocrMensaje, setOcrMensaje] = useState<string | null>(null);
 
+  // Estados de Entrega Directa y Recepción para Choferes sin Teléfono (Hoja Física)
+  const [masivoRegistrarEntrega, setMasivoRegistrarEntrega] = useState(true);
+  const [masivoCompaniaId, setMasivoCompaniaId] = useState<number>(0);
+  const [masivoLitrosRecibidos, setMasivoLitrosRecibidos] = useState<number | ''>('');
+  const [masivoComprobantePesaje, setMasivoComprobantePesaje] = useState<string>('');
+  const [masivoFinalizarInmediato, setMasivoFinalizarInmediato] = useState(true);
+
   const videoWebcamRef = useRef<HTMLVideoElement | null>(null);
   const canvasWebcamRef = useRef<HTMLCanvasElement | null>(null);
   const streamWebcamRef = useRef<MediaStream | null>(null);
@@ -770,6 +777,18 @@ export const RecoleccionRutasPage: React.FC = () => {
     setOcrMensaje(null);
     setIsOcrLoading(false);
     setCamaraActiva(false);
+
+    // Identificar compañía receptora por defecto
+    const compDefault = companias.find((c) => {
+      const nom = (c.nombre || '').toUpperCase();
+      return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA');
+    }) || companias[0];
+    setMasivoCompaniaId(compDefault ? compDefault.id : 0);
+    setMasivoRegistrarEntrega(true);
+    setMasivoLitrosRecibidos('');
+    setMasivoComprobantePesaje('');
+    setMasivoFinalizarInmediato(true);
+
     setMasivoFilas([
       { idTemp: Math.random().toString(), fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, observacion: '' },
     ]);
@@ -937,6 +956,10 @@ export const RecoleccionRutasPage: React.FC = () => {
           throw new Error(`La fila #${i + 1} debe tener una cantidad válida de litros.`);
         }
       }
+      const litrosEfectivosRecibidos = masivoLitrosRecibidos !== '' && Number(masivoLitrosRecibidos) > 0
+        ? Number(masivoLitrosRecibidos)
+        : totalLitrosMasivo;
+
       const payload = {
         fecha: masivoFecha,
         conductorId: masivoConductorId > 0 ? masivoConductorId : (viajeActivo?.usuarioId || user?.id || 1),
@@ -948,13 +971,26 @@ export const RecoleccionRutasPage: React.FC = () => {
           esAcida: f.esAcida,
           observacion: f.observacion || '',
         })),
+        registrarEntrega: masivoRegistrarEntrega,
+        companiaDestinoId: masivoRegistrarEntrega ? (masivoCompaniaId || (companias[0]?.id || 5028)) : null,
+        litrosRecibidosPlanta: masivoRegistrarEntrega ? litrosEfectivosRecibidos : null,
+        observacionEntrega: masivoComprobantePesaje || '',
+        finalizarInmediato: masivoFinalizarInmediato,
       };
       return operacionesApi.guardarRutasMasivo(payload);
     },
     onSuccess: (data) => {
-      toast.success(data.message || `Se registraron las recolecciones exitosamente.`);
+      Swal.fire({
+        icon: 'success',
+        title: masivoRegistrarEntrega ? '¡Recolección y Entrega Registrada!' : '¡Recolecciones Registradas!',
+        text: data.message || 'Se procesó la carga masiva física exitosamente.',
+        confirmButtonColor: '#059669',
+        timer: 2800,
+        showConfirmButton: false,
+      });
       queryClient.invalidateQueries({ queryKey: ['rutas-fincas-hoy'] });
       queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-despachos-hoy'] });
       setModalRutasMasivo(false);
       setMasivoFilas([]);
       detenerCamara();
@@ -2939,7 +2975,6 @@ export const RecoleccionRutasPage: React.FC = () => {
                   item.estado === 'AUDITADO' ||
                   item.estadoProceso === 'CERRADO' ||
                   item.estadoProceso === 'FINALIZADO' ||
-                  item.procesoActualId === 3 ||
                   item.procesoActualId === 4 ||
                   (!esRuta && item.esConfirmado);
 
@@ -6398,6 +6433,116 @@ export const RecoleccionRutasPage: React.FC = () => {
                   {totalLitrosMasivo.toLocaleString()} L
                 </span>
               </div>
+
+              {/* SECCIÓN: ENTREGA Y RECEPCIÓN DIRECTA (HOJA DE RUTA FÍSICA PARA CHOFERES SIN SMARTPHONE) */}
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: masivoRegistrarEntrega ? '1.5px solid #10b981' : '1.5px solid #e2e8f0',
+                  borderRadius: '10px',
+                  marginTop: '12px',
+                  padding: '12px 16px',
+                  boxShadow: masivoRegistrarEntrega ? '0 4px 14px rgba(16,185,129,0.08)' : 'none',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: masivoRegistrarEntrega ? '12px' : '0' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={masivoRegistrarEntrega}
+                      onChange={(e) => setMasivoRegistrarEntrega(e.target.checked)}
+                      style={{ width: '18px', height: '18px', accentColor: '#10b981', cursor: 'pointer' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: masivoRegistrarEntrega ? '#065f46' : '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <i className="fa-solid fa-truck-ramp-box" style={{ color: '#10b981' }}></i>
+                        Registrar Entrega y Recepción del Viaje (Hoja de Ruta Física)
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '2px' }}>
+                        Completa el ciclo normal de recepción/entrega sin dejar el ticket para enviar a receptoría.
+                      </div>
+                    </div>
+                  </label>
+                  {masivoRegistrarEntrega && (
+                    <span
+                      className="badge"
+                      style={{
+                        background: '#dcfce7',
+                        color: '#15803d',
+                        border: '1px solid #86efac',
+                        fontWeight: 800,
+                        fontSize: '11px',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                      }}
+                    >
+                      <i className="fa-solid fa-circle-check"></i> FLUJO COMPLETO ACTIVO
+                    </span>
+                  )}
+                </div>
+
+                {masivoRegistrarEntrega && (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1.2fr 1fr 1fr',
+                      gap: '12px',
+                      paddingTop: '12px',
+                      borderTop: '1px dashed #cbd5e1',
+                    }}
+                  >
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <i className="fa-solid fa-building" style={{ color: '#10b981', marginRight: '4px' }}></i> Receptoría / Planta Destino *
+                      </label>
+                      <select
+                        className="form-input"
+                        value={masivoCompaniaId}
+                        onChange={(e) => setMasivoCompaniaId(Number(e.target.value))}
+                        style={{ height: '38px', borderRadius: '7px', fontWeight: 700, fontSize: '12.5px', border: '1.5px solid #cbd5e1' }}
+                      >
+                        {companias.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.nombre} {(c as any).rif ? `- ${(c as any).rif}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <i className="fa-solid fa-scale-balanced" style={{ color: '#10b981', marginRight: '4px' }}></i> Litros Recibidos en Planta *
+                      </label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={masivoLitrosRecibidos !== '' ? masivoLitrosRecibidos : (totalLitrosMasivo || '')}
+                        onChange={(e) => setMasivoLitrosRecibidos(e.target.value === '' ? '' : Number(e.target.value))}
+                        placeholder={String(totalLitrosMasivo || 0)}
+                        style={{ height: '38px', borderRadius: '7px', fontWeight: 800, fontSize: '13.5px', border: '1.5px solid #cbd5e1', color: '#047857' }}
+                      />
+                      <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '3px' }}>
+                        Pre-llenado con los {totalLitrosMasivo.toLocaleString()} L de fincas.
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <i className="fa-solid fa-file-invoice" style={{ color: '#10b981', marginRight: '4px' }}></i> Ticket Romana / Comprobante
+                      </label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={masivoComprobantePesaje}
+                        onChange={(e) => setMasivoComprobantePesaje(e.target.value)}
+                        placeholder="Ej: Pesaje Romana #5820..."
+                        style={{ height: '38px', borderRadius: '7px', fontSize: '12px', border: '1.5px solid #cbd5e1' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* PIE DEL MODAL */}
@@ -6475,11 +6620,12 @@ export const RecoleccionRutasPage: React.FC = () => {
                 >
                   {guardarMasivoMutation.isPending ? (
                     <>
-                      <i className="fa-solid fa-spinner fa-spin"></i> Guardando Registros...
+                      <i className="fa-solid fa-spinner fa-spin"></i> Guardando y Procesando...
                     </>
                   ) : (
                     <>
-                      <i className="fa-solid fa-floppy-disk"></i> Guardar Todos los Registros
+                      <i className={`fa-solid ${masivoRegistrarEntrega ? 'fa-check-double' : 'fa-floppy-disk'}`}></i>{' '}
+                      {masivoRegistrarEntrega ? 'Guardar y Procesar Entrega' : 'Guardar Todos los Registros'}
                     </>
                   )}
                 </button>

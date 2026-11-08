@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 6,
+  minor: 7,
   patch: 1,
-  tag: 'v3.6.1',
+  tag: 'v3.7.1',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil Chofer: visualización separada de viajes múltiples por día (Turno 1 Mañana / Turno 2 Tarde) con fincas y métricas independientes, selector de turnos, y creación rápida de segundo viaje',
+  descripcion: 'Web Carga Masiva: Flujo completo de entrega y recepción directa para choferes sin teléfono (hoja de ruta física) con destino, pesaje romana y cierre automático sin dejar tickets pendientes de receptoría',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

@@ -69,7 +69,17 @@ export const operacionesApi = {
     return res.data;
   },
 
-  guardarRutasMasivo: async (payload: { fecha: string; conductorId: number; controlRutaId?: number | null; items: any[] }): Promise<{ message: string; ids?: any[] }> => {
+  guardarRutasMasivo: async (payload: {
+    fecha: string;
+    conductorId: number;
+    controlRutaId?: number | null;
+    items: any[];
+    registrarEntrega?: boolean;
+    companiaDestinoId?: number | null;
+    litrosRecibidosPlanta?: number | null;
+    observacionEntrega?: string;
+    finalizarInmediato?: boolean;
+  }): Promise<{ message: string; ids?: any[] }> => {
     const res = await apiClient.post('/rutas/masivo', payload);
     return res.data;
   },

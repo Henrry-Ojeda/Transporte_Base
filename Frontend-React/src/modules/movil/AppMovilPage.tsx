@@ -24,6 +24,8 @@ import type {
   CompaniaDto,
   CombustibleHistorialDto,
 } from '@/types';
+import { dbLocal } from '@/lib/dbLocal';
+import { syncEngine } from '@/lib/syncEngine';
 
 interface DispositivoMovilData {
   token: string;
@@ -758,8 +760,38 @@ export const AppMovilPage: React.FC = () => {
         toast.info(`📶 Señal disponible: enviando automáticamente ${pendientes.length} carga(s) a la central...`);
         sincronizarCargas(cargas);
       }
+      // Sincronizar todos los almacenes IndexedDB pendientes en segundo plano
+      syncEngine.sincronizarTodo(dispositivo.empresaCodigo, true).catch(() => {});
     }
   }, [isOnline]);
+
+  // Listener de eventos del SyncEngine (IndexedDB)
+  useEffect(() => {
+    const handleSyncComplete = (e: any) => {
+      const detail = e.detail;
+      if (detail && detail.totalSubidos > 0) {
+        if (dispositivo?.id) {
+          operacionesApi.getViajeActivo(dispositivo.id).then((v) => {
+            if (v && v.id) setViajeActivo(v);
+          }).catch(() => {});
+        }
+      }
+    };
+
+    const handleNotifAlerta = (e: any) => {
+      const d = e.detail;
+      if (d) {
+        toast.success(d.titulo, { description: d.mensaje });
+      }
+    };
+
+    window.addEventListener('transporte_sync_completada', handleSyncComplete);
+    window.addEventListener('transporte_notificacion_alerta', handleNotifAlerta);
+    return () => {
+      window.removeEventListener('transporte_sync_completada', handleSyncComplete);
+      window.removeEventListener('transporte_notificacion_alerta', handleNotifAlerta);
+    };
+  }, [dispositivo]);
 
   // Cargar catálogo de choferes para selector de administración si está online
   useEffect(() => {
@@ -983,11 +1015,39 @@ export const AppMovilPage: React.FC = () => {
         urgencia: formIncidente.urgencia,
         odometroKm: formIncidente.odometroKm ? Number(formIncidente.odometroKm) : undefined,
       });
+
+      // Persistir en IndexedDB local
+      dbLocal.guardarAveria({
+        empresaCodigo: dispositivo?.empresaCodigo || 'EMPRESA',
+        camionId: dispositivo.camionId,
+        conductorId: dispositivo.id,
+        titulo: formIncidente.titulo.trim(),
+        descripcion: formIncidente.descripcion.trim(),
+        urgencia: formIncidente.urgencia as any,
+        odometroKm: formIncidente.odometroKm ? Number(formIncidente.odometroKm) : null,
+        fecha: new Date().toISOString(),
+        estadoSync: 'SINCRONIZADO',
+      }).catch(() => {});
+
       toast.success(res.message || 'Avería enviada al Taller correctamente.');
       setFormIncidente({ titulo: '', descripcion: '', urgencia: 'MEDIA', odometroKm: '' });
       cargarMisIncidentesChofer();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al enviar reporte al taller.');
+      // Guardar en IndexedDB offline para sincronización posterior
+      dbLocal.guardarAveria({
+        empresaCodigo: dispositivo?.empresaCodigo || 'EMPRESA',
+        camionId: dispositivo.camionId,
+        conductorId: dispositivo.id,
+        titulo: formIncidente.titulo.trim(),
+        descripcion: formIncidente.descripcion.trim(),
+        urgencia: formIncidente.urgencia as any,
+        odometroKm: formIncidente.odometroKm ? Number(formIncidente.odometroKm) : null,
+        fecha: new Date().toISOString(),
+        estadoSync: 'PENDIENTE',
+      }).catch(() => {});
+
+      toast.warning('Avería guardada en la base de datos local. Se enviará al taller al tener señal.');
+      setFormIncidente({ titulo: '', descripcion: '', urgencia: 'MEDIA', odometroKm: '' });
     }
   };
 
@@ -1271,21 +1331,35 @@ export const AppMovilPage: React.FC = () => {
       return;
     }
     setGuardandoCombustible(true);
+    const origenTexto = formCombustible.origen === 'MATERA' ? 'LA MATERA (Tanque Interno)' : 'BOMBA COMERCIAL';
+    const tipoComb: 'GASOIL' | 'GASOLINA' = formCombustible.tipoCombustible === 'GASOLINA' ? 'GASOLINA' : 'GASOIL';
     try {
-      const origenTexto = formCombustible.origen === 'MATERA' ? 'LA MATERA (Tanque Interno)' : 'BOMBA COMERCIAL';
       const obsFinal = `[ORIGEN: ${origenTexto}] ${
         formCombustible.observaciones ? '- ' + formCombustible.observaciones.trim() : ''
       }${formCombustible.fotoComprobante ? ' [COMPROBANTE ADJUNTO]' : ''}`;
 
       const res = await combustibleApi.registrarDespacho({
         camionId: camionIdFinal,
-        tipoCombustible: formCombustible.tipoCombustible || 'GASOIL',
+        tipoCombustible: tipoComb,
         litros: lts,
         odometroKm: formCombustible.odometroKm ? Number(formCombustible.odometroKm) : undefined,
         fecha: hoyStr,
         controlRutaId: viajeActivo?.id || undefined,
         observaciones: obsFinal,
       });
+
+      // Persistir en IndexedDB local
+      dbLocal.guardarCombustible({
+        empresaCodigo: dispositivo?.empresaCodigo || 'EMPRESA',
+        choferId: dispositivo?.id || 0,
+        camionId: camionIdFinal,
+        tipoCombustible: tipoComb,
+        litros: lts,
+        odometroKm: formCombustible.odometroKm ? Number(formCombustible.odometroKm) : 0,
+        estacion: origenTexto,
+        fecha: new Date().toISOString(),
+        estadoSync: 'SINCRONIZADO',
+      }).catch(() => {});
 
       toast.success(res.message || 'Carga de combustible registrada exitosamente');
       setFormCombustible({
@@ -1298,7 +1372,28 @@ export const AppMovilPage: React.FC = () => {
       });
       cargarHistorialCombustible();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al registrar carga de combustible');
+      // Guardar en IndexedDB offline si no hay conexión
+      dbLocal.guardarCombustible({
+        empresaCodigo: dispositivo?.empresaCodigo || 'EMPRESA',
+        choferId: dispositivo?.id || 0,
+        camionId: camionIdFinal,
+        tipoCombustible: tipoComb,
+        litros: lts,
+        odometroKm: formCombustible.odometroKm ? Number(formCombustible.odometroKm) : 0,
+        estacion: origenTexto,
+        fecha: new Date().toISOString(),
+        estadoSync: 'PENDIENTE',
+      }).catch(() => {});
+
+      toast.warning('Sin conexión al servidor. Combustible guardado en el teléfono; se enviará automáticamente al tener señal.');
+      setFormCombustible({
+        litros: '',
+        origen: 'BOMBA',
+        odometroKm: '',
+        fotoComprobante: '',
+        observaciones: '',
+        tipoCombustible: 'GASOIL',
+      });
     } finally {
       setGuardandoCombustible(false);
     }
@@ -2414,6 +2509,25 @@ export const AppMovilPage: React.FC = () => {
     }
     setCargas(nuevasCargas);
     try { localStorage.setItem('movil_cargas_local', JSON.stringify(nuevasCargas)); } catch {}
+
+    // Persistencia Robusta en IndexedDB Local
+    const codEmpresa = dispositivo?.empresaCodigo || 'EMPRESA';
+    dbLocal.guardarRecoleccion({
+      empresaCodigo: codEmpresa,
+      ticketId: viajeActivo?.id || 0,
+      fincaId: Number(formCarga.fincaId),
+      fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
+      productorNombre: fincaSel?.productor || '',
+      litros: litrosNum,
+      tipoLeche: formCarga.tipoLeche === 'BUFALA' ? 'BUFALA' : 'VACA',
+      esDiferida: Boolean(formCarga.esDiferido),
+      esAcida: formCarga.esAcida,
+      temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : null,
+      foto: formCarga.fotoRecibo || null,
+      observaciones: formCarga.observacion,
+      fechaRegistro: new Date().toISOString(),
+      estadoSync: 'PENDIENTE',
+    }).catch((err) => console.warn('Error guardando en IndexedDB (tolerante):', err));
 
     // 6.- Actualizar inmediatamente las paradas locales para que el móvil las visualice sin wifi
     setParadasViajeActivo((prev) => {

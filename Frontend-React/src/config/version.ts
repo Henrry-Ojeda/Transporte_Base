@@ -20,13 +20,13 @@ export interface VersionInfo {
 }
 
 export const VERSION_DATA: VersionInfo = {
-  major: 2,
-  minor: 4,
+  major: 3,
+  minor: 1,
   patch: 1,
-  tag: 'v2.4.1',
+  tag: 'v3.1.1',
   ultimaActualizacion: '2026-11-08',
-  tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Selector Gasoil/Gasolina Móvil y Web, Paridad Estricta de Fincas Recolectadas y Orden Cronológico de Recolección',
+  tipoUltimoCambio: 'ESTRUCTURA',
+  descripcion: 'Arquitectura de Base de Datos Local IndexedDB y Motor de Sincronización Bidireccional Multi-Rol (Chofer, Taller, Receptoría, Admin/SuperAdmin)',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

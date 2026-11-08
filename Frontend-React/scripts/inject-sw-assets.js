@@ -71,3 +71,4 @@ if (fs.existsSync(path.dirname(backendWwwrootSw))) {
 }
 
 console.log(`[SW-Inject] ¡sw.js actualizado exitosamente con ${staticAssets.length} activos para offline en ${version}!`);
+

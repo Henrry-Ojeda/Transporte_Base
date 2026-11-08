@@ -500,6 +500,8 @@ export const AppMovilPage: React.FC = () => {
     plan: PlanificacionRutaChoferDto;
     fincaId: number;
   } | null>(null);
+  const [busquedaFincaRapida, setBusquedaFincaRapida] = useState('');
+  const [filtroEnVivo, setFiltroEnVivo] = useState<'activos' | 'hoy' | 'anteriores' | 'todos'>('activos');
 
   const [modalCircuito, setModalCircuito] = useState<{
     open: boolean;
@@ -1399,7 +1401,8 @@ export const AppMovilPage: React.FC = () => {
   const cargarDatosAdminEnVivo = async () => {
     setCargandoViajesEnVivo(true);
     try {
-      const viajes = await operacionesApi.getControles(hoyStr);
+      // Cargar todos los controles disponibles (sin restringir por fecha de hoy para ver tickets activos de días anteriores como #21303)
+      const viajes = await operacionesApi.getControles();
       setViajesEnVivo(Array.isArray(viajes) ? viajes : []);
     } catch {
       console.warn('Error al cargar viajes en vivo para admin.');
@@ -1469,7 +1472,23 @@ export const AppMovilPage: React.FC = () => {
       return;
     }
 
-    const litrosEst = modalPlanificar.fincasIds.reduce((sum, fid) => {
+    // Asegurar que ninguna finca que ya recolectó leche en esta ruta pueda ser eliminada
+    const planActual = planificaciones.find((p) => p.id === modalPlanificar.id);
+    const controlAsociado = planActual?.controlRutaId
+      ? viajesEnVivo.find((v) => v.id === planActual.controlRutaId)
+      : viajesEnVivo.find((v) => v.camionId === modalPlanificar.camionId && (v.procesoActualId || 1) < 4);
+    const paradasConLeche = (controlAsociado as any)?.paradas || (controlAsociado as any)?.fincasDetalle || [];
+    const fincasConLecheIds = paradasConLeche
+      .filter((p: any) => Number(p.litros || p.litrosLeche || p.litrosCargados || 0) > 0)
+      .map((p: any) => Number(p.fincaId || p.FincaId))
+      .filter((id: number) => id > 0);
+    if (planActual?.fincasRecolectadasIds) {
+      planActual.fincasRecolectadasIds.forEach((fId) => fincasConLecheIds.push(fId));
+    }
+
+    const fincasFinales = Array.from(new Set([...modalPlanificar.fincasIds, ...fincasConLecheIds]));
+
+    const litrosEst = fincasFinales.reduce((sum, fid) => {
       const p = fincasPromedio.find((fp) => fp.fincaId === fid);
       return sum + (p?.promedioLitros || 0);
     }, 0);
@@ -1477,11 +1496,11 @@ export const AppMovilPage: React.FC = () => {
     try {
       const dto: GuardarPlanificacionRutaChoferDto = {
         id: modalPlanificar.esEdicion ? modalPlanificar.id : undefined,
-        fecha: fechaLogistica,
+        fecha: modalPlanificar.esEdicion && planActual?.fecha ? planActual.fecha.split('T')[0] : fechaLogistica,
         camionId: modalPlanificar.camionId,
         conductorId: modalPlanificar.conductorId,
         rutaLogisticaId: modalPlanificar.rutaLogisticaId || undefined,
-        fincasIds: modalPlanificar.fincasIds,
+        fincasIds: fincasFinales,
         litrosEstimados: Math.round(litrosEst),
         observacion: modalPlanificar.observacion.trim() || undefined,
       };
@@ -8971,9 +8990,32 @@ export const AppMovilPage: React.FC = () => {
         {/* ===================================================================
             PESTAÑA: ADMIN EN VIVO (CISTERNAS EN RUTA)
            =================================================================== */}
-        {tabActiva === 'admin_envivo' && (
+        {tabActiva === 'admin_envivo' && (() => {
+          const viajesHoy = viajesEnVivo.filter((v) => (v.fecha || '').split('T')[0] === hoyStr);
+          const viajesActivosTotales = viajesEnVivo.filter((v) => {
+            const est = String(v.estado || '').toUpperCase();
+            return (v.procesoActualId || 1) < 4 && est !== 'FINALIZADO' && est !== 'CERRADO' && est !== 'AUDITADO' && est !== 'CUADRADO';
+          });
+          const viajesActivosAnteriores = viajesActivosTotales.filter((v) => (v.fecha || '').split('T')[0] !== hoyStr);
+          const viajesActivosHoy = viajesActivosTotales.filter((v) => (v.fecha || '').split('T')[0] === hoyStr);
+
+          const litrosHoy = viajesHoy.reduce((acc, v) => acc + (v.totalLitrosFinca || v.totalLitrosRecogidos || 0), 0);
+          const litrosActivosAnteriores = viajesActivosAnteriores.reduce((acc, v) => acc + (v.totalLitrosFinca || v.totalLitrosRecogidos || 0), 0);
+          const litrosTotalesActivos = viajesActivosTotales.reduce((acc, v) => acc + (v.totalLitrosFinca || v.totalLitrosRecogidos || 0), 0);
+          const paradasTotalesActivas = viajesActivosTotales.reduce((acc, v) => acc + (v.fincasDetalle?.length || (v as any).paradas?.length || (v as any).totalParadas || 0), 0);
+
+          let viajesAMostrar = viajesActivosTotales;
+          if (filtroEnVivo === 'hoy') {
+            viajesAMostrar = viajesHoy;
+          } else if (filtroEnVivo === 'anteriores') {
+            viajesAMostrar = viajesActivosAnteriores;
+          } else if (filtroEnVivo === 'todos') {
+            viajesAMostrar = viajesEnVivo;
+          }
+
+          return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* Header En Vivo */}
+            {/* Header En Vivo con Distinción Clara de Fechas */}
             <div
               style={{
                 background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
@@ -9025,25 +9067,60 @@ export const AppMovilPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* KPIs Rápidos */}
+              {/* KPIs Rápidos con Distinción Exacta de Hoy vs Días Anteriores */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '16px' }}>
-                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '12px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '18px', fontWeight: 900, color: '#38bdf8' }}>{viajesEnVivo.length}</div>
-                  <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>VIAJES HOY</div>
-                </div>
-                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '12px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '18px', fontWeight: 900, color: '#4ade80' }}>
-                    {viajesEnVivo.reduce((acc, v) => acc + (v.totalLitrosFinca || v.totalLitrosRecogidos || 0), 0).toLocaleString()} L
+                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '12px', padding: '10px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 900, color: '#38bdf8' }}>{viajesActivosTotales.length}</div>
+                  <div style={{ fontSize: '10px', color: '#bae6fd', fontWeight: 800 }}>CISTERNAS ACTIVAS</div>
+                  <div style={{ fontSize: '9px', color: '#bfdbfe', marginTop: '3px', fontWeight: 700 }}>
+                    {viajesActivosHoy.length} Hoy • {viajesActivosAnteriores.length} Ant.
                   </div>
-                  <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>RECOLECTADOS</div>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '12px', padding: '10px', textAlign: 'center' }}>
+
+                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '12px', padding: '10px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '17px', fontWeight: 900, color: '#4ade80' }}>
+                    {litrosTotalesActivos.toLocaleString()} L
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#bbf7d0', fontWeight: 800 }}>LITROS EN RUTA</div>
+                  <div style={{ fontSize: '9px', color: '#86efac', marginTop: '3px', fontWeight: 700 }}>
+                    {litrosHoy > 0 ? `${litrosHoy.toLocaleString()} L Hoy` : '0 L Hoy'}
+                    {litrosActivosAnteriores > 0 && ` • ${litrosActivosAnteriores.toLocaleString()} L Ant.`}
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '12px', padding: '10px 8px', textAlign: 'center' }}>
                   <div style={{ fontSize: '18px', fontWeight: 900, color: '#facc15' }}>
-                    {viajesEnVivo.reduce((acc, v) => acc + (v.fincasDetalle?.length || (v as any).paradas?.length || (v as any).totalParadas || 0), 0)}
+                    {paradasTotalesActivas}
                   </div>
-                  <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>PARADAS</div>
+                  <div style={{ fontSize: '10px', color: '#fef08a', fontWeight: 800 }}>PARADAS EN RUTA</div>
+                  <div style={{ fontSize: '9px', color: '#fde047', marginTop: '3px', fontWeight: 700 }}>
+                    En Recolección
+                  </div>
                 </div>
               </div>
+
+              {/* Banner Informativo si hay viajes activos de días anteriores */}
+              {viajesActivosAnteriores.length > 0 && (
+                <div
+                  style={{
+                    marginTop: '12px',
+                    background: 'rgba(254, 240, 138, 0.18)',
+                    border: '1px solid rgba(250, 204, 21, 0.4)',
+                    borderRadius: '10px',
+                    padding: '8px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '11px',
+                    color: '#fef9c3',
+                  }}
+                >
+                  <i className="fa-solid fa-clock-rotate-left text-yellow-300"></i>
+                  <span>
+                    Hay <strong>{viajesActivosAnteriores.length} viaje(s) activo(s)</strong> de fechas anteriores ({litrosActivosAnteriores.toLocaleString()} L en ruta).
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* TARJETA DE GESTIÓN DE AUTORIZACIONES CHOFERES (ADMIN/SUPERADMIN) */}
@@ -9116,15 +9193,91 @@ export const AppMovilPage: React.FC = () => {
 
             {/* Lista de Camiones Cisterna En Ruta */}
             <div>
-              <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
-                Cisternas en Operación ({viajesEnVivo.length})
-              </h4>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
+                  Cisternas en Operación ({viajesAMostrar.length})
+                </h4>
+              </div>
+
+              {/* Filtros de Pestaña para Admin En Vivo */}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', overflowX: 'auto', paddingBottom: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEnVivo('activos')}
+                  style={{
+                    background: filtroEnVivo === 'activos' ? '#0284c7' : '#f1f5f9',
+                    color: filtroEnVivo === 'activos' ? '#ffffff' : '#64748b',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '5px 10px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  ⚡ Activos Totales ({viajesActivosTotales.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroEnVivo('hoy')}
+                  style={{
+                    background: filtroEnVivo === 'hoy' ? '#0284c7' : '#f1f5f9',
+                    color: filtroEnVivo === 'hoy' ? '#ffffff' : '#64748b',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '5px 10px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  📅 De Hoy ({viajesHoy.length})
+                </button>
+                {viajesActivosAnteriores.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFiltroEnVivo('anteriores')}
+                    style={{
+                      background: filtroEnVivo === 'anteriores' ? '#d97706' : '#fef3c7',
+                      color: filtroEnVivo === 'anteriores' ? '#ffffff' : '#b45309',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '5px 10px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    ⚠️ Días Anteriores ({viajesActivosAnteriores.length})
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setFiltroEnVivo('todos')}
+                  style={{
+                    background: filtroEnVivo === 'todos' ? '#475569' : '#f1f5f9',
+                    color: filtroEnVivo === 'todos' ? '#ffffff' : '#64748b',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '5px 10px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Histórico ({viajesEnVivo.length})
+                </button>
+              </div>
 
               {cargandoViajesEnVivo ? (
                 <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
                   <i className="fa-solid fa-spinner fa-spin mr-2"></i> Rastreador en vivo actualizándose...
                 </div>
-              ) : viajesEnVivo.length === 0 ? (
+              ) : viajesAMostrar.length === 0 ? (
                 <div
                   style={{
                     background: '#f8fafc',
@@ -9136,14 +9289,16 @@ export const AppMovilPage: React.FC = () => {
                   }}
                 >
                   <i className="fa-solid fa-truck text-slate-400" style={{ fontSize: '32px', marginBottom: '8px', display: 'block' }}></i>
-                  No hay rutas o cisternas registradas para la fecha de hoy ({hoyStr}).
+                  No se encontraron viajes o cisternas para el filtro seleccionado.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {viajesEnVivo.map((viaje) => {
+                  {viajesAMostrar.map((viaje) => {
                     const lts = viaje.totalLitrosFinca || viaje.totalLitrosRecogidos || 0;
                     const cap = viaje.capacidadCamionLitros || 6000;
                     const pct = Math.min(100, Math.round((lts / cap) * 100));
+                    const fechaViajeStr = (viaje.fecha || '').split('T')[0];
+                    const esHoy = fechaViajeStr === hoyStr;
 
                     return (
                       <div
@@ -9152,13 +9307,13 @@ export const AppMovilPage: React.FC = () => {
                           background: '#ffffff',
                           borderRadius: '16px',
                           padding: '16px',
-                          border: '1px solid #e2e8f0',
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
+                          border: !esHoy && (viaje.procesoActualId || 1) < 4 ? '1.5px solid #fde047' : '1px solid #e2e8f0',
+                          boxShadow: !esHoy && (viaje.procesoActualId || 1) < 4 ? '0 4px 14px rgba(234, 179, 8, 0.12)' : '0 4px 12px rgba(0,0,0,0.04)',
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '6px' }}>
                           <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '13px', fontWeight: 900, color: '#1e3a8a' }}>
                                 Ticket {viaje.codigoTicket || `#${viaje.id}`}
                               </span>
@@ -9174,8 +9329,42 @@ export const AppMovilPage: React.FC = () => {
                               >
                                 {viaje.estado || 'EN RUTA'}
                               </span>
+
+                              {/* Distinción destacada de Fecha */}
+                              {esHoy ? (
+                                <span
+                                  style={{
+                                    background: '#dbeafe',
+                                    color: '#1d4ed8',
+                                    fontSize: '9.5px',
+                                    fontWeight: 800,
+                                    padding: '2px 6px',
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  📅 HOY
+                                </span>
+                              ) : (
+                                <span
+                                  style={{
+                                    background: '#fef3c7',
+                                    color: '#b45309',
+                                    border: '1px solid #fde047',
+                                    fontSize: '9.5px',
+                                    fontWeight: 900,
+                                    padding: '2px 6px',
+                                    borderRadius: '6px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                  }}
+                                >
+                                  <i className="fa-solid fa-clock-rotate-left"></i>
+                                  FECHA: {fechaViajeStr}
+                                </span>
+                              )}
                             </div>
-                            <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
+                            <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a', marginTop: '3px' }}>
                               <i className="fa-solid fa-user mr-1 text-slate-400"></i> {viaje.nombreConductor || viaje.choferNombre || 'Chofer Asignado'}
                             </div>
                             <div style={{ fontSize: '11px', color: '#64748b' }}>
@@ -9218,7 +9407,8 @@ export const AppMovilPage: React.FC = () => {
               )}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* ===================================================================
             PESTAÑA: ADMIN LOGÍSTICA (GESTIÓN Y PLANIFICACIÓN DE RUTAS EN MÓVIL)
@@ -9366,6 +9556,117 @@ export const AppMovilPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Aviso y Distinción si la Fecha de Logística no es Hoy */}
+            {fechaLogistica !== hoyStr && (
+              <div
+                style={{
+                  background: '#fef3c7',
+                  border: '1.5px solid #fde047',
+                  borderRadius: '14px',
+                  padding: '10px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <i className="fa-solid fa-clock-rotate-left text-amber-600 text-sm"></i>
+                  <div>
+                    <div style={{ fontSize: '11.5px', color: '#92400e', fontWeight: 800 }}>
+                      Viendo Asignaciones de Fecha Anterior
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: '#b45309' }}>
+                      Fecha seleccionada: <strong>{fechaLogistica}</strong>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFechaLogistica(hoyStr);
+                    cargarDatosLogisticaAdmin(hoyStr);
+                  }}
+                  style={{
+                    background: '#d97706',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '5px 10px',
+                    fontSize: '11px',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 6px rgba(217, 119, 6, 0.25)',
+                  }}
+                >
+                  Volver a Hoy
+                </button>
+              </div>
+            )}
+
+            {/* Alerta de Viajes Activos de Fechas Anteriores (ej. Ticket #21303) */}
+            {(() => {
+              const activasAnteriores = viajesEnVivo.filter((v) => {
+                const est = String(v.estado || '').toUpperCase();
+                const esActivo = (v.procesoActualId || 1) < 4 && est !== 'FINALIZADO' && est !== 'CERRADO' && est !== 'AUDITADO' && est !== 'CUADRADO';
+                const fechaV = (v.fecha || '').split('T')[0];
+                return esActivo && fechaV !== hoyStr;
+              });
+
+              if (fechaLogistica === hoyStr && activasAnteriores.length > 0) {
+                const fechasUnicas = Array.from(new Set(activasAnteriores.map((v) => (v.fecha || '').split('T')[0]))).filter(Boolean);
+                return (
+                  <div
+                    style={{
+                      background: '#eff6ff',
+                      border: '1.5px solid #bfdbfe',
+                      borderRadius: '14px',
+                      padding: '10px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <i className="fa-solid fa-triangle-exclamation text-blue-600 text-sm"></i>
+                      <div>
+                        <div style={{ fontSize: '11.5px', color: '#1e40af', fontWeight: 800 }}>
+                          {activasAnteriores.length} viaje(s) activo(s) de fecha anterior
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#2563eb' }}>
+                          Ticket {activasAnteriores[0].codigoTicket || `#${activasAnteriores[0].id}`} ({fechasUnicas.join(', ')})
+                        </div>
+                      </div>
+                    </div>
+                    {fechasUnicas[0] && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFechaLogistica(fechasUnicas[0]);
+                          cargarDatosLogisticaAdmin(fechasUnicas[0]);
+                        }}
+                        style={{
+                          background: '#2563eb',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '5px 10px',
+                          fontSize: '11px',
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Ver {fechasUnicas[0]}
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
             {/* Selector de Sub-Vistas: Asignaciones vs Circuitos */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               <button
@@ -9497,35 +9798,51 @@ export const AppMovilPage: React.FC = () => {
                           }}
                         >
                           {/* Cabecera de la tarjeta */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                            <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
-                                  🚛 {plan.camionPlaca || 'S/P'}
+                          {(() => {
+                            const fechaPlanStr = (plan.fecha || fechaLogistica || '').split('T')[0];
+                            const esHoyPlan = fechaPlanStr === hoyStr;
+
+                            return (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '6px' }}>
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
+                                      🚛 {plan.camionPlaca || 'S/P'}
+                                    </span>
+                                    {plan.rutaLogisticaNombre && (
+                                      <span style={{ fontSize: '10.5px', background: '#eff6ff', color: '#2563eb', padding: '2px 7px', borderRadius: '6px', fontWeight: 800 }}>
+                                        {plan.rutaLogisticaNombre}
+                                      </span>
+                                    )}
+                                    {esHoyPlan ? (
+                                      <span style={{ fontSize: '9.5px', background: '#dbeafe', color: '#1d4ed8', padding: '2px 6px', borderRadius: '6px', fontWeight: 800 }}>
+                                        📅 HOY
+                                      </span>
+                                    ) : (
+                                      <span style={{ fontSize: '9.5px', background: '#fef3c7', color: '#b45309', border: '1px solid #fde047', padding: '2px 6px', borderRadius: '6px', fontWeight: 900 }}>
+                                        📅 {fechaPlanStr}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>
+                                    <i className="fa-solid fa-user text-slate-400 mr-1"></i> {plan.conductorNombre || 'Chofer no asignado'}
+                                  </div>
+                                </div>
+                                <span
+                                  style={{
+                                    background: plan.estadoTicket === 'FINALIZADO' ? '#dcfce7' : plan.controlRutaId ? '#e0f2fe' : '#fef3c7',
+                                    color: plan.estadoTicket === 'FINALIZADO' ? '#16a34a' : plan.controlRutaId ? '#0284c7' : '#d97706',
+                                    fontSize: '10.5px',
+                                    fontWeight: 900,
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  {plan.estadoTicket || (plan.controlRutaId ? 'EN RUTA' : 'PLANIFICADO')}
                                 </span>
-                                {plan.rutaLogisticaNombre && (
-                                  <span style={{ fontSize: '10.5px', background: '#eff6ff', color: '#2563eb', padding: '2px 7px', borderRadius: '6px', fontWeight: 800 }}>
-                                    {plan.rutaLogisticaNombre}
-                                  </span>
-                                )}
                               </div>
-                              <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>
-                                <i className="fa-solid fa-user text-slate-400 mr-1"></i> {plan.conductorNombre || 'Chofer no asignado'}
-                              </div>
-                            </div>
-                            <span
-                              style={{
-                                background: plan.estadoTicket === 'FINALIZADO' ? '#dcfce7' : plan.controlRutaId ? '#e0f2fe' : '#fef3c7',
-                                color: plan.estadoTicket === 'FINALIZADO' ? '#16a34a' : plan.controlRutaId ? '#0284c7' : '#d97706',
-                                fontSize: '10.5px',
-                                fontWeight: 900,
-                                padding: '3px 8px',
-                                borderRadius: '6px',
-                              }}
-                            >
-                              {plan.estadoTicket || (plan.controlRutaId ? 'EN RUTA' : 'PLANIFICADO')}
-                            </span>
-                          </div>
+                            );
+                          })()}
 
                           {/* Estadísticas de la asignación */}
                           <div
@@ -9642,10 +9959,13 @@ export const AppMovilPage: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => {
+                                setBusquedaFincaRapida('');
+                                const idsYaAsignadas = getFincasIdsDePlan(plan);
+                                const primerFincaDisponible = fincas.find((f) => !idsYaAsignadas.includes(f.id));
                                 setModalAgregarFincaRapida({
                                   open: true,
                                   plan,
-                                  fincaId: fincas.length > 0 ? fincas[0].id : 0,
+                                  fincaId: primerFincaDisponible ? primerFincaDisponible.id : 0,
                                 });
                               }}
                               style={{
@@ -11423,52 +11743,81 @@ export const AppMovilPage: React.FC = () => {
                       const planActual = planificaciones.find((p) => p.id === modalPlanificar.id);
                       const controlAsociado = planActual?.controlRutaId
                         ? viajesEnVivo.find((v) => v.id === planActual.controlRutaId)
-                        : viajesEnVivo.find((v) => v.camionId === modalPlanificar.camionId);
-                      const paradasConLeche = (controlAsociado as any)?.paradas || [];
+                        : viajesEnVivo.find((v) => v.camionId === modalPlanificar.camionId && (v.procesoActualId || 1) < 4);
+                      const paradasConLeche = (controlAsociado as any)?.paradas || (controlAsociado as any)?.fincasDetalle || [];
 
-                      return fincas
-                        .filter(
-                          (f) =>
-                            !busquedaFincaPlanificar.trim() ||
-                            f.nombre.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()) ||
-                            (f.codigo && f.codigo.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()))
-                        )
-                        .map((f) => {
-                          const seleccionada = modalPlanificar.fincasIds.includes(f.id);
-                          const promedio = fincasPromedio.find((p) => p.fincaId === f.id)?.promedioLitros;
+                      // Mapear fincas que ya tienen leche recolectada (bloqueadas)
+                      const paradasLlenasMap = new Map<number, number>();
+                      paradasConLeche.forEach((p: any) => {
+                        const fId = Number(p.fincaId || p.FincaId);
+                        const lts = Number(p.litros || p.litrosLeche || p.litrosCargados || 0);
+                        if (lts > 0 && fId > 0) {
+                          paradasLlenasMap.set(fId, lts);
+                        }
+                      });
+                      if (planActual?.fincasRecolectadasIds) {
+                        planActual.fincasRecolectadasIds.forEach((fId) => {
+                          if (!paradasLlenasMap.has(fId)) {
+                            paradasLlenasMap.set(fId, 1);
+                          }
+                        });
+                      }
 
-                          // REGLA: Si la finca ya tiene leche recolectada (litros > 0), está LLENA y NO se puede desasignar ni cambiar
-                          const paradaReal = paradasConLeche.find(
-                            (p: any) =>
-                              (p.fincaId === f.id || p.FincaId === f.id) &&
-                              Number(p.litros || p.litrosCargados || 0) > 0
-                          );
-                          const estaLlena = Boolean(paradaReal && modalPlanificar.esEdicion);
-                          const ltsRecolectados = paradaReal
-                            ? Number((paradaReal as any).litros || (paradaReal as any).litrosCargados || 0)
-                            : 0;
+                      // Filtrar por término de búsqueda
+                      const fincasFiltradas = fincas.filter(
+                        (f) =>
+                          !busquedaFincaPlanificar.trim() ||
+                          f.nombre.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()) ||
+                          (f.codigo && f.codigo.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase())) ||
+                          (f.propietarioNombre && f.propietarioNombre.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()))
+                      );
 
-                          return (
-                            <div
-                              key={f.id}
-                              onClick={() => {
-                                if (estaLlena) {
-                                  toast.warning(
-                                    `La finca "${f.nombre}" ya tiene ${ltsRecolectados} L recolectados en ruta. No se puede modificar ni desasignar.`
-                                  );
-                                  return;
-                                }
-                                setModalPlanificar((prev) => {
-                                  if (!prev) return null;
-                                  const exists = prev.fincasIds.includes(f.id);
-                                  return {
-                                    ...prev,
-                                    fincasIds: exists
-                                      ? prev.fincasIds.filter((id) => id !== f.id)
-                                      : [...prev.fincasIds, f.id],
-                                  };
-                                });
-                              }}
+                      // REGLA: Poner de primero las seleccionadas y recolectadas (igual que en WEB)
+                      const fincasOrdenadas = [...fincasFiltradas].sort((a, b) => {
+                        const llenaA = paradasLlenasMap.has(a.id);
+                        const llenaB = paradasLlenasMap.has(b.id);
+                        const selA = modalPlanificar.fincasIds.includes(a.id) || llenaA;
+                        const selB = modalPlanificar.fincasIds.includes(b.id) || llenaB;
+
+                        // 1. Con leche recolectada arriba de todo
+                        if (llenaA && !llenaB) return -1;
+                        if (!llenaA && llenaB) return 1;
+
+                        // 2. Seleccionadas de primero
+                        if (selA && !selB) return -1;
+                        if (!selA && selB) return 1;
+
+                        // 3. Alfabético por nombre
+                        return a.nombre.localeCompare(b.nombre);
+                      });
+
+                      return fincasOrdenadas.map((f) => {
+                        const estaLlena = paradasLlenasMap.has(f.id);
+                        const ltsRecolectados = paradasLlenasMap.get(f.id) || 0;
+                        const seleccionada = modalPlanificar.fincasIds.includes(f.id) || estaLlena;
+                        const promedio = fincasPromedio.find((p) => p.fincaId === f.id)?.promedioLitros;
+
+                        return (
+                          <div
+                            key={f.id}
+                            onClick={() => {
+                              if (estaLlena) {
+                                toast.warning(
+                                  `La finca "${f.nombre}" ya tiene ${ltsRecolectados > 1 ? `${ltsRecolectados} L recolectados` : 'leche recolectada'} en ruta. No se puede desasignar.`
+                                );
+                                return;
+                              }
+                              setModalPlanificar((prev) => {
+                                if (!prev) return null;
+                                const exists = prev.fincasIds.includes(f.id);
+                                return {
+                                  ...prev,
+                                  fincasIds: exists
+                                    ? prev.fincasIds.filter((id) => id !== f.id)
+                                    : [...prev.fincasIds, f.id],
+                                };
+                              });
+                            }}
                               style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -11622,110 +11971,359 @@ export const AppMovilPage: React.FC = () => {
       )}
 
       {/* MODAL RÁPIDO: AGREGAR FINCA A RUTA ACTIVA */}
-      {modalAgregarFincaRapida?.open && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(15, 23, 42, 0.75)',
-            backdropFilter: 'blur(5px)',
-            padding: '16px',
-          }}
-        >
+      {modalAgregarFincaRapida?.open && (() => {
+        const plan = modalAgregarFincaRapida.plan;
+        const currentIds = getFincasIdsDePlan(plan);
+        const fincasDisponibles = fincas.filter((f) => !currentIds.includes(f.id));
+        const fincasFiltradas = fincasDisponibles.filter((f) => {
+          if (!busquedaFincaRapida.trim()) return true;
+          const q = busquedaFincaRapida.toLowerCase().trim();
+          return (
+            f.nombre.toLowerCase().includes(q) ||
+            (f.codigo && f.codigo.toLowerCase().includes(q)) ||
+            (f.propietarioNombre && f.propietarioNombre.toLowerCase().includes(q))
+          );
+        });
+
+        const fincaSeleccionadaObj = fincas.find((f) => f.id === modalAgregarFincaRapida.fincaId);
+        const promSel = fincaSeleccionadaObj
+          ? fincasPromedio.find((p) => p.fincaId === fincaSeleccionadaObj.id)?.promedioLitros
+          : undefined;
+
+        return (
           <div
             style={{
-              width: '100%',
-              maxWidth: '420px',
-              background: '#ffffff',
-              borderRadius: '20px',
-              padding: '20px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(6px)',
+              padding: '16px',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
-                + Agregar Finca a la Ruta
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalAgregarFincaRapida(null)}
-                style={{ background: 'none', border: 'none', fontSize: '18px', color: '#64748b', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
-            </div>
-            <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#64748b' }}>
-              Camión: <strong>{modalAgregarFincaRapida.plan.camionPlaca}</strong> • Chofer: <strong>{modalAgregarFincaRapida.plan.conductorNombre}</strong>
-            </p>
-
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
-                Selecciona la finca a incorporar:
-              </label>
-              <select
-                value={modalAgregarFincaRapida.fincaId}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setModalAgregarFincaRapida((prev) => (prev ? { ...prev, fincaId: val } : null));
-                }}
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '460px',
+                background: '#ffffff',
+                borderRadius: '24px',
+                overflow: 'hidden',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                maxHeight: '90vh',
+                border: '1px solid #e2e8f0',
+              }}
+            >
+              {/* Header con gradiente profesional */}
+              <div
                 style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '10px',
-                  border: '1.5px solid #cbd5e1',
-                  fontSize: '13px',
-                  background: '#ffffff',
-                }}
-              >
-                {fincas.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.nombre} ({f.propietarioNombre || 'Productor'})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => setModalAgregarFincaRapida(null)}
-                style={{
-                  flex: 1,
-                  padding: '10px',
-                  borderRadius: '10px',
-                  border: '1px solid #cbd5e1',
-                  background: '#f8fafc',
-                  color: '#64748b',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAgregarFincaRapidaMovil(modalAgregarFincaRapida.plan, modalAgregarFincaRapida.fincaId)}
-                style={{
-                  flex: 1,
-                  padding: '10px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: '#16a34a',
+                  background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                  padding: '16px 20px',
                   color: '#ffffff',
-                  fontWeight: 900,
-                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
                 }}
               >
-                Añadir a la Ruta
-              </button>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#a7f3d0', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                    Gestión Rápida de Campo
+                  </div>
+                  <h3 style={{ margin: '2px 0 0 0', fontSize: '17px', fontWeight: 900 }}>
+                    + Agregar Finca a la Ruta
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBusquedaFincaRapida('');
+                    setModalAgregarFincaRapida(null);
+                  }}
+                  style={{
+                    background: 'rgba(255,255,255,0.15)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    width: '32px',
+                    height: '32px',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '15px',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
+                {/* Resumen del Camión y Conductor */}
+                <div
+                  style={{
+                    background: '#f8fafc',
+                    borderRadius: '14px',
+                    padding: '10px 14px',
+                    border: '1px solid #e2e8f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>
+                      🚛 {plan.camionPlaca || 'S/P'}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                      <i className="fa-solid fa-user text-slate-400 mr-1"></i> {plan.conductorNombre || 'Chofer'}
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      background: '#ecfdf5',
+                      color: '#059669',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      padding: '4px 8px',
+                      borderRadius: '8px',
+                      border: '1px solid #a7f3d0',
+                    }}
+                  >
+                    {currentIds.length} fincas en ruta
+                  </span>
+                </div>
+
+                {/* Input Buscador con Escritura para filtrar */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    Escribe para buscar finca a incorporar ({fincasFiltradas.length} disponibles):
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="🔍 Escribe nombre de finca, código o ganadero..."
+                      value={busquedaFincaRapida}
+                      onChange={(e) => setBusquedaFincaRapida(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '11px 36px 11px 36px',
+                        borderRadius: '12px',
+                        border: '1.5px solid #059669',
+                        fontSize: '13px',
+                        outline: 'none',
+                        boxShadow: '0 2px 8px rgba(5, 150, 105, 0.1)',
+                      }}
+                    />
+                    <i
+                      className="fa-solid fa-magnifying-glass"
+                      style={{ position: 'absolute', left: '12px', top: '14px', color: '#059669', fontSize: '13px' }}
+                    ></i>
+                    {busquedaFincaRapida && (
+                      <button
+                        type="button"
+                        onClick={() => setBusquedaFincaRapida('')}
+                        style={{
+                          position: 'absolute',
+                          right: '10px',
+                          top: '10px',
+                          background: 'none',
+                          border: 'none',
+                          color: '#94a3b8',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Lista de Fincas Filtradas para Selección Táctil */}
+                <div
+                  style={{
+                    maxHeight: '220px',
+                    overflowY: 'auto',
+                    border: '1.5px solid #e2e8f0',
+                    borderRadius: '14px',
+                    padding: '6px',
+                    background: '#f8fafc',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                  }}
+                >
+                  {fincasFiltradas.length === 0 ? (
+                    <div style={{ padding: '24px 12px', textAlign: 'center', color: '#64748b' }}>
+                      <i className="fa-solid fa-magnifying-glass text-slate-300" style={{ fontSize: '28px', marginBottom: '6px', display: 'block' }}></i>
+                      <div style={{ fontWeight: 800, fontSize: '13px', color: '#334155' }}>No se encontró ninguna finca</div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>Intenta con otro término o revisa que no esté ya asignada.</div>
+                    </div>
+                  ) : (
+                    fincasFiltradas.map((f) => {
+                      const esSeleccionada = modalAgregarFincaRapida.fincaId === f.id;
+                      const prom = fincasPromedio.find((p) => p.fincaId === f.id)?.promedioLitros;
+
+                      return (
+                        <div
+                          key={f.id}
+                          onClick={() => setModalAgregarFincaRapida((prev) => (prev ? { ...prev, fincaId: f.id } : null))}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 12px',
+                            borderRadius: '10px',
+                            background: esSeleccionada ? '#ecfdf5' : '#ffffff',
+                            border: esSeleccionada ? '1.5px solid #10b981' : '1px solid #f1f5f9',
+                            cursor: 'pointer',
+                            boxShadow: esSeleccionada ? '0 2px 8px rgba(16, 185, 129, 0.15)' : 'none',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div
+                              style={{
+                                width: '20px',
+                                height: '20px',
+                                borderRadius: '50%',
+                                border: esSeleccionada ? '5px solid #059669' : '2px solid #cbd5e1',
+                                background: '#ffffff',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            />
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: 800, color: esSeleccionada ? '#065f46' : '#1e293b' }}>
+                                {f.nombre}
+                              </div>
+                              <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                                {f.codigo ? `${f.codigo} • ` : ''}
+                                {f.propietarioNombre || 'Productor'}
+                              </div>
+                            </div>
+                          </div>
+
+                          {prom !== undefined && (
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                color: esSeleccionada ? '#047857' : '#0284c7',
+                                background: esSeleccionada ? 'rgba(5, 150, 105, 0.1)' : '#f0f9ff',
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              ~{Math.round(prom)} L
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Previsualización de Finca Seleccionada */}
+                {fincaSeleccionadaObj && (
+                  <div
+                    style={{
+                      background: '#f0fdf4',
+                      border: '1.5px solid #86efac',
+                      borderRadius: '12px',
+                      padding: '10px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '10.5px', color: '#166534', fontWeight: 800, textTransform: 'uppercase' }}>
+                        Finca Lista para Añadir:
+                      </div>
+                      <div style={{ fontSize: '13.5px', fontWeight: 900, color: '#14532d' }}>
+                        {fincaSeleccionadaObj.nombre}
+                      </div>
+                    </div>
+                    {promSel !== undefined && (
+                      <span style={{ fontSize: '12px', fontWeight: 900, color: '#15803d' }}>
+                        +~{Math.round(promSel)} Lts
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Botonera Inferior */}
+              <div
+                style={{
+                  padding: '14px 20px',
+                  background: '#ffffff',
+                  borderTop: '1px solid #e2e8f0',
+                  display: 'flex',
+                  gap: '10px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBusquedaFincaRapida('');
+                    setModalAgregarFincaRapida(null);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #cbd5e1',
+                    background: '#f8fafc',
+                    color: '#64748b',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={!modalAgregarFincaRapida.fincaId || modalAgregarFincaRapida.fincaId === 0}
+                  onClick={() => handleAgregarFincaRapidaMovil(modalAgregarFincaRapida.plan, modalAgregarFincaRapida.fincaId)}
+                  style={{
+                    flex: 1.5,
+                    padding: '12px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: !modalAgregarFincaRapida.fincaId || modalAgregarFincaRapida.fincaId === 0
+                      ? '#94a3b8'
+                      : 'linear-gradient(135deg, #059669, #16a34a)',
+                    color: '#ffffff',
+                    fontWeight: 900,
+                    fontSize: '13px',
+                    cursor: !modalAgregarFincaRapida.fincaId || modalAgregarFincaRapida.fincaId === 0 ? 'not-allowed' : 'pointer',
+                    boxShadow: !modalAgregarFincaRapida.fincaId || modalAgregarFincaRapida.fincaId === 0
+                      ? 'none'
+                      : '0 4px 14px rgba(5, 150, 105, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <i className="fa-solid fa-plus-circle"></i>
+                  Añadir a la Ruta
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL CREAR / EDITAR CIRCUITO LOGÍSTICO */}
       {modalCircuito?.open && (

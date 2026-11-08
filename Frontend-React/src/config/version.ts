@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 9,
-  patch: 1,
-  tag: 'v3.9.1',
+  patch: 2,
+  tag: 'v3.9.2',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Móvil Chofer: Se oculta el botón Registrar Parada Libre al recolectar todas las fincas asignadas; se habilita dinámicamente cuando el supervisor asigna una nueva finca',
+  descripcion: 'Radar y Logística Móvil: Visualización de todos los tickets activos sin filtro restrictivo de fecha, distinción de litros/viajes de Hoy vs Días Anteriores, fincas seleccionadas y recogidas protegidas al inicio en Editar/Asignar y buscador interactivo en modal +Finca',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

@@ -12,6 +12,7 @@ import { CamionSelect, ChoferSelect, FincaSelect, CompaniaSelect } from '@/compo
 import { SearchableSelect, type SelectOption } from '@/components/common/SearchableSelect';
 import Swal from 'sweetalert2';
 import { confirmDialog } from '@/lib/sweetalert';
+import * as XLSX from 'xlsx';
 import { useAuthStore } from '@/stores/authStore';
 import type { ControlRutaDto, FincaDto, CamionDto, CompaniaDto, DespachoCompaniaDto, PlanificacionRutaChoferDto } from '@/types';
 import { PlanificacionRutasChoferesPage } from './PlanificacionRutasChoferesPage';
@@ -1029,6 +1030,337 @@ export const RecoleccionRutasPage: React.FC = () => {
       { idTemp: Math.random().toString(), fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, observacion: '' },
     ]);
     setOcrMensaje(null);
+  };
+
+  // =========================================================================
+  // CARGA MASIVA DE TICKETS DESDE EXCEL (SUPER ADMIN)
+  // =========================================================================
+  const [modalExcelMasivo, setModalExcelMasivo] = useState(false);
+  const [archivoExcelNombre, setArchivoExcelNombre] = useState<string | null>(null);
+  const [filasExcel, setFilasExcel] = useState<any[]>([]);
+  const [validacionExcel, setValidacionExcel] = useState<any | null>(null);
+  const [validandoExcel, setValidandoExcel] = useState(false);
+  const [ejecutandoCargaExcel, setEjecutandoCargaExcel] = useState(false);
+  const [omitirDuplicadosExcel, setOmitirDuplicadosExcel] = useState(true);
+  const [filtroPreviewExcel, setFiltroPreviewExcel] = useState<'TODAS' | 'VALIDAS' | 'DUPLICADAS' | 'ERRORES'>('TODAS');
+  const fileInputExcelRef = useRef<HTMLInputElement>(null);
+
+  const parseFechaExcel = (val: any): string => {
+    if (!val) return '';
+    if (typeof val === 'number') {
+      const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+      return date.toISOString().split('T')[0];
+    }
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    const parts = str.split(/[/.-]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      }
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    return str;
+  };
+
+  const parseDecimalExcel = (val: any) => {
+    if (val === undefined || val === null || val === '') return 0;
+    if (typeof val === 'number') return Math.round(val);
+    const cleaned = String(val).replace(/[^0-9.,]/g, '').replace(',', '.');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : Math.round(num);
+  };
+
+  const buscarFincaExcel = (valor: string) => {
+    if (!valor) return null;
+    const q = valor.toLowerCase().trim();
+    let found = fincas.find((f) => f.nombre.toLowerCase().trim() === q);
+    if (found) return found;
+    found = fincas.find((f) => (f.codigo && f.codigo.toLowerCase().trim() === q) || String(f.id) === q);
+    if (found) return found;
+    found = fincas.find((f) => f.nombre.toLowerCase().includes(q) || q.includes(f.nombre.toLowerCase()));
+    return found || null;
+  };
+
+  const buscarConductorExcel = (valor: string) => {
+    if (!valor) return null;
+    const q = valor.toLowerCase().trim();
+    let found = conductores.find((c) => (c.nombreCompleto || c.nombre || '').toLowerCase().trim() === q);
+    if (found) return found;
+    found = conductores.find((c) => (c.username || '').toLowerCase().trim() === q || String(c.id) === q);
+    if (found) return found;
+    found = conductores.find((c) => (c.nombreCompleto || c.nombre || '').toLowerCase().includes(q) || q.includes((c.nombreCompleto || c.nombre || '').toLowerCase()));
+    return found || null;
+  };
+
+  const resolverCamionConductorExcel = (conductorId: number) => {
+    if (!conductorId) return camiones[0] || null;
+    const asignado = camiones.find((c) => c.usuarioId === conductorId || (c as any).choferHabitualId === conductorId);
+    return asignado || camiones[0] || null;
+  };
+
+  const procesarArchivoExcel = async (file: File) => {
+    setValidandoExcel(true);
+    setArchivoExcelNombre(file.name);
+    setValidacionExcel(null);
+    setFilasExcel([]);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonRaw = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '', raw: false });
+
+        if (jsonRaw.length === 0) {
+          toast.error('El archivo Excel está vacío.');
+          setValidandoExcel(false);
+          return;
+        }
+
+        const normalizarClave = (str: string) =>
+          str
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '');
+
+        const filasParseadas: any[] = [];
+        const filasParaBackend: any[] = [];
+
+        jsonRaw.forEach((rowRaw, idx) => {
+          const rowMap: Record<string, any> = {};
+          Object.keys(rowRaw).forEach((k) => {
+            rowMap[normalizarClave(k)] = rowRaw[k];
+          });
+
+          const fechaRaw = rowMap['FECHA'] || rowMap['DATE'] || rowMap['DIA'] || hoyStr;
+          const fecha = parseFechaExcel(fechaRaw);
+
+          const fincaRaw = String(rowMap['FINCA'] || rowMap['NOMBRE_FINCA'] || rowMap['PRODUCTOR'] || rowMap['GRANJA'] || '').trim();
+          const fincaObj = buscarFincaExcel(fincaRaw);
+          const fincaId = fincaObj ? fincaObj.id : 0;
+          const fincaNombre = fincaObj ? fincaObj.nombre : fincaRaw;
+
+          const litros = parseDecimalExcel(rowMap['LITROS'] || rowMap['LTS'] || rowMap['CANTIDAD'] || rowMap['VOLUMEN'] || 0);
+
+          const conductorRaw = String(rowMap['CONDUCTOR'] || rowMap['CHOFER'] || rowMap['USUARIO'] || rowMap['TRANSPORTISTA'] || '').trim();
+          const conductorObj = buscarConductorExcel(conductorRaw);
+          const conductorId = conductorObj ? conductorObj.id : 0;
+          const conductorNombre = conductorObj ? (conductorObj.nombreCompleto || conductorObj.nombre) : conductorRaw;
+
+          const obsRaw = String(rowMap['OBSERVACION'] || rowMap['OBSERVACIONES'] || rowMap['DETALLE'] || rowMap['NOTA'] || '').trim();
+
+          const acidaRaw = String(rowMap['ACIDA'] || rowMap['ES_ACIDA'] || rowMap['LECHE_ACIDA'] || '').toUpperCase().trim();
+          const esAcida = ['SI', 'S', 'YES', 'TRUE', '1', 'VERDADERO'].includes(acidaRaw);
+
+          const camionObj = resolverCamionConductorExcel(conductorId);
+          const camionPlaca = camionObj ? camionObj.placa : 'S/P';
+          const camionCapacidad = camionObj ? (camionObj.capacidadLitros || 10000) : 10000;
+
+          const filaItem = {
+            index: idx + 1,
+            fecha,
+            fechaRaw,
+            fincaId,
+            fincaNombre,
+            fincaRaw,
+            conductorId,
+            conductorNombre,
+            conductorRaw,
+            litros,
+            esAcida,
+            observacion: obsRaw,
+            camionId: camionObj?.id || null,
+            camionPlaca,
+            camionCapacidad,
+            tipoLeche: fincaObj?.tipoLeche || 'VACA',
+          };
+
+          filasParseadas.push(filaItem);
+          filasParaBackend.push({
+            index: idx + 1,
+            fecha: fecha || null,
+            fincaId,
+            fincaNombre,
+            conductorId,
+            conductorNombre,
+            litros,
+            esAcida,
+            observacion: obsRaw,
+          });
+        });
+
+        // Validar con Backend (duplicados, ciclos, camiones)
+        const resVal = await operacionesApi.validarCargaMasivaExcel(filasParaBackend);
+        setValidacionExcel(resVal);
+
+        const resMap = new Map((resVal.resultados || []).map((r) => [r.index, r]));
+        const filasCompletas = filasParseadas.map((f) => {
+          const r = resMap.get(f.index);
+          return {
+            ...f,
+            esValido: r ? r.esValido : (f.fincaId > 0 && f.conductorId > 0 && f.litros > 0 && Boolean(f.fecha)),
+            esDuplicado: r ? r.esDuplicado : false,
+            mensajeValidacion: r ? r.mensaje : (f.fincaId > 0 && f.conductorId > 0 && f.litros > 0 ? 'Válida' : 'Incompleta'),
+            ticketExistenteId: r?.ticketExistenteId,
+            ticketCodigo: r?.ticketCodigo,
+            ticketEstado: r?.ticketEstado,
+            camionPlaca: r?.camionPlaca || f.camionPlaca,
+            camionId: r?.camionId || f.camionId,
+            camionCapacidadLitros: r?.camionCapacidadLitros || f.camionCapacidad,
+          };
+        });
+
+        setFilasExcel(filasCompletas);
+
+        if (resVal.filasConError > 0) {
+          toast.warning(`Archivo leído con ${resVal.filasConError} error(es) detectados.`);
+        } else if (resVal.filasDuplicadas > 0) {
+          toast.info(`Se detectaron ${resVal.filasDuplicadas} registros ya existentes en el sistema.`);
+        } else {
+          toast.success('¡Archivo validado exitosamente! Data 100% consistente.');
+        }
+      } catch (err: any) {
+        console.error('Error al procesar Excel:', err);
+        toast.error(err.message || 'Error al procesar archivo Excel');
+      } finally {
+        setValidandoExcel(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const descargarPlantillaExcel = () => {
+    const finca1 = fincas[0]?.nombre || 'Huesito';
+    const finca2 = fincas[1]?.nombre || 'El paujil';
+    const conductorEj = conductores[0]?.nombreCompleto || 'Alfredy';
+
+    const plantilla = [
+      {
+        FECHA: hoyStr,
+        FINCA: finca1,
+        LITROS: 250,
+        CONDUCTOR: conductorEj,
+        OBSERVACION: 'Ruta regular',
+        ACIDA: 'NO',
+      },
+      {
+        FECHA: hoyStr,
+        FINCA: finca2,
+        LITROS: 180,
+        CONDUCTOR: conductorEj,
+        OBSERVACION: 'Prueba de acidez conforme',
+        ACIDA: 'SI',
+      },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(plantilla);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Tickets_Recoleccion');
+    XLSX.writeFile(wb, `Plantilla_Carga_Masiva_Tickets_${hoyStr}.xlsx`);
+    toast.success('Plantilla Excel descargada exitosamente');
+  };
+
+  const ejecutarCargaMasivaExcel = async () => {
+    if (!filasExcel.length) {
+      toast.error('No hay datos para procesar.');
+      return;
+    }
+
+    const filasAProcesar = filasExcel.filter((f) => {
+      if (!f.esValido) return false;
+      if (omitirDuplicadosExcel && f.esDuplicado) return false;
+      return true;
+    });
+
+    if (!filasAProcesar.length) {
+      toast.error('No hay filas válidas pendientes por registrar.');
+      return;
+    }
+
+    const grupos = new Map<string, number>();
+    filasAProcesar.forEach((f) => {
+      const key = `${f.fecha}_${f.conductorNombre}`;
+      grupos.set(key, (grupos.get(key) || 0) + 1);
+    });
+
+    const totalLitros = filasAProcesar.reduce((acc, f) => acc + (f.litros || 0), 0);
+
+    const res = await Swal.fire({
+      title: '¿Crear Tickets Nuevos?',
+      html: `
+        <div style="text-align: left; font-size: 13.5px; color: #cbd5e1; background: #1e293b; padding: 14px; border-radius: 12px; line-height: 1.6;">
+          <p style="margin: 0 0 6px 0;">🎫 <b>Tickets a generar:</b> ${grupos.size} ticket(s) nuevo(s) (en estado <b>ABIERTO</b>)</p>
+          <p style="margin: 0 0 6px 0;">🥛 <b>Paradas de recolección:</b> ${filasAProcesar.length} finca(s)</p>
+          <p style="margin: 0 0 6px 0;">📊 <b>Litros totales:</b> ${totalLitros.toLocaleString()} Lts</p>
+          <p style="margin: 0; font-size: 12px; color: #94a3b8;">Los tickets se crearán en sus fechas correspondientes para tu verificación y finalización posterior.</p>
+        </div>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#059669',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: '🚀 Sí, Crear Tickets Nuevos',
+      cancelButtonText: 'Cancelar',
+      background: '#0f172a',
+      color: '#ffffff',
+    });
+
+    if (!res.isConfirmed) return;
+
+    setEjecutandoCargaExcel(true);
+    try {
+      const payload = {
+        filas: filasAProcesar.map((f) => ({
+          fecha: f.fecha,
+          fincaId: f.fincaId,
+          conductorId: f.conductorId,
+          camionId: f.camionId,
+          litros: f.litros,
+          esAcida: f.esAcida,
+          tipoLeche: f.tipoLeche,
+          observacion: f.observacion,
+        })),
+      };
+
+      const result = await operacionesApi.ejecutarCargaMasivaExcel(payload.filas);
+
+      await Swal.fire({
+        icon: 'success',
+        title: '¡Tickets Creados con Éxito!',
+        html: `
+          <div style="text-align: left; font-size: 13px; color: #cbd5e1; background: #1e293b; padding: 14px; border-radius: 12px;">
+            <p>✅ <b>${result.ticketsCreadosCount} Ticket(s) Abierto(s) generado(s)</b></p>
+            <p>🥛 <b>${result.paradasCreadasCount} paradas registradas</b> (${result.litrosTotales.toLocaleString()} Lts)</p>
+            <ul style="margin: 8px 0 0 16px; padding: 0;">
+              ${(result.tickets || [])
+                .map((t: any) => `<li>Ticket #${t.ticketId || t.codigoTicket} • ${t.conductorNombre} (${t.fecha?.split('T')[0]}) - ${t.totalLitros.toLocaleString()} Lts</li>`)
+                .join('')}
+            </ul>
+          </div>
+        `,
+        confirmButtonColor: '#059669',
+        background: '#0f172a',
+        color: '#ffffff',
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-fincas-hoy'] });
+      setModalExcelMasivo(false);
+      setFilasExcel([]);
+      setValidacionExcel(null);
+      setArchivoExcelNombre(null);
+    } catch (err: any) {
+      console.error('Error al ejecutar carga masiva Excel:', err);
+      toast.error(err.response?.data?.message || 'Error al crear tickets masivos');
+    } finally {
+      setEjecutandoCargaExcel(false);
+    }
   };
 
   const editarRecoleccionMutation = useMutation({
@@ -2487,28 +2819,59 @@ export const RecoleccionRutasPage: React.FC = () => {
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           {isSuperAdmin && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => abrirModalRutasMasivo()}
-              style={{
-                fontWeight: 700,
-                fontSize: '13px',
-                padding: '9px 18px',
-                borderRadius: '9px',
-                background: 'linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)',
-                border: 'none',
-                boxShadow: '0 4px 14px rgba(37,99,235,0.35)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: '#ffffff',
-                cursor: 'pointer',
-              }}
-              title="Registro masivo rápido y escaneo por IA / OCR exclusivo para SuperAdmin"
-            >
-              <i className="fa-solid fa-bolt"></i> Carga Masiva / Escanear Foto
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setModalExcelMasivo(true);
+                  setFilasExcel([]);
+                  setValidacionExcel(null);
+                  setArchivoExcelNombre(null);
+                  if (fileInputExcelRef.current) fileInputExcelRef.current.value = '';
+                }}
+                style={{
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  padding: '9px 18px',
+                  borderRadius: '9px',
+                  background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                  border: 'none',
+                  boxShadow: '0 4px 14px rgba(16,185,129,0.35)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                }}
+                title="Importar Excel con FECHA, FINCA, LITROS, CONDUCTOR, OBSERVACION, ACIDA para crear tickets nuevos"
+              >
+                <i className="fa-solid fa-file-excel"></i> Importar Excel (Tickets Masivos)
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => abrirModalRutasMasivo()}
+                style={{
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  padding: '9px 18px',
+                  borderRadius: '9px',
+                  background: 'linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)',
+                  border: 'none',
+                  boxShadow: '0 4px 14px rgba(37,99,235,0.35)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                }}
+                title="Registro masivo rápido y escaneo por IA / OCR exclusivo para SuperAdmin"
+              >
+                <i className="fa-solid fa-bolt"></i> Carga Masiva / Escanear Foto
+              </button>
+            </>
           )}
           <button
             type="button"
@@ -5909,6 +6272,576 @@ export const RecoleccionRutasPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: CARGA MASIVA DE TICKETS DESDE EXCEL (SUPER ADMIN)                  */}
+      {/* ========================================================================= */}
+      {modalExcelMasivo && (() => {
+        const filasFiltradas = filasExcel.filter((f) => {
+          if (filtroPreviewExcel === 'VALIDAS') return f.esValido && !f.esDuplicado;
+          if (filtroPreviewExcel === 'DUPLICADAS') return f.esDuplicado;
+          if (filtroPreviewExcel === 'ERRORES') return !f.esValido;
+          return true;
+        });
+
+        const filasAProcesar = filasExcel.filter((f) => {
+          if (!f.esValido) return false;
+          if (omitirDuplicadosExcel && f.esDuplicado) return false;
+          return true;
+        });
+
+        // Contar grupos de tickets a generar
+        const ticketsMap = new Map<string, any>();
+        filasAProcesar.forEach((f) => {
+          const k = `${f.fecha}_${f.conductorId}`;
+          if (!ticketsMap.has(k)) {
+            ticketsMap.set(k, {
+              fecha: f.fecha,
+              conductorNombre: f.conductorNombre,
+              camionPlaca: f.camionPlaca,
+              paradas: 0,
+              litros: 0,
+            });
+          }
+          const t = ticketsMap.get(k)!;
+          t.paradas += 1;
+          t.litros += f.litros;
+        });
+
+        const ticketsACrearList = Array.from(ticketsMap.values());
+        const totalLitrosAProcesar = filasAProcesar.reduce((acc, f) => acc + (f.litros || 0), 0);
+        const cantDuplicadas = filasExcel.filter((f) => f.esDuplicado).length;
+        const cantErrores = filasExcel.filter((f) => !f.esValido).length;
+        const cantValidas = filasExcel.filter((f) => f.esValido && !f.esDuplicado).length;
+
+        // Definición de columnas para DataTable (Regla #2)
+        const columnasExcel: ColumnDef<any>[] = [
+          {
+            header: '#',
+            accessorKey: 'index',
+            cell: (row) => <span className="font-bold text-slate-500">{row.index}</span>,
+          },
+          {
+            header: 'FECHA',
+            accessorKey: 'fecha',
+            cell: (row) => (
+              <span className="font-mono font-bold text-slate-800 text-xs">
+                {row.fecha || <span className="text-rose-600 font-bold">Sin fecha</span>}
+              </span>
+            ),
+          },
+          {
+            header: 'FINCA',
+            accessorKey: 'fincaNombre',
+            cell: (row) => (
+              <div>
+                <div className="font-bold text-slate-900 text-xs">{row.fincaNombre || row.fincaRaw}</div>
+                {row.fincaId > 0 ? (
+                  <span className="text-[10px] text-emerald-600 font-semibold">✓ Reconocida (ID: #{row.fincaId})</span>
+                ) : (
+                  <span className="text-[10px] text-rose-600 font-extrabold">❌ Finca No Reconocida</span>
+                )}
+              </div>
+            ),
+          },
+          {
+            header: 'LITROS',
+            accessorKey: 'litros',
+            cell: (row) => (
+              <span className="font-extrabold text-blue-700 text-xs">
+                {(row.litros || 0).toLocaleString()} Lts
+              </span>
+            ),
+          },
+          {
+            header: 'CONDUCTOR',
+            accessorKey: 'conductorNombre',
+            cell: (row) => (
+              <div>
+                <div className="font-bold text-slate-900 text-xs">{row.conductorNombre || row.conductorRaw}</div>
+                {row.conductorId > 0 ? (
+                  <span className="text-[10px] text-emerald-600 font-semibold">✓ Chofer Activo</span>
+                ) : (
+                  <span className="text-[10px] text-rose-600 font-extrabold">❌ Chofer No Reconocido</span>
+                )}
+              </div>
+            ),
+          },
+          {
+            header: 'CISTERNA ASOCIADA',
+            accessorKey: 'camionPlaca',
+            cell: (row) => (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 font-bold text-[11px] border border-slate-300">
+                <i className="fa-solid fa-truck-moving text-sky-600"></i>
+                {row.camionPlaca || 'S/P'}
+              </span>
+            ),
+          },
+          {
+            header: 'CONDICIONES',
+            accessorKey: 'esAcida',
+            cell: (row) => (
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                  {row.tipoLeche || 'VACA'}
+                </span>
+                {row.esAcida && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300">
+                    ⚠️ ÁCIDA
+                  </span>
+                )}
+              </div>
+            ),
+          },
+          {
+            header: 'ESTADO / DIAGNÓSTICO',
+            accessorKey: 'mensajeValidacion',
+            cell: (row) => {
+              if (!row.esValido) {
+                return (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                    <i className="fa-solid fa-circle-xmark"></i> {row.mensajeValidacion || 'Dato inválido'}
+                  </span>
+                );
+              }
+              if (row.esDuplicado) {
+                return (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                    <i className="fa-solid fa-triangle-exclamation"></i> {row.mensajeValidacion || 'Ya Registrada'}
+                  </span>
+                );
+              }
+              return (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  <i className="fa-solid fa-circle-check"></i> Válida para crear
+                </span>
+              );
+            },
+          },
+        ];
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 2000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(5px)',
+              padding: '16px',
+            }}
+          >
+            <div
+              className="content-card"
+              style={{
+                maxWidth: '1150px',
+                width: '98%',
+                maxHeight: '94vh',
+                display: 'flex',
+                flexDirection: 'column',
+                background: '#ffffff',
+                borderRadius: '20px',
+                border: '1px solid #cbd5e1',
+                boxShadow: '0 25px 60px rgba(15,23,42,0.4)',
+                padding: 0,
+                overflow: 'hidden',
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '18px 24px',
+                  background: 'linear-gradient(135deg, #065f46 0%, #047857 50%, #059669 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '12px',
+                      background: 'rgba(255,255,255,0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '22px',
+                    }}
+                  >
+                    <i className="fa-solid fa-file-excel"></i>
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900 }}>
+                      Carga Masiva de Tickets desde Excel (Super Admin)
+                    </h3>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#d1fae5' }}>
+                      Lectura de planillas con validación previa de inconsistencias, detección de duplicados y asociación automática de cisterna
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalExcelMasivo(false)}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '34px',
+                    height: '34px',
+                    color: '#ffffff',
+                    fontSize: '20px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Zona de Carga y Descarga de Plantilla */}
+                <div
+                  style={{
+                    background: '#f8fafc',
+                    border: '1.5px dashed #94a3b8',
+                    borderRadius: '16px',
+                    padding: '18px 22px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '16px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <i className="fa-solid fa-cloud-arrow-up text-emerald-600"></i>
+                      <span>{archivoExcelNombre ? `Archivo cargado: ${archivoExcelNombre}` : 'Selecciona o arrastra el archivo Excel (.xlsx, .xls, .csv)'}</span>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '4px' }}>
+                      Columnas requeridas: <b className="text-slate-800">FECHA</b>, <b className="text-slate-800">FINCA</b>, <b className="text-slate-800">LITROS</b>, <b className="text-slate-800">CONDUCTOR</b>, <b className="text-slate-800">OBSERVACION</b>, <b className="text-slate-800">ACIDA</b>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={descargarPlantillaExcel}
+                      className="btn btn-outline"
+                      style={{
+                        padding: '8px 14px',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        borderColor: '#cbd5e1',
+                        color: '#047857',
+                        background: '#ffffff',
+                        borderRadius: '10px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <i className="fa-solid fa-download"></i> Descargar Plantilla (.XLSX)
+                    </button>
+
+                    <label
+                      className="btn btn-primary"
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: '12.5px',
+                        fontWeight: 800,
+                        background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                        border: 'none',
+                        color: '#ffffff',
+                        borderRadius: '10px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <i className="fa-solid fa-file-excel"></i>
+                      <span>{archivoExcelNombre ? 'Cambiar Archivo' : 'Subir Excel'}</span>
+                      <input
+                        ref={fileInputExcelRef}
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) procesarArchivoExcel(file);
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {validandoExcel && (
+                  <div style={{ padding: '30px', textAlign: 'center', color: '#047857' }}>
+                    <i className="fa-solid fa-spinner fa-spin text-3xl mb-3"></i>
+                    <div style={{ fontWeight: 800, fontSize: '15px' }}>Analizando y auditando planilla Excel...</div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                      Validando fincas ganaderas, conductores, ciclos operativos y verificando posibles duplicados...
+                    </div>
+                  </div>
+                )}
+
+                {/* Panel de Validación y Diagnóstico previo */}
+                {!validandoExcel && filasExcel.length > 0 && (
+                  <>
+                    {/* Banner de Diagnóstico */}
+                    <div
+                      style={{
+                        padding: '14px 18px',
+                        borderRadius: '14px',
+                        background: cantErrores > 0 ? '#fef2f2' : cantDuplicadas > 0 ? '#fffbeb' : '#f0fdf4',
+                        border: `1.5px solid ${cantErrores > 0 ? '#fca5a5' : cantDuplicadas > 0 ? '#fde68a' : '#86efac'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <i
+                          className={`fa-solid ${
+                            cantErrores > 0 ? 'fa-circle-xmark text-rose-600 text-xl' : cantDuplicadas > 0 ? 'fa-triangle-exclamation text-amber-600 text-xl' : 'fa-circle-check text-emerald-600 text-xl'
+                          }`}
+                        ></i>
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: 900,
+                              fontSize: '13.5px',
+                              color: cantErrores > 0 ? '#991b1b' : cantDuplicadas > 0 ? '#92400e' : '#166534',
+                            }}
+                          >
+                            {validacionExcel?.mensajeGeneral || (cantErrores === 0 ? 'Data 100% validada sin inconsistencias' : 'Se encontraron errores')}
+                          </div>
+                          <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '2px' }}>
+                            {cantErrores === 0
+                              ? `Listo para generar ${ticketsACrearList.length} ticket(s) nuevo(s) con ${filasAProcesar.length} paradas en estado ABIERTO.`
+                              : `Hay ${cantErrores} fila(s) con datos no reconocidos que no podrán procesarse.`}
+                          </div>
+                        </div>
+                      </div>
+
+                      {cantDuplicadas > 0 && (
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: '#ffffff',
+                            padding: '6px 12px',
+                            borderRadius: '10px',
+                            border: '1px solid #fde68a',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            color: '#92400e',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={omitirDuplicadosExcel}
+                            onChange={(e) => setOmitirDuplicadosExcel(e.target.checked)}
+                          />
+                          <span>Omitir automáticamente {cantDuplicadas} registros ya existentes</span>
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Tarjetas de Resumen */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                      <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>Total Filas Excel</div>
+                        <div style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>{filasExcel.length}</div>
+                      </div>
+
+                      <div style={{ background: '#f0fdf4', padding: '12px 14px', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+                        <div style={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>Tickets Nuevos a Crear</div>
+                        <div style={{ fontSize: '20px', fontWeight: 900, color: '#15803d', marginTop: '2px' }}>
+                          {ticketsACrearList.length} <span style={{ fontSize: '12px', fontWeight: 700 }}>(Abiertos)</span>
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#eff6ff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
+                        <div style={{ fontSize: '11px', color: '#1e40af', fontWeight: 700 }}>Litros Totales a Cargar</div>
+                        <div style={{ fontSize: '20px', fontWeight: 900, color: '#1d4ed8', marginTop: '2px' }}>
+                          {totalLitrosAProcesar.toLocaleString()} Lts
+                        </div>
+                      </div>
+
+                      <div style={{ background: cantDuplicadas > 0 ? '#fffbeb' : '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: `1px solid ${cantDuplicadas > 0 ? '#fde68a' : '#e2e8f0'}` }}>
+                        <div style={{ fontSize: '11px', color: cantDuplicadas > 0 ? '#92400e' : '#64748b', fontWeight: 700 }}>Duplicados Detectados</div>
+                        <div style={{ fontSize: '20px', fontWeight: 900, color: cantDuplicadas > 0 ? '#b45309' : '#64748b', marginTop: '2px' }}>
+                          {cantDuplicadas} {omitirDuplicadosExcel && cantDuplicadas > 0 && <span style={{ fontSize: '11px', color: '#92400e' }}>(Se omitirán)</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Pestañas de Filtro para la Tabla */}
+                    <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setFiltroPreviewExcel('TODAS')}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          background: filtroPreviewExcel === 'TODAS' ? '#0f172a' : '#f1f5f9',
+                          color: filtroPreviewExcel === 'TODAS' ? '#ffffff' : '#475569',
+                          border: 'none',
+                        }}
+                      >
+                        Todas ({filasExcel.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFiltroPreviewExcel('VALIDAS')}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          background: filtroPreviewExcel === 'VALIDAS' ? '#15803d' : '#f1f5f9',
+                          color: filtroPreviewExcel === 'VALIDAS' ? '#ffffff' : '#475569',
+                          border: 'none',
+                        }}
+                      >
+                        Válidas ({cantValidas})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFiltroPreviewExcel('DUPLICADAS')}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          background: filtroPreviewExcel === 'DUPLICADAS' ? '#b45309' : '#f1f5f9',
+                          color: filtroPreviewExcel === 'DUPLICADAS' ? '#ffffff' : '#475569',
+                          border: 'none',
+                        }}
+                      >
+                        Duplicadas ({cantDuplicadas})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFiltroPreviewExcel('ERRORES')}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          background: filtroPreviewExcel === 'ERRORES' ? '#b91c1c' : '#f1f5f9',
+                          color: filtroPreviewExcel === 'ERRORES' ? '#ffffff' : '#475569',
+                          border: 'none',
+                        }}
+                      >
+                        Con Errores ({cantErrores})
+                      </button>
+                    </div>
+
+                    {/* Tabla de Preview con DataTable (Regla #2) */}
+                    <div style={{ flex: 1, minHeight: '260px' }}>
+                      <DataTable
+                        data={filasFiltradas}
+                        columns={columnasExcel}
+                        exportFileName={`Prevalidacion_Excel_${hoyStr}`}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div
+                style={{
+                  padding: '16px 24px',
+                  background: '#f8fafc',
+                  borderTop: '1px solid #e2e8f0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setModalExcelMasivo(false)}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    border: '1px solid #cbd5e1',
+                    background: '#ffffff',
+                    color: '#475569',
+                    fontWeight: 800,
+                    fontSize: '12.5px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  {filasExcel.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={ejecutandoCargaExcel || filasAProcesar.length === 0}
+                      onClick={ejecutarCargaMasivaExcel}
+                      style={{
+                        padding: '11px 24px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background:
+                          filasAProcesar.length > 0
+                            ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+                            : '#94a3b8',
+                        color: '#ffffff',
+                        fontWeight: 900,
+                        fontSize: '13px',
+                        cursor: filasAProcesar.length > 0 ? 'pointer' : 'not-allowed',
+                        boxShadow: filasAProcesar.length > 0 ? '0 4px 14px rgba(16, 185, 129, 0.35)' : 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      {ejecutandoCargaExcel ? (
+                        <>
+                          <i className="fa-solid fa-spinner fa-spin"></i> Generando Tickets...
+                        </>
+                      ) : (
+                        <>
+                          <i className="fa-solid fa-rocket"></i>
+                          <span>Crear {ticketsACrearList.length} Tickets Nuevos ({totalLitrosAProcesar.toLocaleString()} Lts)</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ========================================================================= */}
       {/* MODAL: CARGA MASIVA Y ESCANEO POR FOTO / IA (EXCLUSIVO SUPERADMIN)        */}

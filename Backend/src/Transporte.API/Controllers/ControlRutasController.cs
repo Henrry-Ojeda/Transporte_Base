@@ -658,5 +658,51 @@ namespace Transporte.API.Controllers
             var logs = await _controlRutasRepository.ObtenerLogsModificacionesControlAsync(id);
             return Ok(logs);
         }
+
+        /// <summary>
+        /// Valida filas cargadas desde un archivo Excel antes de crear tickets.
+        /// Verifica fincas, choferes, litros, fechas y detección de duplicados ya existentes.
+        /// </summary>
+        [HttpPost("validar-carga-masiva-excel")]
+        public async Task<IActionResult> ValidarCargaMasivaExcel([FromBody] ValidarCargaMasivaExcelRequestDto dto)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var rol = User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER";
+
+            try
+            {
+                var resultado = await _controlRutasRepository.ValidarCargaMasivaExcelAsync(dto, userId, rol);
+                return Ok(resultado);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Ejecuta la creación masiva de nuevos tickets y paradas en base a la data de Excel validada.
+        /// Los tickets se crean en estado ABIERTO para que el SuperAdmin los revise y finalice.
+        /// </summary>
+        [HttpPost("ejecutar-carga-masiva-excel")]
+        public async Task<IActionResult> EjecutarCargaMasivaExcel([FromBody] EjecutarCargaMasivaExcelRequestDto dto)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var rol = User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER";
+
+            try
+            {
+                var resultado = await _controlRutasRepository.EjecutarCargaMasivaExcelAsync(dto, userId, rol);
+                return Ok(resultado);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }

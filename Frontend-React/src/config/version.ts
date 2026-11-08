@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 9,
-  patch: 9,
-  tag: 'v3.9.9',
+  minor: 10,
+  patch: 0,
+  tag: 'v3.10.0',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Validación de Semana Operativa (Web y Móvil) y función para Administrador de limpiar recolección de finca (marcar como no recogida / 0 Lts) sin removerla del ticket',
+  descripcion: 'Carga Masiva de Tickets desde Excel (Super Admin) con lectura de planilla, pre-validación de consistencia, detección de duplicados, asignación automática de cisterna y creación de tickets abiertos',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

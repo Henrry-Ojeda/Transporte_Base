@@ -474,6 +474,51 @@ export const operacionesApi = {
     return res.data;
   },
 
+  validarCargaMasivaExcel: async (filas: any[]): Promise<{
+    dataValida: boolean;
+    totalFilas: number;
+    filasValidas: number;
+    filasDuplicadas: number;
+    filasConError: number;
+    mensajeGeneral: string;
+    resultados: Array<{
+      index: number;
+      esValido: boolean;
+      esDuplicado: boolean;
+      mensaje?: string;
+      ticketExistenteId?: number;
+      ticketCodigo?: string;
+      ticketEstado?: string;
+      camionId?: number;
+      camionPlaca?: string;
+      camionCapacidadLitros?: number;
+    }>;
+  }> => {
+    const res = await apiClient.post('/control-rutas/validar-carga-masiva-excel', { filas });
+    return res.data;
+  },
+
+  ejecutarCargaMasivaExcel: async (filas: any[]): Promise<{
+    success: boolean;
+    message: string;
+    ticketsCreadosCount: number;
+    paradasCreadasCount: number;
+    litrosTotales: number;
+    tickets: Array<{
+      ticketId: number;
+      codigoTicket?: string;
+      fecha: string;
+      conductorId: number;
+      conductorNombre?: string;
+      camionPlaca?: string;
+      totalLitros: number;
+      cantidadFincas: number;
+    }>;
+  }> => {
+    const res = await apiClient.post('/control-rutas/ejecutar-carga-masiva-excel', { filas });
+    return res.data;
+  },
+
   diferirLitros: async (rutaId: number, dto: { litrosDiferir: number; cicloDestinoId?: number; motivo?: string }): Promise<{ message: string }> => {
     const res = await apiClient.post<{ message: string }>(`/rutas/${rutaId}/diferir-litros`, dto);
     return res.data;

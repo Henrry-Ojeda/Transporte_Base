@@ -1553,6 +1553,91 @@ namespace Transporte.Core.DTOs
         public string? FotoComprobante { get; set; }
     }
 
+    // =====================================================================
+    // DTOs PARA CARGA MASIVA DE TICKETS DESDE EXCEL (SUPER ADMIN)
+    // =====================================================================
+    public class FilaValidarExcelDto
+    {
+        public int Index { get; set; }
+        public DateTime? Fecha { get; set; }
+        public int FincaId { get; set; }
+        public string? FincaNombre { get; set; }
+        public int ConductorId { get; set; }
+        public string? ConductorNombre { get; set; }
+        public int Litros { get; set; }
+        public bool EsAcida { get; set; }
+        public string? Observacion { get; set; }
+    }
+
+    public class ValidarCargaMasivaExcelRequestDto
+    {
+        public List<FilaValidarExcelDto> Filas { get; set; } = new();
+    }
+
+    public class FilaResultadoValidacionDto
+    {
+        public int Index { get; set; }
+        public bool EsValido { get; set; }
+        public bool EsDuplicado { get; set; }
+        public string? Mensaje { get; set; }
+        public long? TicketExistenteId { get; set; }
+        public string? TicketCodigo { get; set; }
+        public string? TicketEstado { get; set; }
+        public int? CamionId { get; set; }
+        public string? CamionPlaca { get; set; }
+        public int? CamionCapacidadLitros { get; set; }
+    }
+
+    public class ValidarCargaMasivaExcelResponseDto
+    {
+        public bool DataValida { get; set; }
+        public int TotalFilas { get; set; }
+        public int FilasValidas { get; set; }
+        public int FilasDuplicadas { get; set; }
+        public int FilasConError { get; set; }
+        public string MensajeGeneral { get; set; } = string.Empty;
+        public List<FilaResultadoValidacionDto> Resultados { get; set; } = new();
+    }
+
+    public class FilaEjecutarExcelDto
+    {
+        public DateTime Fecha { get; set; }
+        public int FincaId { get; set; }
+        public int ConductorId { get; set; }
+        public int? CamionId { get; set; }
+        public int Litros { get; set; }
+        public bool EsAcida { get; set; }
+        public string? TipoLeche { get; set; } = "VACA";
+        public string? Observacion { get; set; }
+    }
+
+    public class EjecutarCargaMasivaExcelRequestDto
+    {
+        public List<FilaEjecutarExcelDto> Filas { get; set; } = new();
+    }
+
+    public class ResumenTicketCreadoDto
+    {
+        public long TicketId { get; set; }
+        public string? CodigoTicket { get; set; }
+        public DateTime Fecha { get; set; }
+        public int ConductorId { get; set; }
+        public string? ConductorNombre { get; set; }
+        public string? CamionPlaca { get; set; }
+        public int TotalLitros { get; set; }
+        public int CantidadFincas { get; set; }
+    }
+
+    public class EjecutarCargaMasivaExcelResponseDto
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public int TicketsCreadosCount { get; set; }
+        public int ParadasCreadasCount { get; set; }
+        public int LitrosTotales { get; set; }
+        public List<ResumenTicketCreadoDto> Tickets { get; set; } = new();
+    }
+
     public class EnviarAReceptoriaDto
     {
         public string? Observacion { get; set; }

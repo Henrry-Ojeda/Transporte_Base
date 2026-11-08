@@ -8327,6 +8327,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
         Task<IEnumerable<EntregaItemDto>> ObtenerEntregasDeViajeAsync(long controlRutaId);
         Task<bool> EditarEntregaDeViajeAuditadoAsync(long controlRutaId, long entregaId, EditarEntregaViajeAuditadoDto dto, int usuarioId, string rol);
         Task<IEnumerable<LogModificacionControlDto>> ObtenerLogsModificacionesControlAsync(long controlRutaId);
+        Task<ValidarCargaMasivaExcelResponseDto> ValidarCargaMasivaExcelAsync(ValidarCargaMasivaExcelRequestDto dto, int usuarioId, string rol);
+        Task<EjecutarCargaMasivaExcelResponseDto> EjecutarCargaMasivaExcelAsync(EjecutarCargaMasivaExcelRequestDto dto, int usuarioId, string rol);
     }
 
     // =====================================================================
@@ -10929,6 +10931,330 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             }
 
             return true;
+        }
+
+        public async Task<ValidarCargaMasivaExcelResponseDto> ValidarCargaMasivaExcelAsync(ValidarCargaMasivaExcelRequestDto dto, int usuarioId, string rol)
+        {
+            var response = new ValidarCargaMasivaExcelResponseDto
+            {
+                TotalFilas = dto.Filas?.Count ?? 0,
+            };
+
+            if (dto.Filas == null || !dto.Filas.Any())
+            {
+                response.DataValida = true;
+                response.MensajeGeneral = "No se recibieron filas para validar.";
+                return response;
+            }
+
+            using var connection = new SqlConnection(_connectionString);
+
+            // Obtener camiones activos asociados a choferes
+            var camiones = (await connection.QueryAsync<dynamic>(
+                @"SELECT c.Id, c.Placa, c.CapacidadLitros, c.UsuarioId 
+                  FROM TB_CAMIONES c 
+                  WHERE c.Activo = 1 AND c.IsDeleted = 0")).ToList();
+
+            // Fechas únicas y Fincas únicas para consultar duplicados eficientemente
+            var fechas = dto.Filas.Where(f => f.Fecha.HasValue).Select(f => f.Fecha.Value.Date).Distinct().ToList();
+            var fincasIds = dto.Filas.Where(f => f.FincaId > 0).Select(f => f.FincaId).Distinct().ToList();
+
+            IEnumerable<dynamic> existentes = new List<dynamic>();
+            if (fechas.Any() && fincasIds.Any())
+            {
+                existentes = await connection.QueryAsync<dynamic>(
+                    @"SELECT r.Id AS RutaId, r.ControlRutaId, r.Fecha, r.FincaId, r.Litros, r.UsuarioId AS RutaChoferId,
+                             cr.Id AS TicketId, cr.CodigoTicket, cr.UsuarioId AS TicketChoferId, cr.Estado AS TicketEstado
+                      FROM TB_RUTAS_RECOLECCION r
+                      LEFT JOIN TB_CONTROL_RUTAS cr ON r.ControlRutaId = cr.Id
+                      WHERE CAST(r.Fecha AS DATE) IN @fechas AND r.FincaId IN @fincasIds",
+                    new { fechas, fincasIds });
+            }
+
+            var resultados = new List<FilaResultadoValidacionDto>();
+            int validas = 0;
+            int duplicadas = 0;
+            int conError = 0;
+
+            foreach (var fila in dto.Filas)
+            {
+                var res = new FilaResultadoValidacionDto
+                {
+                    Index = fila.Index,
+                    EsValido = true,
+                    EsDuplicado = false,
+                };
+
+                // 1. Validaciones básicas
+                if (!fila.Fecha.HasValue)
+                {
+                    res.EsValido = false;
+                    res.Mensaje = "Fecha no especificada o inválida.";
+                    conError++;
+                    resultados.Add(res);
+                    continue;
+                }
+
+                if (fila.FincaId <= 0)
+                {
+                    res.EsValido = false;
+                    res.Mensaje = string.IsNullOrWhiteSpace(fila.FincaNombre) 
+                        ? "Finca no identificada." 
+                        : $"La finca \"{fila.FincaNombre}\" no existe en el catálogo activo.";
+                    conError++;
+                    resultados.Add(res);
+                    continue;
+                }
+
+                if (fila.ConductorId <= 0)
+                {
+                    res.EsValido = false;
+                    res.Mensaje = string.IsNullOrWhiteSpace(fila.ConductorNombre) 
+                        ? "Conductor no identificado." 
+                        : $"El conductor \"{fila.ConductorNombre}\" no existe o no está activo.";
+                    conError++;
+                    resultados.Add(res);
+                    continue;
+                }
+
+                if (fila.Litros <= 0)
+                {
+                    res.EsValido = false;
+                    res.Mensaje = "La cantidad de litros debe ser mayor a 0.";
+                    conError++;
+                    resultados.Add(res);
+                    continue;
+                }
+
+                // 2. Asociar Camión automáticamente por conductor
+                var camionAsociado = camiones.FirstOrDefault(c => c.UsuarioId == fila.ConductorId) 
+                                     ?? camiones.FirstOrDefault();
+                if (camionAsociado != null)
+                {
+                    res.CamionId = (int)camionAsociado.Id;
+                    res.CamionPlaca = (string)camionAsociado.Placa;
+                    res.CamionCapacidadLitros = camionAsociado.CapacidadLitros != null ? (int)camionAsociado.CapacidadLitros : 10000;
+                }
+
+                // 3. Validar si ya está registrada (Detección de Duplicados)
+                var fechaFila = fila.Fecha.Value.Date;
+                var match = existentes.FirstOrDefault(e => 
+                    ((DateTime)e.Fecha).Date == fechaFila &&
+                    (int)e.FincaId == fila.FincaId &&
+                    (int)e.Litros == fila.Litros &&
+                    ((e.RutaChoferId != null && (int)e.RutaChoferId == fila.ConductorId) ||
+                     (e.TicketChoferId != null && (int)e.TicketChoferId == fila.ConductorId)));
+
+                if (match == null)
+                {
+                    match = existentes.FirstOrDefault(e => 
+                        ((DateTime)e.Fecha).Date == fechaFila &&
+                        (int)e.FincaId == fila.FincaId &&
+                        ((e.RutaChoferId != null && (int)e.RutaChoferId == fila.ConductorId) ||
+                         (e.TicketChoferId != null && (int)e.TicketChoferId == fila.ConductorId)));
+                }
+
+                if (match != null)
+                {
+                    res.EsDuplicado = true;
+                    res.TicketExistenteId = match.TicketId != null ? (long)match.TicketId : (match.ControlRutaId != null ? (long)match.ControlRutaId : null);
+                    res.TicketCodigo = match.CodigoTicket ?? (res.TicketExistenteId?.ToString());
+                    res.TicketEstado = match.TicketEstado ?? "REGISTRADO";
+                    res.Mensaje = $"Ya registrada en Ticket #{res.TicketCodigo ?? res.TicketExistenteId?.ToString()} ({res.TicketEstado}) con {match.Litros} Lts.";
+                    duplicadas++;
+                }
+                else
+                {
+                    res.Mensaje = "Fila válida. Lista para crear ticket.";
+                    validas++;
+                }
+
+                resultados.Add(res);
+            }
+
+            response.Resultados = resultados;
+            response.FilasValidas = validas;
+            response.FilasDuplicadas = duplicadas;
+            response.FilasConError = conError;
+            response.DataValida = conError == 0;
+
+            if (conError > 0)
+            {
+                response.MensajeGeneral = $"Se detectaron {conError} fila(s) con errores críticos que deben corregirse.";
+            }
+            else if (duplicadas > 0)
+            {
+                response.MensajeGeneral = $"Data analizada correctamente. Se detectaron {duplicadas} registro(s) que ya existen en el sistema (pueden ser omitidos automáticamente).";
+            }
+            else
+            {
+                response.MensajeGeneral = "¡Data 100% válida! No se encontraron inconsistencias ni registros duplicados. Lista para generar tickets.";
+            }
+
+            return response;
+        }
+
+        public async Task<EjecutarCargaMasivaExcelResponseDto> EjecutarCargaMasivaExcelAsync(EjecutarCargaMasivaExcelRequestDto dto, int usuarioId, string rol)
+        {
+            if (!rol.Contains("ADMIN", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new UnauthorizedAccessException("Solo usuarios con rol Administrador o SuperAdmin tienen autorización para importar tickets masivos.");
+            }
+
+            if (dto.Filas == null || !dto.Filas.Any())
+            {
+                throw new InvalidOperationException("No se recibieron filas para procesar.");
+            }
+
+            using var connection = new SqlConnection(_connectionString);
+            await EnsureTableNotificacionesExistsAsync(connection);
+
+            var tasaBcv = await connection.ExecuteScalarAsync<decimal?>("SELECT TOP 1 TasaDolarBs FROM TB_HISTORIAL_BCV ORDER BY Fecha DESC") ?? 1.0m;
+            var fincas = (await connection.QueryAsync<dynamic>("SELECT Id, Nombre, PrecioLitroUSD, PrecioLitroAcidaUSD, TipoLeche FROM TB_FINCAS")).ToDictionary(f => (int)f.Id);
+            var choferes = (await connection.QueryAsync<dynamic>("SELECT Id, NombreCompleto FROM TB_USUARIOS")).ToDictionary(u => (int)u.Id);
+            var camiones = (await connection.QueryAsync<dynamic>("SELECT Id, Placa, CapacidadLitros, UsuarioId FROM TB_CAMIONES WHERE Activo = 1 AND IsDeleted = 0")).ToList();
+
+            // Agrupar filas por (Fecha, ConductorId)
+            var grupos = dto.Filas
+                .Where(f => f.Fecha != default && f.FincaId > 0 && f.ConductorId > 0 && f.Litros > 0)
+                .GroupBy(f => new { Fecha = f.Fecha.Date, f.ConductorId })
+                .ToList();
+
+            var ticketsCreados = new List<ResumenTicketCreadoDto>();
+            int totalParadas = 0;
+            int totalLitrosGlobal = 0;
+
+            foreach (var grupo in grupos)
+            {
+                var fechaGrupo = grupo.Key.Fecha;
+                var conductorId = grupo.Key.ConductorId;
+
+                // Determinar camión
+                var camion = camiones.FirstOrDefault(c => c.UsuarioId == conductorId) ?? camiones.FirstOrDefault();
+                string camionPlaca = camion != null ? (string)camion.Placa : "S/P";
+
+                // Determinar Ciclo Operativo
+                var cicloId = await connection.ExecuteScalarAsync<int?>(
+                    @"SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS 
+                      WHERE @fechaGrupo >= CAST(FechaInicio AS DATE) AND @fechaGrupo <= CAST(FechaFin AS DATE)",
+                    new { fechaGrupo });
+
+                if (!cicloId.HasValue)
+                {
+                    cicloId = await connection.ExecuteScalarAsync<int?>(
+                        "SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS WHERE Estado = 'ABIERTO' ORDER BY FechaInicio DESC, Id DESC");
+                }
+
+                // Crear el Ticket en TB_CONTROL_RUTAS (En estado ABIERTO para que SuperAdmin lo verifique y finalice)
+                var sqlInsertTicket = @"
+                    INSERT INTO TB_CONTROL_RUTAS
+                    (Fecha, UsuarioId, CicloId, TotalLitrosFinca, TotalLitrosReceptoria, DiferenciaLitros, PorcentajeMerma, Estado, ProcesoActualId, Observacion, CreatedAt, CreatedBy)
+                    VALUES (@fechaGrupo, @conductorId, @cicloId, 0, 0, 0, 0, 'ABIERTO', 1, '[CARGA_EXCEL] Ticket generado por Importación Masiva', GETDATE(), @usuarioId);
+                    SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
+
+                long ticketId = await connection.ExecuteScalarAsync<long>(sqlInsertTicket, new
+                {
+                    fechaGrupo, conductorId, cicloId, usuarioId
+                });
+
+                if (ticketId <= 0) continue;
+
+                int ticketLitros = 0;
+                int ticketFincasCount = 0;
+
+                // Insertar paradas en TB_RUTAS_RECOLECCION
+                foreach (var fila in grupo)
+                {
+                    fincas.TryGetValue(fila.FincaId, out var fincaObj);
+                    decimal precioUSD = 0.0m;
+                    string tipoLeche = !string.IsNullOrWhiteSpace(fila.TipoLeche) ? fila.TipoLeche : "VACA";
+
+                    if (fincaObj != null)
+                    {
+                        precioUSD = fila.EsAcida 
+                            ? (decimal)(fincaObj.PrecioLitroAcidaUSD ?? fincaObj.PrecioLitroUSD ?? 0.0m) 
+                            : (decimal)(fincaObj.PrecioLitroUSD ?? 0.0m);
+                        if (string.IsNullOrWhiteSpace(fila.TipoLeche) && fincaObj.TipoLeche != null)
+                        {
+                            tipoLeche = (string)fincaObj.TipoLeche;
+                        }
+                    }
+
+                    var sqlInsertRuta = @"
+                        INSERT INTO TB_RUTAS_RECOLECCION
+                        (ControlRutaId, FincaId, Litros, EsAcida, TipoLeche, Fecha, Observacion, PrecioLitroUSDAplicado, TasaDolarBsAplicada, CreatedAt, CreatedBy)
+                        VALUES (@ticketId, @FincaId, @Litros, @EsAcida, @tipoLeche, @fechaGrupo, @Observacion, @precioUSD, @tasaBcv, GETDATE(), @usuarioId);";
+
+                    await connection.ExecuteAsync(sqlInsertRuta, new
+                    {
+                        ticketId,
+                        fila.FincaId,
+                        fila.Litros,
+                        fila.EsAcida,
+                        tipoLeche,
+                        fechaGrupo,
+                        Observacion = string.IsNullOrWhiteSpace(fila.Observacion) ? "[ORIGEN_EXCEL]" : $"[ORIGEN_EXCEL] {fila.Observacion}".Trim(),
+                        precioUSD,
+                        tasaBcv,
+                        usuarioId
+                    });
+
+                    ticketLitros += fila.Litros;
+                    ticketFincasCount++;
+                    totalParadas++;
+                    totalLitrosGlobal += fila.Litros;
+                }
+
+                // Recalcular métricas del ticket
+                await _RecalcularMetricasTicketAsync(connection, ticketId, usuarioId);
+
+                // Registrar en historial de procesos
+                await connection.ExecuteAsync(@"
+                    INSERT INTO TB_HISTORIAL_PROCESOS_TICKET (ControlRutaId, ProcesoId, FechaCambio, CambiadoPor, Observacion)
+                    VALUES (@ticketId, 1, GETDATE(), @usuarioId, 'Apertura de Ticket por Carga Masiva Excel SuperAdmin');",
+                    new { ticketId, usuarioId });
+
+                // Notificar al conductor
+                try
+                {
+                    await connection.ExecuteAsync(@"
+                        INSERT INTO TB_NOTIFICACIONES_MOVIL (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
+                        VALUES (@conductorId, 'TICKET_ASIGNADO', '🎫 Nuevo Ticket Creado (Excel)', @msg, @fechaGrupo, @ticketId, 0, GETDATE())",
+                        new
+                        {
+                            conductorId,
+                            msg = $"Se ha generado el Ticket #{ticketId} con {ticketFincasCount} paradas ({ticketLitros:N0} Lts) para el {fechaGrupo:dd/MM/yyyy}.",
+                            fechaGrupo,
+                            ticketId
+                        });
+                }
+                catch { /* Tolerante */ }
+
+                choferes.TryGetValue(conductorId, out var chofObj);
+                string choferNombre = chofObj != null ? (string)chofObj.NombreCompleto : $"Chofer #{conductorId}";
+
+                ticketsCreados.Add(new ResumenTicketCreadoDto
+                {
+                    TicketId = ticketId,
+                    CodigoTicket = ticketId.ToString(),
+                    Fecha = fechaGrupo,
+                    ConductorId = conductorId,
+                    ConductorNombre = choferNombre,
+                    CamionPlaca = camionPlaca,
+                    TotalLitros = ticketLitros,
+                    CantidadFincas = ticketFincasCount
+                });
+            }
+
+            return new EjecutarCargaMasivaExcelResponseDto
+            {
+                Success = true,
+                Message = $"Se crearon {ticketsCreados.Count} tickets exitosamente con un total de {totalParadas} paradas y {totalLitrosGlobal:N0} Lts.",
+                TicketsCreadosCount = ticketsCreados.Count,
+                ParadasCreadasCount = totalParadas,
+                LitrosTotales = totalLitrosGlobal,
+                Tickets = ticketsCreados
+            };
         }
 
         public async Task<IEnumerable<EntregaItemDto>> ObtenerEntregasDeViajeAsync(long controlRutaId)

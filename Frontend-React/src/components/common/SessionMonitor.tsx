@@ -52,12 +52,22 @@ const isTokenExpired = (token: string | null): boolean => {
 export const SessionMonitor: React.FC = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const warningOpenRef = useRef(false);
   const lastWriteRef = useRef(0);
 
+  // La terminal móvil de campo para choferes es permanente y resiliente offline:
+  // jamás debe cerrar sesión por inactividad si está en la app móvil o es un chofer en ruta
+  const esRutaMovil = typeof window !== 'undefined' && (
+    window.location.pathname.startsWith('/app') ||
+    window.location.pathname.startsWith('/movil') ||
+    (user?.rol || '').toUpperCase() === 'CHOFER' ||
+    Boolean(localStorage.getItem('movil_device_info'))
+  );
+
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || esRutaMovil) return;
 
     const cerrarSesion = (msg: string) => {
       warningOpenRef.current = false;

@@ -7,6 +7,7 @@ import { LoginPage } from '@/modules/auth/LoginPage';
 import { ProtectedRoute } from '@/components/common/ProtectedRoute';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { SessionMonitor } from '@/components/common/SessionMonitor';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 
 // Dashboard
 import { DashboardPage } from '@/modules/dashboard/DashboardPage';
@@ -63,7 +64,7 @@ import { PermisosPage } from '@/modules/sistema/PermisosPage';
 import { ConfiguracionPage } from '@/modules/sistema/ConfiguracionPage';
 import { TiempoSesionPage } from '@/modules/sistema/TiempoSesionPage';
 import { AppMovilPage } from '@/modules/movil/AppMovilPage';
-import { setOnLogoutListener } from '@/stores/authStore';
+import { setOnLogoutListener, useAuthStore } from '@/stores/authStore';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -80,17 +81,30 @@ setOnLogoutListener(() => {
   queryClient.clear();
 });
 
+// Redirección inteligente de raíz: choferes y móviles siempre a /app
+const HomeRedirect: React.FC = () => {
+  const user = useAuthStore((s) => s.user);
+  const rol = (user?.rol || '').toUpperCase();
+  const tieneDispositivo = typeof window !== 'undefined' && Boolean(localStorage.getItem('movil_device_info'));
+  if (rol === 'CHOFER' || tieneDispositivo) {
+    return <Navigate to="/app" replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
+};
+
 export const App: React.FC = () => {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <SessionMonitor />
-        <Routes>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <SessionMonitor />
+          <Routes>
           {/* Ruta Pública de Login */}
           <Route path="/login" element={<LoginPage />} />
 
           {/* Terminal / App Móvil Offline para Conductores y Dispositivos Vinculados */}
           <Route path="/app" element={<AppMovilPage />} />
+          <Route path="/movil" element={<Navigate to="/app" replace />} />
 
           {/* Rutas Protegidas dentro de MainLayout */}
           <Route
@@ -100,8 +114,8 @@ export const App: React.FC = () => {
               </ProtectedRoute>
             }
           >
-            {/* Redirección raíz a Dashboard */}
-            <Route index element={<Navigate to="/dashboard" replace />} />
+            {/* Redirección raíz según el rol */}
+            <Route index element={<HomeRedirect />} />
 
             {/* Operaciones */}
             <Route path="/dashboard" element={<DashboardPage />} />
@@ -161,11 +175,12 @@ export const App: React.FC = () => {
           </Route>
 
           {/* Ruta no encontrada */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<HomeRedirect />} />
         </Routes>
         <Toaster position="top-right" richColors closeButton />
       </BrowserRouter>
     </QueryClientProvider>
+  </ErrorBoundary>
   );
 };
 

@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "build:dotnet": "set BUILD_DEST=wwwroot&& tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "version:diseno": "node scripts/bump-version.js diseno",
+    "version:logica": "node scripts/bump-version.js logica",
+    "version:estructura": "node scripts/bump-version.js estructura"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

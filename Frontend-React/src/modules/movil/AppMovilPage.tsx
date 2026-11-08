@@ -86,7 +86,8 @@ const REPORTES_CHOFER = [
   { value: 'MANTENIMIENTO', label: '8. MANTENIMIENTO & TALLER (Flota e Incidentes)', icon: 'fa-wrench' },
 ];
 
-export const APP_VERSION = 'v2.10.0';
+import { APP_VERSION } from '@/config/version';
+export { APP_VERSION };
 
 export const AppMovilPage: React.FC = () => {
   // Navegación de Pestañas Móviles
@@ -259,6 +260,25 @@ export const AppMovilPage: React.FC = () => {
       } catch {}
     }
   }, [paradasViajeActivo]);
+
+  // Salvaguarda: Rehidratar viaje activo y paradas de LocalStorage si la memoria quedó vacía
+  useEffect(() => {
+    if (!viajeActivo) {
+      try {
+        const savedV = localStorage.getItem('movil_viaje_activo');
+        if (savedV) setViajeActivo(JSON.parse(savedV));
+      } catch {}
+    }
+    if (!paradasViajeActivo || paradasViajeActivo.length === 0) {
+      try {
+        const savedP = localStorage.getItem('movil_paradas_activo');
+        if (savedP) {
+          const list = JSON.parse(savedP);
+          if (Array.isArray(list) && list.length > 0) setParadasViajeActivo(list);
+        }
+      } catch {}
+    }
+  }, []);
 
   // Usuario autenticado en la plataforma web global
   const authUser = useAuthStore((s) => s.user);
@@ -1409,6 +1429,101 @@ export const AppMovilPage: React.FC = () => {
     };
   }, []);
 
+  // Interceptar tecla física o gesto ATRÁS (<) de Android para evitar salir a pantallas en blanco
+  const ultimoAtrasRef = useRef<number>(0);
+  useEffect(() => {
+    try {
+      window.history.pushState({ app: 'movil' }, '', window.location.href);
+    } catch {}
+
+    const handlePopState = () => {
+      // 1. Cerrar cualquier modal abierto antes de retroceder
+      if (modalRegistro) {
+        setModalRegistro(false);
+        setFincaFijadaParaModal(null);
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+      if (modalNotificaciones) {
+        setModalNotificaciones(false);
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+      if (modalConfirmarDespachoChofer) {
+        setModalConfirmarDespachoChofer(null);
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+      if (modalPlanificar) {
+        setModalPlanificar(null);
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+      if (modalCircuito) {
+        setModalCircuito(null);
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+      if (modalAsignarFincasCircuito) {
+        setModalAsignarFincasCircuito(null);
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+      if (modalReparacion) {
+        setModalReparacion(null);
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+      if (modalVerificarLitros) {
+        setModalVerificarLitros(null);
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+      if (modalDevolverTicket) {
+        setModalDevolverTicket(null);
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+      if (modalNuevoDespachoSalida) {
+        setModalNuevoDespachoSalida(null);
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+
+      // 2. Si está en otra pestaña, regresar a la pestaña Principal (Inicio)
+      if (tabActiva !== 'principal') {
+        setTabActiva('principal');
+        try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+        return;
+      }
+
+      // 3. Si ya está en la pestaña principal, evitar salir accidentalmente hacia una pantalla en blanco
+      const now = Date.now();
+      if (now - ultimoAtrasRef.current < 2000) {
+        // Permitir salida si pulsa dos veces seguidas en menos de 2s
+        return;
+      }
+      ultimoAtrasRef.current = now;
+      toast.info('Presiona Atrás nuevamente para salir de la aplicación.');
+      try { window.history.pushState({ app: 'movil' }, '', window.location.href); } catch {}
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [
+    modalRegistro,
+    modalNotificaciones,
+    modalConfirmarDespachoChofer,
+    modalPlanificar,
+    modalCircuito,
+    modalAsignarFincasCircuito,
+    modalReparacion,
+    modalVerificarLitros,
+    modalDevolverTicket,
+    modalNuevoDespachoSalida,
+    tabActiva,
+  ]);
+
   const handleInstalarApp = async () => {
     if (deferredPrompt) {
       deferredPrompt.prompt();
@@ -1944,6 +2059,25 @@ export const AppMovilPage: React.FC = () => {
     if (fincasRuta.length === 0) {
       const idsParadas = todasLasParadas.map((p) => Number(p.fincaId || p.FincaId || 0)).filter((id) => id > 0);
       fincasRuta = fincas.filter((f) => idsParadas.includes(f.id));
+    }
+
+    // Salvaguarda Offline: Si fincas no estaba en caché pero hay paradas en local, reconstruirlas
+    if (fincasRuta.length === 0 && todasLasParadas.length > 0) {
+      const mapa = new Map<number, FincaDto>();
+      todasLasParadas.forEach((p) => {
+        const id = Number(p.fincaId || p.FincaId || 0);
+        if (id > 0 && !mapa.has(id)) {
+          mapa.set(id, {
+            id,
+            nombre: p.fincaNombre || p.FincaNombre || `Finca #${id}`,
+            propietario: p.propietario || p.Propietario || '',
+            propietarioNombre: p.propietario || p.Propietario || '',
+            codigo: '',
+            tipoLeche: p.tipoLeche || 'VACA',
+          } as any);
+        }
+      });
+      fincasRuta = Array.from(mapa.values());
     }
 
     return fincasRuta.map((f) => {

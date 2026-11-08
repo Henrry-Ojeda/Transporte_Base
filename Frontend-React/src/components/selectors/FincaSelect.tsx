@@ -16,6 +16,7 @@ interface FincaSelectProps {
   allowClear?: boolean;
   style?: React.CSSProperties;
   className?: string;
+  dropDirection?: 'auto' | 'down' | 'up';
 }
 
 export const FincaSelect: React.FC<FincaSelectProps> = ({
@@ -30,6 +31,7 @@ export const FincaSelect: React.FC<FincaSelectProps> = ({
   allowClear = true,
   style,
   className,
+  dropDirection = 'down',
 }) => {
   const { data: fincas = [], isLoading } = useQuery<FincaDto[]>({
     queryKey: ['fincas-catalogos'],
@@ -88,6 +90,7 @@ export const FincaSelect: React.FC<FincaSelectProps> = ({
       allowClear={allowClear}
       style={style}
       className={className}
+      dropDirection={dropDirection}
     />
   );
 };

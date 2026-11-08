@@ -1360,6 +1360,70 @@ export const RecoleccionRutasPage: React.FC = () => {
     toast.success('Plantilla Excel descargada exitosamente');
   };
 
+  const actualizarFincaFilaExcel = (index: number, nuevoFincaId: number, fincaObj?: FincaDto) => {
+    setFilasExcel((prev) =>
+      prev.map((f) => {
+        if (f.index !== index) return f;
+        const nombreFinal = fincaObj?.nombre || f.fincaNombre || f.fincaRaw;
+        const nuevoTipoLeche =
+          f.tipoLeche === 'BUFALA' || (fincaObj?.tipoLeche && fincaObj.tipoLeche.toUpperCase().includes('BUFAL'))
+            ? 'BUFALA'
+            : 'VACA';
+
+        let precioUSD = f.precioLitroUSDAplicado;
+        if (!precioUSD && fincaObj) {
+          if (f.esAcida) {
+            precioUSD = fincaObj.precioLitroAcidaUSD || fincaObj.precioLitroUSD;
+          } else if (nuevoTipoLeche === 'BUFALA') {
+            precioUSD = fincaObj.precioBufalaLitroUSD || fincaObj.precioLitroUSD;
+          } else {
+            precioUSD = fincaObj.precioLitroUSD;
+          }
+        }
+
+        const esValidoAhora = nuevoFincaId > 0 && f.conductorId > 0 && f.litros > 0 && Boolean(f.fecha);
+
+        return {
+          ...f,
+          fincaId: nuevoFincaId,
+          fincaNombre: nombreFinal,
+          fincaObj: fincaObj || f.fincaObj,
+          tipoLeche: nuevoTipoLeche,
+          precioLitroUSDAplicado: precioUSD,
+          esValido: esValidoAhora,
+          mensajeValidacion: esValidoAhora
+            ? (f.esDuplicado ? f.mensajeValidacion : 'Finca vinculada manualmente. Válida para crear.')
+            : (nuevoFincaId <= 0 ? 'Finca no seleccionada.' : f.mensajeValidacion),
+        };
+      })
+    );
+  };
+
+  const actualizarConductorFilaExcel = (index: number, nuevoConductorId: number, conductorNombre?: string) => {
+    setFilasExcel((prev) =>
+      prev.map((f) => {
+        if (f.index !== index) return f;
+        const camionObj = resolverCamionConductorExcel(nuevoConductorId);
+        const camionPlaca = camionObj ? camionObj.placa : 'S/P';
+        const camionCapacidad = camionObj ? (camionObj.capacidadLitros || 10000) : 10000;
+        const esValidoAhora = f.fincaId > 0 && nuevoConductorId > 0 && f.litros > 0 && Boolean(f.fecha);
+
+        return {
+          ...f,
+          conductorId: nuevoConductorId,
+          conductorNombre: conductorNombre || f.conductorNombre,
+          camionId: camionObj ? camionObj.id : null,
+          camionPlaca,
+          camionCapacidadLitros: camionCapacidad,
+          esValido: esValidoAhora,
+          mensajeValidacion: esValidoAhora
+            ? (f.esDuplicado ? f.mensajeValidacion : 'Chofer y cisterna actualizados.')
+            : (nuevoConductorId <= 0 ? 'Chofer no seleccionado.' : f.mensajeValidacion),
+        };
+      })
+    );
+  };
+
   const ejecutarCargaMasivaExcel = async () => {
     if (!filasExcel.length) {
       toast.error('No hay datos para procesar.');
@@ -6432,13 +6496,49 @@ export const RecoleccionRutasPage: React.FC = () => {
             header: 'FINCA',
             accessorKey: 'fincaNombre',
             cell: (row) => (
-              <div>
-                <div className="font-bold text-slate-900 text-xs">{row.fincaNombre || row.fincaRaw}</div>
-                {row.fincaId > 0 ? (
-                  <span className="text-[10px] text-emerald-600 font-semibold">✓ Reconocida (ID: #{row.fincaId})</span>
-                ) : (
-                  <span className="text-[10px] text-rose-600 font-extrabold">❌ Finca No Reconocida</span>
-                )}
+              <div style={{ minWidth: '230px', maxWidth: '300px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: row.fincaId > 0 ? '#475569' : '#dc2626',
+                    }}
+                    title={row.fincaRaw}
+                  >
+                    {row.fincaId > 0 ? (
+                      <span className="truncate max-w-[150px] inline-block">Excel: <b>{row.fincaRaw}</b></span>
+                    ) : (
+                      <span className="truncate max-w-[150px] inline-block text-rose-600 font-extrabold">
+                        ⚠️ Excel: "{row.fincaRaw}"
+                      </span>
+                    )}
+                  </span>
+                  {row.fincaId > 0 ? (
+                    <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                      ID #{row.fincaId}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-rose-700 font-extrabold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 animate-pulse">
+                      Asignar Finca 👇
+                    </span>
+                  )}
+                </div>
+                <FincaSelect
+                  value={row.fincaId > 0 ? row.fincaId : undefined}
+                  onChange={(val, finca) => {
+                    const fId = Number(val) || 0;
+                    actualizarFincaFilaExcel(row.index, fId, finca);
+                  }}
+                  placeholder={row.fincaRaw ? `Asignar a "${row.fincaRaw}"...` : '-- Seleccionar Finca --'}
+                  searchPlaceholder="Buscar finca en catálogo..."
+                  dropDirection="auto"
+                  style={{
+                    fontSize: '11.5px',
+                    borderColor: row.fincaId > 0 ? '#cbd5e1' : '#f87171',
+                    background: row.fincaId > 0 ? '#ffffff' : '#fff1f2',
+                  }}
+                />
               </div>
             ),
           },
@@ -6455,13 +6555,38 @@ export const RecoleccionRutasPage: React.FC = () => {
             header: 'CONDUCTOR',
             accessorKey: 'conductorNombre',
             cell: (row) => (
-              <div>
-                <div className="font-bold text-slate-900 text-xs">{row.conductorNombre || row.conductorRaw}</div>
-                {row.conductorId > 0 ? (
-                  <span className="text-[10px] text-emerald-600 font-semibold">✓ Chofer Activo</span>
-                ) : (
-                  <span className="text-[10px] text-rose-600 font-extrabold">❌ Chofer No Reconocido</span>
-                )}
+              <div style={{ minWidth: '180px', maxWidth: '240px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: row.conductorId > 0 ? '#475569' : '#dc2626' }}>
+                    {row.conductorId > 0 ? (
+                      <span className="truncate max-w-[120px] inline-block">Excel: <b>{row.conductorRaw}</b></span>
+                    ) : (
+                      <span className="truncate max-w-[120px] inline-block text-rose-600 font-extrabold">
+                        ⚠️ Excel: "{row.conductorRaw}"
+                      </span>
+                    )}
+                  </span>
+                  {row.conductorId > 0 && (
+                    <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                      ID #{row.conductorId}
+                    </span>
+                  )}
+                </div>
+                <ChoferSelect
+                  value={row.conductorId > 0 ? row.conductorId : undefined}
+                  onChange={(val, chofer) => {
+                    const cId = Number(val) || 0;
+                    actualizarConductorFilaExcel(row.index, cId, chofer?.nombreCompleto || chofer?.nombre);
+                  }}
+                  placeholder={row.conductorRaw ? `Asignar a "${row.conductorRaw}"...` : '-- Seleccionar Chofer --'}
+                  searchPlaceholder="Buscar chofer..."
+                  dropDirection="auto"
+                  style={{
+                    fontSize: '11.5px',
+                    borderColor: row.conductorId > 0 ? '#cbd5e1' : '#f87171',
+                    background: row.conductorId > 0 ? '#ffffff' : '#fff1f2',
+                  }}
+                />
               </div>
             ),
           },

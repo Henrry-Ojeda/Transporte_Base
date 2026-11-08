@@ -13,6 +13,7 @@ interface ChoferSelectProps {
   allowClear?: boolean;
   style?: React.CSSProperties;
   className?: string;
+  dropDirection?: 'auto' | 'down' | 'up';
 }
 
 export const ChoferSelect: React.FC<ChoferSelectProps> = ({
@@ -25,6 +26,7 @@ export const ChoferSelect: React.FC<ChoferSelectProps> = ({
   allowClear = true,
   style,
   className,
+  dropDirection = 'down',
 }) => {
   const { data: choferes = [], isLoading } = useQuery<any[]>({
     queryKey: ['choferes-catalogos'],
@@ -58,6 +60,7 @@ export const ChoferSelect: React.FC<ChoferSelectProps> = ({
       allowClear={allowClear}
       style={style}
       className={className}
+      dropDirection={dropDirection}
     />
   );
 };

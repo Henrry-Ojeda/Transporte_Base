@@ -257,7 +257,7 @@ namespace Transporte.Infrastructure.Repositories
 
                 // Sincronizar estado real del Ticket operativo
                 var ticketSql = @"
-                    SELECT TOP 1 cr.Id, cr.Estado, cr.TotalLitrosFinca, cr.ProcesoId
+                    SELECT TOP 1 cr.Id, cr.Estado, cr.TotalLitrosFinca, cr.ProcesoActualId
                     FROM TB_CONTROL_RUTAS cr
                     WHERE (cr.Id = @ControlRutaId OR (CAST(cr.Fecha AS DATE) = CAST(@Fecha AS DATE) AND cr.UsuarioId = @ConductorId))
                     ORDER BY cr.Id DESC";
@@ -272,7 +272,7 @@ namespace Transporte.Infrastructure.Repositories
                 {
                     item.ControlRutaId = (long)ticketInfo.Id;
                     string rawEst = (string?)ticketInfo.Estado ?? "ABIERTO";
-                    int procId = ticketInfo.ProcesoId != null ? Convert.ToInt32(ticketInfo.ProcesoId) : 1;
+                    int procId = ticketInfo.ProcesoActualId != null ? Convert.ToInt32(ticketInfo.ProcesoActualId) : 1;
                     bool esFin = procId >= 4 || rawEst.Contains("Finaliz", StringComparison.OrdinalIgnoreCase) || rawEst.Contains("Cerrad", StringComparison.OrdinalIgnoreCase) || rawEst.StartsWith("4");
                     item.EstadoTicket = esFin ? "FINALIZADO" : rawEst;
                     item.LitrosRecolectadosReal = (int)(ticketInfo.TotalLitrosFinca ?? 0);
@@ -315,7 +315,7 @@ namespace Transporte.Infrastructure.Repositories
                     LEFT JOIN TB_CAMIONES cam ON cam.UsuarioId = cr.UsuarioId AND cam.Activo = 1
                     LEFT JOIN TB_RUTAS_LOGISTICA r ON cr.RutaLogisticaId = r.Id
                     WHERE CAST(cr.Fecha AS DATE) = CAST(@fecha AS DATE)
-                      AND ISNULL(cr.ProcesoId, 0) < 4
+                      AND ISNULL(cr.ProcesoActualId, 0) < 4
                       AND (cr.Estado IS NULL OR (cr.Estado NOT LIKE '%Finaliz%' AND cr.Estado NOT LIKE '%Cerrad%' AND cr.Estado NOT LIKE '4%'))
                     ORDER BY cr.Id ASC";
 
@@ -440,13 +440,22 @@ namespace Transporte.Infrastructure.Repositories
             int porcentaje = capacidad > 0 ? (int)Math.Round((double)dto.LitrosEstimados / capacidad * 100) : 0;
 
             // 1. Sincronizar o crear el Ticket operativo en TB_CONTROL_RUTAS
-            var ticketExistenteId = await connection.ExecuteScalarAsync<long?>(@"
-                SELECT TOP 1 Id FROM TB_CONTROL_RUTAS 
-                WHERE CAST(Fecha AS DATE) = CAST(@Fecha AS DATE) AND UsuarioId = @ConductorId
-                ORDER BY Id DESC", new { Fecha = dto.Fecha.Date, ConductorId = dto.ConductorId });
+            long? ticketExistenteId = null;
+            if (dto.Id.HasValue && dto.Id.Value > 0)
+            {
+                ticketExistenteId = await connection.ExecuteScalarAsync<long?>(
+                    "SELECT ControlRutaId FROM TB_PLANIFICACION_RUTAS_CHOFERES WHERE Id = @Id", new { Id = dto.Id.Value });
+            }
+            if (!ticketExistenteId.HasValue || ticketExistenteId.Value <= 0)
+            {
+                ticketExistenteId = await connection.ExecuteScalarAsync<long?>(@"
+                    SELECT TOP 1 Id FROM TB_CONTROL_RUTAS 
+                    WHERE CAST(Fecha AS DATE) = CAST(@Fecha AS DATE) AND UsuarioId = @ConductorId
+                    ORDER BY Id DESC", new { Fecha = dto.Fecha.Date, ConductorId = dto.ConductorId });
+            }
 
             long ticketIdEfectivo;
-            if (!ticketExistenteId.HasValue)
+            if (!ticketExistenteId.HasValue || ticketExistenteId.Value <= 0)
             {
                 var cicloId = await connection.ExecuteScalarAsync<int?>(@"
                     SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS 
@@ -478,16 +487,14 @@ namespace Transporte.Infrastructure.Repositories
             else
             {
                 ticketIdEfectivo = ticketExistenteId.Value;
-                if (dto.RutaLogisticaId.HasValue && dto.RutaLogisticaId.Value > 0)
-                {
-                    await connection.ExecuteAsync(@"
-                        UPDATE TB_CONTROL_RUTAS
-                        SET RutaLogisticaId = @RutaLogisticaId,
-                            ModifiedAt = GETDATE(),
-                            ModifiedBy = @usuarioId
-                        WHERE Id = @ticketIdEfectivo",
-                        new { dto.RutaLogisticaId, usuarioId, ticketIdEfectivo });
-                }
+                await connection.ExecuteAsync(@"
+                    UPDATE TB_CONTROL_RUTAS
+                    SET UsuarioId = @ConductorId,
+                        RutaLogisticaId = COALESCE(@RutaLogisticaId, RutaLogisticaId),
+                        ModifiedAt = GETDATE(),
+                        ModifiedBy = @usuarioId
+                    WHERE Id = @ticketIdEfectivo",
+                    new { dto.ConductorId, dto.RutaLogisticaId, usuarioId, ticketIdEfectivo });
             }
 
             // 2. Guardar o actualizar la Planificación ligada al Ticket

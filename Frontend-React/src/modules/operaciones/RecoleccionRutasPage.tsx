@@ -2440,7 +2440,9 @@ export const RecoleccionRutasPage: React.FC = () => {
 
                 const cantParadas = fincasTicket.length > 0 ? fincasTicket.length : (item.totalFincas || 0);
                 const sumFincasLts = fincasTicket.reduce((acc, f: any) => acc + Number(f.litros ?? f.Litros ?? 0), 0);
-                const ltsRecolectados = item._litrosRecogidos > 0 ? item._litrosRecogidos : sumFincasLts;
+                const ltsRecolectados = fincasTicket.length > 0
+                  ? sumFincasLts
+                  : (esRuta && cantParadas === 0 && !esFinalizado ? 0 : (item._litrosRecogidos > 0 ? item._litrosRecogidos : sumFincasLts));
                 const ltsEntregados = item._litrosEntregados || 0;
                 const mermaLitros = ltsRecolectados > 0 && ltsEntregados > 0 ? (ltsRecolectados - ltsEntregados) : 0;
                 const estaExpandido = Boolean(fincasExpandidas[item.id]);

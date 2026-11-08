@@ -211,7 +211,7 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
   const getFincaId = (f: any): number => Number(f?.fincaId ?? f?.FincaId ?? f?.id ?? f?.Id ?? 0);
   const getRutaId = (f: any): number => Number(f?.rutaId ?? f?.RutaId ?? 0);
 
-  // Fincas filtradas para el modal
+  // Fincas filtradas y ordenadas para el modal
   const fincasParaModal = useMemo(() => {
     let list = fincasPromedios;
     if (filtroSoloRuta && formRutasIds.length > 0) {
@@ -225,8 +225,33 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
           (f.propietario && f.propietario.toLowerCase().includes(q))
       );
     }
-    return list;
-  }, [fincasPromedios, filtroSoloRuta, formRutasIds, busquedaFincaChecklist]);
+
+    // Regla: Cuando se selecciona una ruta, sus fincas y las fincas marcadas pasan DE PRIMERO para desmarcar o marcar
+    return [...list].sort((a, b) => {
+      const fIdA = getFincaId(a);
+      const fIdB = getFincaId(b);
+      const checkedA = formFincasSeleccionadas.includes(fIdA) || fincasBloqueadas.includes(fIdA);
+      const checkedB = formFincasSeleccionadas.includes(fIdB) || fincasBloqueadas.includes(fIdB);
+      const inRouteA = formRutasIds.length > 0 && formRutasIds.includes(getRutaId(a));
+      const inRouteB = formRutasIds.length > 0 && formRutasIds.includes(getRutaId(b));
+
+      // Ponderación:
+      // 4: De la ruta seleccionada y marcada (lista para revisar/desmarcar)
+      // 3: De la ruta seleccionada pero no marcada (fácil de marcar)
+      // 2: Marcada (de otra ruta o manual)
+      // 0: Resto de fincas
+      const scoreA = (inRouteA && checkedA ? 4 : inRouteA ? 3 : checkedA ? 2 : 0);
+      const scoreB = (inRouteB && checkedB ? 4 : inRouteB ? 3 : checkedB ? 2 : 0);
+
+      if (scoreA !== scoreB) {
+        return scoreB - scoreA;
+      }
+
+      const nameA = a.fincaNombre || (a as any).FincaNombre || '';
+      const nameB = b.fincaNombre || (b as any).FincaNombre || '';
+      return nameA.localeCompare(nameB);
+    });
+  }, [fincasPromedios, filtroSoloRuta, formRutasIds, busquedaFincaChecklist, formFincasSeleccionadas, fincasBloqueadas]);
 
   // Litros estimados en vivo de las fincas seleccionadas en el modal
   const litrosEstimadosSeleccionados = useMemo(() => {
@@ -1191,6 +1216,7 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
                       const fId = getFincaId(finca);
                       const isBloqueada = fincasBloqueadas.includes(fId);
                       const isChecked = formFincasSeleccionadas.includes(fId) || isBloqueada;
+                      const inSelectedRoute = formRutasIds.length > 0 && formRutasIds.includes(getRutaId(finca));
                       const asignadaA = fincasAsignadasEnFecha.get(fId);
                       const nombreFinca = finca.fincaNombre || (finca as any).FincaNombre || (finca as any).nombre || `Finca #${fId}`;
                       const nombrePropietario = finca.propietario || (finca as any).Propietario || (finca as any).productor || 'Sin propietario';
@@ -1206,7 +1232,9 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
                             isBloqueada
                               ? 'bg-emerald-50/70 border border-emerald-200 cursor-not-allowed'
                               : isChecked
-                              ? 'bg-blue-50/70 hover:bg-blue-50 cursor-pointer'
+                              ? 'bg-blue-50/70 hover:bg-blue-50 cursor-pointer border border-blue-100'
+                              : inSelectedRoute
+                              ? 'bg-purple-50/40 hover:bg-purple-50/70 cursor-pointer border border-purple-100'
                               : 'hover:bg-slate-50 cursor-pointer'
                           }`}
                         >
@@ -1221,6 +1249,14 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
                             <div>
                               <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
                                 <span>{nombreFinca}</span>
+                                {inSelectedRoute && (
+                                  <span
+                                    className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-300"
+                                    title="Finca perteneciente al circuito de la ruta seleccionada"
+                                  >
+                                    📍 De la Ruta
+                                  </span>
+                                )}
                                 {isBloqueada ? (
                                   <span
                                     className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300"

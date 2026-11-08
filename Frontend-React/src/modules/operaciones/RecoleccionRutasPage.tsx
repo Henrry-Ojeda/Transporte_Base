@@ -1063,22 +1063,77 @@ export const RecoleccionRutasPage: React.FC = () => {
     return str;
   };
 
+  const parseCondicionesEspecialesExcel = (fincaRaw: string, obsRaw: string = '') => {
+    const rawCompleto = `${fincaRaw} ${obsRaw}`.toUpperCase();
+
+    // 1. Detección ÁCIDA
+    const esAcida = /ACIDA|ÁCIDA|AGRIA|CORTADA/.test(rawCompleto);
+    let precioEspecialUSD: number | undefined = undefined;
+    const matchPrecio = fincaRaw.match(/\$?\s*([0-9]+(?:\.[0-9]+)?)/);
+    if (matchPrecio && matchPrecio[1]) {
+      const p = parseFloat(matchPrecio[1]);
+      if (!isNaN(p) && p > 0 && p < 10) {
+        precioEspecialUSD = p;
+      }
+    }
+
+    // 2. Detección Tipo de Leche (BUFALA vs VACA)
+    let tipoLeche: 'VACA' | 'BUFALA' = 'VACA';
+    if (/🐃|BUFALA|BÚFALA|BUFALO|BÚFALO/.test(rawCompleto)) {
+      tipoLeche = 'BUFALA';
+    } else if (/🐄|VACA/.test(rawCompleto)) {
+      tipoLeche = 'VACA';
+    }
+
+    // 3. Limpieza de nombre de finca para matching en catálogo
+    let nombreLimpio = fincaRaw
+      .replace(/[\(].*?[\)]/g, ' ')
+      .replace(/🐃|🐄|BÚFALA|BUFALA|BUFALO|BÚFALO|VACA|ÁCIDA|ACIDA|AGRIA|CORTADA/gi, ' ')
+      .replace(/\$\s*[0-9]+(?:\.[0-9]+)?/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return { esAcida, precioEspecialUSD, tipoLeche, nombreLimpio };
+  };
+
   const parseDecimalExcel = (val: any) => {
     if (val === undefined || val === null || val === '') return 0;
     if (typeof val === 'number') return Math.round(val);
-    const cleaned = String(val).replace(/[^0-9.,]/g, '').replace(',', '.');
-    const num = parseFloat(cleaned);
+    let str = String(val).replace(/lts|lt|litros/gi, '').trim();
+    // Si tiene separador de miles latino: ej. "1.660" o "6.000"
+    if (/^\d{1,3}\.\d{3}$/.test(str)) {
+      str = str.replace('.', '');
+    } else if (/^\d{1,3},\d{3}$/.test(str)) {
+      str = str.replace(',', '');
+    } else {
+      str = str.replace(',', '.');
+    }
+    const num = parseFloat(str);
     return isNaN(num) ? 0 : Math.round(num);
   };
 
   const buscarFincaExcel = (valor: string) => {
     if (!valor) return null;
-    const q = valor.toLowerCase().trim();
+    const { nombreLimpio } = parseCondicionesEspecialesExcel(valor);
+    const q = (nombreLimpio || valor).toLowerCase().trim();
+    if (!q) return null;
+
     let found = fincas.find((f) => f.nombre.toLowerCase().trim() === q);
     if (found) return found;
+
     found = fincas.find((f) => (f.codigo && f.codigo.toLowerCase().trim() === q) || String(f.id) === q);
     if (found) return found;
-    found = fincas.find((f) => f.nombre.toLowerCase().includes(q) || q.includes(f.nombre.toLowerCase()));
+
+    found = fincas.find((f) => f.nombre.toLowerCase().trim().includes(q) || q.includes(f.nombre.toLowerCase().trim()));
+    if (found) return found;
+
+    // Normalizado sin acentos
+    const qNorm = q.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    found = fincas.find((f) => {
+      const fNorm = f.nombre.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return fNorm === qNorm || fNorm.includes(qNorm) || qNorm.includes(fNorm);
+    });
+
     return found || null;
   };
 
@@ -1142,9 +1197,18 @@ export const RecoleccionRutasPage: React.FC = () => {
           const fecha = parseFechaExcel(fechaRaw);
 
           const fincaRaw = String(rowMap['FINCA'] || rowMap['NOMBRE_FINCA'] || rowMap['PRODUCTOR'] || rowMap['GRANJA'] || '').trim();
+          const obsRaw = String(rowMap['OBSERVACION'] || rowMap['OBSERVACIONES'] || rowMap['DETALLE'] || rowMap['NOTA'] || '').trim();
+          const acidaRaw = String(rowMap['ACIDA'] || rowMap['ES_ACIDA'] || rowMap['LECHE_ACIDA'] || '').toUpperCase().trim();
+
+          // Detección inteligente de condiciones especiales: Ácida, Búfala/Vaca, Precio y Nombre Limpio
+          const condiciones = parseCondicionesEspecialesExcel(fincaRaw, obsRaw);
+          const esAcida = condiciones.esAcida || ['SI', 'S', 'YES', 'TRUE', '1', 'VERDADERO'].includes(acidaRaw);
+          const tipoLeche = condiciones.tipoLeche;
+          const precioLitroUSDAplicado = condiciones.precioEspecialUSD;
+
           const fincaObj = buscarFincaExcel(fincaRaw);
           const fincaId = fincaObj ? fincaObj.id : 0;
-          const fincaNombre = fincaObj ? fincaObj.nombre : fincaRaw;
+          const fincaNombre = fincaObj ? fincaObj.nombre : (condiciones.nombreLimpio || fincaRaw);
 
           const litros = parseDecimalExcel(rowMap['LITROS'] || rowMap['LTS'] || rowMap['CANTIDAD'] || rowMap['VOLUMEN'] || 0);
 
@@ -1152,11 +1216,6 @@ export const RecoleccionRutasPage: React.FC = () => {
           const conductorObj = buscarConductorExcel(conductorRaw);
           const conductorId = conductorObj ? conductorObj.id : 0;
           const conductorNombre = conductorObj ? (conductorObj.nombreCompleto || conductorObj.nombre) : conductorRaw;
-
-          const obsRaw = String(rowMap['OBSERVACION'] || rowMap['OBSERVACIONES'] || rowMap['DETALLE'] || rowMap['NOTA'] || '').trim();
-
-          const acidaRaw = String(rowMap['ACIDA'] || rowMap['ES_ACIDA'] || rowMap['LECHE_ACIDA'] || '').toUpperCase().trim();
-          const esAcida = ['SI', 'S', 'YES', 'TRUE', '1', 'VERDADERO'].includes(acidaRaw);
 
           const camionObj = resolverCamionConductorExcel(conductorId);
           const camionPlaca = camionObj ? camionObj.placa : 'S/P';
@@ -1174,11 +1233,12 @@ export const RecoleccionRutasPage: React.FC = () => {
             conductorRaw,
             litros,
             esAcida,
-            observacion: obsRaw,
+            tipoLeche,
+            precioLitroUSDAplicado,
+            observacion: obsRaw || (precioLitroUSDAplicado ? `[TARIFA: $${precioLitroUSDAplicado}]` : ''),
             camionId: camionObj?.id || null,
             camionPlaca,
             camionCapacidad,
-            tipoLeche: fincaObj?.tipoLeche || 'VACA',
           };
 
           filasParseadas.push(filaItem);
@@ -1191,7 +1251,9 @@ export const RecoleccionRutasPage: React.FC = () => {
             conductorNombre,
             litros,
             esAcida,
-            observacion: obsRaw,
+            tipoLeche,
+            precioLitroUSDAplicado,
+            observacion: filaItem.observacion,
           });
         });
 
@@ -1324,6 +1386,7 @@ export const RecoleccionRutasPage: React.FC = () => {
           litros: f.litros,
           esAcida: f.esAcida,
           tipoLeche: f.tipoLeche,
+          precioLitroUSDAplicado: f.precioLitroUSDAplicado,
           observacion: f.observacion,
         })),
       };
@@ -6310,6 +6373,9 @@ export const RecoleccionRutasPage: React.FC = () => {
 
         const ticketsACrearList = Array.from(ticketsMap.values());
         const totalLitrosAProcesar = filasAProcesar.reduce((acc, f) => acc + (f.litros || 0), 0);
+        const totalLitrosVaca = filasAProcesar.filter((f) => f.tipoLeche !== 'BUFALA').reduce((acc, f) => acc + (f.litros || 0), 0);
+        const totalLitrosBufala = filasAProcesar.filter((f) => f.tipoLeche === 'BUFALA').reduce((acc, f) => acc + (f.litros || 0), 0);
+        const totalLitrosAcida = filasAProcesar.filter((f) => f.esAcida).reduce((acc, f) => acc + (f.litros || 0), 0);
         const cantDuplicadas = filasExcel.filter((f) => f.esDuplicado).length;
         const cantErrores = filasExcel.filter((f) => !f.esValido).length;
         const cantValidas = filasExcel.filter((f) => f.esValido && !f.esDuplicado).length;
@@ -6381,13 +6447,19 @@ export const RecoleccionRutasPage: React.FC = () => {
             header: 'CONDICIONES',
             accessorKey: 'esAcida',
             cell: (row) => (
-              <div className="flex items-center gap-1 flex-wrap">
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
-                  {row.tipoLeche || 'VACA'}
-                </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {row.tipoLeche === 'BUFALA' ? (
+                  <span className="px-2 py-0.5 rounded-md text-[10.5px] font-black bg-purple-100 text-purple-800 border border-purple-300 inline-flex items-center gap-1 shadow-xs">
+                    🐃 BÚFALA
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-md text-[10.5px] font-black bg-blue-100 text-blue-800 border border-blue-300 inline-flex items-center gap-1 shadow-xs">
+                    🐄 VACA
+                  </span>
+                )}
                 {row.esAcida && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300">
-                    ⚠️ ÁCIDA
+                  <span className="px-2 py-0.5 rounded-md text-[10.5px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1 shadow-xs animate-pulse">
+                    🍋 ÁCIDA {row.precioLitroUSDAplicado ? `($${Number(row.precioLitroUSDAplicado).toFixed(4)})` : ''}
                   </span>
                 )}
               </div>
@@ -6664,30 +6736,46 @@ export const RecoleccionRutasPage: React.FC = () => {
                     </div>
 
                     {/* Tarjetas de Resumen */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
                       <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                         <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>Total Filas Excel</div>
-                        <div style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>{filasExcel.length}</div>
+                        <div style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>{filasExcel.length}</div>
                       </div>
 
                       <div style={{ background: '#f0fdf4', padding: '12px 14px', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
-                        <div style={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>Tickets Nuevos a Crear</div>
-                        <div style={{ fontSize: '20px', fontWeight: 900, color: '#15803d', marginTop: '2px' }}>
-                          {ticketsACrearList.length} <span style={{ fontSize: '12px', fontWeight: 700 }}>(Abiertos)</span>
+                        <div style={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>Tickets Nuevos</div>
+                        <div style={{ fontSize: '18px', fontWeight: 900, color: '#15803d', marginTop: '2px' }}>
+                          {ticketsACrearList.length} <span style={{ fontSize: '11px', fontWeight: 700 }}>(Abiertos)</span>
                         </div>
                       </div>
 
                       <div style={{ background: '#eff6ff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
-                        <div style={{ fontSize: '11px', color: '#1e40af', fontWeight: 700 }}>Litros Totales a Cargar</div>
-                        <div style={{ fontSize: '20px', fontWeight: 900, color: '#1d4ed8', marginTop: '2px' }}>
+                        <div style={{ fontSize: '11px', color: '#1e40af', fontWeight: 700 }}>Litros a Cargar</div>
+                        <div style={{ fontSize: '18px', fontWeight: 900, color: '#1d4ed8', marginTop: '2px' }}>
                           {totalLitrosAProcesar.toLocaleString()} Lts
                         </div>
                       </div>
 
+                      <div style={{ background: '#f5f3ff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #ddd6fe' }}>
+                        <div style={{ fontSize: '11px', color: '#6b21a8', fontWeight: 700 }}>🐃 Búfala / 🐄 Vaca</div>
+                        <div style={{ fontSize: '12.5px', fontWeight: 900, color: '#581c87', marginTop: '4px' }}>
+                          🐃 {totalLitrosBufala.toLocaleString()} L | 🐄 {totalLitrosVaca.toLocaleString()} L
+                        </div>
+                      </div>
+
+                      {totalLitrosAcida > 0 && (
+                        <div style={{ background: '#fffbeb', padding: '12px 14px', borderRadius: '12px', border: '1px solid #fde68a' }}>
+                          <div style={{ fontSize: '11px', color: '#92400e', fontWeight: 700 }}>🍋 Leche Ácida</div>
+                          <div style={{ fontSize: '17px', fontWeight: 900, color: '#b45309', marginTop: '2px' }}>
+                            {totalLitrosAcida.toLocaleString()} Lts
+                          </div>
+                        </div>
+                      )}
+
                       <div style={{ background: cantDuplicadas > 0 ? '#fffbeb' : '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: `1px solid ${cantDuplicadas > 0 ? '#fde68a' : '#e2e8f0'}` }}>
                         <div style={{ fontSize: '11px', color: cantDuplicadas > 0 ? '#92400e' : '#64748b', fontWeight: 700 }}>Duplicados Detectados</div>
-                        <div style={{ fontSize: '20px', fontWeight: 900, color: cantDuplicadas > 0 ? '#b45309' : '#64748b', marginTop: '2px' }}>
-                          {cantDuplicadas} {omitirDuplicadosExcel && cantDuplicadas > 0 && <span style={{ fontSize: '11px', color: '#92400e' }}>(Se omitirán)</span>}
+                        <div style={{ fontSize: '18px', fontWeight: 900, color: cantDuplicadas > 0 ? '#b45309' : '#64748b', marginTop: '2px' }}>
+                          {cantDuplicadas} {omitirDuplicadosExcel && cantDuplicadas > 0 && <span style={{ fontSize: '10px', color: '#92400e' }}>(Se omitirán)</span>}
                         </div>
                       </div>
                     </div>

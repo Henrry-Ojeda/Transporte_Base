@@ -1566,6 +1566,8 @@ namespace Transporte.Core.DTOs
         public string? ConductorNombre { get; set; }
         public int Litros { get; set; }
         public bool EsAcida { get; set; }
+        public string? TipoLeche { get; set; } = "VACA";
+        public decimal? PrecioLitroUSDAplicado { get; set; }
         public string? Observacion { get; set; }
     }
 
@@ -1608,6 +1610,7 @@ namespace Transporte.Core.DTOs
         public int Litros { get; set; }
         public bool EsAcida { get; set; }
         public string? TipoLeche { get; set; } = "VACA";
+        public decimal? PrecioLitroUSDAplicado { get; set; }
         public string? Observacion { get; set; }
     }
 

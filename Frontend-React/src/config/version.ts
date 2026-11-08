@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 10,
-  patch: 0,
-  tag: 'v3.10.0',
+  patch: 1,
+  tag: 'v3.10.1',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Carga Masiva de Tickets desde Excel (Super Admin) con lectura de planilla, pre-validación de consistencia, detección de duplicados, asignación automática de cisterna y creación de tickets abiertos',
+  descripcion: 'Detección inteligente de condiciones especiales en Excel (leche ácida, búfala/vaca y tarifas especiales)',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

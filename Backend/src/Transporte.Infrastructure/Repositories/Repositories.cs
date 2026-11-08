@@ -10963,7 +10963,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             if (fechas.Any() && fincasIds.Any())
             {
                 existentes = await connection.QueryAsync<dynamic>(
-                    @"SELECT r.Id AS RutaId, r.ControlRutaId, r.Fecha, r.FincaId, r.Litros, r.UsuarioId AS RutaChoferId,
+                    @"SELECT r.Id AS RutaId, r.ControlRutaId, r.Fecha, r.FincaId, r.Litros, r.EsAcida, r.TipoLeche, r.UsuarioId AS RutaChoferId,
                              cr.Id AS TicketId, cr.CodigoTicket, cr.UsuarioId AS TicketChoferId, cr.Estado AS TicketEstado
                       FROM TB_RUTAS_RECOLECCION r
                       LEFT JOIN TB_CONTROL_RUTAS cr ON r.ControlRutaId = cr.Id
@@ -11028,6 +11028,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
                 // 2. Asociar Camión automáticamente por conductor
                 var camionAsociado = camiones.FirstOrDefault(c => c.UsuarioId == fila.ConductorId) 
+                                     ?? camiones.FirstOrDefault(c => c.Placa == "S/P-9" || c.Placa == "S/P-4")
                                      ?? camiones.FirstOrDefault();
                 if (camionAsociado != null)
                 {
@@ -11038,10 +11039,12 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
                 // 3. Validar si ya está registrada (Detección de Duplicados)
                 var fechaFila = fila.Fecha.Value.Date;
+                var tipoFila = !string.IsNullOrWhiteSpace(fila.TipoLeche) ? fila.TipoLeche.Trim().ToUpper() : "VACA";
                 var match = existentes.FirstOrDefault(e => 
                     ((DateTime)e.Fecha).Date == fechaFila &&
                     (int)e.FincaId == fila.FincaId &&
                     (int)e.Litros == fila.Litros &&
+                    (((string)e.TipoLeche ?? "VACA").Trim().ToUpper() == tipoFila) &&
                     ((e.RutaChoferId != null && (int)e.RutaChoferId == fila.ConductorId) ||
                      (e.TicketChoferId != null && (int)e.TicketChoferId == fila.ConductorId)));
 
@@ -11050,6 +11053,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     match = existentes.FirstOrDefault(e => 
                         ((DateTime)e.Fecha).Date == fechaFila &&
                         (int)e.FincaId == fila.FincaId &&
+                        (((string)e.TipoLeche ?? "VACA").Trim().ToUpper() == tipoFila) &&
                         ((e.RutaChoferId != null && (int)e.RutaChoferId == fila.ConductorId) ||
                          (e.TicketChoferId != null && (int)e.TicketChoferId == fila.ConductorId)));
                 }
@@ -11110,7 +11114,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             await EnsureTableNotificacionesExistsAsync(connection);
 
             var tasaBcv = await connection.ExecuteScalarAsync<decimal?>("SELECT TOP 1 TasaDolarBs FROM TB_HISTORIAL_BCV ORDER BY Fecha DESC") ?? 1.0m;
-            var fincas = (await connection.QueryAsync<dynamic>("SELECT Id, Nombre, PrecioLitroUSD, PrecioLitroAcidaUSD, TipoLeche FROM TB_FINCAS")).ToDictionary(f => (int)f.Id);
+            var fincas = (await connection.QueryAsync<dynamic>("SELECT Id, Codigo, Nombre, PrecioLitroUSD, PrecioLitroAcidaUSD, TieneDosTiposLeche, PrecioBufalaLitroUSD FROM TB_FINCAS")).ToDictionary(f => (int)f.Id);
             var choferes = (await connection.QueryAsync<dynamic>("SELECT Id, NombreCompleto FROM TB_USUARIOS")).ToDictionary(u => (int)u.Id);
             var camiones = (await connection.QueryAsync<dynamic>("SELECT Id, Placa, CapacidadLitros, UsuarioId FROM TB_CAMIONES WHERE Activo = 1 AND IsDeleted = 0")).ToList();
 
@@ -11130,8 +11134,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 var conductorId = grupo.Key.ConductorId;
 
                 // Determinar camión
-                var camion = camiones.FirstOrDefault(c => c.UsuarioId == conductorId) ?? camiones.FirstOrDefault();
+                var camion = camiones.FirstOrDefault(c => c.UsuarioId == conductorId) 
+                             ?? camiones.FirstOrDefault(c => c.Placa == "S/P-9" || c.Placa == "S/P-4") 
+                             ?? camiones.FirstOrDefault();
                 string camionPlaca = camion != null ? (string)camion.Placa : "S/P";
+                int? camionId = camion != null ? (int?)camion.Id : null;
 
                 // Determinar Ciclo Operativo
                 var cicloId = await connection.ExecuteScalarAsync<int?>(
@@ -11148,13 +11155,13 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 // Crear el Ticket en TB_CONTROL_RUTAS (En estado ABIERTO para que SuperAdmin lo verifique y finalice)
                 var sqlInsertTicket = @"
                     INSERT INTO TB_CONTROL_RUTAS
-                    (Fecha, UsuarioId, CicloId, TotalLitrosFinca, TotalLitrosReceptoria, DiferenciaLitros, PorcentajeMerma, Estado, ProcesoActualId, Observacion, CreatedAt, CreatedBy)
-                    VALUES (@fechaGrupo, @conductorId, @cicloId, 0, 0, 0, 0, 'ABIERTO', 1, '[CARGA_EXCEL] Ticket generado por Importación Masiva', GETDATE(), @usuarioId);
+                    (Fecha, UsuarioId, CamionId, CicloId, TotalLitrosFinca, TotalLitrosReceptoria, DiferenciaLitros, PorcentajeMerma, Estado, ProcesoActualId, Observacion, CreatedAt, CreatedBy)
+                    VALUES (@fechaGrupo, @conductorId, @camionId, @cicloId, 0, 0, 0, 0, 'ABIERTO', 1, '[CARGA_EXCEL] Ticket generado por Importación Masiva', GETDATE(), @usuarioId);
                     SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
                 long ticketId = await connection.ExecuteScalarAsync<long>(sqlInsertTicket, new
                 {
-                    fechaGrupo, conductorId, cicloId, usuarioId
+                    fechaGrupo, conductorId, camionId, cicloId, usuarioId
                 });
 
                 if (ticketId <= 0) continue;
@@ -11167,28 +11174,39 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 {
                     fincas.TryGetValue(fila.FincaId, out var fincaObj);
                     decimal precioUSD = 0.0m;
-                    string tipoLeche = !string.IsNullOrWhiteSpace(fila.TipoLeche) ? fila.TipoLeche : "VACA";
+                    string tipoLeche = !string.IsNullOrWhiteSpace(fila.TipoLeche) ? fila.TipoLeche.Trim().ToUpper() : "VACA";
 
-                    if (fincaObj != null)
+                    if (fila.PrecioLitroUSDAplicado.HasValue && fila.PrecioLitroUSDAplicado.Value > 0)
                     {
-                        precioUSD = fila.EsAcida 
-                            ? (decimal)(fincaObj.PrecioLitroAcidaUSD ?? fincaObj.PrecioLitroUSD ?? 0.0m) 
-                            : (decimal)(fincaObj.PrecioLitroUSD ?? 0.0m);
-                        if (string.IsNullOrWhiteSpace(fila.TipoLeche) && fincaObj.TipoLeche != null)
+                        precioUSD = fila.PrecioLitroUSDAplicado.Value;
+                    }
+                    else if (fincaObj != null)
+                    {
+                        if (fila.EsAcida)
                         {
-                            tipoLeche = (string)fincaObj.TipoLeche;
+                            precioUSD = (decimal)(fincaObj.PrecioLitroAcidaUSD ?? fincaObj.PrecioLitroUSD ?? 0.0m);
+                        }
+                        else if (tipoLeche == "BUFALA")
+                        {
+                            precioUSD = (decimal)(fincaObj.PrecioBufalaLitroUSD ?? fincaObj.PrecioLitroUSD ?? 0.0m);
+                        }
+                        else
+                        {
+                            precioUSD = (decimal)(fincaObj.PrecioLitroUSD ?? 0.0m);
                         }
                     }
 
                     var sqlInsertRuta = @"
                         INSERT INTO TB_RUTAS_RECOLECCION
-                        (ControlRutaId, FincaId, Litros, EsAcida, TipoLeche, Fecha, Observacion, PrecioLitroUSDAplicado, TasaDolarBsAplicada, CreatedAt, CreatedBy)
-                        VALUES (@ticketId, @FincaId, @Litros, @EsAcida, @tipoLeche, @fechaGrupo, @Observacion, @precioUSD, @tasaBcv, GETDATE(), @usuarioId);";
+                        (ControlRutaId, CicloId, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, Fecha, Observacion, PrecioLitroUSDAplicado, TasaDolarBsAplicada, CreatedAt, CreatedBy)
+                        VALUES (@ticketId, @cicloId, @FincaId, @conductorId, @Litros, @EsAcida, @tipoLeche, @fechaGrupo, @Observacion, @precioUSD, @tasaBcv, GETDATE(), @usuarioId);";
 
                     await connection.ExecuteAsync(sqlInsertRuta, new
                     {
                         ticketId,
+                        cicloId,
                         fila.FincaId,
+                        conductorId,
                         fila.Litros,
                         fila.EsAcida,
                         tipoLeche,

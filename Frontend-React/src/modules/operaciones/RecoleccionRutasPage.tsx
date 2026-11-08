@@ -1101,9 +1101,11 @@ export const RecoleccionRutasPage: React.FC = () => {
     }
 
     // 3. Limpieza de nombre de finca para matching en catálogo
+    // NOTA: Usar límites de palabra (\b) para no mutilar fincas reales como "LA VACANA" -> "La na"
     let nombreLimpio = fincaRaw
       .replace(/[\(].*?[\)]/g, ' ')
-      .replace(/🐃|🐄|BÚFALA|BUFALA|BUFALO|BÚFALO|VACA|ÁCIDA|ACIDA|AGRIA|CORTADA/gi, ' ')
+      .replace(/🐃|🐄/g, ' ')
+      .replace(/\b(BÚFALA|BUFALA|BÚFALO|BUFALO|VACA|VACAS|ÁCIDA|ACIDA|AGRIA|CORTADA)\b/gi, ' ')
       .replace(/\$\s*[0-9]+(?:\.[0-9]+)?/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -1127,26 +1129,62 @@ export const RecoleccionRutasPage: React.FC = () => {
     return isNaN(num) ? 0 : Math.round(num);
   };
 
+  const normalizarTextoComparacion = (texto: string) =>
+    (texto || '')
+      .toUpperCase()
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
   const buscarFincaExcel = (valor: string) => {
     if (!valor) return null;
+    const rawUpper = valor.toUpperCase().trim();
+    const rawNorm = normalizarTextoComparacion(valor);
+    if (!rawNorm) return null;
+
+    // 1. Coincidencia exacta directa (TODO A MAYÚSCULAS)
+    let found = fincas.find((f) => (f.nombre || '').toUpperCase().trim() === rawUpper);
+    if (found) return found;
+
+    // 2. Coincidencia exacta normalizada (sin acentos, mayúsculas uniformes)
+    found = fincas.find((f) => normalizarTextoComparacion(f.nombre) === rawNorm);
+    if (found) return found;
+
+    // 3. Coincidencia por código o ID numérico
+    found = fincas.find(
+      (f) =>
+        (f.codigo && f.codigo.toUpperCase().trim() === rawUpper) ||
+        String(f.id) === rawUpper
+    );
+    if (found) return found;
+
+    // 4. Si el texto contenía condiciones o emojis (ej: "Tarita🐃 BÚFALA", "San PedroÁCIDA ($0.6500)")
     const { nombreLimpio } = parseCondicionesEspecialesExcel(valor);
-    const q = (nombreLimpio || valor).toLowerCase().trim();
-    if (!q) return null;
+    if (nombreLimpio && nombreLimpio.toUpperCase().trim() !== rawUpper) {
+      const limpioUpper = nombreLimpio.toUpperCase().trim();
+      const limpioNorm = normalizarTextoComparacion(nombreLimpio);
 
-    let found = fincas.find((f) => f.nombre.toLowerCase().trim() === q);
-    if (found) return found;
+      found = fincas.find((f) => (f.nombre || '').toUpperCase().trim() === limpioUpper);
+      if (found) return found;
 
-    found = fincas.find((f) => (f.codigo && f.codigo.toLowerCase().trim() === q) || String(f.id) === q);
-    if (found) return found;
+      found = fincas.find((f) => normalizarTextoComparacion(f.nombre) === limpioNorm);
+      if (found) return found;
 
-    found = fincas.find((f) => f.nombre.toLowerCase().trim().includes(q) || q.includes(f.nombre.toLowerCase().trim()));
-    if (found) return found;
+      // Inclusión parcial con nombre limpio
+      found = fincas.find((f) => {
+        const fNorm = normalizarTextoComparacion(f.nombre);
+        return fNorm.length >= 3 && limpioNorm.length >= 3 && (fNorm.includes(limpioNorm) || limpioNorm.includes(fNorm));
+      });
+      if (found) return found;
+    }
 
-    // Normalizado sin acentos
-    const qNorm = q.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    // 5. Inclusión parcial con nombre original
     found = fincas.find((f) => {
-      const fNorm = f.nombre.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      return fNorm === qNorm || fNorm.includes(qNorm) || qNorm.includes(fNorm);
+      const fNorm = normalizarTextoComparacion(f.nombre);
+      return fNorm.length >= 3 && rawNorm.length >= 3 && (fNorm.includes(rawNorm) || rawNorm.includes(fNorm));
     });
 
     return found || null;
@@ -1154,12 +1192,23 @@ export const RecoleccionRutasPage: React.FC = () => {
 
   const buscarConductorExcel = (valor: string) => {
     if (!valor) return null;
-    const q = valor.toLowerCase().trim();
-    let found = conductores.find((c) => (c.nombreCompleto || c.nombre || '').toLowerCase().trim() === q);
+    const rawUpper = valor.toUpperCase().trim();
+    const rawNorm = normalizarTextoComparacion(valor);
+    if (!rawNorm) return null;
+
+    let found = conductores.find(
+      (c) =>
+        (c.nombreCompleto || c.nombre || '').toUpperCase().trim() === rawUpper ||
+        (c.username || '').toUpperCase().trim() === rawUpper ||
+        String(c.id) === rawUpper
+    );
     if (found) return found;
-    found = conductores.find((c) => (c.username || '').toLowerCase().trim() === q || String(c.id) === q);
-    if (found) return found;
-    found = conductores.find((c) => (c.nombreCompleto || c.nombre || '').toLowerCase().includes(q) || q.includes((c.nombreCompleto || c.nombre || '').toLowerCase()));
+
+    found = conductores.find((c) => {
+      const cNorm = normalizarTextoComparacion(c.nombreCompleto || c.nombre || c.username);
+      return cNorm === rawNorm || (cNorm.length >= 3 && rawNorm.length >= 3 && (cNorm.includes(rawNorm) || rawNorm.includes(cNorm)));
+    });
+
     return found || null;
   };
 

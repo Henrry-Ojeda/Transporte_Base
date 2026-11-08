@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
+import Swal from 'sweetalert2';
 import { AUTH_TOKEN_KEY } from '@/api/client';
 import { authApi } from '@/api/auth.api';
 import { catalogosApi } from '@/api/catalogos.api';
@@ -89,6 +90,13 @@ export const APP_VERSION = 'v2.10.0';
 export const AppMovilPage: React.FC = () => {
   // Navegación de Pestañas Móviles
   const [tabActiva, setTabActiva] = useState<TabMovil>('principal');
+
+  // Redirigir siempre a principal si se invoca recolección antigua
+  useEffect(() => {
+    if ((tabActiva as any) === 'recoleccion') {
+      setTabActiva('principal');
+    }
+  }, [tabActiva]);
 
   // Estado de Red (Online / Offline)
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
@@ -471,6 +479,7 @@ export const AppMovilPage: React.FC = () => {
 
   // Estado para el modal de Registro de Carga
   const [modalRegistro, setModalRegistro] = useState(false);
+  const [fincaFijadaParaModal, setFincaFijadaParaModal] = useState<any>(null);
   const [formCarga, setFormCarga] = useState({
     fecha: hoyStr,
     fincaId: 0,
@@ -1843,6 +1852,7 @@ export const AppMovilPage: React.FC = () => {
       lista.push({
         localId: `server_${p.id || idx}`,
         id: p.id,
+        fincaId: Number(p.fincaId || p.FincaId || 0),
         fincaNombre: p.fincaNombre || p.FincaNombre || p.finca || `Finca #${p.fincaId || p.FincaId}`,
         litros: Number(p.litros ?? p.Litros ?? 0),
         tipoLeche: (p.tipoLeche || p.TipoLeche || 'VACA').toUpperCase(),
@@ -1858,6 +1868,7 @@ export const AppMovilPage: React.FC = () => {
     cargas.filter((c) => !c.synced).forEach((c) => {
       lista.push({
         localId: c.localId,
+        fincaId: Number(c.fincaId || 0),
         fincaNombre: c.fincaNombre,
         litros: Number(c.litros) || 0,
         tipoLeche: c.tipoLeche,
@@ -1931,18 +1942,20 @@ export const AppMovilPage: React.FC = () => {
 
     return fincasRuta.map((f) => {
       const parada = todasLasParadas.find((p) =>
-        Number(p.fincaId || p.FincaId) === f.id ||
+        (Number(p.fincaId) > 0 && Number(p.fincaId) === f.id) ||
         (p.fincaNombre && f.nombre && p.fincaNombre.trim().toLowerCase() === f.nombre.trim().toLowerCase())
       );
+      const lts = parada ? Number(parada.litros || 0) : 0;
+      const esRec = Boolean(parada && lts > 0);
       return {
         ...f,
-        recolectada: Boolean(parada),
-        parada,
-        litrosRecolectados: parada ? Number(parada.litros || 0) : 0,
+        recolectada: esRec,
+        parada: esRec ? parada : null,
+        litrosRecolectados: lts,
       };
     }).sort((a, b) => {
-      if (a.recolectada && !b.recolectada) return -1;
-      if (!a.recolectada && b.recolectada) return 1;
+      if (!a.recolectada && b.recolectada) return -1;
+      if (a.recolectada && !b.recolectada) return 1;
       return a.nombre.localeCompare(b.nombre);
     });
   }, [viajeActivo, rutasActivasIds, fincas, todasLasParadas]);
@@ -2061,25 +2074,25 @@ export const AppMovilPage: React.FC = () => {
     });
   };
 
-  // Abrir modal de carga preseleccionando una finca específica
+  // Abrir modal de carga preseleccionando una finca específica (fija y no editable)
   const abrirCargaParaFinca = (fincaItem: any) => {
-    if (viajeActivo?.fecha) {
-      setFormCarga((prev) => ({
-        ...prev,
-        fecha: viajeActivo.fecha.split('T')[0],
-        fincaId: fincaItem.id,
-      }));
-    } else {
-      setFormCarga((prev) => ({
-        ...prev,
-        fincaId: fincaItem.id,
-      }));
-    }
+    setFincaFijadaParaModal(fincaItem);
+    const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
+    const ltsActuales = fincaItem.litrosRecolectados && Number(fincaItem.litrosRecolectados) > 0 ? String(fincaItem.litrosRecolectados) : '';
+    setFormCarga((prev) => ({
+      ...prev,
+      fecha: fechaAUsar,
+      fincaId: Number(fincaItem.id),
+      litros: ltsActuales,
+      tipoLeche: fincaItem.parada?.tipoLeche || prev.tipoLeche || 'VACA',
+      esAcida: Boolean(fincaItem.parada?.esAcida ?? prev.esAcida),
+      esDiferido: Boolean(fincaItem.parada?.esDiferido ?? prev.esDiferido),
+    }));
     setModalRegistro(true);
   };
 
   // Guardar nueva carga en local
-  const handleGuardarCarga = (e: React.FormEvent) => {
+  const handleGuardarCarga = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formCarga.fincaId) {
       toast.error('Selecciona una finca de la lista');
@@ -2091,7 +2104,35 @@ export const AppMovilPage: React.FC = () => {
       return;
     }
 
-    const fincaSel = fincas.find((f) => f.id === Number(formCarga.fincaId));
+    const fincaSel = fincas.find((f) => f.id === Number(formCarga.fincaId)) || fincaFijadaParaModal;
+
+    // Validación: si dos choferes tienen la misma finca o ya fue registrada hoy, requiere confirmación
+    const yaRegistrada = todasLasParadas.find((p) => {
+      const pFincaId = Number(p.fincaId || 0);
+      const lts = Number(p.litros || 0);
+      const mismoId = pFincaId > 0 && pFincaId === Number(formCarga.fincaId);
+      const mismoNombre = fincaSel && p.fincaNombre && p.fincaNombre.trim().toLowerCase() === fincaSel.nombre.trim().toLowerCase();
+      return (mismoId || mismoNombre) && lts > 0;
+    });
+
+    if (yaRegistrada) {
+      const result = await Swal.fire({
+        title: '⚠️ ¿Confirmar Carga Duplicada?',
+        html: `La finca <strong>${fincaSel ? fincaSel.nombre : 'seleccionada'}</strong> ya cuenta con un registro hoy de <strong>${yaRegistrada.litros.toLocaleString()} L</strong>.<br/><br/>¿Confirmas que deseas registrar esta recolección de todos modos?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#10b981',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Sí, confirmar y guardar',
+        cancelButtonText: 'Cancelar',
+        reverseButtons: true,
+      });
+
+      if (!result.isConfirmed) {
+        return;
+      }
+    }
+
     const now = new Date();
     const horaStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -2116,6 +2157,7 @@ export const AppMovilPage: React.FC = () => {
     const nuevasCargas = [nuevaCarga, ...cargas];
     setCargas(nuevasCargas);
     setModalRegistro(false);
+    setFincaFijadaParaModal(null);
     setFormCarga({
       fecha: viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr,
       fincaId: 0,
@@ -3471,54 +3513,35 @@ export const AppMovilPage: React.FC = () => {
                   </div>
 
                   {/* Acciones Rápidas del Viaje */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px' }}>
+                  <div>
                     <button
                       type="button"
                       onClick={() => {
                         if (viajeActivo?.fecha) {
                           setFormCarga((prev) => ({ ...prev, fecha: viajeActivo.fecha.split('T')[0] }));
                         }
+                        setFincaFijadaParaModal(null);
                         setModalRegistro(true);
                       }}
                       style={{
+                        width: '100%',
                         background: 'linear-gradient(135deg, #10b981, #059669)',
                         color: '#ffffff',
                         border: 'none',
-                        borderRadius: '12px',
-                        padding: '11px',
-                        fontSize: '13px',
+                        borderRadius: '14px',
+                        padding: '12px 16px',
+                        fontSize: '14px',
                         fontWeight: 900,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                        gap: '8px',
+                        boxShadow: '0 4px 14px rgba(16, 185, 129, 0.28)',
                       }}
                     >
-                      <i className="fa-solid fa-plus text-xs"></i>
-                      <span>+ Cargar Finca</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTabActiva('recoleccion')}
-                      style={{
-                        background: '#eff6ff',
-                        color: '#1d4ed8',
-                        border: '1px solid #bfdbfe',
-                        borderRadius: '12px',
-                        padding: '11px',
-                        fontSize: '13px',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <i className="fa-solid fa-route text-xs"></i>
-                      <span>Ver Circuito</span>
+                      <i className="fa-solid fa-plus text-sm"></i>
+                      <span>+ Registrar Parada Libre en Finca</span>
                     </button>
                   </div>
                 </div>
@@ -3658,8 +3681,8 @@ export const AppMovilPage: React.FC = () => {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '7px' }}>
-                      <i className="fa-solid fa-cow text-sky-600"></i>
-                      <span>Fincas del Recorrido ({fincasDeMiRuta.length})</span>
+                      <i className="fa-solid fa-cow text-emerald-600"></i>
+                      <span>Fincas a Recolectar ({fincasDeMiRuta.length})</span>
                     </div>
                     <span
                       style={{
@@ -3677,7 +3700,7 @@ export const AppMovilPage: React.FC = () => {
                   </div>
 
                   {/* Barra de progreso rápida */}
-                  <div style={{ width: '100%', height: '6px', background: '#f1f5f9', borderRadius: '999px', overflow: 'hidden', marginBottom: '12px' }}>
+                  <div style={{ width: '100%', height: '7px', background: '#f1f5f9', borderRadius: '999px', overflow: 'hidden', marginBottom: '12px' }}>
                     <div
                       style={{
                         width: `${fincasDeMiRuta.length > 0 ? Math.round((recCount / fincasDeMiRuta.length) * 100) : 0}%`,
@@ -3688,14 +3711,77 @@ export const AppMovilPage: React.FC = () => {
                     />
                   </div>
 
+                  {/* Filtro segmentado: Todas | Pendientes | Hechas */}
+                  {fincasDeMiRuta.length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '12px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setFiltroCircuito('todas')}
+                        style={{
+                          padding: '6px 4px',
+                          borderRadius: '8px',
+                          border: filtroCircuito === 'todas' ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
+                          background: filtroCircuito === 'todas' ? '#eff6ff' : '#f8fafc',
+                          color: filtroCircuito === 'todas' ? '#1d4ed8' : '#64748b',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                        }}
+                      >
+                        Todas ({fincasDeMiRuta.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFiltroCircuito('pendientes')}
+                        style={{
+                          padding: '6px 4px',
+                          borderRadius: '8px',
+                          border: filtroCircuito === 'pendientes' ? '1.5px solid #f59e0b' : '1px solid #e2e8f0',
+                          background: filtroCircuito === 'pendientes' ? '#fef3c7' : '#f8fafc',
+                          color: filtroCircuito === 'pendientes' ? '#b45309' : '#64748b',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                        }}
+                      >
+                        ⏳ Pendientes ({pendientesCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFiltroCircuito('recolectadas')}
+                        style={{
+                          padding: '6px 4px',
+                          borderRadius: '8px',
+                          border: filtroCircuito === 'recolectadas' ? '1.5px solid #10b981' : '1px solid #e2e8f0',
+                          background: filtroCircuito === 'recolectadas' ? '#ecfdf5' : '#f8fafc',
+                          color: filtroCircuito === 'recolectadas' ? '#047857' : '#64748b',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                        }}
+                      >
+                        ✓ Hechas ({recCount})
+                      </button>
+                    </div>
+                  )}
+
                   {/* Lista de Fincas con Detalle y Botón de Cargar Litros */}
                   {fincasDeMiRuta.length === 0 ? (
                     <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '12px', background: '#f8fafc', borderRadius: '12px' }}>
-                      No hay fincas asignadas específicamente. Usa el botón superior <strong>+ Cargar Finca</strong> para registrar paradas libres.
+                      No hay fincas asignadas específicamente. Usa el botón superior <strong>+ Registrar Parada Libre</strong> para registrar paradas de leche.
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {fincasDeMiRuta.map((f, idx) => {
+                      {fincasDeMiRuta
+                        .filter((f) => {
+                          if (filtroCircuito === 'pendientes') return !f.recolectada;
+                          if (filtroCircuito === 'recolectadas') return f.recolectada;
+                          return true;
+                        })
+                        .map((f, idx) => {
                         const estaTitilando = fincaRecienActualizadaId === f.id;
                         return (
                         <div
@@ -3792,19 +3878,19 @@ export const AppMovilPage: React.FC = () => {
                                   background: 'linear-gradient(135deg, #10b981, #059669)',
                                   color: '#ffffff',
                                   border: 'none',
-                                  borderRadius: '8px',
-                                  padding: '7px 12px',
-                                  fontSize: '11.5px',
+                                  borderRadius: '10px',
+                                  padding: '8px 14px',
+                                  fontSize: '12.5px',
                                   fontWeight: 900,
                                   cursor: 'pointer',
-                                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                                  boxShadow: '0 3px 10px rgba(16, 185, 129, 0.35)',
                                   display: 'flex',
                                   alignItems: 'center',
-                                  gap: '4px',
+                                  gap: '6px',
                                 }}
                               >
-                                <i className="fa-solid fa-faucet-drip"></i>
-                                <span>+ Cargar Litros</span>
+                                <i className="fa-solid fa-faucet-drip text-[12px]"></i>
+                                <span>Cargar Leche</span>
                               </button>
                             )}
                           </div>
@@ -4064,9 +4150,9 @@ export const AppMovilPage: React.FC = () => {
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '7px' }}>
-                      <i className="fa-solid fa-route" style={{ color: '#2563eb' }}></i>
-                      <span>Circuito de Ruta ({fincasDeMiRuta.length})</span>
+                    <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                      <i className="fa-solid fa-cow" style={{ color: '#059669' }}></i>
+                      <span>Fincas a Recolectar ({fincasDeMiRuta.length})</span>
                     </div>
                     <span
                       style={{
@@ -4241,11 +4327,30 @@ export const AppMovilPage: React.FC = () => {
 
                           <div>
                             {f.recolectada ? (
-                              <div style={{ textAlign: 'right' }}>
-                                <span style={{ fontSize: '15px', fontWeight: 900, color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', animation: 'titilarPuntoPulso 1.5s infinite' }}></span>
-                                  +{f.litrosRecolectados.toLocaleString()} L
-                                </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ textAlign: 'right' }}>
+                                  <span style={{ fontSize: '15px', fontWeight: 900, color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', animation: 'titilarPuntoPulso 1.5s infinite' }}></span>
+                                    +{f.litrosRecolectados.toLocaleString()} L
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => abrirCargaParaFinca(f)}
+                                  style={{
+                                    background: '#ffffff',
+                                    border: '1px solid #86efac',
+                                    color: '#16a34a',
+                                    borderRadius: '8px',
+                                    padding: '5px 8px',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Modificar litros"
+                                >
+                                  <i className="fa-solid fa-pen"></i>
+                                </button>
                               </div>
                             ) : (
                               <button
@@ -4256,18 +4361,18 @@ export const AppMovilPage: React.FC = () => {
                                   color: '#ffffff',
                                   border: 'none',
                                   borderRadius: '10px',
-                                  padding: '7px 14px',
-                                  fontSize: '12px',
-                                  fontWeight: 800,
+                                  padding: '8px 14px',
+                                  fontSize: '12.5px',
+                                  fontWeight: 900,
                                   cursor: 'pointer',
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: '6px',
-                                  boxShadow: '0 3px 8px rgba(16, 185, 129, 0.3)',
+                                  boxShadow: '0 3px 10px rgba(16, 185, 129, 0.35)',
                                 }}
                               >
-                                <i className="fa-solid fa-plus text-[11px]"></i>
-                                <span>Cargar</span>
+                                <i className="fa-solid fa-faucet-drip text-[12px]"></i>
+                                <span>Cargar Leche</span>
                               </button>
                             )}
                           </div>
@@ -8759,7 +8864,10 @@ export const AppMovilPage: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={() => setModalRegistro(false)}
+                onClick={() => {
+                  setModalRegistro(false);
+                  setFincaFijadaParaModal(null);
+                }}
                 style={{
                   background: '#f1f5f9',
                   border: 'none',
@@ -8776,55 +8884,116 @@ export const AppMovilPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleGuardarCarga}>
-              {/* Finca con buscador integrado */}
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#1e293b', marginBottom: '6px' }}>
-                  Finca Productora <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="🔍 Buscar finca por nombre..."
-                  value={busquedaFinca}
-                  onChange={(e) => setBusquedaFinca(e.target.value)}
+              {/* Finca: Si viene fijada desde la lista, NO se puede editar ni buscar */}
+              {fincaFijadaParaModal ? (
+                <div
                   style={{
-                    width: '100%',
-                    height: '40px',
-                    borderRadius: '10px',
+                    marginBottom: '16px',
+                    background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
                     border: '1.5px solid #cbd5e1',
-                    padding: '0 12px',
-                    fontSize: '13px',
-                    marginBottom: '8px',
-                    outline: 'none',
-                  }}
-                />
-                <select
-                  value={formCarga.fincaId}
-                  onChange={(e) => setFormCarga({ ...formCarga, fincaId: Number(e.target.value) })}
-                  required
-                  style={{
-                    width: '100%',
-                    height: '46px',
-                    borderRadius: '10px',
-                    border: '1.5px solid #0284c7',
-                    background: '#f0f9ff',
-                    padding: '0 12px',
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    color: '#0369a1',
-                    outline: 'none',
+                    borderRadius: '14px',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
                   }}
                 >
-                  <option value={0}>-- Selecciona la Finca ({fincasFiltradas.length}) --</option>
-                  {fincasFiltradas.map((f) => {
-                    const enRuta = f.rutaId && rutasActivasIds.includes(f.rutaId);
-                    return (
-                      <option key={f.id} value={f.id}>
-                        {enRuta ? '⭐ [En Ruta] ' : ''}{f.nombre} {f.codigo ? `(${f.codigo})` : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '12px',
+                        background: '#ecfdf5',
+                        color: '#059669',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '20px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="fa-solid fa-cow"></i>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>
+                        {fincaFijadaParaModal.nombre}
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: '#64748b', fontWeight: 600, marginTop: '2px' }}>
+                        {fincaFijadaParaModal.propietarioNombre || fincaFijadaParaModal.propietario || 'Finca Asignada'}
+                        {fincaFijadaParaModal.codigo ? ` • Cód: ${fincaFijadaParaModal.codigo}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      background: '#e2e8f0',
+                      color: '#475569',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <i className="fa-solid fa-lock text-[10px]"></i> Finca Fija
+                  </span>
+                </div>
+              ) : (
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#1e293b', marginBottom: '6px' }}>
+                    Finca Productora <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="🔍 Buscar finca por nombre..."
+                    value={busquedaFinca}
+                    onChange={(e) => setBusquedaFinca(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: '40px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #cbd5e1',
+                      padding: '0 12px',
+                      fontSize: '13px',
+                      marginBottom: '8px',
+                      outline: 'none',
+                    }}
+                  />
+                  <select
+                    value={formCarga.fincaId}
+                    onChange={(e) => setFormCarga({ ...formCarga, fincaId: Number(e.target.value) })}
+                    required
+                    style={{
+                      width: '100%',
+                      height: '46px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #0284c7',
+                      background: '#f0f9ff',
+                      padding: '0 12px',
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      color: '#0369a1',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value={0}>-- Selecciona la Finca ({fincasFiltradas.length}) --</option>
+                    {fincasFiltradas.map((f) => {
+                      const enRuta = f.rutaId && rutasActivasIds.includes(f.rutaId);
+                      return (
+                        <option key={f.id} value={f.id}>
+                          {enRuta ? '⭐ [En Ruta] ' : ''}{f.nombre} {f.codigo ? `(${f.codigo})` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
 
               {/* Fecha de Recolección: si hay un ticket activo asignado, se toma automáticamente su fecha y no se muestra el selector manual */}
               {viajeActivo ? (
@@ -9126,7 +9295,10 @@ export const AppMovilPage: React.FC = () => {
               <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
                 <button
                   type="button"
-                  onClick={() => setModalRegistro(false)}
+                  onClick={() => {
+                    setModalRegistro(false);
+                    setFincaFijadaParaModal(null);
+                  }}
                   style={{
                     flex: 1,
                     height: '48px',
@@ -10291,7 +10463,7 @@ export const AppMovilPage: React.FC = () => {
                             onClick={() => {
                               if (!notif.leido) handleMarcarLeida(notif.id);
                               setModalNotificaciones(false);
-                              setTabActiva('recoleccion');
+                              setTabActiva('principal');
                             }}
                             style={{
                               background: '#10b981',

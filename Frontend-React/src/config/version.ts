@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 1,
-  patch: 2,
-  tag: 'v3.1.2',
+  minor: 2,
+  patch: 1,
+  tag: 'v3.2.1',
   ultimaActualizacion: '2026-11-08',
-  tipoUltimoCambio: 'DISEÑO',
-  descripcion: 'Diseño Claro Corporativo en App Móvil (Fondo blanco/azul, eliminación de tema oscuro en bienvenida, cabecera y tarjetas)',
+  tipoUltimoCambio: 'DISEÑO_LOGICA',
+  descripcion: 'Unificación de sincronización móvil anti-duplicados y corrección de paradas duplicadas',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

@@ -751,13 +751,7 @@ export const AppMovilPage: React.FC = () => {
   // Auto-sincronización automática cuando se recupera o detecta conexión a internet
   useEffect(() => {
     if (isOnline && dispositivo) {
-      const pendientes = cargas.filter((c) => !c.synced);
-      if (pendientes.length > 0 && !sincronizando) {
-        toast.info(`📶 Señal disponible: enviando automáticamente ${pendientes.length} carga(s) a la central...`);
-        sincronizarCargas(cargas);
-      }
-      // Sincronizar todos los almacenes IndexedDB pendientes en segundo plano
-      syncEngine.sincronizarTodo(dispositivo.empresaCodigo, true).catch(() => {});
+      sincronizarCargas();
     }
   }, [isOnline]);
 
@@ -2578,124 +2572,39 @@ export const AppMovilPage: React.FC = () => {
     toast.success(`Carga de ${litrosNum.toLocaleString()} L guardada en el teléfono`);
 
     if (isOnline) {
-      setTimeout(() => sincronizarCargas(nuevasCargas), 500);
+      setTimeout(() => sincronizarCargas(), 400);
     }
   };
 
-  // Sincronizar cargas con servidor
-  const sincronizarCargas = async (cargasParaSync = cargas) => {
+  // Sincronizar cargas con servidor mediante el SyncEngine Unificado
+  const sincronizarCargas = async () => {
     if (!isOnline && !navigator.onLine) {
       toast.warning('No hay conexión a internet disponible para sincronizar.');
       return;
     }
-    const pendientes = cargasParaSync.filter((c) => !c.synced);
-    if (pendientes.length === 0) {
-      toast.info('Todas las cargas ya están sincronizadas con la central.');
-      return;
-    }
 
     setSincronizando(true);
-    let sincronizadasCount = 0;
-
     try {
-      // 1. Priorizar el viaje activo ya cargado o asignado al chofer
-      let idViaje: number | undefined = viajeActivo?.id;
-
-      if (!idViaje) {
-        // Consultar al servidor si existe un viaje activo abierto asignado a este chofer
-        const vActivo = await operacionesApi.getViajeActivo(dispositivo?.id);
-        if (vActivo && vActivo.id) {
-          idViaje = vActivo.id;
-          setViajeActivo(vActivo);
-        }
+      // 1. Ejecutar sincronización a través del motor unificado (evita carreras y doble envío)
+      const resSync = await syncEngine.sincronizarTodo();
+      if (resSync.totalSubidos > 0) {
+        toast.success(`¡Sincronización completada! ${resSync.totalSubidos} registro(s) sincronizados.`);
+      } else {
+        toast.info('Todas las cargas ya están sincronizadas con la central.');
       }
 
-      // Si aún no se encontró, buscar en controles abiertos por chofer o unidad
-      if (!idViaje) {
-        const fechaCarga = pendientes[0]?.fecha || hoyStr;
-        let viajes = await operacionesApi.getControles(fechaCarga);
-        let viajeExistente = viajes.find(
-          (v: any) =>
-            (v.usuarioId === dispositivo?.id || v.conductorId === dispositivo?.id || v.choferId === dispositivo?.id || (dispositivo?.camionId && v.camionId === dispositivo.camionId)) &&
-            v.estado !== 'Cerrado' && v.estado !== 'FINALIZADO' && v.estado !== 'Cancelado'
-        );
+      // 2. Marcar estado local como sincronizado
+      setCargas((prev) => prev.map((c) => ({ ...c, synced: true })));
+      try {
+        const cargasLoc = JSON.parse(localStorage.getItem('movil_cargas_local') || '[]');
+        localStorage.setItem('movil_cargas_local', JSON.stringify(cargasLoc.map((c: any) => ({ ...c, synced: true }))));
+      } catch {}
 
-        if (!viajeExistente) {
-          const todosLosViajes = await operacionesApi.getControles();
-          viajeExistente = todosLosViajes.find(
-            (v: any) =>
-              (v.usuarioId === dispositivo?.id || v.conductorId === dispositivo?.id || v.choferId === dispositivo?.id || (dispositivo?.camionId && v.camionId === dispositivo.camionId)) &&
-              v.estado !== 'Cerrado' && v.estado !== 'FINALIZADO' && v.estado !== 'Cancelado'
-          );
-        }
-
-        if (viajeExistente && viajeExistente.id) {
-          idViaje = viajeExistente.id;
-        }
-      }
-
-      // Solo si absolutamente ningún viaje abierto existe para el chofer, iniciar uno
-      if (!idViaje) {
-        const fechaCarga = pendientes[0]?.fecha || hoyStr;
-        const viajeIniciado = await operacionesApi.iniciarViaje({
-          fecha: fechaCarga,
-          camionId: dispositivo?.camionId,
-          choferId: dispositivo?.id,
-          conductorId: dispositivo?.id,
-          observacion: 'Viaje iniciado automáticamente desde App Móvil [ORIGEN_MOVIL]',
-        });
-        idViaje = viajeIniciado.id;
-      }
-
-      const actualizadas = [...cargasParaSync];
-      for (const carga of pendientes) {
-        try {
-          // Sello obligatorio [ORIGEN_MOVIL] para trazabilidad en vivo
-          const obsConOrigen = `${carga.observacion ? carga.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim();
-
-          await operacionesApi.agregarFincaViaje(idViaje, {
-            fincaId: carga.fincaId,
-            litros: carga.litros,
-            esAcida: carga.esAcida,
-            esDiferido: carga.esDiferido,
-            fecha: carga.fecha || hoyStr,
-            tipoLeche: carga.tipoLeche,
-            observacion: obsConOrigen,
-            temperatura: carga.temperatura,
-            fotoComprobante: carga.fotoRecibo,
-          });
-
-          const idx = actualizadas.findIndex((c) => c.localId === carga.localId);
-          if (idx !== -1) {
-            actualizadas[idx] = {
-              ...actualizadas[idx],
-              synced: true,
-              syncedAt: new Date().toLocaleTimeString(),
-              serverTicketId: idViaje,
-            };
-            sincronizadasCount++;
-          }
-        } catch (itemErr: any) {
-          console.error('Error al sincronizar item:', carga, itemErr);
-        }
-      }
-
-      setCargas(actualizadas);
-      if (sincronizadasCount > 0) {
-        toast.success(`¡Sincronización completada! ${sincronizadasCount} carga(s) enviadas a la central.`);
-        try {
-          localStorage.setItem('transporte_evento_finca_movil', JSON.stringify({
-            timestamp: Date.now(),
-            viajeId: idViaje,
-            totalCargas: sincronizadasCount,
-          }));
-        } catch { /* tolerante */ }
-      }
-
-      // Actualizar paradas consolidadas y viaje activo desde la central
+      // 3. Actualizar paradas consolidadas y viaje activo desde la central
       await cargarViajeActivo();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al conectar con la central para sincronizar.');
+      console.error('Error al sincronizar cargas:', err);
+      toast.error('Error al conectar con la central para sincronizar.');
     } finally {
       setSincronizando(false);
     }

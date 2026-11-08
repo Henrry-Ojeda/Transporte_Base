@@ -270,18 +270,18 @@ namespace Transporte.Infrastructure.Repositories
 
                 if (ticketInfo != null)
                 {
-                    item.ControlRutaId = (long)ticketInfo.Id;
+                    item.ControlRutaId = Convert.ToInt64(ticketInfo.Id);
                     string rawEst = (string?)ticketInfo.Estado ?? "ABIERTO";
                     int procId = ticketInfo.ProcesoActualId != null ? Convert.ToInt32(ticketInfo.ProcesoActualId) : 1;
                     bool esFin = procId >= 4 || rawEst.Contains("Finaliz", StringComparison.OrdinalIgnoreCase) || rawEst.Contains("Cerrad", StringComparison.OrdinalIgnoreCase) || rawEst.StartsWith("4");
                     item.EstadoTicket = esFin ? "FINALIZADO" : rawEst;
-                    item.LitrosRecolectadosReal = (int)(ticketInfo.TotalLitrosFinca ?? 0);
+                    item.LitrosRecolectadosReal = Convert.ToInt32(ticketInfo.TotalLitrosFinca ?? 0);
 
                     var fincasRecSql = @"
                         SELECT DISTINCT FincaId 
                         FROM TB_RUTAS_RECOLECCION 
                         WHERE ControlRutaId = @TicketId AND FincaId IS NOT NULL AND Litros > 0";
-                    var recIds = await connection.QueryAsync<int>(fincasRecSql, new { TicketId = (long)ticketInfo.Id });
+                    var recIds = await connection.QueryAsync<int>(fincasRecSql, new { TicketId = Convert.ToInt64(ticketInfo.Id) });
                     item.FincasRecolectadasIds = recIds.ToList();
                 }
                 else
@@ -794,7 +794,7 @@ namespace Transporte.Infrastructure.Repositories
                 "SELECT ControlRutaId FROM TB_PLANIFICACION_RUTAS_CHOFERES WHERE Id = @id", new { id });
             if (plan != null && plan.ControlRutaId != null)
             {
-                long crId = (long)plan.ControlRutaId;
+                long crId = Convert.ToInt64(plan.ControlRutaId);
                 var totalLeche = await connection.ExecuteScalarAsync<int?>(
                     "SELECT SUM(Litros) FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @crId AND Litros > 0", new { crId }) ?? 0;
                 if (totalLeche > 0)

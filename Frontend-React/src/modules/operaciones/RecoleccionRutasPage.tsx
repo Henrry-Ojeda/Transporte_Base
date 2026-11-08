@@ -1148,7 +1148,10 @@ export const RecoleccionRutasPage: React.FC = () => {
     if (fechaFiltro) {
       list = list.filter((v) => (v.fecha || '').split('T')[0] === fechaFiltro);
     }
-    if (filtroEstadoTicket === 'activos') {
+    // Si el usuario escribe una búsqueda específica (ej: número de ticket), no restringir por estado
+    const tieneBusqueda = Boolean(busquedaTexto.trim());
+
+    if (!tieneBusqueda && filtroEstadoTicket === 'activos') {
       list = list.filter((v) => {
         const est = (v.estado || '').toUpperCase();
         const estP = (v.estadoProceso || '').toUpperCase();
@@ -1165,27 +1168,10 @@ export const RecoleccionRutasPage: React.FC = () => {
           v.procesoActualId !== 4
         );
       });
-    } else if (filtroEstadoTicket === 'todos') {
-      // MODO "HISTORICO COMPLETO": SOLO SE VEN LOS FINALIZADOS, LOS QUE TIENEN ESTADO ABIERTO NO
-      list = list.filter((v) => {
-        const est = (v.estado || '').toUpperCase();
-        const estP = (v.estadoProceso || '').toUpperCase();
-        if (est === 'ABIERTO' || v.procesoActualId === 1) return false;
-        return (
-          est === 'FINALIZADO' ||
-          est === 'CERRADO' ||
-          est === 'ENTREGADO' ||
-          est === 'CUADRADO' ||
-          est === 'AUDITADO' ||
-          estP === 'CERRADO' ||
-          estP === 'FINALIZADO' ||
-          v.procesoActualId === 3 ||
-          v.procesoActualId === 4
-        );
-      });
     }
+    // En 'todos' (Histórico Completo) se muestran TODOS los viajes de la fecha (abiertos y finalizados)
     return list;
-  }, [viajes, filtroEstadoTicket, esChofer, user, fechaFiltro]);
+  }, [viajes, filtroEstadoTicket, esChofer, user, fechaFiltro, busquedaTexto]);
 
   const despachosFiltrados = useMemo(() => {
     let list = despachos;
@@ -1203,7 +1189,8 @@ export const RecoleccionRutasPage: React.FC = () => {
     if (fechaFiltro) {
       list = list.filter((d) => (d.fecha || '').split('T')[0] === fechaFiltro);
     }
-    if (filtroEstadoTicket === 'activos') {
+    const tieneBusqueda = Boolean(busquedaTexto.trim());
+    if (!tieneBusqueda && filtroEstadoTicket === 'activos') {
       list = list.filter((d) => {
         const est = (d.estado || '').toUpperCase();
         const estP = ((d as any).estadoProceso || '').toUpperCase();
@@ -1218,25 +1205,21 @@ export const RecoleccionRutasPage: React.FC = () => {
           estP !== 'FINALIZADO'
         );
       });
-    } else if (filtroEstadoTicket === 'todos') {
-      // MODO "HISTORICO COMPLETO": SOLO SE VEN LOS FINALIZADOS, LOS QUE TIENEN ESTADO ABIERTO NO
-      list = list.filter((d) => {
-        const est = (d.estado || '').toUpperCase();
-        const estP = ((d as any).estadoProceso || '').toUpperCase();
-        if (est === 'ABIERTO') return false;
-        return (
-          est === 'FINALIZADO' ||
-          est === 'CERRADO' ||
-          est === 'ENTREGADO' ||
-          est === 'CUADRADO' ||
-          est === 'AUDITADO' ||
-          estP === 'CERRADO' ||
-          estP === 'FINALIZADO'
-        );
-      });
     }
+    // En 'todos' (Histórico Completo) se muestran todos los despachos
     return list;
-  }, [despachos, filtroEstadoTicket, esChofer, user, fechaFiltro]);
+  }, [despachos, filtroEstadoTicket, esChofer, user, fechaFiltro, busquedaTexto]);
+
+  // Precargar automáticamente paradas de los viajes para que las métricas y conteos de paradas
+  // se sincronicen reactivamente sin necesidad de hacer clic
+  useEffect(() => {
+    if (!viajes || viajes.length === 0) return;
+    viajes.forEach((v) => {
+      if (v.id && !fincasTicketsMap[v.id]) {
+        cargarFincasTicket(v.id, true);
+      }
+    });
+  }, [viajes]);
 
   const ticketsCombinados = useMemo(() => {
     const normRutas = viajesFiltrados.map((v) => ({
@@ -1306,6 +1289,37 @@ export const RecoleccionRutasPage: React.FC = () => {
 
     return combinados;
   }, [viajesFiltrados, despachosFiltrados, filtroOrigenTicket, busquedaTexto]);
+
+  const contarTabs = useMemo(() => {
+    const q = busquedaTexto.trim().toLowerCase();
+    const coincide = (t: any) =>
+      !q ||
+      String(t.id).includes(q) ||
+      String(t.codigoTicket || '').toLowerCase().includes(q) ||
+      String(t._conductor || t.choferNombre || t.nombreConductor || '').toLowerCase().includes(q) ||
+      String(t.camionPlaca || '').toLowerCase().includes(q) ||
+      String(t.rutaLogisticaNombre || t.rutaNombre || '').toLowerCase().includes(q) ||
+      String(t.nombreCompania || t.companiaNombre || '').toLowerCase().includes(q);
+
+    const rutas = viajesFiltrados.filter(coincide);
+    const receptoria = despachosFiltrados.filter((d: any) => {
+      const comp = (d.nombreCompania || d.companiaNombre || '').toUpperCase();
+      const esSalida = comp !== '' && !comp.includes('RECEPTOR') && !comp.includes('PLANTA');
+      return !esSalida && coincide(d);
+    });
+    const salidas = despachosFiltrados.filter((d: any) => {
+      const comp = (d.nombreCompania || d.companiaNombre || '').toUpperCase();
+      const esSalida = comp !== '' && !comp.includes('RECEPTOR') && !comp.includes('PLANTA');
+      return esSalida && coincide(d);
+    });
+
+    return {
+      todos: rutas.length + receptoria.length + salidas.length,
+      rutas: rutas.length,
+      receptoria: receptoria.length,
+      salidas: salidas.length,
+    };
+  }, [viajesFiltrados, despachosFiltrados, busquedaTexto]);
 
   // Lista filtrada para Detalle por Fincas (Filtros por Chofer y Finca)
   const recoleccionesFiltradas = useMemo(() => {
@@ -2225,7 +2239,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                   boxShadow: filtroOrigenTicket === 'todos' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
                 }}
               >
-                Todos ({ticketsCombinados.length})
+                Todos ({contarTabs.todos})
               </button>
               <button
                 type="button"
@@ -2246,7 +2260,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                 }}
               >
                 <i className="fa-solid fa-route" style={{ color: '#0284c7' }}></i>
-                Rutas / Fincas ({viajesFiltrados.length})
+                Rutas / Fincas ({contarTabs.rutas})
               </button>
               <button
                 type="button"
@@ -2267,7 +2281,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                 }}
               >
                 <i className="fa-solid fa-building-wheat" style={{ color: '#9333ea' }}></i>
-                Receptoría ({despachosFiltrados.filter((d: any) => !((d.nombreCompania || d.companiaNombre || '').toUpperCase() !== '' && !(d.nombreCompania || d.companiaNombre || '').toUpperCase().includes('RECEPTOR') && !(d.nombreCompania || d.companiaNombre || '').toUpperCase().includes('PLANTA'))).length})
+                Receptoría ({contarTabs.receptoria})
               </button>
               <button
                 type="button"
@@ -2288,7 +2302,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                 }}
               >
                 <i className="fa-solid fa-truck-arrow-right" style={{ color: '#dc2626' }}></i>
-                Salidas ({despachosFiltrados.filter((d: any) => (d.nombreCompania || d.companiaNombre || '').toUpperCase() !== '' && !(d.nombreCompania || d.companiaNombre || '').toUpperCase().includes('RECEPTOR') && !(d.nombreCompania || d.companiaNombre || '').toUpperCase().includes('PLANTA')).length})
+                Salidas ({contarTabs.salidas})
               </button>
             </div>
 

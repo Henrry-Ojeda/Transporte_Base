@@ -242,20 +242,20 @@ export const AppMovilPage: React.FC = () => {
     }
   });
 
-  // Persistir viaje activo y paradas en LocalStorage
+  // Persistir viaje activo y paradas en LocalStorage (Solo guardar, no borrar por fallo de red)
   useEffect(() => {
-    if (viajeActivo) {
-      localStorage.setItem('movil_viaje_activo', JSON.stringify(viajeActivo));
-    } else {
-      localStorage.removeItem('movil_viaje_activo');
+    if (viajeActivo && viajeActivo.id) {
+      try {
+        localStorage.setItem('movil_viaje_activo', JSON.stringify(viajeActivo));
+      } catch {}
     }
   }, [viajeActivo]);
 
   useEffect(() => {
     if (paradasViajeActivo && paradasViajeActivo.length > 0) {
-      localStorage.setItem('movil_paradas_activo', JSON.stringify(paradasViajeActivo));
-    } else {
-      localStorage.removeItem('movil_paradas_activo');
+      try {
+        localStorage.setItem('movil_paradas_activo', JSON.stringify(paradasViajeActivo));
+      } catch {}
     }
   }, [paradasViajeActivo]);
 
@@ -774,6 +774,18 @@ export const AppMovilPage: React.FC = () => {
   const cargarViajeActivo = async (idTarget?: number) => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
+
+    // Si no hay red disponible, recuperar estrictamente de LocalStorage y no tocar nada más
+    if (!navigator.onLine) {
+      try {
+        const savedV = localStorage.getItem('movil_viaje_activo');
+        if (savedV) setViajeActivo(JSON.parse(savedV));
+        const savedP = localStorage.getItem('movil_paradas_activo');
+        if (savedP) setParadasViajeActivo(JSON.parse(savedP));
+      } catch {}
+      return;
+    }
+
     setCargandoViaje(true);
     try {
       // 1. Obtener viaje activo asignado al chofer en TB_CONTROL_RUTAS
@@ -783,6 +795,8 @@ export const AppMovilPage: React.FC = () => {
 
       if (v && v.id && !esCerrado) {
         setViajeActivo(v);
+        try { localStorage.setItem('movil_viaje_activo', JSON.stringify(v)); } catch {}
+
         // Si el ticket trae cisterna o placa específica, actualizar localmente
         if (v.camionId || v.camionPlaca) {
           setDispositivo((prev) => {
@@ -806,13 +820,28 @@ export const AppMovilPage: React.FC = () => {
         }
         // 2. Cargar paradas ya registradas en este ticket en el servidor
         const paradas = await operacionesApi.getFincasViaje(v.id);
-        setParadasViajeActivo(Array.isArray(paradas) ? paradas : []);
-      } else {
+        if (Array.isArray(paradas)) {
+          setParadasViajeActivo(paradas);
+          try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradas)); } catch {}
+        }
+      } else if (v && esCerrado) {
+        // Solo si el servidor confirmó explícitamente que el ticket fue cerrado
         setViajeActivo(null);
         setParadasViajeActivo([]);
+        try {
+          localStorage.removeItem('movil_viaje_activo');
+          localStorage.removeItem('movil_paradas_activo');
+        } catch {}
       }
     } catch (err) {
-      console.warn('No se pudo sincronizar el viaje activo con el servidor:', err);
+      console.warn('No se pudo sincronizar el viaje activo con el servidor (manteniendo local):', err);
+      // En caso de fallo de red, rescatar de LocalStorage si está vacío en memoria
+      try {
+        const savedV = localStorage.getItem('movil_viaje_activo');
+        if (savedV && !viajeActivo) setViajeActivo(JSON.parse(savedV));
+        const savedP = localStorage.getItem('movil_paradas_activo');
+        if (savedP && (!paradasViajeActivo || paradasViajeActivo.length === 0)) setParadasViajeActivo(JSON.parse(savedP));
+      } catch {}
     } finally {
       setCargandoViaje(false);
     }
@@ -1941,12 +1970,22 @@ export const AppMovilPage: React.FC = () => {
     }
 
     return fincasRuta.map((f) => {
-      const parada = todasLasParadas.find((p) =>
+      const paradasDeFinca = todasLasParadas.filter((p) =>
         (Number(p.fincaId) > 0 && Number(p.fincaId) === f.id) ||
         (p.fincaNombre && f.nombre && p.fincaNombre.trim().toLowerCase() === f.nombre.trim().toLowerCase())
       );
-      const lts = parada ? Number(parada.litros || 0) : 0;
-      const esRec = Boolean(parada && lts > 0);
+      const cargaLocal = cargas.find((c) => Number(c.fincaId) === f.id);
+
+      let lts = 0;
+      if (cargaLocal && Number(cargaLocal.litros) > 0) {
+        lts = Number(cargaLocal.litros);
+      } else if (paradasDeFinca.length > 0) {
+        lts = paradasDeFinca.reduce((acc, p) => acc + (Number(p.litros) || 0), 0);
+      }
+
+      const esRec = lts > 0;
+      const parada = paradasDeFinca.length > 0 ? paradasDeFinca[paradasDeFinca.length - 1] : null;
+
       return {
         ...f,
         recolectada: esRec,
@@ -1954,11 +1993,15 @@ export const AppMovilPage: React.FC = () => {
         litrosRecolectados: lts,
       };
     }).sort((a, b) => {
-      if (!a.recolectada && b.recolectada) return -1;
-      if (a.recolectada && !b.recolectada) return 1;
+      // 3.- Se va ordenando de primero con litros: las recolectadas arriba
+      if (a.litrosRecolectados > 0 && b.litrosRecolectados === 0) return -1;
+      if (a.litrosRecolectados === 0 && b.litrosRecolectados > 0) return 1;
+      if (a.litrosRecolectados > 0 && b.litrosRecolectados > 0) {
+        return b.litrosRecolectados - a.litrosRecolectados;
+      }
       return a.nombre.localeCompare(b.nombre);
     });
-  }, [viajeActivo, rutasActivasIds, fincas, todasLasParadas]);
+  }, [viajeActivo, rutasActivasIds, fincas, todasLasParadas, cargas]);
 
   const fincasFiltradas = useMemo(() => {
     // Si el viaje tiene fincas planificadas por el Admin, el chofer sólo puede ver y cargar esas fincas
@@ -2074,19 +2117,33 @@ export const AppMovilPage: React.FC = () => {
     });
   };
 
-  // Abrir modal de carga preseleccionando una finca específica (fija y no editable)
+  // Abrir modal de carga preseleccionando una finca específica (fija y cargando litros previos)
   const abrirCargaParaFinca = (fincaItem: any) => {
     setFincaFijadaParaModal(fincaItem);
     const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
-    const ltsActuales = fincaItem.litrosRecolectados && Number(fincaItem.litrosRecolectados) > 0 ? String(fincaItem.litrosRecolectados) : '';
+
+    // 7.- Cargar los litros que ya se habían colocado (offline o servidor)
+    const cargaLocal = cargas.find((c) => Number(c.fincaId) === Number(fincaItem.id));
+    const paradaServidor = (paradasViajeActivo || []).find((p) => Number(p.fincaId || p.FincaId) === Number(fincaItem.id));
+    let ltsPrevios = '';
+    if (cargaLocal && Number(cargaLocal.litros) > 0) {
+      ltsPrevios = String(cargaLocal.litros);
+    } else if (fincaItem.litrosRecolectados && Number(fincaItem.litrosRecolectados) > 0) {
+      ltsPrevios = String(fincaItem.litrosRecolectados);
+    } else if (paradaServidor && Number(paradaServidor.litros || paradaServidor.Litros || 0) > 0) {
+      ltsPrevios = String(paradaServidor.litros || paradaServidor.Litros);
+    }
+
     setFormCarga((prev) => ({
       ...prev,
       fecha: fechaAUsar,
       fincaId: Number(fincaItem.id),
-      litros: ltsActuales,
-      tipoLeche: fincaItem.parada?.tipoLeche || prev.tipoLeche || 'VACA',
-      esAcida: Boolean(fincaItem.parada?.esAcida ?? prev.esAcida),
-      esDiferido: Boolean(fincaItem.parada?.esDiferido ?? prev.esDiferido),
+      litros: ltsPrevios,
+      tipoLeche: cargaLocal?.tipoLeche || fincaItem.parada?.tipoLeche || prev.tipoLeche || 'VACA',
+      esAcida: Boolean(cargaLocal?.esAcida ?? fincaItem.parada?.esAcida ?? prev.esAcida),
+      esDiferido: Boolean(cargaLocal?.esDiferido ?? fincaItem.parada?.esDiferido ?? prev.esDiferido),
+      temperatura: cargaLocal?.temperatura ? String(cargaLocal.temperatura) : '',
+      observacion: cargaLocal?.observacion || '',
     }));
     setModalRegistro(true);
   };
@@ -2105,33 +2162,6 @@ export const AppMovilPage: React.FC = () => {
     }
 
     const fincaSel = fincas.find((f) => f.id === Number(formCarga.fincaId)) || fincaFijadaParaModal;
-
-    // Validación: si dos choferes tienen la misma finca o ya fue registrada hoy, requiere confirmación
-    const yaRegistrada = todasLasParadas.find((p) => {
-      const pFincaId = Number(p.fincaId || 0);
-      const lts = Number(p.litros || 0);
-      const mismoId = pFincaId > 0 && pFincaId === Number(formCarga.fincaId);
-      const mismoNombre = fincaSel && p.fincaNombre && p.fincaNombre.trim().toLowerCase() === fincaSel.nombre.trim().toLowerCase();
-      return (mismoId || mismoNombre) && lts > 0;
-    });
-
-    if (yaRegistrada) {
-      const result = await Swal.fire({
-        title: '⚠️ ¿Confirmar Carga Duplicada?',
-        html: `La finca <strong>${fincaSel ? fincaSel.nombre : 'seleccionada'}</strong> ya cuenta con un registro hoy de <strong>${yaRegistrada.litros.toLocaleString()} L</strong>.<br/><br/>¿Confirmas que deseas registrar esta recolección de todos modos?`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#10b981',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'Sí, confirmar y guardar',
-        cancelButtonText: 'Cancelar',
-        reverseButtons: true,
-      });
-
-      if (!result.isConfirmed) {
-        return;
-      }
-    }
 
     const now = new Date();
     const horaStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -2154,8 +2184,59 @@ export const AppMovilPage: React.FC = () => {
       synced: false,
     };
 
-    const nuevasCargas = [nuevaCarga, ...cargas];
+    // 7.- Si ya existe una carga local para esta finca, actualizarla en vez de duplicarla
+    const idxExistente = cargas.findIndex((c) => Number(c.fincaId) === Number(formCarga.fincaId));
+    let nuevasCargas: CargaOffline[];
+    if (idxExistente >= 0) {
+      nuevasCargas = [...cargas];
+      nuevasCargas[idxExistente] = {
+        ...nuevasCargas[idxExistente],
+        litros: litrosNum,
+        tipoLeche: formCarga.tipoLeche,
+        esAcida: formCarga.esAcida,
+        esDiferido: formCarga.esDiferido,
+        temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
+        observacion: formCarga.observacion,
+        fotoRecibo: formCarga.fotoRecibo || nuevasCargas[idxExistente].fotoRecibo,
+        synced: false,
+      };
+    } else {
+      nuevasCargas = [nuevaCarga, ...cargas];
+    }
     setCargas(nuevasCargas);
+    try { localStorage.setItem('movil_cargas_local', JSON.stringify(nuevasCargas)); } catch {}
+
+    // 6.- Actualizar inmediatamente las paradas locales para que el móvil las visualice sin wifi
+    setParadasViajeActivo((prev) => {
+      const list = Array.isArray(prev) ? [...prev] : [];
+      const idxP = list.findIndex((p) => Number(p.fincaId || p.FincaId) === Number(formCarga.fincaId));
+      if (idxP >= 0) {
+        list[idxP] = {
+          ...list[idxP],
+          litros: litrosNum,
+          Litros: litrosNum,
+          tipoLeche: formCarga.tipoLeche,
+          esAcida: formCarga.esAcida,
+          esDiferido: formCarga.esDiferido,
+        };
+      } else {
+        list.push({
+          id: Date.now(),
+          fincaId: Number(formCarga.fincaId),
+          fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
+          litros: litrosNum,
+          Litros: litrosNum,
+          tipoLeche: formCarga.tipoLeche,
+          esAcida: formCarga.esAcida,
+          esDiferido: formCarga.esDiferido,
+          createdAt: new Date().toISOString(),
+          origen: 'Teléfono',
+        });
+      }
+      try { localStorage.setItem('movil_paradas_activo', JSON.stringify(list)); } catch {}
+      return list;
+    });
+
     setModalRegistro(false);
     setFincaFijadaParaModal(null);
     setFormCarga({
@@ -2171,13 +2252,7 @@ export const AppMovilPage: React.FC = () => {
     });
     setBusquedaFinca('');
 
-    // Activar efecto visual TITILAR para esta finca al ingresar litros
-    const fincaIdNum = Number(formCarga.fincaId);
-    setFincaRecienActualizadaId(fincaIdNum);
-    setTimeout(() => {
-      setFincaRecienActualizadaId((prev) => (prev === fincaIdNum ? null : prev));
-    }, 10000);
-
+    // 2.- DENTRO DE LA APP NO se titila la finca (solo cuando se carga por web)
     toast.success(`Carga de ${litrosNum.toLocaleString()} L guardada en el teléfono`);
 
     if (isOnline) {
@@ -3787,27 +3862,28 @@ export const AppMovilPage: React.FC = () => {
                         <div
                           key={f.id}
                           style={{
-                            background: f.recolectada ? '#f0fdf4' : '#ffffff',
-                            borderRadius: '12px',
-                            padding: '12px',
-                            border: f.recolectada ? '1.5px solid #86efac' : '1px solid #e2e8f0',
+                            background: f.recolectada ? 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)' : '#f8fafc',
+                            borderRadius: '14px',
+                            padding: '12px 14px',
+                            border: f.recolectada ? '1.5px solid #86efac' : '1.5px solid #cbd5e1',
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             gap: '10px',
                             animation: estaTitilando ? 'titilarFincaVerde 1.2s infinite ease-in-out' : 'none',
                             transition: 'all 0.3s ease',
+                            boxShadow: f.recolectada ? '0 2px 6px rgba(16, 185, 129, 0.08)' : '0 1px 3px rgba(0,0,0,0.02)',
                           }}
                         >
                           <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <span
                                 style={{
-                                  width: '20px',
-                                  height: '20px',
+                                  width: '22px',
+                                  height: '22px',
                                   borderRadius: '6px',
-                                  background: f.recolectada ? '#dcfce7' : '#f1f5f9',
-                                  color: f.recolectada ? '#15803d' : '#64748b',
+                                  background: f.recolectada ? '#dcfce7' : '#e2e8f0',
+                                  color: f.recolectada ? '#15803d' : '#475569',
                                   fontSize: '11px',
                                   fontWeight: 900,
                                   display: 'flex',
@@ -3817,38 +3893,22 @@ export const AppMovilPage: React.FC = () => {
                               >
                                 {idx + 1}
                               </span>
-                              <span style={{ fontSize: '13px', fontWeight: 800, color: f.recolectada ? '#15803d' : '#0f172a' }}>
-                                {f.nombre}
+                              <span style={{ fontSize: '13.5px', fontWeight: 800, color: f.recolectada ? '#15803d' : '#1e293b' }}>
+                                {f.recolectada ? '✓ ' : ''}{f.nombre}
                               </span>
-                              {estaTitilando && (
-                                <span
-                                  style={{
-                                    fontSize: '9.5px',
-                                    fontWeight: 900,
-                                    background: '#10b981',
-                                    color: '#ffffff',
-                                    padding: '1px 6px',
-                                    borderRadius: '6px',
-                                    animation: 'titilarPuntoPulso 1s infinite',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '3px',
-                                  }}
-                                >
-                                  ⚡ ¡LITROS INGRESADOS!
+                              {f.recolectada ? (
+                                <span style={{ background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px', border: '1px solid #bbf7d0' }}>
+                                  Recolectada
+                                </span>
+                              ) : (
+                                <span style={{ background: '#f1f5f9', color: '#64748b', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '5px', border: '1px solid #cbd5e1' }}>
+                                  ⏳ Pendiente
                                 </span>
                               )}
                             </div>
-                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', paddingLeft: '26px' }}>
-                              {f.codigo ? `${f.codigo} • ` : ''}
-                              {f.recolectada ? (
-                                <strong style={{ color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#16a34a', display: 'inline-block', animation: 'titilarPuntoPulso 1.5s infinite' }}></span>
-                                  ✓ Recolectada: {f.litrosRecolectados.toLocaleString()} L
-                                </strong>
-                              ) : (
-                                <span style={{ color: '#d97706', fontWeight: 700 }}>⏳ Pendiente por recoger</span>
-                              )}
+                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', paddingLeft: '28px' }}>
+                              {f.propietarioNombre || f.propietario || f.codigo || 'Finca productora'}
+                              {f.recolectada && f.parada?.hora ? ` • Recogida ${f.parada.hora}` : ''}
                             </div>
                           </div>
 
@@ -4251,7 +4311,7 @@ export const AppMovilPage: React.FC = () => {
                           style={{
                             borderRadius: '14px',
                             padding: '11px 13px',
-                            border: f.recolectada ? '1.5px solid #86efac' : '1px solid #e2e8f0',
+                            border: f.recolectada ? '1.5px solid #86efac' : '1.5px solid #cbd5e1',
                             background: f.recolectada ? 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)' : '#f8fafc',
                             display: 'flex',
                             alignItems: 'center',

@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 2,
-  patch: 1,
-  tag: 'v3.2.1',
+  patch: 2,
+  tag: 'v3.2.2',
   ultimaActualizacion: '2026-11-08',
-  tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Unificación de sincronización móvil anti-duplicados y corrección de paradas duplicadas',
+  tipoUltimoCambio: 'DISEÑO',
+  descripcion: 'Restauración del fondo claro corporativo original (#f8fafc) en el cascarón HTML de la Web',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

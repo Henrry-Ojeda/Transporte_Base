@@ -265,6 +265,22 @@ export const AppMovilPage: React.FC = () => {
 
   // Salvaguarda: Rehidratar viaje activo y paradas de LocalStorage si la memoria quedó vacía
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('reset') === '1' || params.get('logout') === '1' || params.get('nuevo') === '1') {
+        localStorage.removeItem('movil_device_info');
+        localStorage.removeItem('movil_viaje_activo');
+        localStorage.removeItem('movil_paradas_activo');
+        localStorage.removeItem('movil_modo_activo');
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        setDispositivo(null);
+        setViajeActivo(null);
+        setParadasViajeActivo([]);
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+    }
+
     if (!viajeActivo) {
       try {
         const savedV = localStorage.getItem('movil_viaje_activo');

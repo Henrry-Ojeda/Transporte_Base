@@ -1292,7 +1292,7 @@ export const RecoleccionRutasPage: React.FC = () => {
 
   const enviarCompaniaMutation = useMutation({
     mutationFn: (ticketId: number) => {
-      const primeraFila = filasEntregaDirecta[0] || { companiaId: 0, litros: 0, tipoLeche: 'VACA' };
+      const primeraFila = filasEntregaDirecta.find((f) => Number(f.companiaId) > 0 && Number(f.litros) > 0) || filasEntregaDirecta[0] || { companiaId: 0, litros: 0, tipoLeche: 'VACA' };
       return operacionesApi.enviarACompania(ticketId, {
         companiaId: Number(primeraFila.companiaId),
         litrosDespachados: Number(primeraFila.litros || 0),

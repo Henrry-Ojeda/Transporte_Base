@@ -9,7 +9,7 @@ const STATIC_ASSETS = [
   "/manifest.json",
   "/favicon.svg",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css",
-  "/assets/index-BCgAtPv2.js",
+  "/assets/index-CYTzxcKB.js",
   "/assets/index-DJh36P8P.css",
   "/assets/rolldown-runtime-XKyaHtl9.js",
   "/assets/vendor-excel-D_lWTlWp.js",

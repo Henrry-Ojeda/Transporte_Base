@@ -1650,6 +1650,7 @@ namespace Transporte.Core.DTOs
     {
         public int CompaniaId { get; set; }
         public int LitrosDespachados { get; set; }
+        public int Litros { get; set; } // Alias para soportar "litros" o "litrosDespachados" desde Frontend
         public string? TipoLeche { get; set; }
         public string? Observacion { get; set; }
     }

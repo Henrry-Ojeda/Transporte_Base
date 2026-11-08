@@ -2818,15 +2818,17 @@ export const AppMovilPage: React.FC = () => {
 
     setGuardandoEntregaDirecta(true);
     try {
-      const primeraFila = filasEntregaDirecta[0] || { companiaId: 0, litros: 0, tipoLeche: 'VACA' };
+      const primeraFilaValida = filasEntregaDirecta.find((f) => Number(f.companiaId) > 0 && Number(f.litros) > 0) || filasEntregaDirecta[0];
       const resp = await operacionesApi.enviarACompania(viajeActivo.id, {
-        companiaId: Number(primeraFila.companiaId),
-        litrosDespachados: Number(primeraFila.litros || 0),
+        companiaId: Number(primeraFilaValida?.companiaId || 0),
+        litrosDespachados: Number(primeraFilaValida?.litros || 0),
         observacion: obsEntregaDirecta,
         destinos: filasEntregaDirecta.map((f) => ({
           companiaId: Number(f.companiaId),
           litros: Number(f.litros || 0),
+          litrosDespachados: Number(f.litros || 0),
           tipoLeche: f.tipoLeche || 'VACA',
+          observacion: obsEntregaDirecta,
         })),
       });
 

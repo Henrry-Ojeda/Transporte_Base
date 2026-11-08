@@ -9760,7 +9760,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             {
                 foreach (var d in dto.Destinos)
                 {
-                    if (d.CompaniaId <= 0 || d.LitrosDespachados <= 0) continue;
+                    int ltsItem = d.LitrosDespachados > 0 ? d.LitrosDespachados : d.Litros;
+                    if (d.CompaniaId <= 0 || ltsItem <= 0) continue;
                     if (primerCompaniaId == 0) primerCompaniaId = d.CompaniaId;
 
                     var tipoLeche = string.IsNullOrWhiteSpace(d.TipoLeche) ? "VACA" : d.TipoLeche.Trim().ToUpper();
@@ -9771,7 +9772,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         choferDespacho,
                         companiaId = d.CompaniaId,
                         cicloId,
-                        litrosDespacho = d.LitrosDespachados,
+                        litrosDespacho = ltsItem,
                         tipoLeche,
                         obs,
                         controlRutaId,
@@ -9812,6 +9813,10 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             int dif = totalLitrosFinca - totalDespachado;
             decimal merma = totalLitrosFinca > 0 ? Math.Round((Math.Abs(dif) * 100.0m) / totalLitrosFinca, 2) : 0;
 
+            int? finalCompaniaDestinoId = primerCompaniaId > 0 
+                ? primerCompaniaId 
+                : ((dto.CompaniaId.HasValue && dto.CompaniaId.Value > 0) ? dto.CompaniaId.Value : (int?)null);
+
             // Finalizar la entrada en TB_CONTROL_RUTAS (Estado = 'RECEPCIONADO') con el total consolidado
             await connection.ExecuteAsync(@"
                 UPDATE TB_CONTROL_RUTAS
@@ -9829,7 +9834,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     ModifiedAt = GETDATE(),
                     ModifiedBy = @usuarioId
                 WHERE Id = @controlRutaId",
-                new { companiaId = primerCompaniaId, totalDespachado, dif, merma, usuarioId, controlRutaId });
+                new { companiaId = finalCompaniaDestinoId, totalDespachado, dif, merma, usuarioId, controlRutaId });
 
             return primerControlCompaniaId;
         }

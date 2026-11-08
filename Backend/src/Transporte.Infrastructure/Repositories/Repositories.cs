@@ -9002,6 +9002,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         EsAcida = @esAcida,
                         TipoLeche = @tipoLeche,
                         EsDiferido = @esDiferido,
+                        LitrosOriginales = CASE WHEN @esDiferido = 1 THEN @litros ELSE LitrosOriginales END,
                         PrecioLitroUSDAplicado = @precioAplicado,
                         TasaDolarBsAplicada = @tasaActual,
                         Observacion = @observacion,
@@ -9037,8 +9038,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             {
                 var sqlInsertRuta = @"
                     INSERT INTO TB_RUTAS_RECOLECCION
-                    (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy)
-                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, GETDATE(), @usuarioId);
+                    (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, LitrosOriginales, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy)
+                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, GETDATE(), @usuarioId);
                     SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
                 nuevaRutaId = await connection.ExecuteScalarAsync<long>(sqlInsertRuta, new
@@ -9153,6 +9154,9 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     ISNULL(r.PrecioLitroUSDAplicado, CASE WHEN r.EsAcida = 1 THEN ISNULL(f.PrecioLitroAcidaUSD, 0) ELSE ISNULL(f.PrecioLitroUSD, 0) END) AS PrecioLitroUSD,
                     r.Observacion AS Observacion,
                     r.FotoComprobante AS FotoComprobante,
+                    ISNULL(r.EsDiferido, 0) AS EsDiferido,
+                    r.LitrosOriginales AS LitrosOriginales,
+                    r.RecoleccionOrigenId AS RecoleccionOrigenId,
                     r.ControlRutaId AS ControlRutaId,
                     r.CreatedAt AS CreatedAt,
                     1 AS PuedeModificar

@@ -1915,31 +1915,6 @@ export const AppMovilPage: React.FC = () => {
     return lista;
   }, [paradasViajeActivo, cargas]);
 
-  const totalLitrosCargados = useMemo(() => {
-    const sumParadasServer = (paradasViajeActivo || []).reduce((acc, p) => acc + Number(p.litros ?? p.Litros ?? 0), 0);
-    const sumPendientes = cargas.filter((c) => !c.synced).reduce((acc, c) => acc + (Number(c.litros) || 0), 0);
-    if (!viajeActivo) return sumPendientes;
-    const serverTotal = (viajeActivo?.totalLitrosFinca && viajeActivo.totalLitrosFinca > sumParadasServer && (paradasViajeActivo || []).length > 0) 
-      ? viajeActivo.totalLitrosFinca 
-      : sumParadasServer;
-    return serverTotal + sumPendientes;
-  }, [viajeActivo, paradasViajeActivo, cargas]);
-
-  const capacidad = viajeActivo?.capacidadCamionLitros || dispositivo?.capacidadTanqueLitros || 6000;
-  const porcentajeLlenado = Math.min(Math.round((totalLitrosCargados / capacidad) * 100), 100);
-
-  // Mantener alias para compatibilidad
-  const cargasHoy = todasLasParadas;
-  const totalLitrosHoy = totalLitrosCargados;
-
-  const pendientesSync = useMemo(() => {
-    return cargas.filter((c) => !c.synced);
-  }, [cargas]);
-
-  const noLeidasCount = useMemo(() => {
-    return notificaciones.filter((n) => !n.leido).length;
-  }, [notificaciones]);
-
   const rutasActivasIds = useMemo(() => {
     if (!viajeActivo) return [];
     const obs = viajeActivo.observacion || '';
@@ -1986,13 +1961,31 @@ export const AppMovilPage: React.FC = () => {
       }
 
       const esRec = lts > 0;
-      const parada = paradasDeFinca.length > 0 ? paradasDeFinca[paradasDeFinca.length - 1] : null;
+      const paradaConLitros = paradasDeFinca.filter((p) => (Number(p.litros) || 0) > 0);
+      const parada = paradaConLitros.length > 0 
+        ? paradaConLitros[paradaConLitros.length - 1] 
+        : (paradasDeFinca.length > 0 ? paradasDeFinca[paradasDeFinca.length - 1] : null);
+
+      const esAcida = cargaLocal ? Boolean(cargaLocal.esAcida) : Boolean(parada?.esAcida || (parada as any)?.EsAcida);
+      const esDiferido = cargaLocal 
+        ? Boolean((cargaLocal as any).esDiferido) 
+        : Boolean(parada?.esDiferido || (parada as any)?.EsDiferido);
+      const litrosDiferidos = cargaLocal 
+        ? Number((cargaLocal as any).litrosDiferidos || 0) 
+        : Number(parada?.litrosOriginales || (parada as any)?.LitrosOriginales || 0);
+      const tipoLeche = (cargaLocal?.tipoLeche || parada?.tipoLeche || (parada as any)?.TipoLeche || (f as any).tipoLeche || 'VACA').toUpperCase();
+      const horaRecogida = cargaLocal?.hora || (parada ? (parada.hora || (parada as any).createdAt || (parada as any).CreatedAt) : null);
 
       return {
         ...f,
         recolectada: esRec,
         parada: esRec ? parada : null,
         litrosRecolectados: lts,
+        esAcida,
+        esDiferido,
+        litrosDiferidos,
+        tipoLeche,
+        horaRecogida,
       };
     }).sort((a, b) => {
       // 3.- Se va ordenando de primero con litros: las recolectadas arriba
@@ -2004,6 +1997,36 @@ export const AppMovilPage: React.FC = () => {
       return a.nombre.localeCompare(b.nombre);
     });
   }, [viajeActivo, rutasActivasIds, fincas, todasLasParadas, cargas]);
+
+  const totalLitrosCargados = useMemo(() => {
+    // Si tenemos fincas planificadas/asignadas en la ruta, calcular directamente de fincasDeMiRuta
+    // para evitar cualquier duplicación entre el servidor y cargas locales offline
+    if (fincasDeMiRuta && fincasDeMiRuta.length > 0) {
+      return fincasDeMiRuta.reduce((acc, f) => acc + (Number(f.litrosRecolectados) || 0), 0);
+    }
+    const sumParadasServer = (paradasViajeActivo || []).reduce((acc, p) => acc + Number(p.litros ?? p.Litros ?? 0), 0);
+    const sumPendientes = cargas.filter((c) => !c.synced).reduce((acc, c) => acc + (Number(c.litros) || 0), 0);
+    if (!viajeActivo) return sumPendientes;
+    const serverTotal = (viajeActivo?.totalLitrosFinca && viajeActivo.totalLitrosFinca > sumParadasServer && (paradasViajeActivo || []).length > 0) 
+      ? viajeActivo.totalLitrosFinca 
+      : sumParadasServer;
+    return serverTotal + sumPendientes;
+  }, [viajeActivo, paradasViajeActivo, cargas, fincasDeMiRuta]);
+
+  const capacidad = viajeActivo?.capacidadCamionLitros || dispositivo?.capacidadTanqueLitros || 6000;
+  const porcentajeLlenado = Math.min(Math.round((totalLitrosCargados / capacidad) * 100), 100);
+
+  // Mantener alias para compatibilidad
+  const cargasHoy = todasLasParadas;
+  const totalLitrosHoy = totalLitrosCargados;
+
+  const pendientesSync = useMemo(() => {
+    return cargas.filter((c) => !c.synced);
+  }, [cargas]);
+
+  const noLeidasCount = useMemo(() => {
+    return notificaciones.filter((n) => !n.leido).length;
+  }, [notificaciones]);
 
   const fincasFiltradas = useMemo(() => {
     // Si el viaje tiene fincas planificadas por el Admin, el chofer sólo puede ver y cargar esas fincas
@@ -3890,8 +3913,8 @@ export const AppMovilPage: React.FC = () => {
                             boxShadow: f.recolectada ? '0 2px 6px rgba(16, 185, 129, 0.08)' : '0 1px 3px rgba(0,0,0,0.02)',
                           }}
                         >
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                               <span
                                 style={{
                                   width: '22px',
@@ -3904,6 +3927,7 @@ export const AppMovilPage: React.FC = () => {
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
+                                  flexShrink: 0,
                                 }}
                               >
                                 {idx + 1}
@@ -3911,14 +3935,42 @@ export const AppMovilPage: React.FC = () => {
                               <span style={{ fontSize: '13.5px', fontWeight: 800, color: f.recolectada ? '#15803d' : '#1e293b' }}>
                                 {f.recolectada ? '✓ ' : ''}{f.nombre}
                               </span>
+
+                              {estaTitilando && (
+                                <span
+                                  style={{
+                                    fontSize: '9.5px',
+                                    fontWeight: 900,
+                                    background: '#10b981',
+                                    color: '#ffffff',
+                                    padding: '1px 6px',
+                                    borderRadius: '6px',
+                                    animation: 'titilarPuntoPulso 1s infinite',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                  }}
+                                >
+                                  ⚡ ¡LITROS INGRESADOS!
+                                </span>
+                              )}
+
                               {f.recolectada ? (
                                 <>
                                   <span style={{ background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px', border: '1px solid #bbf7d0' }}>
                                     Recolectada
                                   </span>
-                                  {Boolean(f.parada?.esDiferido ?? f.parada?.EsDiferido ?? cargas.find((c) => Number(c.fincaId) === Number(f.id))?.esDiferido) && (
-                                    <span style={{ background: '#fff7ed', color: '#c2410c', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px', border: '1px solid #fed7aa', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                      <i className="fa-solid fa-clock-rotate-left"></i> Diferido
+                                  <span style={{ background: '#eff6ff', color: '#1e40af', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px', border: '1px solid #bfdbfe' }}>
+                                    {f.tipoLeche === 'BUFALA' ? '🐃 BÚFALA' : '🥛 VACA'}
+                                  </span>
+                                  {f.esAcida && (
+                                    <span style={{ background: '#fef2f2', color: '#dc2626', fontSize: '10px', fontWeight: 900, padding: '1px 6px', borderRadius: '5px', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                      ⚠️ ÁCIDA
+                                    </span>
+                                  )}
+                                  {f.esDiferido && (
+                                    <span style={{ background: '#fff7ed', color: '#c2410c', fontSize: '10px', fontWeight: 900, padding: '1px 6px', borderRadius: '5px', border: '1px solid #fed7aa', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                      <i className="fa-solid fa-clock-rotate-left"></i> Diferido ({f.litrosDiferidos || f.litrosRecolectados} L)
                                     </span>
                                   )}
                                 </>
@@ -3928,30 +3980,41 @@ export const AppMovilPage: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', paddingLeft: '28px' }}>
+                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px', paddingLeft: '28px' }}>
                               {f.propietarioNombre || f.propietario || f.codigo || 'Finca productora'}
-                              {f.recolectada && f.parada?.hora ? ` • Recogida ${f.parada.hora}` : ''}
+                              {f.recolectada && f.horaRecogida ? ` • Recogida ${f.horaRecogida}` : ''}
                             </div>
                           </div>
 
-                          <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                             {f.recolectada ? (
-                              <button
-                                type="button"
-                                onClick={() => abrirCargaParaFinca(f)}
-                                style={{
-                                  background: '#ffffff',
-                                  border: '1px solid #86efac',
-                                  color: '#16a34a',
-                                  borderRadius: '8px',
-                                  padding: '6px 10px',
-                                  fontSize: '11.5px',
-                                  fontWeight: 800,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                <i className="fa-solid fa-pen mr-1"></i> Modificar
-                              </button>
+                              <>
+                                <div style={{ textAlign: 'right' }}>
+                                  <div style={{ fontSize: '15px', fontWeight: 900, color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    +{f.litrosRecolectados.toLocaleString()} L
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => abrirCargaParaFinca(f)}
+                                  style={{
+                                    background: '#ffffff',
+                                    border: '1px solid #86efac',
+                                    color: '#16a34a',
+                                    borderRadius: '8px',
+                                    padding: '6px 10px',
+                                    fontSize: '11.5px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  <i className="fa-solid fa-pen"></i>
+                                  <span>Modificar</span>
+                                </button>
+                              </>
                             ) : (
                               <button
                                 type="button"
@@ -4368,23 +4431,38 @@ export const AppMovilPage: React.FC = () => {
                                 </span>
                               )}
                               {f.recolectada ? (
-                                <span
-                                  style={{
-                                    background: '#dcfce7',
-                                    color: '#15803d',
-                                    fontSize: '10px',
-                                    fontWeight: 800,
-                                    padding: '1px 6px',
-                                    borderRadius: '5px',
-                                    border: '1px solid #bbf7d0',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                  }}
-                                >
-                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'titilarPuntoPulso 1.5s infinite' }}></span>
-                                  Recolectada
-                                </span>
+                                <>
+                                  <span
+                                    style={{
+                                      background: '#dcfce7',
+                                      color: '#15803d',
+                                      fontSize: '10px',
+                                      fontWeight: 800,
+                                      padding: '1px 6px',
+                                      borderRadius: '5px',
+                                      border: '1px solid #bbf7d0',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'titilarPuntoPulso 1.5s infinite' }}></span>
+                                    Recolectada
+                                  </span>
+                                  <span style={{ background: '#eff6ff', color: '#1e40af', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px', border: '1px solid #bfdbfe' }}>
+                                    {f.tipoLeche === 'BUFALA' ? '🐃 BÚFALA' : '🥛 VACA'}
+                                  </span>
+                                  {f.esAcida && (
+                                    <span style={{ background: '#fef2f2', color: '#dc2626', fontSize: '10px', fontWeight: 900, padding: '1px 6px', borderRadius: '5px', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                      ⚠️ ÁCIDA
+                                    </span>
+                                  )}
+                                  {f.esDiferido && (
+                                    <span style={{ background: '#fff7ed', color: '#c2410c', fontSize: '10px', fontWeight: 900, padding: '1px 6px', borderRadius: '5px', border: '1px solid #fed7aa', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                      <i className="fa-solid fa-clock-rotate-left"></i> Diferido ({f.litrosDiferidos || f.litrosRecolectados} L)
+                                    </span>
+                                  )}
+                                </>
                               ) : (
                                 <span
                                   style={{
@@ -4402,8 +4480,7 @@ export const AppMovilPage: React.FC = () => {
                             </div>
                             <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                               {f.propietarioNombre || f.propietario || f.codigo || 'Finca ganadera'}
-                              {f.recolectada && f.parada?.hora ? ` • Recogida ${f.parada.hora}` : ''}
-                              {f.parada?.tipoLeche === 'BUFALA' ? ' • 🐃 Búfala' : ''}
+                              {f.recolectada && f.horaRecogida ? ` • Recogida ${f.horaRecogida}` : ''}
                             </div>
                           </div>
 

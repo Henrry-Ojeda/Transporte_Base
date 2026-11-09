@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 15,
-  patch: 6,
-  tag: 'v3.15.6',
+  patch: 7,
+  tag: 'v3.15.7',
   ultimaActualizacion: '2026-11-09',
-  tipoUltimoCambio: 'DISEÑO',
-  descripcion: 'Timelapse con fincas asignadas en ruta, diferenciación de pendientes vs recolectadas, vista fija de finca con captura/adjunto de comprobante y recarga forzada v3.11.1',
+  tipoUltimoCambio: 'DISEÑO_LOGICA',
+  descripcion: 'Validación robusta en perfil y mapeo estricto de SUPERADMIN a ADMIN en apps hijas v3.15.7',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

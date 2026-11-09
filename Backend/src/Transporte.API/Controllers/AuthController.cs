@@ -186,7 +186,7 @@ namespace Transporte.API.Controllers
 
             string tenantCodePerfil = _tenantService.GetTenantCode();
             bool isHijoPerfil = !string.IsNullOrEmpty(tenantCodePerfil) && !tenantCodePerfil.Equals("PRODUCTO_BASE", StringComparison.OrdinalIgnoreCase);
-            if (isHijoPerfil && perfil.Rol.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase))
+            if (isHijoPerfil && string.Equals(perfil.Rol, "SUPERADMIN", StringComparison.OrdinalIgnoreCase))
             {
                 perfil.Rol = "ADMIN";
             }
@@ -204,6 +204,15 @@ namespace Transporte.API.Controllers
             if (!ok) return BadRequest(new { message = msg });
 
             var perfilActualizado = await _usuariosRepository.ObtenerPerfilAsync(userId);
+            if (perfilActualizado != null)
+            {
+                string tenantCodePerfil = _tenantService.GetTenantCode();
+                bool isHijoPerfil = !string.IsNullOrEmpty(tenantCodePerfil) && !tenantCodePerfil.Equals("PRODUCTO_BASE", StringComparison.OrdinalIgnoreCase);
+                if (isHijoPerfil && string.Equals(perfilActualizado.Rol, "SUPERADMIN", StringComparison.OrdinalIgnoreCase))
+                {
+                    perfilActualizado.Rol = "ADMIN";
+                }
+            }
             return Ok(new { success = true, message = msg, perfil = perfilActualizado });
         }
 

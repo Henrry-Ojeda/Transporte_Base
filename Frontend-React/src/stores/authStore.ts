@@ -109,6 +109,7 @@ export const useAuthStore = create<AuthState>()(
         if (typeof window !== 'undefined') {
           const host = window.location.hostname.toLowerCase();
           if (host.includes('campoverde') || host.includes('vergel')) return true;
+          if (host && !host.includes('base') && !host.includes('localhost') && host !== '127.0.0.1') return true;
         }
         return false;
       },

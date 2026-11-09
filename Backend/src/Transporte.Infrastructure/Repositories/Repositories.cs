@@ -9077,6 +9077,10 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     h.CambiadoPor,
                     u.NombreCompleto AS NombreUsuario,
                     h.Observacion
+       
+                    h.CambiadoPor,
+                    u.NombreCompleto AS NombreUsuario,
+                    h.Observacion
                 FROM TB_HISTORIAL_PROCESOS_TICKET h
                 INNER JOIN TB_PROCESOS_TICKET pt ON h.ProcesoId = pt.Id
                 INNER JOIN TB_USUARIOS u ON h.CambiadoPor = u.Id

@@ -51,13 +51,13 @@ export const notificacionesApi = {
     }
   },
 
-  suscribirPush: async (dto: { endpoint: string; p256dh: string; auth: string; userAgent?: string }): Promise<{ success: boolean; message: string }> => {
+  suscribirPush: async (dto: { endpoint: string; p256dh: string; auth: string; userAgent?: string; usuarioId?: number }): Promise<{ success: boolean; message: string }> => {
     const res = await apiClient.post('/notificaciones/suscribir-push', dto);
     return res.data;
   },
 
-  probarPushDiferido: async (segundos = 5): Promise<{ success: boolean; message: string }> => {
-    const res = await apiClient.post('/notificaciones/probar-push-diferido', null, { params: { segundos } });
+  probarPushDiferido: async (segundos = 5, usuarioId?: number): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.post('/notificaciones/probar-push-diferido', null, { params: { segundos, usuarioId } });
     return res.data;
   },
 };

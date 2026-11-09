@@ -22,7 +22,7 @@ namespace Transporte.API.Controllers
 
         private int GetCurrentUserId()
         {
-            var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirst("id")?.Value;
+            var idClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirst("id")?.Value ?? User.FindFirst("sub")?.Value;
             return int.TryParse(idClaim, out var id) ? id : 0;
         }
 
@@ -79,6 +79,10 @@ namespace Transporte.API.Controllers
         public async Task<IActionResult> SuscribirPush([FromBody] SuscripcionPushDto dto)
         {
             var userId = GetCurrentUserId();
+            if (userId <= 0 && dto.UsuarioId.HasValue && dto.UsuarioId.Value > 0)
+            {
+                userId = dto.UsuarioId.Value;
+            }
             if (userId <= 0) return Unauthorized(new { message = "Usuario no identificado." });
             if (string.IsNullOrWhiteSpace(dto.Endpoint) || string.IsNullOrWhiteSpace(dto.P256dh) || string.IsNullOrWhiteSpace(dto.Auth))
             {
@@ -97,9 +101,13 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("probar-push-diferido")]
-        public async Task<IActionResult> ProbarPushDiferido([FromQuery] int segundos = 5)
+        public async Task<IActionResult> ProbarPushDiferido([FromQuery] int segundos = 5, [FromQuery] int? usuarioId = null)
         {
             var userId = GetCurrentUserId();
+            if (userId <= 0 && usuarioId.HasValue && usuarioId.Value > 0)
+            {
+                userId = usuarioId.Value;
+            }
             if (userId <= 0) return Unauthorized(new { message = "Usuario no identificado." });
 
             _ = Task.Run(async () =>

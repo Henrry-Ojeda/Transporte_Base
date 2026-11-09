@@ -220,57 +220,117 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
+  // VAPID Public Key fija para Web Push a nivel de SO
+  const VAPID_PUBLIC_KEY = 'BLaD6DOWHSNTZ2TVY91CnRLuOCb8p9NpUv4AGslQ_Cp1vg3oiHA7MIR-qF74ZxzkHKp1ucbg2kVMU61S4IpxRHo';
+
   // Convertir VAPID Public Key en Uint8Array para Web Push
   const urlB64ToUint8Array = (base64String: string) => {
-    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
+    try {
+      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    } catch {
+      return new Uint8Array(0);
     }
-    return outputArray;
+  };
+
+  // Obtener registro de Service Worker de forma segura y con timeout estricto (previene cuelgues)
+  const getServiceWorkerRegistrationSafe = async (timeoutMs = 2000): Promise<ServiceWorkerRegistration | null> => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
+
+    const resolver = async (): Promise<ServiceWorkerRegistration | null> => {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) return reg;
+        return await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      } catch (err) {
+        console.warn('[SW] Error obteniendo registration:', err);
+        return null;
+      }
+    };
+
+    return Promise.race([
+      resolver(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
   };
 
   // Suscribir dispositivo a Web Push en el servidor para notificaciones con pantalla bloqueada
-  const suscribirWebPushDispositivo = async () => {
-    try {
-      if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-        return false;
-      }
-      const reg = await navigator.serviceWorker.ready;
-      if (!reg || !reg.pushManager) return false;
-
-      const vapidKey = await notificacionesApi.getVapidPublicKey();
-      const convertedKey = urlB64ToUint8Array(vapidKey);
-
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: convertedKey,
-        });
-      }
-
-      if (sub) {
-        const rawKey = sub.getKey ? sub.getKey('p256dh') : null;
-        const key = rawKey ? btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(rawKey)))) : '';
-        const rawAuth = sub.getKey ? sub.getKey('auth') : null;
-        const auth = rawAuth ? btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(rawAuth)))) : '';
-
-        await notificacionesApi.suscribirPush({
-          endpoint: sub.endpoint,
-          p256dh: key,
-          auth: auth,
-          userAgent: navigator.userAgent,
-        });
-        console.log('✅ WebPush registrado exitosamente para pantalla apagada.');
-        return true;
-      }
-    } catch (err) {
-      console.warn('Error suscribiendo Web Push:', err);
+  const suscribirWebPushDispositivo = async (timeoutMs = 2500): Promise<boolean> => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      return false;
     }
-    return false;
+
+    const ejecutarSuscripcion = async (): Promise<boolean> => {
+      try {
+        const reg = await getServiceWorkerRegistrationSafe(1800);
+        if (!reg || !reg.pushManager) {
+          console.warn('[Push] ServiceWorker o PushManager no disponibles.');
+          return false;
+        }
+
+        const convertedKey = urlB64ToUint8Array(VAPID_PUBLIC_KEY);
+        let sub = await reg.pushManager.getSubscription();
+
+        if (!sub && convertedKey.length > 0) {
+          try {
+            sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: convertedKey,
+            });
+          } catch (errSub) {
+            console.warn('[Push] Reintentando suscribir tras limpiar suscripción:', errSub);
+            const old = await reg.pushManager.getSubscription();
+            if (old) await old.unsubscribe().catch(() => {});
+            sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: convertedKey,
+            });
+          }
+        }
+
+        if (sub) {
+          const subJson = sub.toJSON ? sub.toJSON() : null;
+          let p256dh = subJson?.keys?.p256dh || '';
+          let auth = subJson?.keys?.auth || '';
+
+          if (!p256dh && sub.getKey) {
+            const raw = sub.getKey('p256dh');
+            if (raw) p256dh = btoa(String.fromCharCode(...new Uint8Array(raw)));
+          }
+          if (!auth && sub.getKey) {
+            const rawA = sub.getKey('auth');
+            if (rawA) auth = btoa(String.fromCharCode(...new Uint8Array(rawA)));
+          }
+
+          if (sub.endpoint && p256dh && auth) {
+            const uid = authUser?.id || dispositivo?.id;
+            await notificacionesApi.suscribirPush({
+              endpoint: sub.endpoint,
+              p256dh,
+              auth,
+              userAgent: navigator.userAgent,
+              usuarioId: uid ? Number(uid) : undefined,
+            });
+            console.log('✅ WebPush registrado exitosamente para pantalla apagada.');
+            return true;
+          }
+        }
+      } catch (err) {
+        console.warn('[Push] Error suscribiendo dispositivo:', err);
+      }
+      return false;
+    };
+
+    return Promise.race([
+      ejecutarSuscripcion(),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs)),
+    ]);
   };
 
   // Probar notificación diferida de 5 segundos para que el usuario bloquee la pantalla
@@ -280,28 +340,59 @@ export const AppMovilPage: React.FC = () => {
       return;
     }
     if (Notification.permission !== 'granted') {
-      const p = await Notification.requestPermission();
-      setPermisoNotificaciones(p);
-      if (p !== 'granted') {
-        toast.error('Debes autorizar las notificaciones en tu navegador primero.');
+      try {
+        const p = await Notification.requestPermission();
+        setPermisoNotificaciones(p);
+        if (p !== 'granted') {
+          toast.error('Debes autorizar las notificaciones en tu navegador primero.');
+          return;
+        }
+      } catch {
+        toast.error('No se pudo solicitar el permiso de notificaciones.');
         return;
       }
     }
 
-    toast.loading('Sincronizando Push con el servidor...', { duration: 1500 });
-    await suscribirWebPushDispositivo();
+    const toastLoadingId = toast.loading('Sincronizando Push con el servidor...');
+    let sincronizadoOk = false;
 
     try {
-      await notificacionesApi.probarPushDiferido(5);
+      sincronizadoOk = await suscribirWebPushDispositivo(2500);
+    } catch (err) {
+      console.warn('Aviso durante suscripción:', err);
+    } finally {
+      // SIEMPRE descartar el toast de carga de inmediato
+      toast.dismiss(toastLoadingId);
+    }
+
+    try {
+      const uid = authUser?.id || dispositivo?.id;
+      await notificacionesApi.probarPushDiferido(5, uid ? Number(uid) : undefined);
+
+      // Si el Service Worker está disponible, programar también emisión local por postMessage
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        setTimeout(() => {
+          try {
+            navigator.serviceWorker.controller?.postMessage({
+              type: 'SHOW_NOTIFICATION',
+              titulo: '🚨 AVISO DE RUTA (Pantalla Bloqueada)',
+              mensaje: '¡Tu dispositivo y pantalla bloqueada reciben las alertas de transporte perfectamente!',
+              id: Date.now(),
+            });
+          } catch {}
+        }, 5000);
+      }
+
       await Swal.fire({
         title: '🔒 ¡BLOQUEA TU PANTALLA YA!',
         html: `
           <div style="font-size: 13.5px; text-align: left; line-height: 1.5; color: #cbd5e1;">
-            <p>Se ha enviado la orden al servidor para enviar una <strong>notificación push a nivel de sistema</strong> en <strong>5 segundos</strong>.</p>
+            <p>Se ha enviado la orden al servidor para emitir una <strong>notificación push a nivel de sistema</strong> en <strong>5 segundos</strong>.</p>
             <div style="background: rgba(16, 185, 129, 0.15); border: 1.5px solid #10b981; padding: 12px; border-radius: 10px; margin: 10px 0; color: #a7f3d0; text-align: center;">
               <strong style="font-size: 16px;">⏱️ Pulsa el botón de bloqueo de tu teléfono AHORA.</strong>
             </div>
             <p style="font-size: 12px; color: #94a3b8; margin: 0;">Tu teléfono vibrará y sonará con la pantalla completamente apagada.</p>
+            ${!sincronizadoOk ? '<p style="font-size: 11px; color: #f59e0b; margin-top: 6px;">⚠️ Push en cola de envío; se disparará al cumplirse el conteo.</p>' : ''}
           </div>
         `,
         icon: 'info',

@@ -602,6 +602,91 @@ export const AppMovilPage: React.FC = () => {
     return [];
   };
 
+  // Estados para Multi-Ruta y Recolecciones del Día (Regla Asimétrica y Solicitudes Extraordinarias)
+  const [recoleccionesHoy, setRecoleccionesHoy] = useState<any[]>([]);
+  const [solicitudesExtraordinarias, setSolicitudesExtraordinarias] = useState<any[]>([]);
+
+  const cargarRecoleccionesYSolicitudes = async (fechaParam?: string) => {
+    try {
+      const f = fechaParam || (viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr);
+      const [recs, solics] = await Promise.all([
+        operacionesApi.getRecoleccionesHoyFincas(f),
+        operacionesApi.getSolicitudesExtraordinariasHoy(f),
+      ]);
+      setRecoleccionesHoy(Array.isArray(recs) ? recs : []);
+      setSolicitudesExtraordinarias(Array.isArray(solics) ? solics : []);
+    } catch {}
+  };
+
+  const solicitarEmergenciaFinca = async (finca: any, recPrev?: any) => {
+    const { value: motivo } = await Swal.fire({
+      title: `🚨 Recogida de Emergencia`,
+      html: `<div style="text-align:left; font-size:13px; color:#334155;">
+        <p><b>Finca:</b> ${finca.nombre}</p>
+        <p style="color:#d97706; margin-bottom:8px;">⚠️ Esta finca ya fue recogida hoy ${recPrev ? `(${recPrev.litros} Lts)` : ''}.</p>
+        <p>Indica el motivo de la recogida extraordinaria:</p>
+      </div>`,
+      input: 'select',
+      inputOptions: {
+        'Corte eléctrico (Sin luz / Tanque apagado)': '⚡ Corte eléctrico (Sin luz / Tanque apagado)',
+        'Tanque dañado / Falla mecánica': '🛠️ Tanque dañado / Falla mecánica',
+        'Doble ordeño vespertino': '🥛 Doble ordeño vespertino',
+        'Requerimiento urgente de administración': '📋 Requerimiento urgente de administración',
+      },
+      inputPlaceholder: '-- Selecciona el motivo --',
+      showCancelButton: true,
+      confirmButtonText: 'Enviar Solicitud',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#d97706',
+    });
+
+    if (!motivo) return;
+
+    try {
+      await operacionesApi.solicitarRecoleccionExtraordinaria({
+        fincaId: finca.id,
+        rutaLogisticaId: viajeActivo?.rutaLogisticaId,
+        controlRutaId: viajeActivo?.id,
+        motivo,
+      });
+      Swal.fire({
+        icon: 'success',
+        title: '¡Solicitud Enviada!',
+        text: 'La solicitud de recogida extraordinaria se notificó a supervisión. Al ser aprobada, la finca se habilitará automáticamente para ingresar litros.',
+        confirmButtonColor: '#10b981',
+      });
+      cargarRecoleccionesYSolicitudes();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al enviar solicitud.');
+    }
+  };
+
+  const responderEmergencia = async (solicitudId: number, aprobar: boolean) => {
+    try {
+      await operacionesApi.responderSolicitudExtraordinaria(solicitudId, aprobar);
+      toast.success(aprobar ? 'Solicitud aprobada con éxito' : 'Solicitud rechazada');
+      cargarRecoleccionesYSolicitudes();
+      cargarViajeActivo();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al procesar solicitud');
+    }
+  };
+
+  const abrirFincaDesdeTimelapse = (v: ControlRutaDto, p: any) => {
+    setViajeActivo(v);
+    const fid = Number(p.fincaId || p.FincaId || (p.id > 0 ? p.id : 0));
+    const targetFinca = fincas.find((f) => f.id === fid) || {
+      id: fid,
+      nombre: p.fincaNombre || p.nombreFinca || `Finca #${fid}`,
+      propietario: p.propietario || '',
+      codigo: p.codigo || '',
+      tipoLeche: p.tipoLeche || 'VACA',
+      litrosRecolectados: Number(p.litros || p.litrosLeche || 0),
+      parada: p,
+    };
+    abrirCargaParaFinca(targetFinca);
+  };
+
   // Estados para Modal Timelapse de Viaje Móvil (Paradas, Horas, Litros, Trazabilidad)
   const [modalTimelapseMovil, setModalTimelapseMovil] = useState(false);
   const [viajeTimelapseMovil, setViajeTimelapseMovil] = useState<ControlRutaDto | null>(null);
@@ -1888,6 +1973,7 @@ export const AppMovilPage: React.FC = () => {
         }
 
         await cargarDespachoActivo(idBusqueda, targetV.id);
+        await cargarRecoleccionesYSolicitudes(targetV.fecha ? targetV.fecha.split('T')[0] : hoyStr);
       } else {
         setViajeSeleccionadoId(null);
         setViajeActivo(null);
@@ -3352,54 +3438,97 @@ export const AppMovilPage: React.FC = () => {
       fincasRuta = Array.from(mapa.values());
     }
 
-    return fincasRuta.map((f) => {
-      const paradasDeFinca = todasLasParadas.filter((p) =>
-        (Number(p.fincaId) > 0 && Number(p.fincaId) === f.id) ||
-        (p.fincaNombre && f.nombre && p.fincaNombre.trim().toLowerCase() === f.nombre.trim().toLowerCase())
-      );
-      // Solo cargas locales pendientes de sincronizar que pertenezcan a este viaje
-      const cargaLocal = cargas.find((c) =>
-        Number(c.fincaId) === f.id &&
-        !c.synced &&
-        (!c.serverTicketId || Number(c.serverTicketId) === Number(viajeActivo.id))
-      );
+    return fincasRuta
+      .map((f) => {
+        const paradasDeFinca = todasLasParadas.filter((p) =>
+          (Number(p.fincaId) > 0 && Number(p.fincaId) === f.id) ||
+          (p.fincaNombre && f.nombre && p.fincaNombre.trim().toLowerCase() === f.nombre.trim().toLowerCase())
+        );
+        // Solo cargas locales pendientes de sincronizar que pertenezcan a este viaje
+        const cargaLocal = cargas.find((c) =>
+          Number(c.fincaId) === f.id &&
+          !c.synced &&
+          (!c.serverTicketId || Number(c.serverTicketId) === Number(viajeActivo.id))
+        );
 
-      let lts = 0;
-      if (cargaLocal && Number(cargaLocal.litros) > 0) {
-        lts = Number(cargaLocal.litros);
-      } else if (paradasDeFinca.length > 0) {
-        lts = paradasDeFinca.reduce((acc, p) => acc + (Number(p.litros) || 0), 0);
-      }
+        let lts = 0;
+        if (cargaLocal && Number(cargaLocal.litros) > 0) {
+          lts = Number(cargaLocal.litros);
+        } else if (paradasDeFinca.length > 0) {
+          lts = paradasDeFinca.reduce((acc, p) => acc + (Number(p.litros) || 0), 0);
+        }
 
-      // REGLA MAESTRA: Una finca es RECOLECTADA estrictamente si tiene litros recolectados (> 0)
-      const esRec = lts > 0;
-      const paradaConLitros = paradasDeFinca.filter((p) => (Number(p.litros) || 0) > 0);
-      const parada = paradaConLitros.length > 0 
-        ? paradaConLitros[paradaConLitros.length - 1] 
-        : (paradasDeFinca.length > 0 ? paradasDeFinca[paradasDeFinca.length - 1] : null);
+        // Revisar recolecciones de hoy por OTRO camión o ticket
+        const recOtro = recoleccionesHoy.find(
+          (r: any) => Number(r.fincaId) === f.id && Number(r.controlRutaId) !== Number(viajeActivo.id)
+        );
 
-      const esAcida = cargaLocal ? Boolean(cargaLocal.esAcida) : Boolean(parada?.esAcida || (parada as any)?.EsAcida);
-      const esDiferido = cargaLocal 
-        ? Boolean((cargaLocal as any).esDiferido) 
-        : Boolean(parada?.esDiferido || (parada as any)?.EsDiferido);
-      const litrosDiferidos = cargaLocal 
-        ? Number((cargaLocal as any).litrosDiferidos || 0) 
-        : Number(parada?.litrosOriginales || (parada as any)?.LitrosOriginales || 0);
-      const tipoLeche = (cargaLocal?.tipoLeche || parada?.tipoLeche || (parada as any)?.TipoLeche || (f as any).tipoLeche || 'VACA').toUpperCase();
-      const horaRecogida = cargaLocal?.hora || (parada ? (parada.hora || (parada as any).createdAt || (parada as any).CreatedAt) : null);
+        // Revisar solicitud de emergencia
+        const solicAprobada = solicitudesExtraordinarias.find(
+          (s: any) => Number(s.fincaId) === f.id && s.estado === 'APROBADA'
+        );
+        const solicPendiente = solicitudesExtraordinarias.find(
+          (s: any) => Number(s.fincaId) === f.id && s.estado === 'PENDIENTE'
+        );
 
-      return {
-        ...f,
-        recolectada: esRec,
-        parada: esRec ? parada : null,
-        litrosRecolectados: lts,
-        esAcida,
-        esDiferido,
-        litrosDiferidos,
-        tipoLeche,
-        horaRecogida,
-      };
-    }).sort((a, b) => {
+        // Identificar si la finca es habitual o alterna para este viaje/ruta
+        const miRutaId = viajeActivo.rutaLogisticaId;
+        const esHabitualParaMi =
+          (miRutaId && f.rutaId === miRutaId) ||
+          (f as any).esPrincipal === 1 ||
+          !(f as any).esAlterna;
+
+        // REGLA ASIMÉTRICA 1:
+        // Si ya la recogió otro ticket y NO hay solicitud de emergencia aprobada:
+        // - Si para este chofer la finca es ALTERNA: desaparece de su lista
+        if (!esHabitualParaMi && recOtro && !solicAprobada && lts === 0) {
+          return null;
+        }
+
+        // - Si para este chofer la finca es HABITUAL: se muestra con aviso de recogida por otro y litros en solo lectura
+        const recogidaPorOtro = Boolean(recOtro && !solicAprobada && lts === 0);
+        const soloLectura = recogidaPorOtro;
+
+        const esRec = lts > 0 || (recogidaPorOtro && Number(recOtro.litros) > 0);
+        const ltsFinal = lts > 0 ? lts : (recogidaPorOtro ? Number(recOtro.litros) : 0);
+
+        const paradaConLitros = paradasDeFinca.filter((p) => (Number(p.litros) || 0) > 0);
+        const parada = paradaConLitros.length > 0 
+          ? paradaConLitros[paradaConLitros.length - 1] 
+          : (paradasDeFinca.length > 0 ? paradasDeFinca[paradasDeFinca.length - 1] : null);
+
+        const esAcida = cargaLocal ? Boolean(cargaLocal.esAcida) : Boolean(parada?.esAcida || (parada as any)?.EsAcida || recOtro?.esAcida);
+        const esDiferido = cargaLocal 
+          ? Boolean((cargaLocal as any).esDiferido) 
+          : Boolean(parada?.esDiferido || (parada as any)?.EsDiferido);
+        const litrosDiferidos = cargaLocal 
+          ? Number((cargaLocal as any).litrosDiferidos || 0) 
+          : Number(parada?.litrosOriginales || (parada as any)?.LitrosOriginales || 0);
+        const tipoLeche = (cargaLocal?.tipoLeche || parada?.tipoLeche || (parada as any)?.TipoLeche || recOtro?.tipoLeche || (f as any).tipoLeche || 'VACA').toUpperCase();
+        const horaRecogida = cargaLocal?.hora || (parada ? (parada.hora || (parada as any).createdAt || (parada as any).CreatedAt) : (recOtro?.createdAt ? new Date(recOtro.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null));
+
+        return {
+          ...f,
+          recolectada: esRec,
+          parada: esRec && !recogidaPorOtro ? parada : null,
+          litrosRecolectados: ltsFinal,
+          esAcida,
+          esDiferido,
+          litrosDiferidos,
+          tipoLeche,
+          horaRecogida,
+          recogidaPorOtro,
+          soloLectura,
+          otroConductorNombre: recOtro?.conductorNombre,
+          otroCamionPlaca: recOtro?.camionPlaca,
+          otroTicketCodigo: recOtro?.ticketCodigo || recOtro?.controlRutaId,
+          solicAprobada: Boolean(solicAprobada),
+          solicPendiente: Boolean(solicPendiente),
+          recOtro,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => {
       // 1. Las fincas recolectadas (> 0 Lts) se ubican de primero
       const recA = a.recolectada && a.litrosRecolectados > 0;
       const recB = b.recolectada && b.litrosRecolectados > 0;
@@ -3431,7 +3560,7 @@ export const AppMovilPage: React.FC = () => {
       // 3. Las pendientes por orden alfabético
       return a.nombre.localeCompare(b.nombre);
     });
-  }, [viajeActivo, rutasActivasIds, fincas, todasLasParadas, cargas]);
+  }, [viajeActivo, rutasActivasIds, fincas, todasLasParadas, cargas, recoleccionesHoy, solicitudesExtraordinarias]);
 
   const totalLitrosCargados = useMemo(() => {
     // Si tenemos fincas planificadas/asignadas en la ruta, calcular directamente de fincasDeMiRuta
@@ -6442,7 +6571,23 @@ export const AppMovilPage: React.FC = () => {
                                 </span>
                               )}
 
-                              {f.recolectada ? (
+                              {f.recogidaPorOtro ? (
+                                <>
+                                  <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde047', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px' }}>
+                                    🚛 Recogida por {f.otroCamionPlaca || f.otroConductorNombre || 'otro camión'}
+                                  </span>
+                                  {f.solicPendiente && (
+                                    <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #f59e0b', fontSize: '9.5px', fontWeight: 900, padding: '1px 6px', borderRadius: '5px' }}>
+                                      ⏳ Emergencia Solicitada
+                                    </span>
+                                  )}
+                                  {f.solicAprobada && (
+                                    <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', fontSize: '9.5px', fontWeight: 900, padding: '1px 6px', borderRadius: '5px' }}>
+                                      ⚡ 2da Recogida Aprobada
+                                    </span>
+                                  )}
+                                </>
+                              ) : f.recolectada ? (
                                 <>
                                   <span style={{ background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px', border: '1px solid #bbf7d0' }}>
                                     Recolectada
@@ -6487,26 +6632,71 @@ export const AppMovilPage: React.FC = () => {
                                   )}
                                 </div>
                                 {!viajeBloqueadoPorReceptoria && (
-                                  <button
-                                    type="button"
-                                    onClick={() => abrirCargaParaFinca(f)}
-                                    style={{
-                                      background: '#ffffff',
-                                      border: '1px solid #86efac',
-                                      color: '#16a34a',
-                                      borderRadius: '8px',
-                                      padding: '6px 10px',
-                                      fontSize: '11.5px',
-                                      fontWeight: 800,
-                                      cursor: 'pointer',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                    }}
-                                  >
-                                    <i className="fa-solid fa-pen"></i>
-                                    <span>Modificar</span>
-                                  </button>
+                                  f.soloLectura ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-end' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => abrirCargaParaFinca(f)}
+                                        style={{
+                                          background: '#f8fafc',
+                                          border: '1px solid #cbd5e1',
+                                          color: '#475569',
+                                          borderRadius: '8px',
+                                          padding: '5px 8px',
+                                          fontSize: '11px',
+                                          fontWeight: 800,
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                        }}
+                                        title="Ver comprobante y litros (Solo Lectura)"
+                                      >
+                                        <i className="fa-solid fa-eye"></i>
+                                        <span>Ver Litros</span>
+                                      </button>
+                                      {!f.solicPendiente && (
+                                        <button
+                                          type="button"
+                                          onClick={() => solicitarEmergenciaFinca(f, f.recOtro)}
+                                          style={{
+                                            background: '#fffbeb',
+                                            border: '1px solid #f59e0b',
+                                            color: '#b45309',
+                                            borderRadius: '6px',
+                                            padding: '2px 6px',
+                                            fontSize: '9.5px',
+                                            fontWeight: 800,
+                                            cursor: 'pointer',
+                                          }}
+                                          title="Solicitar segunda recolección extraordinaria"
+                                        >
+                                          🚨 Emergencia
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirCargaParaFinca(f)}
+                                      style={{
+                                        background: '#ffffff',
+                                        border: '1px solid #86efac',
+                                        color: '#16a34a',
+                                        borderRadius: '8px',
+                                        padding: '6px 10px',
+                                        fontSize: '11.5px',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
+                                      <i className="fa-solid fa-pen"></i>
+                                      <span>Modificar</span>
+                                    </button>
+                                  )
                                 )}
                               </>
                             ) : viajeBloqueadoPorReceptoria ? (
@@ -7043,7 +7233,23 @@ export const AppMovilPage: React.FC = () => {
                                   ⚡ ¡LITROS INGRESADOS!
                                 </span>
                               )}
-                              {f.recolectada ? (
+                              {f.recogidaPorOtro ? (
+                                <>
+                                  <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde047', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px' }}>
+                                    🚛 Recogida por {f.otroCamionPlaca || f.otroConductorNombre || 'otro camión'}
+                                  </span>
+                                  {f.solicPendiente && (
+                                    <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #f59e0b', fontSize: '9.5px', fontWeight: 900, padding: '1px 6px', borderRadius: '5px' }}>
+                                      ⏳ Emergencia Solicitada
+                                    </span>
+                                  )}
+                                  {f.solicAprobada && (
+                                    <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', fontSize: '9.5px', fontWeight: 900, padding: '1px 6px', borderRadius: '5px' }}>
+                                      ⚡ 2da Recogida Aprobada
+                                    </span>
+                                  )}
+                                </>
+                              ) : f.recolectada ? (
                                 <>
                                   <span
                                     style={{
@@ -7112,23 +7318,68 @@ export const AppMovilPage: React.FC = () => {
                                   )}
                                 </div>
                                 {!ticketEnReceptoria && (
-                                  <button
-                                    type="button"
-                                    onClick={() => abrirCargaParaFinca(f)}
-                                    style={{
-                                      background: '#ffffff',
-                                      border: '1px solid #86efac',
-                                      color: '#16a34a',
-                                      borderRadius: '8px',
-                                      padding: '5px 8px',
-                                      fontSize: '11px',
-                                      fontWeight: 800,
-                                      cursor: 'pointer',
-                                    }}
-                                    title="Modificar litros"
-                                  >
-                                    <i className="fa-solid fa-pen"></i>
-                                  </button>
+                                  f.soloLectura ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-end' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => abrirCargaParaFinca(f)}
+                                        style={{
+                                          background: '#f8fafc',
+                                          border: '1px solid #cbd5e1',
+                                          color: '#475569',
+                                          borderRadius: '8px',
+                                          padding: '5px 8px',
+                                          fontSize: '11px',
+                                          fontWeight: 800,
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                        }}
+                                        title="Ver datos (Solo Lectura)"
+                                      >
+                                        <i className="fa-solid fa-eye"></i>
+                                        <span>Ver</span>
+                                      </button>
+                                      {!f.solicPendiente && (
+                                        <button
+                                          type="button"
+                                          onClick={() => solicitarEmergenciaFinca(f, f.recOtro)}
+                                          style={{
+                                            background: '#fffbeb',
+                                            border: '1px solid #f59e0b',
+                                            color: '#b45309',
+                                            borderRadius: '6px',
+                                            padding: '2px 6px',
+                                            fontSize: '9.5px',
+                                            fontWeight: 800,
+                                            cursor: 'pointer',
+                                          }}
+                                          title="Solicitar segunda recolección extraordinaria"
+                                        >
+                                          🚨 Emergencia
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirCargaParaFinca(f)}
+                                      style={{
+                                        background: '#ffffff',
+                                        border: '1px solid #86efac',
+                                        color: '#16a34a',
+                                        borderRadius: '8px',
+                                        padding: '5px 8px',
+                                        fontSize: '11px',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                      }}
+                                      title="Modificar litros"
+                                    >
+                                      <i className="fa-solid fa-pen"></i>
+                                    </button>
+                                  )
                                 )}
                               </div>
                             ) : ticketEnReceptoria ? (
@@ -10008,7 +10259,11 @@ export const AppMovilPage: React.FC = () => {
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
                             <span>Ruta: {t.rutaLogisticaNombre || 'Modo Libre'}</span>
-                            <span>{paradas.length} Fincas Recolectadas</span>
+                            <span>
+                              {paradas.filter((p: any) => Number(p.litros || p.litrosLeche || p.litrosCargados || 0) > 0).length > 0
+                                ? `${paradas.filter((p: any) => Number(p.litros || p.litrosLeche || p.litrosCargados || 0) > 0).length} Fincas Recolectadas`
+                                : '⏳ Chofer en ruta (0 Lts)'}
+                            </span>
                           </div>
                           {ltsRecibidos > 0 && (
                             <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between' }}>
@@ -10511,6 +10766,99 @@ export const AppMovilPage: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* SECCIÓN DE APROBACIÓN DE SOLICITUDES EXTRAORDINARIAS DE RECOGIDA */}
+            {solicitudesExtraordinarias.filter((s: any) => s.estado === 'PENDIENTE').length > 0 && (
+              <div
+                style={{
+                  background: '#fffbeb',
+                  border: '1.5px solid #f59e0b',
+                  borderRadius: '16px',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  boxShadow: '0 4px 15px rgba(245, 158, 11, 0.15)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#fef3c7', color: '#b45309', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px' }}>
+                      <i className="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 900, color: '#92400e' }}>
+                        Solicitudes de Recogida Extraordinaria ({solicitudesExtraordinarias.filter((s: any) => s.estado === 'PENDIENTE').length})
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#b45309' }}>
+                        Fincas que requieren segunda recolección autorizada
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {solicitudesExtraordinarias.filter((s: any) => s.estado === 'PENDIENTE').map((sol: any) => (
+                    <div
+                      key={sol.id}
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #fde047',
+                        borderRadius: '12px',
+                        padding: '10px 12px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '10px',
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
+                          {sol.fincaNombre || `Finca #${sol.fincaId}`}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                          Chofer: <strong>{sol.choferSolicitanteNombre || 'Chofer'}</strong> • Motivo: <em>"{sol.motivo}"</em>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => responderEmergencia(sol.id, true)}
+                          style={{
+                            background: '#10b981',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '7px 12px',
+                            fontSize: '11.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ✓ Aprobar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => responderEmergencia(sol.id, false)}
+                          style={{
+                            background: '#ef4444',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '7px 10px',
+                            fontSize: '11.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* TARJETA DE GESTIÓN DE AUTORIZACIONES CHOFERES (ADMIN/SUPERADMIN) */}
             <div
@@ -12368,6 +12716,7 @@ export const AppMovilPage: React.FC = () => {
             <form onSubmit={handleGuardarCarga}>
               {/* Finca: Si viene fijada desde la lista, NO se puede editar ni buscar */}
               {fincaFijadaParaModal ? (
+                <>
                 <div
                   style={{
                     marginBottom: '16px',
@@ -12426,6 +12775,28 @@ export const AppMovilPage: React.FC = () => {
                     <i className="fa-solid fa-lock text-[10px]"></i> Finca Fija
                   </span>
                 </div>
+                {fincaFijadaParaModal?.soloLectura && (
+                  <div
+                    style={{
+                      background: '#fffbeb',
+                      border: '1.5px solid #f59e0b',
+                      borderRadius: '12px',
+                      padding: '12px 14px',
+                      marginBottom: '16px',
+                      fontSize: '12px',
+                      color: '#92400e',
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+                      <i className="fa-solid fa-triangle-exclamation text-amber-600"></i>
+                      <span>Finca ya recolectada por {fincaFijadaParaModal.otroCamionPlaca || fincaFijadaParaModal.otroConductorNombre || 'otro camión'}</span>
+                    </div>
+                    <p style={{ margin: '6px 0 0 0', fontSize: '11.5px', lineHeight: 1.4 }}>
+                      Esta finca pertenece a la ruta y ya fue recolectada hoy en su recorrido ({formCarga.litros || 0} Lts). La información se muestra en <strong>modo solo lectura</strong>. Si necesitas hacer una segunda recolección extraordinaria (corte eléctrico, emergencia), solicita autorización con el botón inferior.
+                    </p>
+                  </div>
+                )}
+              </>
               ) : (
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#1e293b', marginBottom: '6px' }}>
@@ -12536,6 +12907,8 @@ export const AppMovilPage: React.FC = () => {
                     type="number"
                     inputMode="decimal"
                     step="any"
+                    disabled={Boolean(fincaFijadaParaModal?.soloLectura)}
+                    readOnly={Boolean(fincaFijadaParaModal?.soloLectura)}
                     value={formCarga.litros}
                     onChange={(e) => setFormCarga({ ...formCarga, litros: e.target.value })}
                     placeholder="0"
@@ -12544,12 +12917,12 @@ export const AppMovilPage: React.FC = () => {
                       width: '100%',
                       height: '56px',
                       borderRadius: '12px',
-                      border: '2px solid #3b82f6',
+                      border: fincaFijadaParaModal?.soloLectura ? '2px solid #cbd5e1' : '2px solid #3b82f6',
                       padding: '0 60px 0 16px',
                       fontSize: '24px',
                       fontWeight: 900,
-                      color: '#1e3a8a',
-                      background: '#f8fafc',
+                      color: fincaFijadaParaModal?.soloLectura ? '#64748b' : '#1e3a8a',
+                      background: fincaFijadaParaModal?.soloLectura ? '#f1f5f9' : '#f8fafc',
                       outline: 'none',
                     }}
                   />
@@ -12568,46 +12941,48 @@ export const AppMovilPage: React.FC = () => {
                   </span>
                 </div>
                 {/* Botones de incremento rápido táctil */}
-                <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
-                  {[50, 100, 200, 500, 1000].map((inc) => (
+                {!fincaFijadaParaModal?.soloLectura && (
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                    {[50, 100, 200, 500, 1000].map((inc) => (
+                      <button
+                        key={inc}
+                        type="button"
+                        onClick={() => sumarLitros(inc)}
+                        style={{
+                          flex: 1,
+                          minWidth: '55px',
+                          padding: '6px 2px',
+                          borderRadius: '8px',
+                          background: '#eff6ff',
+                          color: '#1d4ed8',
+                          border: '1px solid #bfdbfe',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                        }}
+                      >
+                        +{inc}
+                      </button>
+                    ))}
                     <button
-                      key={inc}
                       type="button"
-                      onClick={() => sumarLitros(inc)}
+                      onClick={() => setFormCarga((p) => ({ ...p, litros: '' }))}
                       style={{
-                        flex: 1,
-                        minWidth: '55px',
-                        padding: '6px 2px',
+                        padding: '6px 10px',
                         borderRadius: '8px',
-                        background: '#eff6ff',
-                        color: '#1d4ed8',
-                        border: '1px solid #bfdbfe',
-                        fontSize: '12px',
-                        fontWeight: 800,
+                        background: '#f1f5f9',
+                        color: '#64748b',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '11.5px',
+                        fontWeight: 700,
                         cursor: 'pointer',
-                        textAlign: 'center',
                       }}
                     >
-                      +{inc}
+                      Borrar
                     </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setFormCarga((p) => ({ ...p, litros: '' }))}
-                    style={{
-                      padding: '6px 10px',
-                      borderRadius: '8px',
-                      background: '#f1f5f9',
-                      color: '#64748b',
-                      border: '1px solid #cbd5e1',
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Borrar
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
 
               {/* Tipo de Leche */}
@@ -12931,23 +13306,53 @@ export const AppMovilPage: React.FC = () => {
                 >
                   Cancelar
                 </button>
-                <button
-                  type="submit"
-                  style={{
-                    flex: 2,
-                    height: '48px',
-                    borderRadius: '12px',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    border: 'none',
-                    color: '#ffffff',
-                    fontWeight: 900,
-                    fontSize: '15px',
-                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Guardar Carga
-                </button>
+                {fincaFijadaParaModal?.soloLectura ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const fItem = fincaFijadaParaModal;
+                      setModalRegistro(false);
+                      setFincaFijadaParaModal(null);
+                      solicitarEmergenciaFinca(fItem, fItem.recOtro);
+                    }}
+                    style={{
+                      flex: 2,
+                      height: '48px',
+                      borderRadius: '12px',
+                      background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+                      border: 'none',
+                      color: '#ffffff',
+                      fontWeight: 900,
+                      fontSize: '14px',
+                      boxShadow: '0 4px 15px rgba(217, 119, 6, 0.4)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    🚨 Solicitar Emergencia
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    style={{
+                      flex: 2,
+                      height: '48px',
+                      borderRadius: '12px',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      border: 'none',
+                      color: '#ffffff',
+                      fontWeight: 900,
+                      fontSize: '15px',
+                      boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Guardar Carga
+                  </button>
+                )}
               </div>
             </form>
           </div>
@@ -16948,7 +17353,7 @@ export const AppMovilPage: React.FC = () => {
                       const fNom = p.fincaNombre || p.nombreFinca || fincas.find((f) => f.id === (p.fincaId || p.FincaId))?.nombre || `Finca #${p.fincaId || p.FincaId}`;
                       const horaP = esRecolectada 
                         ? (p.hora || (p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : `Parada #${idx + 1}`))
-                        : 'En ruta • Pendiente';
+                        : 'En ruta • ⏳ Pendiente';
                       const esBufala = (p.tipoLeche || '').toUpperCase() === 'BUFALA';
                       const esAcida = Boolean(p.esAcida);
                       const foto = p.fotoComprobante || p.fotoRecibo;
@@ -16956,7 +17361,7 @@ export const AppMovilPage: React.FC = () => {
                       return (
                         <div
                           key={p.id || idx}
-                          onClick={() => esAdminReal && abrirModalAdminCargarLitros(v, p)}
+                          onClick={() => esAdminReal && abrirFincaDesdeTimelapse(v, p)}
                           style={{
                             background: esRecolectada ? '#ffffff' : '#fffdf7',
                             borderRadius: '14px',
@@ -17028,7 +17433,7 @@ export const AppMovilPage: React.FC = () => {
                                 </div>
                               ) : (
                                 <div style={{ fontSize: '10px', color: '#d97706', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                  <i className="fa-solid fa-clock text-[9px]"></i> Pendiente
+                                  <i className="fa-solid fa-clock text-[9px]"></i> ⏳ Pendiente
                                 </div>
                               )}
                             </div>
@@ -17063,7 +17468,7 @@ export const AppMovilPage: React.FC = () => {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  abrirModalAdminCargarLitros(v, p);
+                                  abrirFincaDesdeTimelapse(v, p);
                                 }}
                                 style={{
                                   background: '#f1f5f9',

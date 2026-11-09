@@ -18,12 +18,16 @@ namespace Transporte.Infrastructure.Repositories
         Task<bool> ActualizarRutaAsync(int id, GuardarRutaLogisticaDto dto);
         Task<bool> EliminarRutaAsync(int id);
         Task<IEnumerable<dynamic>> ObtenerFincasDeRutaAsync(int rutaId);
-        Task<bool> AsignarFincasARutaAsync(int rutaId, List<int> fincaIds);
+        Task<bool> AsignarFincasARutaAsync(int rutaId, List<int> fincaIds, List<int>? habitualesIds = null, List<int>? alternasIds = null);
         Task<IEnumerable<PlanificacionRutaChoferDto>> ObtenerPlanificacionesPorFechaAsync(DateTime fecha);
         Task<int> GuardarPlanificacionChoferAsync(GuardarPlanificacionRutaChoferDto dto, int usuarioId);
         Task<bool> EliminarPlanificacionChoferAsync(int id);
         Task<bool> ModificarFincasTicketAsync(long controlRutaId, List<int> fincaIds, int usuarioId);
         Task<IEnumerable<FincaPromedioDto>> ObtenerFincasConPromedio15DiasAsync(int? rutaId = null);
+        Task<IEnumerable<RecoleccionFincaResumenDto>> ObtenerRecoleccionesHoyFincasAsync(DateTime? fecha = null);
+        Task<long> SolicitarRecoleccionExtraordinariaAsync(CrearSolicitudExtraordinariaDto dto, int choferId);
+        Task<IEnumerable<SolicitudRecoleccionExtraordinariaDto>> ObtenerSolicitudesExtraordinariasHoyAsync(DateTime? fecha = null);
+        Task<bool> ResponderSolicitudExtraordinariaAsync(long solicitudId, int usuarioId, bool aprobar);
     }
 
     public class RutasLogisticaRepository : IRutasLogisticaRepository
@@ -48,9 +52,55 @@ namespace Transporte.Infrastructure.Repositories
             return new SqlConnection(connStr);
         }
 
+        private static bool _tablesChecked = false;
+        private async Task EnsureTablesAsync(IDbConnection connection)
+        {
+            if (_tablesChecked) return;
+            try
+            {
+                var sql = @"
+                    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='TB_RUTAS_LOGISTICA_FINCAS' AND xtype='U')
+                    BEGIN
+                        CREATE TABLE TB_RUTAS_LOGISTICA_FINCAS (
+                            RutaLogisticaId INT NOT NULL,
+                            FincaId INT NOT NULL,
+                            EsPrincipal BIT NOT NULL DEFAULT 1,
+                            Orden INT NULL DEFAULT 0,
+                            CreatedAt DATETIME2 DEFAULT GETDATE(),
+                            CONSTRAINT PK_TB_RUTAS_LOGISTICA_FINCAS PRIMARY KEY (RutaLogisticaId, FincaId)
+                        );
+                        INSERT INTO TB_RUTAS_LOGISTICA_FINCAS (RutaLogisticaId, FincaId, EsPrincipal, Orden, CreatedAt)
+                        SELECT f.RutaId, f.Id, 1, 0, GETDATE()
+                        FROM TB_FINCAS f
+                        WHERE f.RutaId IS NOT NULL AND f.RutaId > 0;
+                    END;
+
+                    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='TB_SOLICITUDES_RECOLECCION_EXTRAORDINARIA' AND xtype='U')
+                    BEGIN
+                        CREATE TABLE TB_SOLICITUDES_RECOLECCION_EXTRAORDINARIA (
+                            Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+                            Fecha DATE NOT NULL,
+                            FincaId INT NOT NULL,
+                            RutaLogisticaId INT NULL,
+                            ControlRutaId BIGINT NULL,
+                            ChoferSolicitanteId INT NOT NULL,
+                            Motivo NVARCHAR(250) NULL,
+                            Estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+                            AprobadoPorUsuarioId INT NULL,
+                            FechaAprobacion DATETIME2 NULL,
+                            CreatedAt DATETIME2 DEFAULT GETDATE()
+                        );
+                    END;";
+                await connection.ExecuteAsync(sql);
+                _tablesChecked = true;
+            }
+            catch { /* Tolerante */ }
+        }
+
         public async Task<IEnumerable<RutaLogisticaDto>> ObtenerRutasAsync()
         {
             using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
             var sql = @"
                 SELECT 
                     r.Id,
@@ -65,14 +115,17 @@ namespace Transporte.Infrastructure.Repositories
                     r.ChoferPredeterminadoId,
                     u.NombreCompleto AS ChoferNombre,
                     r.CreatedAt,
-                    (SELECT COUNT(*) FROM TB_FINCAS f WHERE f.RutaId = r.Id AND f.Activo = 1) AS TotalFincasAsignadas,
+                    (SELECT COUNT(*) FROM TB_RUTAS_LOGISTICA_FINCAS rlf JOIN TB_FINCAS f ON rlf.FincaId = f.Id WHERE rlf.RutaLogisticaId = r.Id AND f.Activo = 1) AS TotalFincasAsignadas,
+                    (SELECT COUNT(*) FROM TB_RUTAS_LOGISTICA_FINCAS rlf JOIN TB_FINCAS f ON rlf.FincaId = f.Id WHERE rlf.RutaLogisticaId = r.Id AND rlf.EsPrincipal = 1 AND f.Activo = 1) AS TotalFincasHabituales,
+                    (SELECT COUNT(*) FROM TB_RUTAS_LOGISTICA_FINCAS rlf JOIN TB_FINCAS f ON rlf.FincaId = f.Id WHERE rlf.RutaLogisticaId = r.Id AND rlf.EsPrincipal = 0 AND f.Activo = 1) AS TotalFincasAlternas,
                     ISNULL((
                         SELECT SUM(sub.Prom)
                         FROM (
                             SELECT CAST(ROUND(AVG(CAST(rec.Litros AS FLOAT)), 0) AS INT) AS Prom
-                            FROM TB_FINCAS f2
+                            FROM TB_RUTAS_LOGISTICA_FINCAS rlf2
+                            JOIN TB_FINCAS f2 ON rlf2.FincaId = f2.Id
                             INNER JOIN TB_RUTAS_RECOLECCION rec ON rec.FincaId = f2.Id AND rec.Fecha >= DATEADD(day, -30, GETDATE())
-                            WHERE f2.RutaId = r.Id AND f2.Activo = 1
+                            WHERE rlf2.RutaLogisticaId = r.Id AND rlf2.EsPrincipal = 1 AND f2.Activo = 1
                             GROUP BY f2.Id
                         ) sub
                     ), 0) AS TotalLitrosEstimados
@@ -86,6 +139,7 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<RutaLogisticaDto?> ObtenerRutaPorIdAsync(int id)
         {
             using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
             var sql = @"
                 SELECT 
                     r.Id,
@@ -100,14 +154,17 @@ namespace Transporte.Infrastructure.Repositories
                     r.ChoferPredeterminadoId,
                     u.NombreCompleto AS ChoferNombre,
                     r.CreatedAt,
-                    (SELECT COUNT(*) FROM TB_FINCAS f WHERE f.RutaId = r.Id AND f.Activo = 1) AS TotalFincasAsignadas,
+                    (SELECT COUNT(*) FROM TB_RUTAS_LOGISTICA_FINCAS rlf JOIN TB_FINCAS f ON rlf.FincaId = f.Id WHERE rlf.RutaLogisticaId = r.Id AND f.Activo = 1) AS TotalFincasAsignadas,
+                    (SELECT COUNT(*) FROM TB_RUTAS_LOGISTICA_FINCAS rlf JOIN TB_FINCAS f ON rlf.FincaId = f.Id WHERE rlf.RutaLogisticaId = r.Id AND rlf.EsPrincipal = 1 AND f.Activo = 1) AS TotalFincasHabituales,
+                    (SELECT COUNT(*) FROM TB_RUTAS_LOGISTICA_FINCAS rlf JOIN TB_FINCAS f ON rlf.FincaId = f.Id WHERE rlf.RutaLogisticaId = r.Id AND rlf.EsPrincipal = 0 AND f.Activo = 1) AS TotalFincasAlternas,
                     ISNULL((
                         SELECT SUM(sub.Prom)
                         FROM (
                             SELECT CAST(ROUND(AVG(CAST(rec.Litros AS FLOAT)), 0) AS INT) AS Prom
-                            FROM TB_FINCAS f2
+                            FROM TB_RUTAS_LOGISTICA_FINCAS rlf2
+                            JOIN TB_FINCAS f2 ON rlf2.FincaId = f2.Id
                             INNER JOIN TB_RUTAS_RECOLECCION rec ON rec.FincaId = f2.Id AND rec.Fecha >= DATEADD(day, -30, GETDATE())
-                            WHERE f2.RutaId = r.Id AND f2.Activo = 1
+                            WHERE rlf2.RutaLogisticaId = r.Id AND rlf2.EsPrincipal = 1 AND f2.Activo = 1
                             GROUP BY f2.Id
                         ) sub
                     ), 0) AS TotalLitrosEstimados
@@ -121,6 +178,7 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<int> CrearRutaAsync(GuardarRutaLogisticaDto dto)
         {
             using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
             var sql = @"
                 INSERT INTO TB_RUTAS_LOGISTICA (Codigo, Nombre, Descripcion, Color, CamionPredeterminadoId, ChoferPredeterminadoId, Activo, CreatedAt)
                 VALUES (@Codigo, @Nombre, @Descripcion, @Color, @CamionPredeterminadoId, @ChoferPredeterminadoId, @Activo, GETDATE());
@@ -131,6 +189,7 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<bool> ActualizarRutaAsync(int id, GuardarRutaLogisticaDto dto)
         {
             using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
             var sql = @"
                 UPDATE TB_RUTAS_LOGISTICA
                 SET Codigo = @Codigo,
@@ -158,7 +217,9 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<bool> EliminarRutaAsync(int id)
         {
             using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
             var sql = @"
+                DELETE FROM TB_RUTAS_LOGISTICA_FINCAS WHERE RutaLogisticaId = @id;
                 UPDATE TB_FINCAS SET RutaId = NULL WHERE RutaId = @id;
                 DELETE FROM TB_RUTAS_LOGISTICA WHERE Id = @id;";
             var rows = await connection.ExecuteAsync(sql, new { id });
@@ -168,42 +229,122 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<IEnumerable<dynamic>> ObtenerFincasDeRutaAsync(int rutaId)
         {
             using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
             var sql = @"
                 SELECT 
                     f.Id, 
                     f.Codigo, 
                     f.Nombre, 
                     f.Propietario, 
-                    f.RutaId,
-                    CASE WHEN f.RutaId = @rutaId THEN 1 ELSE 0 END AS Asignada
+                    f.RutaId AS RutaPrincipalId,
+                    rp.Nombre AS RutaPrincipalNombre,
+                    CASE WHEN rlf.FincaId IS NOT NULL THEN 1 ELSE 0 END AS Asignada,
+                    ISNULL(rlf.EsPrincipal, CASE WHEN f.RutaId = @rutaId THEN 1 ELSE 0 END) AS EsPrincipal,
+                    CASE 
+                        WHEN rlf.FincaId IS NOT NULL AND rlf.EsPrincipal = 1 THEN 'HABITUAL'
+                        WHEN rlf.FincaId IS NOT NULL AND rlf.EsPrincipal = 0 THEN 'ALTERNA'
+                        ELSE 'NO_ASIGNADA'
+                    END AS TipoAsignacion
                 FROM TB_FINCAS f
-                WHERE f.Activo = 1
-                ORDER BY Asignada DESC, f.Nombre ASC";
+                LEFT JOIN TB_RUTAS_LOGISTICA rp ON f.RutaId = rp.Id
+                LEFT JOIN TB_RUTAS_LOGISTICA_FINCAS rlf ON rlf.FincaId = f.Id AND rlf.RutaLogisticaId = @rutaId
+                WHERE f.Activo = 1 AND f.IsDeleted = 0
+                ORDER BY Asignada DESC, EsPrincipal DESC, f.Nombre ASC";
             return await connection.QueryAsync(sql, new { rutaId });
         }
 
-        public async Task<bool> AsignarFincasARutaAsync(int rutaId, List<int> fincaIds)
+        public async Task<bool> AsignarFincasARutaAsync(int rutaId, List<int> fincaIds, List<int>? habitualesIds = null, List<int>? alternasIds = null)
         {
             using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
             if (connection.State != ConnectionState.Open) connection.Open();
             using var tx = connection.BeginTransaction();
             try
             {
-                if (fincaIds == null || fincaIds.Count == 0)
+                // Si vienen listas explícitas de Habituales y Alternas
+                if (habitualesIds != null || alternasIds != null)
                 {
-                    await connection.ExecuteAsync("UPDATE TB_FINCAS SET RutaId = NULL WHERE RutaId = @rutaId", new { rutaId }, tx);
+                    var hab = habitualesIds ?? new List<int>();
+                    var alt = (alternasIds ?? new List<int>()).Where(x => !hab.Contains(x)).ToList();
+                    var total = hab.Concat(alt).Distinct().ToList();
+
+                    await connection.ExecuteAsync(
+                        "DELETE FROM TB_RUTAS_LOGISTICA_FINCAS WHERE RutaLogisticaId = @rutaId AND FincaId NOT IN @total",
+                        new { rutaId, total = total.Count > 0 ? total : new List<int> { -1 } }, tx);
+
+                    await connection.ExecuteAsync(
+                        "UPDATE TB_FINCAS SET RutaId = NULL WHERE RutaId = @rutaId AND Id NOT IN @total",
+                        new { rutaId, total = total.Count > 0 ? total : new List<int> { -1 } }, tx);
+
+                    foreach (var fId in hab)
+                    {
+                        await connection.ExecuteAsync("UPDATE TB_FINCAS SET RutaId = @rutaId WHERE Id = @fId", new { rutaId, fId }, tx);
+                        await connection.ExecuteAsync(@"
+                            IF EXISTS (SELECT 1 FROM TB_RUTAS_LOGISTICA_FINCAS WHERE RutaLogisticaId = @rutaId AND FincaId = @fId)
+                                UPDATE TB_RUTAS_LOGISTICA_FINCAS SET EsPrincipal = 1 WHERE RutaLogisticaId = @rutaId AND FincaId = @fId;
+                            ELSE
+                                INSERT INTO TB_RUTAS_LOGISTICA_FINCAS (RutaLogisticaId, FincaId, EsPrincipal, Orden, CreatedAt)
+                                VALUES (@rutaId, @fId, 1, 0, GETDATE());", new { rutaId, fId }, tx);
+                    }
+
+                    foreach (var fId in alt)
+                    {
+                        await connection.ExecuteAsync(@"
+                            IF EXISTS (SELECT 1 FROM TB_RUTAS_LOGISTICA_FINCAS WHERE RutaLogisticaId = @rutaId AND FincaId = @fId)
+                                UPDATE TB_RUTAS_LOGISTICA_FINCAS SET EsPrincipal = 0 WHERE RutaLogisticaId = @rutaId AND FincaId = @fId;
+                            ELSE
+                                INSERT INTO TB_RUTAS_LOGISTICA_FINCAS (RutaLogisticaId, FincaId, EsPrincipal, Orden, CreatedAt)
+                                VALUES (@rutaId, @fId, 0, 0, GETDATE());", new { rutaId, fId }, tx);
+                    }
                 }
                 else
                 {
-                    // Desasociar fincas de esta ruta que ya no estén seleccionadas
-                    await connection.ExecuteAsync(
-                        "UPDATE TB_FINCAS SET RutaId = NULL WHERE RutaId = @rutaId AND Id NOT IN @fincaIds",
-                        new { rutaId, fincaIds }, tx);
+                    // Manejo tolerante con lista simple fincaIds
+                    if (fincaIds == null || fincaIds.Count == 0)
+                    {
+                        await connection.ExecuteAsync("DELETE FROM TB_RUTAS_LOGISTICA_FINCAS WHERE RutaLogisticaId = @rutaId", new { rutaId }, tx);
+                        await connection.ExecuteAsync("UPDATE TB_FINCAS SET RutaId = NULL WHERE RutaId = @rutaId", new { rutaId }, tx);
+                    }
+                    else
+                    {
+                        await connection.ExecuteAsync(
+                            "DELETE FROM TB_RUTAS_LOGISTICA_FINCAS WHERE RutaLogisticaId = @rutaId AND FincaId NOT IN @fincaIds",
+                            new { rutaId, fincaIds }, tx);
 
-                    // Asociar fincas seleccionadas
-                    await connection.ExecuteAsync(
-                        "UPDATE TB_FINCAS SET RutaId = @rutaId WHERE Id IN @fincaIds",
-                        new { rutaId, fincaIds }, tx);
+                        await connection.ExecuteAsync(
+                            "UPDATE TB_FINCAS SET RutaId = NULL WHERE RutaId = @rutaId AND Id NOT IN @fincaIds",
+                            new { rutaId, fincaIds }, tx);
+
+                        var fincasActuales = (await connection.QueryAsync<dynamic>(
+                            "SELECT Id, RutaId FROM TB_FINCAS WHERE Id IN @fincaIds", new { fincaIds }, tx)).ToList();
+
+                        foreach (var f in fincasActuales)
+                        {
+                            int fId = Convert.ToInt32(f.Id);
+                            int? curRuta = f.RutaId != null ? Convert.ToInt32(f.RutaId) : (int?)null;
+                            bool esPrincipal = (curRuta == null || curRuta == rutaId || curRuta == 0);
+
+                            if (esPrincipal && curRuta != rutaId)
+                            {
+                                await connection.ExecuteAsync("UPDATE TB_FINCAS SET RutaId = @rutaId WHERE Id = @fId", new { rutaId, fId }, tx);
+                            }
+
+                            var sqlUpsert = @"
+                                IF EXISTS (SELECT 1 FROM TB_RUTAS_LOGISTICA_FINCAS WHERE RutaLogisticaId = @rutaId AND FincaId = @fId)
+                                BEGIN
+                                    UPDATE TB_RUTAS_LOGISTICA_FINCAS 
+                                    SET EsPrincipal = CASE WHEN @esPrincipal = 1 THEN 1 ELSE EsPrincipal END
+                                    WHERE RutaLogisticaId = @rutaId AND FincaId = @fId;
+                                END
+                                ELSE
+                                BEGIN
+                                    INSERT INTO TB_RUTAS_LOGISTICA_FINCAS (RutaLogisticaId, FincaId, EsPrincipal, Orden, CreatedAt)
+                                    VALUES (@rutaId, @fId, @esPrincipal, 0, GETDATE());
+                                END";
+
+                            await connection.ExecuteAsync(sqlUpsert, new { rutaId, fId, esPrincipal = esPrincipal ? 1 : 0 }, tx);
+                        }
+                    }
                 }
 
                 tx.Commit();
@@ -828,16 +969,32 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<IEnumerable<FincaPromedioDto>> ObtenerFincasConPromedio15DiasAsync(int? rutaId = null)
         {
             using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
             var sql = @"
                 SELECT 
                     f.Id AS FincaId,
                     f.Nombre AS FincaNombre,
                     f.Propietario,
                     f.RutaId,
+                    rp.Nombre AS RutaPrincipalNombre,
                     CASE WHEN f.TieneDosTiposLeche = 1 THEN 'BUFALA' ELSE 'VACA' END AS TipoLeche,
                     CAST(ISNULL(p15.Promedio15Dias, ISNULL(pTotal.PromedioTotal, 0)) AS INT) AS PromedioLitros,
-                    ISNULL(p15.DiasRecolectados, 0) AS DiasRecolectados15
+                    ISNULL(p15.DiasRecolectados, 0) AS DiasRecolectados15,
+                    ISNULL(
+                        (SELECT STRING_AGG(CAST(rlf.RutaLogisticaId AS VARCHAR), ',') 
+                         FROM TB_RUTAS_LOGISTICA_FINCAS rlf 
+                         WHERE rlf.FincaId = f.Id), 
+                        CAST(ISNULL(f.RutaId, 0) AS VARCHAR)
+                    ) AS RutasAsignadasStr,
+                    CASE 
+                        WHEN @rutaId IS NOT NULL AND EXISTS (
+                            SELECT 1 FROM TB_RUTAS_LOGISTICA_FINCAS rlf2 
+                            WHERE rlf2.FincaId = f.Id AND rlf2.RutaLogisticaId = @rutaId AND rlf2.EsPrincipal = 0
+                        ) THEN 1 
+                        ELSE 0 
+                    END AS EsAlterna
                 FROM TB_FINCAS f
+                LEFT JOIN TB_RUTAS_LOGISTICA rp ON f.RutaId = rp.Id
                 LEFT JOIN (
                     SELECT FincaId, ROUND(AVG(CAST(Litros AS FLOAT)), 0) AS Promedio15Dias, COUNT(1) AS DiasRecolectados
                     FROM TB_RUTAS_RECOLECCION
@@ -850,9 +1007,189 @@ namespace Transporte.Infrastructure.Repositories
                     GROUP BY FincaId
                 ) pTotal ON f.Id = pTotal.FincaId
                 WHERE f.IsDeleted = 0 AND f.Activo = 1 " +
-                (rutaId.HasValue && rutaId.Value > 0 ? " AND f.RutaId = @rutaId " : "") +
+                (rutaId.HasValue && rutaId.Value > 0 
+                    ? " AND (EXISTS (SELECT 1 FROM TB_RUTAS_LOGISTICA_FINCAS rlf3 WHERE rlf3.FincaId = f.Id AND rlf3.RutaLogisticaId = @rutaId) OR f.RutaId = @rutaId) " 
+                    : "") +
                 " ORDER BY f.Nombre ASC";
-            return await connection.QueryAsync<FincaPromedioDto>(sql, new { rutaId });
+
+            var rows = await connection.QueryAsync<dynamic>(sql, new { rutaId });
+            var list = new List<FincaPromedioDto>();
+            foreach (var r in rows)
+            {
+                var dto = new FincaPromedioDto
+                {
+                    FincaId = Convert.ToInt32(r.FincaId),
+                    FincaNombre = Convert.ToString(r.FincaNombre) ?? "",
+                    Propietario = Convert.ToString(r.Propietario),
+                    RutaId = r.RutaId != null ? Convert.ToInt32(r.RutaId) : null,
+                    RutaPrincipalNombre = Convert.ToString(r.RutaPrincipalNombre),
+                    TipoLeche = Convert.ToString(r.TipoLeche),
+                    PromedioLitros = Convert.ToInt32(r.PromedioLitros),
+                    DiasRecolectados15 = Convert.ToInt32(r.DiasRecolectados15),
+                    EsAlterna = Convert.ToInt32(r.EsAlterna) == 1,
+                };
+                string rutasStr = Convert.ToString(r.RutasAsignadasStr) ?? "";
+                if (!string.IsNullOrWhiteSpace(rutasStr))
+                {
+                    dto.RutasAsignadasIds = rutasStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s => int.TryParse(s, out var rid) ? rid : 0)
+                        .Where(rid => rid > 0)
+                        .Distinct()
+                        .ToList();
+                }
+                list.Add(dto);
+            }
+            return list;
+        }
+
+        public async Task<IEnumerable<RecoleccionFincaResumenDto>> ObtenerRecoleccionesHoyFincasAsync(DateTime? fecha = null)
+        {
+            using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
+            var fechaTarget = (fecha ?? DateTime.Today).Date;
+            var sql = @"
+                SELECT 
+                    r.Id AS RecoleccionId,
+                    r.FincaId AS FincaId,
+                    f.Nombre AS FincaNombre,
+                    r.ControlRutaId AS ControlRutaId,
+                    CAST(r.ControlRutaId AS VARCHAR) AS TicketCodigo,
+                    r.UsuarioId AS ConductorId,
+                    u.NombreCompleto AS ConductorNombre,
+                    ISNULL(c.Placa, 'Sin Camión') AS CamionPlaca,
+                    ISNULL(r.Litros, 0) AS Litros,
+                    ISNULL(r.EsAcida, 0) AS EsAcida,
+                    ISNULL(r.TipoLeche, 'VACA') AS TipoLeche,
+                    r.CreatedAt AS CreatedAt
+                FROM TB_RUTAS_RECOLECCION r
+                INNER JOIN TB_FINCAS f ON r.FincaId = f.Id
+                LEFT JOIN TB_USUARIOS u ON r.UsuarioId = u.Id
+                LEFT JOIN TB_CONTROL_RUTAS cr ON r.ControlRutaId = cr.Id
+                LEFT JOIN TB_CAMIONES c ON c.UsuarioId = r.UsuarioId AND c.Activo = 1
+                WHERE CAST(r.Fecha AS DATE) = @fechaTarget
+                ORDER BY r.CreatedAt DESC, r.Id DESC";
+            return await connection.QueryAsync<RecoleccionFincaResumenDto>(sql, new { fechaTarget });
+        }
+
+        public async Task<long> SolicitarRecoleccionExtraordinariaAsync(CrearSolicitudExtraordinariaDto dto, int choferId)
+        {
+            using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
+            var sql = @"
+                INSERT INTO TB_SOLICITUDES_RECOLECCION_EXTRAORDINARIA (
+                    Fecha, FincaId, RutaLogisticaId, ControlRutaId, ChoferSolicitanteId, Motivo, Estado, CreatedAt
+                ) VALUES (
+                    CAST(GETDATE() AS DATE), @FincaId, @RutaLogisticaId, @ControlRutaId, @ChoferSolicitanteId, @Motivo, 'PENDIENTE', GETDATE()
+                );
+                SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
+
+            var id = await connection.ExecuteScalarAsync<long>(sql, new
+            {
+                FincaId = dto.FincaId,
+                RutaLogisticaId = dto.RutaLogisticaId,
+                ControlRutaId = dto.ControlRutaId,
+                ChoferSolicitanteId = choferId,
+                Motivo = dto.Motivo ?? "Recolección Extraordinaria / Emergencia"
+            });
+
+            // Emitir notificación a supervisores y administradores
+            try
+            {
+                if (_notificacionesRepo != null)
+                {
+                    var fNom = await connection.ExecuteScalarAsync<string>("SELECT Nombre FROM TB_FINCAS WHERE Id = @id", new { id = dto.FincaId });
+                    var chNom = await connection.ExecuteScalarAsync<string>("SELECT NombreCompleto FROM TB_USUARIOS WHERE Id = @id", new { id = choferId });
+                    await _notificacionesRepo.CrearNotificacionAsync(new CrearNotificacionMovilDto
+                    {
+                        UsuarioId = 0,
+                        Titulo = $"🚨 Solicitud 2da Recogida: {fNom ?? "Finca"}",
+                        Mensaje = $"{chNom ?? "Chofer"} solicita recoger nuevamente la finca '{fNom}' por motivo: {dto.Motivo}. Requiere aprobación.",
+                        Tipo = "SOLICITUD_EXTRAORDINARIA",
+                        ReferenciaId = id
+                    });
+                }
+            }
+            catch { /* Tolerante */ }
+
+            return id;
+        }
+
+        public async Task<IEnumerable<SolicitudRecoleccionExtraordinariaDto>> ObtenerSolicitudesExtraordinariasHoyAsync(DateTime? fecha = null)
+        {
+            using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
+            var fechaTarget = (fecha ?? DateTime.Today).Date;
+            var sql = @"
+                SELECT 
+                    s.Id,
+                    s.Fecha,
+                    s.FincaId,
+                    f.Nombre AS FincaNombre,
+                    s.RutaLogisticaId,
+                    rl.Nombre AS RutaNombre,
+                    s.ControlRutaId,
+                    s.ChoferSolicitanteId,
+                    u.NombreCompleto AS ChoferSolicitanteNombre,
+                    c.Placa AS CamionPlaca,
+                    s.Motivo,
+                    s.Estado,
+                    s.AprobadoPorUsuarioId,
+                    uAprob.NombreCompleto AS AprobadoPorNombre,
+                    s.FechaAprobacion,
+                    s.CreatedAt
+                FROM TB_SOLICITUDES_RECOLECCION_EXTRAORDINARIA s
+                INNER JOIN TB_FINCAS f ON s.FincaId = f.Id
+                LEFT JOIN TB_RUTAS_LOGISTICA rl ON s.RutaLogisticaId = rl.Id
+                LEFT JOIN TB_USUARIOS u ON s.ChoferSolicitanteId = u.Id
+                LEFT JOIN TB_CONTROL_RUTAS cr ON s.ControlRutaId = cr.Id
+                LEFT JOIN TB_CAMIONES c ON c.UsuarioId = s.ChoferSolicitanteId AND c.Activo = 1
+                LEFT JOIN TB_USUARIOS uAprob ON s.AprobadoPorUsuarioId = uAprob.Id
+                WHERE CAST(s.Fecha AS DATE) = @fechaTarget
+                ORDER BY s.Id DESC";
+            return await connection.QueryAsync<SolicitudRecoleccionExtraordinariaDto>(sql, new { fechaTarget });
+        }
+
+        public async Task<bool> ResponderSolicitudExtraordinariaAsync(long solicitudId, int usuarioId, bool aprobar)
+        {
+            using var connection = CreateConnection();
+            await EnsureTablesAsync(connection);
+            var nuevoEstado = aprobar ? "APROBADA" : "RECHAZADA";
+            var sql = @"
+                UPDATE TB_SOLICITUDES_RECOLECCION_EXTRAORDINARIA
+                SET Estado = @nuevoEstado,
+                    AprobadoPorUsuarioId = @usuarioId,
+                    FechaAprobacion = GETDATE()
+                WHERE Id = @solicitudId";
+
+            var rows = await connection.ExecuteAsync(sql, new { solicitudId, nuevoEstado, usuarioId });
+
+            if (rows > 0 && _notificacionesRepo != null)
+            {
+                try
+                {
+                    var sol = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                        "SELECT ChoferSolicitanteId, FincaId FROM TB_SOLICITUDES_RECOLECCION_EXTRAORDINARIA WHERE Id = @solicitudId", new { solicitudId });
+                    if (sol != null)
+                    {
+                        int chId = Convert.ToInt32(sol.ChoferSolicitanteId);
+                        int fId = Convert.ToInt32(sol.FincaId);
+                        var fNom = await connection.ExecuteScalarAsync<string>("SELECT Nombre FROM TB_FINCAS WHERE Id = @id", new { id = fId });
+                        await _notificacionesRepo.CrearNotificacionAsync(new CrearNotificacionMovilDto
+                        {
+                            UsuarioId = chId,
+                            Titulo = aprobar ? $"⚡ Solicitud Aprobada: {fNom}" : $"❌ Solicitud Rechazada: {fNom}",
+                            Mensaje = aprobar 
+                                ? $"El supervisor autorizó la 2da recolección de '{fNom}'. Ya puedes cargar litros." 
+                                : $"La solicitud de recolección para '{fNom}' no fue aprobada.",
+                            Tipo = "RESPUESTA_EXTRAORDINARIA",
+                            ReferenciaId = solicitudId
+                        });
+                    }
+                }
+                catch { /* Tolerante */ }
+            }
+
+            return rows > 0;
         }
     }
 }

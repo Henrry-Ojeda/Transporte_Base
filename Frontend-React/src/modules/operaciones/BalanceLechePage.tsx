@@ -29,9 +29,16 @@ export const BalanceLechePage: React.FC = () => {
     queryFn: () => finanzasApi.getCiclos(),
   });
 
-  // Ciclos ordenados descendente
+  // Ciclos ordenados descendente (excluyendo semana 46 en adelante y fechas futuras)
   const ciclosOrdenados = useMemo(() => {
-    return [...ciclos].sort((a, b) => (b.id || 0) - (a.id || 0));
+    return [...ciclos]
+      .filter((c) => {
+        const num = Number(c.numeroSemana || c.id || 0);
+        if (num >= 46) return false;
+        if (c.fechaInicio && new Date(c.fechaInicio) > new Date('2026-11-09T23:59:59')) return false;
+        return true;
+      })
+      .sort((a, b) => (b.id || 0) - (a.id || 0));
   }, [ciclos]);
 
   // Ciclo activo por defecto

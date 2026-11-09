@@ -2324,6 +2324,8 @@ namespace Transporte.Core.DTOs
         public string Color { get; set; } = "#2563eb";
         public bool Activo { get; set; } = true;
         public int TotalFincasAsignadas { get; set; }
+        public int TotalFincasHabituales { get; set; }
+        public int TotalFincasAlternas { get; set; }
         public int? CamionPredeterminadoId { get; set; }
         public string? CamionPlaca { get; set; }
         public decimal? CapacidadCamionLitros { get; set; }
@@ -2397,6 +2399,57 @@ namespace Transporte.Core.DTOs
     public class AsignarFincasRutaDto
     {
         public List<int> FincaIds { get; set; } = new();
+        public List<int>? FincasHabitualesIds { get; set; }
+        public List<int>? FincasAlternasIds { get; set; }
+    }
+
+    public class RecoleccionFincaResumenDto
+    {
+        public long RecoleccionId { get; set; }
+        public int FincaId { get; set; }
+        public string FincaNombre { get; set; } = string.Empty;
+        public long? ControlRutaId { get; set; }
+        public string? TicketCodigo { get; set; }
+        public int? ConductorId { get; set; }
+        public string? ConductorNombre { get; set; }
+        public string? CamionPlaca { get; set; }
+        public int Litros { get; set; }
+        public bool EsAcida { get; set; }
+        public string? TipoLeche { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class SolicitudRecoleccionExtraordinariaDto
+    {
+        public long Id { get; set; }
+        public DateTime Fecha { get; set; }
+        public int FincaId { get; set; }
+        public string? FincaNombre { get; set; }
+        public int? RutaLogisticaId { get; set; }
+        public string? RutaNombre { get; set; }
+        public long? ControlRutaId { get; set; }
+        public int ChoferSolicitanteId { get; set; }
+        public string? ChoferSolicitanteNombre { get; set; }
+        public string? CamionPlaca { get; set; }
+        public string? Motivo { get; set; }
+        public string Estado { get; set; } = "PENDIENTE";
+        public int? AprobadoPorUsuarioId { get; set; }
+        public string? AprobadoPorNombre { get; set; }
+        public DateTime? FechaAprobacion { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class CrearSolicitudExtraordinariaDto
+    {
+        public int FincaId { get; set; }
+        public int? RutaLogisticaId { get; set; }
+        public long? ControlRutaId { get; set; }
+        public string? Motivo { get; set; }
+    }
+
+    public class ResponderSolicitudExtraordinariaDto
+    {
+        public bool Aprobar { get; set; }
     }
 
     // =====================================================================
@@ -2671,6 +2724,9 @@ namespace Transporte.Core.DTOs
         public string? TipoLeche { get; set; }
         public int PromedioLitros { get; set; }
         public int DiasRecolectados15 { get; set; }
+        public bool EsAlterna { get; set; } = false;
+        public string? RutaPrincipalNombre { get; set; }
+        public List<int> RutasAsignadasIds { get; set; } = new();
     }
 }
 

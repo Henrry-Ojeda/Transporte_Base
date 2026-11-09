@@ -106,7 +106,7 @@ namespace Transporte.API.Controllers
         {
             try
             {
-                var ok = await _rutasLogisticaRepository.AsignarFincasARutaAsync(id, dto.FincaIds);
+                var ok = await _rutasLogisticaRepository.AsignarFincasARutaAsync(id, dto.FincaIds, dto.FincasHabitualesIds, dto.FincasAlternasIds);
                 return Ok(new { message = "Fincas asignadas a la ruta exitosamente." });
             }
             catch (System.Exception ex)
@@ -190,6 +190,52 @@ namespace Transporte.API.Controllers
         {
             var fincas = await _rutasLogisticaRepository.ObtenerFincasConPromedio15DiasAsync(rutaId);
             return Ok(fincas);
+        }
+
+        [HttpGet("recolecciones-hoy-fincas")]
+        public async Task<IActionResult> ObtenerRecoleccionesHoyFincas([FromQuery] System.DateTime? fecha)
+        {
+            var list = await _rutasLogisticaRepository.ObtenerRecoleccionesHoyFincasAsync(fecha);
+            return Ok(list);
+        }
+
+        [HttpPost("solicitar-extraordinaria")]
+        public async Task<IActionResult> SolicitarRecoleccionExtraordinaria([FromBody] CrearSolicitudExtraordinariaDto dto)
+        {
+            if (dto.FincaId <= 0) return BadRequest(new { message = "Finca inválida." });
+            var userId = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? uid : 1;
+            try
+            {
+                var id = await _rutasLogisticaRepository.SolicitarRecoleccionExtraordinariaAsync(dto, userId);
+                return Ok(new { success = true, id, message = "Solicitud de recolección extraordinaria enviada para aprobación." });
+            }
+            catch (System.Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("solicitudes-extraordinarias")]
+        public async Task<IActionResult> ObtenerSolicitudesExtraordinarias([FromQuery] System.DateTime? fecha)
+        {
+            var list = await _rutasLogisticaRepository.ObtenerSolicitudesExtraordinariasHoyAsync(fecha);
+            return Ok(list);
+        }
+
+        [HttpPost("responder-extraordinaria/{id:long}")]
+        public async Task<IActionResult> ResponderSolicitudExtraordinaria([FromRoute] long id, [FromBody] ResponderSolicitudExtraordinariaDto dto)
+        {
+            var userId = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? uid : 1;
+            try
+            {
+                var ok = await _rutasLogisticaRepository.ResponderSolicitudExtraordinariaAsync(id, userId, dto.Aprobar);
+                if (!ok) return NotFound(new { message = "Solicitud no encontrada." });
+                return Ok(new { success = true, message = dto.Aprobar ? "Solicitud aprobada exitosamente." : "Solicitud rechazada." });
+            }
+            catch (System.Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
     }
 }

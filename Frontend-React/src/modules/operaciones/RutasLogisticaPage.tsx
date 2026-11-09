@@ -40,6 +40,7 @@ export const RutasLogisticaPage: React.FC = () => {
 
   const [rutaSeleccionada, setRutaSeleccionada] = useState<RutaLogisticaDto | null>(null);
   const [fincasSeleccionadas, setFincasSeleccionadas] = useState<number[]>([]);
+  const [fincasAlternas, setFincasAlternas] = useState<number[]>([]);
   const [busquedaFincasModal, setBusquedaFincasModal] = useState('');
   const [focusedFincaIndex, setFocusedFincaIndex] = useState(0);
   const [modoEdicionId, setModoEdicionId] = useState<number | null>(null);
@@ -135,11 +136,13 @@ export const RutasLogisticaPage: React.FC = () => {
 
   const totalLitrosRutaEstimados = useMemo(() => {
     return fincasSeleccionadas.reduce((acc, fId) => {
+      // Las fincas alternas no suman a la proyección fija de litros de la ruta habitual
+      if (fincasAlternas.includes(fId)) return acc;
       const f = fincas.find((item) => item.id === fId);
       const lts = getPromedioReal15Dias(fId, f);
       return acc + lts;
     }, 0);
-  }, [fincasSeleccionadas, fincas]);
+  }, [fincasSeleccionadas, fincas, fincasAlternas]);
 
   const capacidadCisterna = camionSeleccionado?.capacidadLitros || 0;
   const porcentajeUtilizacion = capacidadCisterna > 0 ? Math.round((totalLitrosRutaEstimados / capacidadCisterna) * 100) : 0;
@@ -158,7 +161,9 @@ export const RutasLogisticaPage: React.FC = () => {
         const fincasActivasIds = fincasSeleccionadas.filter((id) =>
           fincas.some((f) => f.id === id && f.activo !== false)
         );
-        await operacionesApi.asignarFincasARuta(rId, fincasActivasIds);
+        const alternasIds = fincasActivasIds.filter((id) => fincasAlternas.includes(id));
+        const habitualesIds = fincasActivasIds.filter((id) => !fincasAlternas.includes(id));
+        await operacionesApi.asignarFincasARuta(rId, fincasActivasIds, habitualesIds, alternasIds);
       }
       return { id: rId };
     },
@@ -238,11 +243,12 @@ export const RutasLogisticaPage: React.FC = () => {
     setModoEdicionId(null);
     setForm(initialForm);
     setFincasSeleccionadas([]);
+    setFincasAlternas([]);
     setBusquedaFincasModal('');
     setModalAbierto(true);
   };
 
-  const abrirModalEditar = (item: RutaLogisticaDto) => {
+  const abrirModalEditar = async (item: RutaLogisticaDto) => {
     setModoEdicionId(item.id);
     setForm({
       nombre: item.nombre,
@@ -250,10 +256,29 @@ export const RutasLogisticaPage: React.FC = () => {
       camionPredeterminadoId: item.camionPredeterminadoId,
       choferPredeterminadoId: item.choferPredeterminadoId,
     });
-    const fincasDeRuta = fincas.filter((f) => f.rutaId === item.id).map((f) => f.id);
-    setFincasSeleccionadas(fincasDeRuta);
     setBusquedaFincasModal('');
     setModalAbierto(true);
+
+    try {
+      const fincasRuta = await operacionesApi.getFincasDeRutaLogistica(item.id);
+      const asignadas = fincasRuta.filter((x: any) => x.asignada === 1);
+      if (asignadas.length > 0) {
+        setFincasSeleccionadas(asignadas.map((x: any) => x.id));
+        setFincasAlternas(
+          asignadas
+            .filter((x: any) => x.esPrincipal === 0 || x.tipoAsignacion === 'ALTERNA')
+            .map((x: any) => x.id)
+        );
+      } else {
+        const fallbackIds = fincas.filter((f) => f.rutaId === item.id).map((f) => f.id);
+        setFincasSeleccionadas(fallbackIds);
+        setFincasAlternas([]);
+      }
+    } catch {
+      const fallbackIds = fincas.filter((f) => f.rutaId === item.id).map((f) => f.id);
+      setFincasSeleccionadas(fallbackIds);
+      setFincasAlternas([]);
+    }
   };
 
   const abrirModalAsignar = (item: RutaLogisticaDto) => {
@@ -267,6 +292,7 @@ export const RutasLogisticaPage: React.FC = () => {
     setModalAbierto(false);
     setModoEdicionId(null);
     setFincasSeleccionadas([]);
+    setFincasAlternas([]);
     setBusquedaFincasModal('');
   };
 
@@ -277,8 +303,15 @@ export const RutasLogisticaPage: React.FC = () => {
     );
   };
 
+  const toggleHabitualAlterna = (id: number) => {
+    setFincasAlternas((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
   const removerFincaSeleccionada = (id: number) => {
     setFincasSeleccionadas((prev) => prev.filter((item) => item !== id));
+    setFincasAlternas((prev) => prev.filter((item) => item !== id));
   };
 
   const agregarFincaSeleccionada = (id: number) => {
@@ -362,7 +395,8 @@ export const RutasLogisticaPage: React.FC = () => {
     {
       header: 'Fincas en Circuito',
       cell: (row) => {
-        const count = fincas.filter((f) => f.rutaId === row.id).length;
+        const count = row.totalFincasAsignadas || fincas.filter((f) => f.rutaId === row.id).length;
+        const alt = row.totalFincasAlternas || 0;
         return (
           <button
             onClick={() => abrirModalEditar(row)}
@@ -370,7 +404,12 @@ export const RutasLogisticaPage: React.FC = () => {
             title="Administrar fincas del circuito"
           >
             <Landmark className="w-3 h-3" />
-            {count} {count === 1 ? 'finca asignada' : 'fincas asignadas'}
+            <span>{count} {count === 1 ? 'finca asignada' : 'fincas asignadas'}</span>
+            {alt > 0 && (
+              <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-extrabold border border-amber-300">
+                +{alt} alterna{alt > 1 ? 's' : ''}
+              </span>
+            )}
           </button>
         );
       },
@@ -378,8 +417,10 @@ export const RutasLogisticaPage: React.FC = () => {
     {
       header: 'Litros Estimados / Capacidad',
       cell: (row) => {
-        const fincasDeRuta = fincas.filter((f) => f.rutaId === row.id);
-        const ltsTot = fincasDeRuta.reduce((acc, f) => acc + getPromedioReal15Dias(f.id, f), 0);
+        // Los litros estimados de la ruta se calculan exclusivamente de sus fincas habituales
+        const ltsTot = row.totalLitrosEstimados != null && row.totalLitrosEstimados > 0
+          ? row.totalLitrosEstimados
+          : fincas.filter((f) => f.rutaId === row.id).reduce((acc, f) => acc + getPromedioReal15Dias(f.id, f), 0);
         const cam = camiones.find((c) => c.id === row.camionPredeterminadoId);
         const cap = cam?.capacidadLitros || row.capacidadCamionLitros || 0;
         const pct = cap > 0 ? Math.round((ltsTot / cap) * 100) : 0;
@@ -969,16 +1010,39 @@ export const RutasLogisticaPage: React.FC = () => {
                       <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
                         {fincasEnModal.seleccionadas.map((f) => {
                           const lts = getPromedioReal15Dias(f.id, f);
+                          const esAlterna = fincasAlternas.includes(f.id);
                           return (
                             <div
                               key={f.id}
-                              className="flex items-center justify-between p-2 bg-white rounded-lg border border-emerald-200 shadow-2xs hover:border-emerald-300 transition-all text-xs"
+                              className={`flex items-center justify-between p-2 bg-white rounded-lg border shadow-2xs transition-all text-xs ${
+                                esAlterna ? 'border-amber-200 bg-amber-50/30' : 'border-emerald-200'
+                              }`}
                             >
                               <div className="flex-1 pr-2">
-                                <div className="font-bold text-slate-900">{f.nombre}</div>
-                                <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                                <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                                  <span>{f.nombre}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleHabitualAlterna(f.id)}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase border cursor-pointer transition-colors ${
+                                      esAlterna
+                                        ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                        : 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
+                                    }`}
+                                    title={
+                                      esAlterna
+                                        ? 'Ruta Alterna: No suma al volumen diario estimado fijo. Clic para cambiar a Habitual'
+                                        : 'Ruta Habitual: Suma al volumen diario estimado fijo. Clic para cambiar a Alterna'
+                                    }
+                                  >
+                                    {esAlterna ? '🔄 Alterna' : '📍 Habitual'}
+                                  </button>
+                                </div>
+                                <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
                                   <span>{(f as any).propietario || f.propietarioNombre || 'Productor'}</span>
-                                  <span className="font-semibold text-emerald-700">~{lts} Lts/d</span>
+                                  <span className={`font-semibold ${esAlterna ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                    ~{lts} Lts/d {esAlterna ? '(Op)' : ''}
+                                  </span>
                                 </div>
                               </div>
                               <button

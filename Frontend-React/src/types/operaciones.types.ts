@@ -87,6 +87,9 @@ export interface RutaLogisticaDto {
   choferNombre?: string;
   totalLitrosEstimados?: number;
   totalFincas?: number;
+  totalFincasAsignadas?: number;
+  totalFincasHabituales?: number;
+  totalFincasAlternas?: number;
   fincas?: { fincaId: number; fincaNombre: string; ordenSecuencia: number }[];
 }
 
@@ -204,6 +207,9 @@ export interface FincaPromedioDto {
   rutaId?: number;
   tipoLeche?: string;
   promedioLitros: number;
+  esAlterna?: boolean;
+  rutaPrincipalNombre?: string;
+  rutasAsignadasIds?: number[];
 }
 
 export interface ResumenProcesoDto {
@@ -256,6 +262,47 @@ export interface BalanceVolumetricoDto {
   proceso3_FincaCompania: ResumenProcesoDto;
   proceso4_ReceptoriaCompania: ResumenProcesoDto;
   movimientos: MovimientoLecheDto[];
+}
+
+export interface RecoleccionFincaResumenDto {
+  recoleccionId: number;
+  fincaId: number;
+  fincaNombre: string;
+  controlRutaId?: number;
+  ticketCodigo?: string;
+  conductorId?: number;
+  conductorNombre?: string;
+  camionPlaca?: string;
+  litros: number;
+  esAcida: boolean;
+  tipoLeche?: string;
+  createdAt: string;
+}
+
+export interface SolicitudRecoleccionExtraordinariaDto {
+  id: number;
+  fecha: string;
+  fincaId: number;
+  fincaNombre?: string;
+  rutaLogisticaId?: number;
+  rutaNombre?: string;
+  controlRutaId?: number;
+  choferSolicitanteId: number;
+  choferSolicitanteNombre?: string;
+  camionPlaca?: string;
+  motivo?: string;
+  estado: string;
+  aprobadoPorUsuarioId?: number;
+  aprobadoPorNombre?: string;
+  fechaAprobacion?: string;
+  createdAt: string;
+}
+
+export interface CrearSolicitudExtraordinariaDto {
+  fincaId: number;
+  rutaLogisticaId?: number;
+  controlRutaId?: number;
+  motivo?: string;
 }
 
 

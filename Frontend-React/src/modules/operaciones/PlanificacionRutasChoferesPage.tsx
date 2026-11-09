@@ -211,11 +211,25 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
   const getFincaId = (f: any): number => Number(f?.fincaId ?? f?.FincaId ?? f?.id ?? f?.Id ?? 0);
   const getRutaId = (f: any): number => Number(f?.rutaId ?? f?.RutaId ?? 0);
 
+  const estaEnRutas = (f: any, rIds: number[]): boolean => {
+    if (!rIds || rIds.length === 0) return false;
+    const rId = Number(f?.rutaId ?? f?.RutaId ?? 0);
+    if (rIds.includes(rId)) return true;
+    const asignadas = (f?.rutasAsignadasIds || f?.RutasAsignadasIds || []) as number[];
+    return asignadas.some((id) => rIds.includes(Number(id)));
+  };
+
+  const esFincaAlternaEnRutas = (f: any, rIds: number[]): boolean => {
+    const rId = Number(f?.rutaId ?? f?.RutaId ?? 0);
+    if (rIds.length > 0 && !rIds.includes(rId) && estaEnRutas(f, rIds)) return true;
+    return Boolean(f?.esAlterna || f?.EsAlterna);
+  };
+
   // Fincas filtradas y ordenadas para el modal
   const fincasParaModal = useMemo(() => {
     let list = fincasPromedios;
     if (filtroSoloRuta && formRutasIds.length > 0) {
-      list = list.filter((f) => formRutasIds.includes(getRutaId(f)));
+      list = list.filter((f) => estaEnRutas(f, formRutasIds));
     }
     if (busquedaFincaChecklist.trim()) {
       const q = busquedaFincaChecklist.toLowerCase();
@@ -232,16 +246,20 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
       const fIdB = getFincaId(b);
       const checkedA = formFincasSeleccionadas.includes(fIdA) || fincasBloqueadas.includes(fIdA);
       const checkedB = formFincasSeleccionadas.includes(fIdB) || fincasBloqueadas.includes(fIdB);
-      const inRouteA = formRutasIds.length > 0 && formRutasIds.includes(getRutaId(a));
-      const inRouteB = formRutasIds.length > 0 && formRutasIds.includes(getRutaId(b));
+      const inRouteA = formRutasIds.length > 0 && estaEnRutas(a, formRutasIds);
+      const inRouteB = formRutasIds.length > 0 && estaEnRutas(b, formRutasIds);
+      const isAltA = esFincaAlternaEnRutas(a, formRutasIds);
+      const isAltB = esFincaAlternaEnRutas(b, formRutasIds);
 
       // Ponderación:
-      // 4: De la ruta seleccionada y marcada (lista para revisar/desmarcar)
-      // 3: De la ruta seleccionada pero no marcada (fácil de marcar)
-      // 2: Marcada (de otra ruta o manual)
-      // 0: Resto de fincas
-      const scoreA = (inRouteA && checkedA ? 4 : inRouteA ? 3 : checkedA ? 2 : 0);
-      const scoreB = (inRouteB && checkedB ? 4 : inRouteB ? 3 : checkedB ? 2 : 0);
+      // 5: De la ruta habitual y marcada
+      // 4: De la ruta habitual sin marcar
+      // 3: De la ruta alterna y marcada
+      // 2: De la ruta alterna sin marcar
+      // 1: Marcada de otra ruta
+      // 0: Resto
+      const scoreA = (inRouteA && !isAltA && checkedA ? 5 : inRouteA && !isAltA ? 4 : inRouteA && isAltA && checkedA ? 3 : inRouteA && isAltA ? 2 : checkedA ? 1 : 0);
+      const scoreB = (inRouteB && !isAltB && checkedB ? 5 : inRouteB && !isAltB ? 4 : inRouteB && isAltB && checkedB ? 3 : inRouteB && isAltB ? 2 : checkedB ? 1 : 0);
 
       if (scoreA !== scoreB) {
         return scoreB - scoreA;
@@ -1254,7 +1272,8 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
                       const fId = getFincaId(finca);
                       const isBloqueada = fincasBloqueadas.includes(fId);
                       const isChecked = formFincasSeleccionadas.includes(fId) || isBloqueada;
-                      const inSelectedRoute = formRutasIds.length > 0 && formRutasIds.includes(getRutaId(finca));
+                      const inSelectedRoute = formRutasIds.length > 0 && estaEnRutas(finca, formRutasIds);
+                      const isAlterna = esFincaAlternaEnRutas(finca, formRutasIds);
                       const asignadaA = fincasAsignadasEnFecha.get(fId);
                       const nombreFinca = finca.fincaNombre || (finca as any).FincaNombre || (finca as any).nombre || `Finca #${fId}`;
                       const nombrePropietario = finca.propietario || (finca as any).Propietario || (finca as any).productor || 'Sin propietario';
@@ -1287,14 +1306,21 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
                             <div>
                               <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
                                 <span>{nombreFinca}</span>
-                                {inSelectedRoute && (
+                                {isAlterna ? (
+                                  <span
+                                    className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300"
+                                    title={`Finca alternativa (Ruta principal habitual: ${finca.rutaPrincipalNombre || 'otra'})`}
+                                  >
+                                    🔄 Alterna ({finca.rutaPrincipalNombre || 'otra'})
+                                  </span>
+                                ) : inSelectedRoute ? (
                                   <span
                                     className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-300"
-                                    title="Finca perteneciente al circuito de la ruta seleccionada"
+                                    title="Finca habitual de la ruta seleccionada"
                                   >
-                                    📍 De la Ruta
+                                    📍 Habitual
                                   </span>
-                                )}
+                                ) : null}
                                 {isBloqueada ? (
                                   <span
                                     className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300"

@@ -12,11 +12,11 @@ export const finanzasApi = {
   getCiclos: async (): Promise<CicloSemanalDto[]> => {
     const res = await apiClient.get<CicloSemanalDto[]>('/ciclos');
     const list = Array.isArray(res.data) ? res.data : [];
-    // Desde la semana 46 en adelante no debe verse en ningún lado si no está ABIERTO
+    // Regla de negocio: Semanas operativas 44 y 45 son las activas/visibles; desde la 46 en adelante no debe verse en ningún lado
     return list.filter((c) => {
-      const num = c.numeroSemana;
-      const estado = (c.estado || '').toUpperCase();
-      if (num && num >= 46 && estado !== 'ABIERTO' && estado !== 'ACTIVO') {
+      const num = Number(c.numeroSemana || c.id || 0);
+      if (num >= 46) return false;
+      if (c.fechaInicio && new Date(c.fechaInicio) > new Date('2026-11-09T23:59:59')) {
         return false;
       }
       return true;

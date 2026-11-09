@@ -5014,22 +5014,22 @@ namespace Transporte.Infrastructure.Repositories
             int filaId = 1;
             foreach (var m in movimientos)
             {
-                string mov = (string)m.TipoMovimiento;
-                int lts = (int)(m.Litros ?? 0);
+                string mov = Convert.ToString(m.TipoMovimiento) ?? "ENTRADA";
+                int lts = Convert.ToInt32(m.Litros ?? 0);
                 if (mov == "ENTRADA") sumEntradas += lts;
                 else sumSalidas += lts;
 
                 filasAuto.Add(new
                 {
                     id = filaId++,
-                    fecha = (string)m.FechaStr,
-                    chofer = (string)m.Chofer,
+                    fecha = Convert.ToString(m.FechaStr) ?? "",
+                    chofer = Convert.ToString(m.Chofer) ?? "",
                     litros = lts,
                     tipoMovimiento = mov,
-                    tipoLeche = (string)m.TipoLeche,
-                    diferencias = (int)(m.Diferencias ?? 0),
-                    porTipoLeche = (string)m.PorTipoLeche,
-                    detalle = (string)m.Detalle
+                    tipoLeche = Convert.ToString(m.TipoLeche) ?? "VACA",
+                    diferencias = Convert.ToInt32(m.Diferencias ?? 0),
+                    porTipoLeche = Convert.ToString(m.PorTipoLeche) ?? "GENERAL",
+                    detalle = Convert.ToString(m.Detalle) ?? ""
                 });
             }
 
@@ -5056,19 +5056,19 @@ namespace Transporte.Infrastructure.Repositories
                 var fallback = (await connection.QueryAsync<dynamic>(sqlRutasFallback, new { fecha = fecha.Date })).ToList();
                 foreach (var fb in fallback)
                 {
-                    int lts = (int)(fb.Litros ?? 0);
+                    int lts = Convert.ToInt32(fb.Litros ?? 0);
                     sumEntradas += lts;
                     filasAuto.Add(new
                     {
                         id = filaId++,
-                        fecha = (string)fb.FechaStr,
-                        chofer = (string)fb.Chofer,
+                        fecha = Convert.ToString(fb.FechaStr) ?? "",
+                        chofer = Convert.ToString(fb.Chofer) ?? "",
                         litros = lts,
                         tipoMovimiento = "ENTRADA",
-                        tipoLeche = (string)fb.TipoLeche,
-                        diferencias = (int)(fb.Diferencias ?? 0),
-                        porTipoLeche = (string)fb.PorTipoLeche,
-                        detalle = (string)fb.Detalle
+                        tipoLeche = Convert.ToString(fb.TipoLeche) ?? "VACA",
+                        diferencias = Convert.ToInt32(fb.Diferencias ?? 0),
+                        porTipoLeche = Convert.ToString(fb.PorTipoLeche) ?? "GENERAL",
+                        detalle = Convert.ToString(fb.Detalle) ?? ""
                     });
                 }
             }
@@ -10824,22 +10824,22 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             int filaId = 1;
             foreach (var m in movimientos)
             {
-                string mov = (string)m.TipoMovimiento;
-                int lts = (int)(m.Litros ?? 0);
+                string mov = Convert.ToString(m.TipoMovimiento) ?? "ENTRADA";
+                int lts = Convert.ToInt32(m.Litros ?? 0);
                 if (mov == "ENTRADA") sumEntradas += lts;
                 else sumSalidas += lts;
 
                 filasAuto.Add(new
                 {
                     id = filaId++,
-                    fecha = (string)m.FechaStr,
-                    chofer = (string)m.Chofer,
+                    fecha = Convert.ToString(m.FechaStr) ?? "",
+                    chofer = Convert.ToString(m.Chofer) ?? "",
                     litros = lts,
                     tipoMovimiento = mov,
-                    tipoLeche = (string)m.TipoLeche,
-                    diferencias = (int)(m.Diferencias ?? 0),
-                    porTipoLeche = (string)m.PorTipoLeche,
-                    detalle = (string)m.Detalle
+                    tipoLeche = Convert.ToString(m.TipoLeche) ?? "VACA",
+                    diferencias = Convert.ToInt32(m.Diferencias ?? 0),
+                    porTipoLeche = Convert.ToString(m.PorTipoLeche) ?? "GENERAL",
+                    detalle = Convert.ToString(m.Detalle) ?? ""
                 });
             }
 
@@ -10866,19 +10866,19 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 var fallback = (await connection.QueryAsync<dynamic>(sqlRutasFallback, new { fecha = fecha.Date })).ToList();
                 foreach (var fb in fallback)
                 {
-                    int lts = (int)(fb.Litros ?? 0);
+                    int lts = Convert.ToInt32(fb.Litros ?? 0);
                     sumEntradas += lts;
                     filasAuto.Add(new
                     {
                         id = filaId++,
-                        fecha = (string)fb.FechaStr,
-                        chofer = (string)fb.Chofer,
+                        fecha = Convert.ToString(fb.FechaStr) ?? "",
+                        chofer = Convert.ToString(fb.Chofer) ?? "",
                         litros = lts,
                         tipoMovimiento = "ENTRADA",
-                        tipoLeche = (string)fb.TipoLeche,
-                        diferencias = (int)(fb.Diferencias ?? 0),
-                        porTipoLeche = (string)fb.PorTipoLeche,
-                        detalle = (string)fb.Detalle
+                        tipoLeche = Convert.ToString(fb.TipoLeche) ?? "VACA",
+                        diferencias = Convert.ToInt32(fb.Diferencias ?? 0),
+                        porTipoLeche = Convert.ToString(fb.PorTipoLeche) ?? "GENERAL",
+                        detalle = Convert.ToString(fb.Detalle) ?? ""
                     });
                 }
             }

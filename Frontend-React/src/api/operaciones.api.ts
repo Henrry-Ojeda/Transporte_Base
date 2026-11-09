@@ -11,6 +11,9 @@ import type {
   PlanificacionRutaChoferDto,
   GuardarPlanificacionRutaChoferDto,
   FincaPromedioDto,
+  RecoleccionFincaResumenDto,
+  SolicitudRecoleccionExtraordinariaDto,
+  CrearSolicitudExtraordinariaDto,
 } from '@/types';
 
 export const operacionesApi = {
@@ -240,12 +243,32 @@ export const operacionesApi = {
     }
   },
 
-  asignarFincasARuta: async (id: number, fincaIds: number[]): Promise<{ success: boolean; message: string }> => {
+  getFincasDeRutaLogistica: async (id: number): Promise<{ id: number; codigo: string; nombre: string; propietario?: string; rutaPrincipalId?: number; rutaPrincipalNombre?: string; asignada: number; esPrincipal: number; tipoAsignacion: string }[]> => {
     try {
-      const res = await apiClient.post(`/rutas-logistica/${id}/fincas`, { fincaIds });
+      const res = await apiClient.get(`/rutas-logistica/${id}/fincas`);
+      return Array.isArray(res.data) ? res.data : [];
+    } catch {
+      const res = await apiClient.get(`/rutaslogistica/${id}/fincas`);
+      return Array.isArray(res.data) ? res.data : [];
+    }
+  },
+
+  asignarFincasARuta: async (
+    id: number, 
+    fincaIds: number[], 
+    habitualesIds?: number[], 
+    alternasIds?: number[]
+  ): Promise<{ success: boolean; message: string }> => {
+    const payload = {
+      fincaIds,
+      fincasHabitualesIds: habitualesIds,
+      fincasAlternasIds: alternasIds,
+    };
+    try {
+      const res = await apiClient.post(`/rutas-logistica/${id}/fincas`, payload);
       return res.data;
     } catch {
-      const res = await apiClient.post(`/rutaslogistica/${id}/fincas`, { fincaIds });
+      const res = await apiClient.post(`/rutaslogistica/${id}/fincas`, payload);
       return res.data;
     }
   },
@@ -295,6 +318,62 @@ export const operacionesApi = {
       return Array.isArray(res.data) ? res.data : [];
     } catch {
       return [];
+    }
+  },
+
+  getRecoleccionesHoyFincas: async (fecha?: string): Promise<RecoleccionFincaResumenDto[]> => {
+    try {
+      const params: Record<string, any> = {};
+      if (fecha) params.fecha = fecha;
+      const res = await apiClient.get<RecoleccionFincaResumenDto[]>('/rutas-logistica/recolecciones-hoy-fincas', { params });
+      return Array.isArray(res.data) ? res.data : [];
+    } catch {
+      try {
+        const params: Record<string, any> = {};
+        if (fecha) params.fecha = fecha;
+        const res = await apiClient.get<RecoleccionFincaResumenDto[]>('/rutaslogistica/recolecciones-hoy-fincas', { params });
+        return Array.isArray(res.data) ? res.data : [];
+      } catch {
+        return [];
+      }
+    }
+  },
+
+  solicitarRecoleccionExtraordinaria: async (dto: CrearSolicitudExtraordinariaDto): Promise<{ success: boolean; id: number; message: string }> => {
+    try {
+      const res = await apiClient.post('/rutas-logistica/solicitar-extraordinaria', dto);
+      return res.data;
+    } catch {
+      const res = await apiClient.post('/rutaslogistica/solicitar-extraordinaria', dto);
+      return res.data;
+    }
+  },
+
+  getSolicitudesExtraordinariasHoy: async (fecha?: string): Promise<SolicitudRecoleccionExtraordinariaDto[]> => {
+    try {
+      const params: Record<string, any> = {};
+      if (fecha) params.fecha = fecha;
+      const res = await apiClient.get<SolicitudRecoleccionExtraordinariaDto[]>('/rutas-logistica/solicitudes-extraordinarias', { params });
+      return Array.isArray(res.data) ? res.data : [];
+    } catch {
+      try {
+        const params: Record<string, any> = {};
+        if (fecha) params.fecha = fecha;
+        const res = await apiClient.get<SolicitudRecoleccionExtraordinariaDto[]>('/rutaslogistica/solicitudes-extraordinarias', { params });
+        return Array.isArray(res.data) ? res.data : [];
+      } catch {
+        return [];
+      }
+    }
+  },
+
+  responderSolicitudExtraordinaria: async (id: number, aprobar: boolean): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await apiClient.post(`/rutas-logistica/responder-extraordinaria/${id}`, { aprobar });
+      return res.data;
+    } catch {
+      const res = await apiClient.post(`/rutaslogistica/responder-extraordinaria/${id}`, { aprobar });
+      return res.data;
     }
   },
 

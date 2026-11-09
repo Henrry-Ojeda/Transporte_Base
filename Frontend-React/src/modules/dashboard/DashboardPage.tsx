@@ -505,7 +505,18 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* BARRA SUPERIOR DE FILTROS Y CONTROLES */}
-      <div className="dashboard-filter-toolbar" style={{ marginBottom: '20px' }}>
+      <div
+        className="dashboard-filter-toolbar"
+        style={{
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+        }}
+      >
+        {/* LADO IZQUIERDO: Vistas y Servicios */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           {/* Filtro de Período (Día / Semana) */}
           <div className="filter-pills-bar">
@@ -553,109 +564,64 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Selector para Vista por Día */}
-        {modoDashboard === 'dia' && (
-          <div id="contenedorFiltroDia" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <label
-              htmlFor="filtroFechaDashboard"
-              style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}
-            >
-              <i className="fa-regular fa-calendar"></i> Fecha:
-            </label>
-            <input
-              type="date"
-              id="filtroFechaDashboard"
-              className="form-input"
-              style={{ height: '38px', fontSize: '13px', width: '170px' }}
-              value={fechaFiltro}
-              onChange={(e) => setFechaFiltro(e.target.value)}
-            />
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={() => refetch()}
-              style={{ height: '38px', padding: '0 12px', fontSize: '13px' }}
-              title="Refrescar métricas"
-            >
-              <i className={`fa-solid fa-rotate-right ${isLoading ? 'fa-spin' : ''}`}></i>
-            </button>
-          </div>
-        )}
-
-        {/* Selector para Vista por Semana */}
-        {modoDashboard === 'semana' && (
-          <div
-            id="contenedorFiltroSemana"
-            style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}
-          >
-            <label
-              htmlFor="selectSemanaDashboard"
-              style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}
-            >
-              <i className="fa-solid fa-calendar-check"></i> Semana Operativa:
-            </label>
-            <select
-              id="selectSemanaDashboard"
-              className="form-input"
-              style={{ height: '38px', fontSize: '13px', minWidth: '320px', fontWeight: 600 }}
-              value={cicloSeleccionado || ''}
-              onChange={(e) => setCicloSeleccionado(e.target.value ? Number(e.target.value) : undefined)}
-            >
-              <option value="">-- Seleccionar Semana Operativa --</option>
-              {ciclosOrdenados.map((c: any) => {
-                const esActiva = String(c.estado || c.Estado || '').toUpperCase() === 'ABIERTO';
-                const semNum = c.numeroSemana || c.NumeroSemana || '';
-                const anio = c.año || c.Anio || (c.fechaInicio ? new Date(c.fechaInicio).getFullYear() : '');
-                const rangoFechas = c.fechaInicio && c.fechaFin
-                  ? `${formatearFechaCorta(c.fechaInicio)} al ${formatearFechaCorta(c.fechaFin)}`
-                  : '';
-                return (
-                  <option key={c.id} value={c.id}>
-                    Semana #{semNum} ({anio}){rangoFechas ? ` • ${rangoFechas}` : ''} {esActiva ? '★ [ACTIVA]' : ''}
-                  </option>
-                );
-              })}
-            </select>
-            {cicloSeleccionadoObj && (
-              <span
-                className="badge"
-                title="Rango de fechas de la semana operativa"
-                style={{
-                  background: 'rgba(59, 130, 246, 0.1)',
-                  color: '#2563eb',
-                  border: '1px solid rgba(59, 130, 246, 0.3)',
-                  padding: '7px 12px',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  whiteSpace: 'nowrap',
-                }}
+        {/* LADO DERECHO: Selector de Fecha / Semana + Botón de Recarga al lado */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' }}>
+          {modoDashboard === 'dia' ? (
+            <div id="contenedorFiltroDia" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                type="date"
+                id="filtroFechaDashboard"
+                className="form-input"
+                style={{ height: '38px', fontSize: '13px', width: '160px', fontWeight: 600 }}
+                value={fechaFiltro}
+                onChange={(e) => setFechaFiltro(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => refetch()}
+                style={{ height: '38px', padding: '0 12px', fontSize: '13px' }}
+                title="Refrescar métricas"
               >
-                <i className="fa-solid fa-calendar-days" style={{ color: '#3b82f6' }}></i>
-                <span>
-                  {cicloSeleccionadoObj.fechaInicio && cicloSeleccionadoObj.fechaFin
-                    ? `${formatearFechaCorta(cicloSeleccionadoObj.fechaInicio)} al ${formatearFechaCorta(cicloSeleccionadoObj.fechaFin)}`
-                    : 'Semana Operativa'}
-                </span>
-                {String(cicloSeleccionadoObj.estado || (cicloSeleccionadoObj as any).Estado || '').toUpperCase() === 'ABIERTO' && (
-                  <span style={{ color: '#16a34a', fontWeight: 800, marginLeft: '4px' }}>★ ACTIVA</span>
-                )}
-              </span>
-            )}
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={() => refetch()}
-              style={{ height: '38px', padding: '0 12px', fontSize: '13px' }}
-              title="Refrescar métricas"
-            >
-              <i className={`fa-solid fa-rotate-right ${isLoading ? 'fa-spin' : ''}`}></i>
-            </button>
-          </div>
-        )}
+                <i className={`fa-solid fa-rotate-right ${isLoading ? 'fa-spin' : ''}`}></i>
+              </button>
+            </div>
+          ) : (
+            <div id="contenedorFiltroSemana" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <select
+                id="selectSemanaDashboard"
+                className="form-input"
+                style={{ height: '38px', fontSize: '13px', minWidth: '340px', fontWeight: 600 }}
+                value={cicloSeleccionado || ''}
+                onChange={(e) => setCicloSeleccionado(e.target.value ? Number(e.target.value) : undefined)}
+              >
+                <option value="">-- Seleccionar Semana Operativa --</option>
+                {ciclosOrdenados.map((c: any) => {
+                  const esActiva = String(c.estado || (c as any).Estado || '').toUpperCase() === 'ABIERTO';
+                  const semNum = c.numeroSemana || (c as any).NumeroSemana || '';
+                  const anio = c.año || (c as any).Anio || (c.fechaInicio ? new Date(c.fechaInicio).getFullYear() : '');
+                  const rangoFechas = c.fechaInicio && c.fechaFin
+                    ? `${formatearFechaCorta(c.fechaInicio)} al ${formatearFechaCorta(c.fechaFin)}`
+                    : '';
+                  return (
+                    <option key={c.id} value={c.id}>
+                      Semana #{semNum} ({anio}){rangoFechas ? ` • ${rangoFechas}` : ''} {esActiva ? '★ [ACTIVA]' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => refetch()}
+                style={{ height: '38px', padding: '0 12px', fontSize: '13px' }}
+                title="Refrescar métricas"
+              >
+                <i className={`fa-solid fa-rotate-right ${isLoading ? 'fa-spin' : ''}`}></i>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* BLOQUE 1: MÉTRICAS DEL SERVICIO DE RUTA */}

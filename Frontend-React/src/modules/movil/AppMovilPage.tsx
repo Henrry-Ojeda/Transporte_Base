@@ -148,6 +148,100 @@ export const AppMovilPage: React.FC = () => {
   const [notificaciones, setNotificaciones] = useState<NotificacionMovil[]>([]);
   const [modalNotificaciones, setModalNotificaciones] = useState(false);
   const ultimasIdsNotificadas = useRef<Set<number>>(new Set());
+  const [permisoNotificaciones, setPermisoNotificaciones] = useState<NotificationPermission>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'default';
+  });
+
+  // Sintetizador de audio nativo para alerta sonora al recibir notificación
+  const reproducirAlertaSonora = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.45);
+    } catch {}
+  };
+
+  // Notificación a nivel de sistema del teléfono (vibración + sonido + pantalla bloqueada vía Service Worker)
+  const emitirNotificacionTelefono = async (titulo: string, mensaje: string, id?: number) => {
+    // 1. Vibración háptica intensa
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate([300, 100, 300, 100, 400]);
+      } catch {}
+    }
+
+    // 2. Alerta Sonora nativa
+    reproducirAlertaSonora();
+
+    // 3. Notificación del sistema vía Service Worker (visible con pantalla bloqueada)
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      if ('serviceWorker' in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          if (reg && 'showNotification' in reg) {
+            await (reg as any).showNotification(titulo, {
+              body: mensaje,
+              icon: '/favicon.svg',
+              badge: '/favicon.svg',
+              vibrate: [300, 100, 300, 100, 400],
+              requireInteraction: true,
+              tag: `transporte-notif-${id || Date.now()}`,
+              renotify: true,
+              data: { url: '/movil', id },
+            });
+            return;
+          }
+        } catch (e) {
+          console.warn('Error en serviceWorker.showNotification:', e);
+        }
+      }
+
+      // Fallback
+      try {
+        new Notification(titulo, {
+          body: mensaje,
+          icon: '/favicon.svg',
+        });
+      } catch {}
+    }
+  };
+
+  // Solicitar permiso explícito mediante gesto del usuario
+  const solicitarPermisoNotificaciones = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      toast.error('Este navegador o dispositivo no soporta notificaciones nativas.');
+      return;
+    }
+    try {
+      const res = await Notification.requestPermission();
+      setPermisoNotificaciones(res);
+      if (res === 'granted') {
+        toast.success('¡Avisos de teléfono activados!');
+        await emitirNotificacionTelefono(
+          '🔔 Notificaciones Activadas en tu Teléfono',
+          'Ahora recibirás avisos de cambios de ruta y despachos, incluso con la pantalla bloqueada.'
+        );
+      } else {
+        toast.error('Permiso denegado. Puedes habilitarlo en los permisos de sitio de tu navegador.');
+      }
+    } catch (err: any) {
+      toast.error('No se pudo solicitar el permiso: ' + (err?.message || 'Error'));
+    }
+  };
 
   // Estado del Dispositivo Vinculado
   const [dispositivo, setDispositivo] = useState<DispositivoMovilData | null>(() => {
@@ -1155,36 +1249,22 @@ export const AppMovilPage: React.FC = () => {
           if (nuevas.length > 0) {
             nuevas.forEach((n) => ultimasIdsNotificadas.current.add(n.id));
 
-            // Vibración háptica en móvil
-            if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-              try {
-                navigator.vibrate([200, 100, 200]);
-              } catch {}
-            }
-
-            // Alerta Sonner en pantalla
+            // Alerta visual Toast en pantalla si la app está visible
             const nReciente = nuevas[0];
             toast.info(`🔔 ${nReciente.titulo}`, {
               description: nReciente.mensaje,
-              duration: 7000,
+              duration: 8000,
               action: {
                 label: 'Ver Alerta',
                 onClick: () => setModalNotificaciones(true),
               },
             });
 
-            // Notificación nativa PWA si está permitido
-            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-              try {
-                new Notification(nReciente.titulo, {
-                  body: nReciente.mensaje,
-                  icon: '/favicon.ico',
-                });
-              } catch {}
-            }
+            // AVISO DIRECTO AL TELÉFONO (Vibración + Sonido + Notificación en Pantalla Bloqueada vía Service Worker)
+            emitirNotificacionTelefono(nReciente.titulo, nReciente.mensaje, nReciente.id);
 
             // AUTO-ACTUALIZACIÓN INMEDIATA:
-            // Al recibir una notificación (ej. ruta asignada, finca agregada, entrega confirmada),
+            // Al recibir una notificación (ej. cambio en la ruta, finca agregada, entrega confirmada),
             // recargar automáticamente el viaje y las paradas activas del chofer sin requerir refresh manual
             cargarViajeActivo();
             cargarDespachoActivo();
@@ -4499,6 +4579,48 @@ export const AppMovilPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Banner Activador de Notificaciones de Teléfono (Requisito 3) */}
+        {typeof window !== 'undefined' && 'Notification' in window && permisoNotificaciones !== 'granted' && (
+          <div
+            style={{
+              marginTop: '10px',
+              background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+              border: '1.5px solid #93c5fd',
+              borderRadius: '12px',
+              padding: '8px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <i className="fa-solid fa-bell text-blue-600" style={{ fontSize: '15px' }}></i>
+              <div style={{ fontSize: '11px', color: '#1e40af', fontWeight: 700, lineHeight: 1.2 }}>
+                Activar avisos en teléfono (sonido y pantalla bloqueada)
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={solicitarPermisoNotificaciones}
+              style={{
+                background: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '7px',
+                padding: '5px 10px',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                boxShadow: '0 2px 6px rgba(37,99,235,0.25)',
+              }}
+            >
+              Activar
+            </button>
+          </div>
+        )}
+
         {/* Barra de Cambio Rápido de Módulo (Chofer / Admin / Taller / Receptoría) - Exclusivo Administradores */}
         {esAdminReal && (
           <div
@@ -4671,14 +4793,26 @@ export const AppMovilPage: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* Barra de Supervisión de Chofer (Exclusiva para Administrador / SuperAdmin) */}
               {esAdminReal && (() => {
-                // Filtrar choferes que tienen ruta o ticket activo actualmente
-                const choferesConViajeLista = choferesLista.filter(
+                // 1. REGLA ESTRICTA (Requisito 1): Solo usuarios con Activo = 1 / true y rol Chofer
+                // Inactivos como Alejandro (Activo = 0) NUNCA se muestran en ningún filtro del selector
+                const choferesActivosSistema = choferesLista.filter((c) => {
+                  const esActivo = c.activo === true || (c as any).activo === 1;
+                  const rol = String((c as any).rol || 'CHOFER').toUpperCase();
+                  const esChofer = rol === 'CHOFER' || rol === 'CONDUCTOR';
+                  return esActivo && esChofer;
+                });
+
+                // Choferes activos con viaje o ticket en curso actualmente
+                const choferesConViajeLista = choferesActivosSistema.filter(
                   (ch) => choferesConViajeActivo.has(ch.id) || choferesConViajeActivo.has((ch as any).usuarioId)
                 );
-                // Por defecto o si el filtro es 'activos', solo se muestran los activos con viaje
+
+                // Base según filtro:
+                // 'activos' -> Solo choferes con viaje activo
+                // 'todos'   -> TODOS los choferes ACTIVOS del sistema (Activo = 1, como Alfredy; NUNCA inactivos como Alejandro)
                 const baseLista = filtroChoferSupervisar === 'activos'
-                  ? (choferesConViajeLista.length > 0 ? choferesConViajeLista : choferesLista.filter((c) => c.activo !== false))
-                  : choferesLista;
+                  ? choferesConViajeLista
+                  : choferesActivosSistema;
 
                 // Búsqueda en tiempo real por nombre, cédula, camión o ticket
                 const q = busquedaChoferSupervisar.trim().toLowerCase();
@@ -4693,14 +4827,17 @@ export const AppMovilPage: React.FC = () => {
                 });
 
                 // Chofer seleccionado actualmente
-                const choferSeleccionado = choferesLista.find(
+                const choferSeleccionado = choferesActivosSistema.find(
                   (c) => c.id === choferSimuladoId || (c as any).usuarioId === choferSimuladoId
-                );
+                ) || choferesLista.find((c) => c.id === choferSimuladoId || (c as any).usuarioId === choferSimuladoId);
                 const viajeDelSeleccionado = choferesConViajeActivo.get(choferSimuladoId) ||
                   (choferSeleccionado ? choferesConViajeActivo.get((choferSeleccionado as any).usuarioId) : undefined);
                 const ltsSeleccionado = viajeDelSeleccionado
                   ? (viajeDelSeleccionado.totalLitrosFinca || viajeDelSeleccionado.totalLitrosRecogidos || 0)
                   : 0;
+
+                const fechaViajeSel = viajeDelSeleccionado?.fecha ? viajeDelSeleccionado.fecha.split('T')[0] : '';
+                const esTicketHoySel = fechaViajeSel === hoyStr;
 
                 const seleccionarChofer = (nuevoId: number) => {
                   setChoferSimuladoId(nuevoId);
@@ -4714,224 +4851,299 @@ export const AppMovilPage: React.FC = () => {
                 };
 
                 return (
-                  <div
-                    style={{
-                      background: '#fffbeb',
-                      border: '1.5px solid #fde68a',
-                      borderRadius: '18px',
-                      padding: '12px 14px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      boxShadow: '0 4px 14px rgba(217, 119, 6, 0.08)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#92400e', fontWeight: 900 }}>
-                        <i className="fa-solid fa-user-gear text-amber-600"></i>
-                        <span>Supervisando Chofer:</span>
-                        <span style={{ fontSize: '10.5px', background: '#dcfce7', color: '#15803d', padding: '2px 7px', borderRadius: '6px', fontWeight: 800 }}>
-                          {choferesConViajeLista.length} Activo(s)
-                        </span>
-                      </div>
-
-                      {/* Filtro: Solo Activos vs Todos */}
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <button
-                          type="button"
-                          onClick={() => setFiltroChoferSupervisar('activos')}
-                          style={{
-                            background: filtroChoferSupervisar === 'activos' ? '#16a34a' : '#ffffff',
-                            color: filtroChoferSupervisar === 'activos' ? '#ffffff' : '#15803d',
-                            border: '1px solid #86efac',
-                            borderRadius: '7px',
-                            padding: '3px 8px',
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          🟢 Solo Activos ({choferesConViajeLista.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFiltroChoferSupervisar('todos')}
-                          style={{
-                            background: filtroChoferSupervisar === 'todos' ? '#92400e' : '#ffffff',
-                            color: filtroChoferSupervisar === 'todos' ? '#ffffff' : '#92400e',
-                            border: '1px solid #fde047',
-                            borderRadius: '7px',
-                            padding: '3px 8px',
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          👥 Todos ({choferesLista.length})
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Botón Selector Desplegable con Información del Chofer */}
-                    <button
-                      type="button"
-                      onClick={() => setDropdownChoferSupervisarAbierto((prev) => !prev)}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div
                       style={{
-                        width: '100%',
-                        background: '#ffffff',
-                        border: dropdownChoferSupervisarAbierto ? '2px solid #d97706' : '1.5px solid #d97706',
-                        borderRadius: '12px',
-                        padding: '10px 12px',
+                        background: '#fffbeb',
+                        border: '1.5px solid #fde68a',
+                        borderRadius: '18px',
+                        padding: '12px 14px',
                         display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        boxShadow: '0 4px 14px rgba(217, 119, 6, 0.08)',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                        <span
-                          style={{
-                            width: '12px',
-                            height: '12px',
-                            borderRadius: '50%',
-                            background: viajeDelSeleccionado ? '#16a34a' : '#94a3b8',
-                            boxShadow: viajeDelSeleccionado ? '0 0 6px rgba(22, 163, 74, 0.6)' : 'none',
-                            flexShrink: 0,
-                          }}
-                        ></span>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '13px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {choferSeleccionado?.nombreCompleto || 'Seleccionar Chofer Activo'}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#92400e', fontWeight: 900 }}>
+                          <i className="fa-solid fa-user-gear text-amber-600"></i>
+                          <span>Supervisando Chofer:</span>
+                          <span style={{ fontSize: '10.5px', background: '#dcfce7', color: '#15803d', padding: '2px 7px', borderRadius: '6px', fontWeight: 800 }}>
+                            {choferesConViajeLista.length} con Viaje
+                          </span>
+                        </div>
+
+                        {/* Filtro: Solo Activos vs Todos */}
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setFiltroChoferSupervisar('activos')}
+                            style={{
+                              background: filtroChoferSupervisar === 'activos' ? '#16a34a' : '#ffffff',
+                              color: filtroChoferSupervisar === 'activos' ? '#ffffff' : '#15803d',
+                              border: '1px solid #86efac',
+                              borderRadius: '7px',
+                              padding: '3px 8px',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            🟢 Solo Activos ({choferesConViajeLista.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFiltroChoferSupervisar('todos')}
+                            style={{
+                              background: filtroChoferSupervisar === 'todos' ? '#92400e' : '#ffffff',
+                              color: filtroChoferSupervisar === 'todos' ? '#ffffff' : '#92400e',
+                              border: '1px solid #fde047',
+                              borderRadius: '7px',
+                              padding: '3px 8px',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            👥 Todos ({choferesActivosSistema.length})
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Botón Selector Desplegable con Información del Chofer */}
+                      <button
+                        type="button"
+                        onClick={() => setDropdownChoferSupervisarAbierto((prev) => !prev)}
+                        style={{
+                          width: '100%',
+                          background: '#ffffff',
+                          border: dropdownChoferSupervisarAbierto ? '2px solid #d97706' : '1.5px solid #d97706',
+                          borderRadius: '12px',
+                          padding: '10px 12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                          <span
+                            style={{
+                              width: '12px',
+                              height: '12px',
+                              borderRadius: '50%',
+                              background: viajeDelSeleccionado ? '#16a34a' : '#94a3b8',
+                              boxShadow: viajeDelSeleccionado ? '0 0 6px rgba(22, 163, 74, 0.6)' : 'none',
+                              flexShrink: 0,
+                            }}
+                          ></span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '13px', fontWeight: 900, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {choferSeleccionado?.nombreCompleto || 'Seleccionar Chofer Activo'}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginTop: '2px' }}>
+                              {viajeDelSeleccionado ? (
+                                <>
+                                  {esTicketHoySel ? (
+                                    <span style={{ background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: '4px', fontWeight: 900, fontSize: '9.5px' }}>
+                                      🟢 HOY
+                                    </span>
+                                  ) : (
+                                    <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #f59e0b', padding: '1px 6px', borderRadius: '4px', fontWeight: 900, fontSize: '9.5px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                      <i className="fa-solid fa-clock-rotate-left"></i> DÍA ANTERIOR ({fechaViajeSel})
+                                    </span>
+                                  )}
+                                  <span style={{ color: esTicketHoySel ? '#15803d' : '#b45309', fontWeight: 800 }}>
+                                    Ticket #{viajeDelSeleccionado.codigoTicket || viajeDelSeleccionado.id} • {ltsSeleccionado.toLocaleString()} L
+                                    {viajeDelSeleccionado.camionPlaca ? ` • 🚛 ${viajeDelSeleccionado.camionPlaca}` : ''}
+                                  </span>
+                                </>
+                              ) : (
+                                <span>Sin viaje activo</span>
+                              )}
+                            </div>
                           </div>
-                          <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                            {viajeDelSeleccionado ? (
-                              <span style={{ color: '#15803d', fontWeight: 800 }}>
-                                Ticket #{viajeDelSeleccionado.codigoTicket || viajeDelSeleccionado.id} • {ltsSeleccionado.toLocaleString()} L
-                                {viajeDelSeleccionado.camionPlaca ? ` • 🚛 ${viajeDelSeleccionado.camionPlaca}` : ''}
-                              </span>
+                        </div>
+                        <i
+                          className={`fa-solid ${dropdownChoferSupervisarAbierto ? 'fa-chevron-up' : 'fa-chevron-down'}`}
+                          style={{ color: '#d97706', fontSize: '13px', marginLeft: '8px' }}
+                        ></i>
+                      </button>
+
+                      {/* Menú Desplegable con Buscador Integrado */}
+                      {dropdownChoferSupervisarAbierto && (
+                        <div
+                          style={{
+                            background: '#ffffff',
+                            borderRadius: '14px',
+                            border: '1.5px solid #fed7aa',
+                            boxShadow: '0 8px 24px rgba(217, 119, 6, 0.15)',
+                            padding: '10px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            marginTop: '4px',
+                          }}
+                        >
+                          {/* Buscador de Chofer */}
+                          <div style={{ position: 'relative' }}>
+                            <input
+                              type="text"
+                              placeholder="🔍 Buscar chofer activo, ticket o camión..."
+                              value={busquedaChoferSupervisar}
+                              onChange={(e) => setBusquedaChoferSupervisar(e.target.value)}
+                              autoFocus
+                              style={{
+                                width: '100%',
+                                padding: '8px 30px 8px 10px',
+                                borderRadius: '8px',
+                                border: '1px solid #cbd5e1',
+                                fontSize: '12px',
+                                outline: 'none',
+                              }}
+                            />
+                            {busquedaChoferSupervisar && (
+                              <button
+                                type="button"
+                                onClick={() => setBusquedaChoferSupervisar('')}
+                                style={{
+                                  position: 'absolute',
+                                  right: '8px',
+                                  top: '50%',
+                                  transform: 'translateY(-50%)',
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#94a3b8',
+                                  fontSize: '12px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Lista de Choferes Activos Filtrados */}
+                          <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {listaFiltrada.length > 0 ? (
+                              listaFiltrada.map((ch) => {
+                                const v = choferesConViajeActivo.get(ch.id) || choferesConViajeActivo.get((ch as any).usuarioId);
+                                const esSel = ch.id === choferSimuladoId;
+                                const lts = v ? (v.totalLitrosFinca || v.totalLitrosRecogidos || 0) : 0;
+                                const fViaje = v?.fecha ? v.fecha.split('T')[0] : '';
+                                const esHoyV = fViaje === hoyStr;
+
+                                return (
+                                  <div
+                                    key={ch.id}
+                                    onClick={() => seleccionarChofer(ch.id)}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      padding: '8px 10px',
+                                      borderRadius: '8px',
+                                      background: esSel ? '#fef3c7' : '#f8fafc',
+                                      border: esSel ? '1.5px solid #f59e0b' : '1px solid #f1f5f9',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                      <span
+                                        style={{
+                                          width: '10px',
+                                          height: '10px',
+                                          borderRadius: '50%',
+                                          background: v ? (esHoyV ? '#16a34a' : '#d97706') : '#cbd5e1',
+                                          flexShrink: 0,
+                                        }}
+                                      ></span>
+                                      <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                          {ch.nombreCompleto}
+                                        </div>
+                                        <div style={{ fontSize: '10.5px', marginTop: '2px' }}>
+                                          {v ? (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                              {esHoyV ? (
+                                                <span style={{ background: '#dcfce7', color: '#15803d', padding: '1px 5px', borderRadius: '4px', fontWeight: 900, fontSize: '9.5px' }}>
+                                                  🟢 HOY
+                                                </span>
+                                              ) : (
+                                                <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde047', padding: '1px 5px', borderRadius: '4px', fontWeight: 900, fontSize: '9.5px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                                  <i className="fa-solid fa-clock-rotate-left"></i> DÍA ANTERIOR ({fViaje})
+                                                </span>
+                                              )}
+                                              <span style={{ color: esHoyV ? '#15803d' : '#b45309', fontWeight: 700 }}>
+                                                Ticket #{v.codigoTicket || v.id} • {lts.toLocaleString()} L{v.camionPlaca ? ` • ${v.camionPlaca}` : ''}
+                                              </span>
+                                            </div>
+                                          ) : (
+                                            <span style={{ color: '#94a3b8' }}>Sin ticket activo</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {esSel && (
+                                      <i className="fa-solid fa-check text-amber-600" style={{ fontSize: '13px' }}></i>
+                                    )}
+                                  </div>
+                                );
+                              })
                             ) : (
-                              <span>Sin viaje activo</span>
+                              <div style={{ padding: '12px', textAlign: 'center', fontSize: '11.5px', color: '#94a3b8' }}>
+                                No se encontraron choferes activos con "{busquedaChoferSupervisar}".
+                              </div>
                             )}
                           </div>
                         </div>
-                      </div>
-                      <i
-                        className={`fa-solid ${dropdownChoferSupervisarAbierto ? 'fa-chevron-up' : 'fa-chevron-down'}`}
-                        style={{ color: '#d97706', fontSize: '13px', marginLeft: '8px' }}
-                      ></i>
-                    </button>
+                      )}
+                    </div>
 
-                    {/* Menú Desplegable con Buscador Integrado */}
-                    {dropdownChoferSupervisarAbierto && (
+                    {/* Banner Diferenciador de Ticket de Días Anteriores (Requisito 2) */}
+                    {viajeActivo && (viajeActivo.fecha || '').split('T')[0] !== hoyStr && (
                       <div
                         style={{
-                          background: '#ffffff',
-                          borderRadius: '14px',
-                          border: '1.5px solid #fed7aa',
-                          boxShadow: '0 8px 24px rgba(217, 119, 6, 0.15)',
-                          padding: '10px',
+                          background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+                          border: '2px solid #f59e0b',
+                          borderRadius: '16px',
+                          padding: '12px 14px',
+                          boxShadow: '0 4px 14px rgba(245, 158, 11, 0.15)',
                           display: 'flex',
-                          flexDirection: 'column',
-                          gap: '8px',
-                          marginTop: '4px',
+                          alignItems: 'center',
+                          gap: '10px',
                         }}
                       >
-                        {/* Buscador de Chofer */}
-                        <div style={{ position: 'relative' }}>
-                          <input
-                            type="text"
-                            placeholder="🔍 Buscar chofer, ticket o camión..."
-                            value={busquedaChoferSupervisar}
-                            onChange={(e) => setBusquedaChoferSupervisar(e.target.value)}
-                            autoFocus
-                            style={{
-                              width: '100%',
-                              padding: '8px 30px 8px 10px',
-                              borderRadius: '8px',
-                              border: '1px solid #cbd5e1',
-                              fontSize: '12px',
-                              outline: 'none',
-                            }}
-                          />
-                          {busquedaChoferSupervisar && (
-                            <button
-                              type="button"
-                              onClick={() => setBusquedaChoferSupervisar('')}
-                              style={{
-                                position: 'absolute',
-                                right: '8px',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                background: 'none',
-                                border: 'none',
-                                color: '#94a3b8',
-                                fontSize: '12px',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              ✕
-                            </button>
-                          )}
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '10px',
+                            background: '#fde68a',
+                            color: '#b45309',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '18px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <i className="fa-solid fa-clock-rotate-left"></i>
                         </div>
-
-                        {/* Lista de Choferes Activos Filtrados */}
-                        <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {listaFiltrada.length > 0 ? (
-                            listaFiltrada.map((ch) => {
-                              const v = choferesConViajeActivo.get(ch.id) || choferesConViajeActivo.get((ch as any).usuarioId);
-                              const esSel = ch.id === choferSimuladoId;
-                              const lts = v ? (v.totalLitrosFinca || v.totalLitrosRecogidos || 0) : 0;
-                              return (
-                                <div
-                                  key={ch.id}
-                                  onClick={() => seleccionarChofer(ch.id)}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    padding: '8px 10px',
-                                    borderRadius: '8px',
-                                    background: esSel ? '#fef3c7' : '#f8fafc',
-                                    border: esSel ? '1.5px solid #f59e0b' : '1px solid #f1f5f9',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                                    <span
-                                      style={{
-                                        width: '10px',
-                                        height: '10px',
-                                        borderRadius: '50%',
-                                        background: v ? '#16a34a' : '#cbd5e1',
-                                        flexShrink: 0,
-                                      }}
-                                    ></span>
-                                    <div style={{ minWidth: 0 }}>
-                                      <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                        {ch.nombreCompleto}
-                                      </div>
-                                      <div style={{ fontSize: '10.5px', color: v ? '#15803d' : '#64748b' }}>
-                                        {v ? (
-                                          `🟢 Ticket #${v.codigoTicket || v.id} • ${lts.toLocaleString()} L${v.camionPlaca ? ` • ${v.camionPlaca}` : ''}`
-                                        ) : (
-                                          'Sin ticket activo'
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  {esSel && (
-                                    <i className="fa-solid fa-check text-amber-600" style={{ fontSize: '13px' }}></i>
-                                  )}
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <div style={{ padding: '12px', textAlign: 'center', fontSize: '11.5px', color: '#94a3b8' }}>
-                              No se encontraron choferes activos con "{busquedaChoferSupervisar}".
-                            </div>
-                          )}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#92400e' }}>
+                              TICKET DE DÍA ANTERIOR
+                            </span>
+                            <span style={{ background: '#f59e0b', color: '#ffffff', fontSize: '10px', fontWeight: 900, padding: '2px 7px', borderRadius: '6px' }}>
+                              Fecha: {(viajeActivo.fecha || '').split('T')[0]}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '11.5px', color: '#78350f', marginTop: '2px' }}>
+                            Este ticket activo (#{viajeActivo.codigoTicket || viajeActivo.id}) fue iniciado en una jornada anterior a hoy y sigue en curso / pendiente de liquidación.
+                          </div>
                         </div>
                       </div>
                     )}
@@ -10183,11 +10395,11 @@ export const AppMovilPage: React.FC = () => {
                       <div
                         key={viaje.id}
                         style={{
-                          background: '#ffffff',
+                          background: !esHoy && (viaje.procesoActualId || 1) < 4 ? '#fffdf7' : '#ffffff',
                           borderRadius: '16px',
                           padding: '16px',
-                          border: !esHoy && (viaje.procesoActualId || 1) < 4 ? '1.5px solid #fde047' : '1px solid #e2e8f0',
-                          boxShadow: !esHoy && (viaje.procesoActualId || 1) < 4 ? '0 4px 14px rgba(234, 179, 8, 0.12)' : '0 4px 12px rgba(0,0,0,0.04)',
+                          border: !esHoy && (viaje.procesoActualId || 1) < 4 ? '2px solid #f59e0b' : '1px solid #e2e8f0',
+                          boxShadow: !esHoy && (viaje.procesoActualId || 1) < 4 ? '0 4px 16px rgba(245, 158, 11, 0.18)' : '0 4px 12px rgba(0,0,0,0.04)',
                         }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '6px' }}>
@@ -10209,29 +10421,29 @@ export const AppMovilPage: React.FC = () => {
                                 {viaje.estado || 'EN RUTA'}
                               </span>
 
-                              {/* Distinción destacada de Fecha */}
+                              {/* Distinción destacada de Fecha (Requisito 2) */}
                               {esHoy ? (
                                 <span
                                   style={{
-                                    background: '#dbeafe',
-                                    color: '#1d4ed8',
+                                    background: '#dcfce7',
+                                    color: '#15803d',
                                     fontSize: '9.5px',
-                                    fontWeight: 800,
-                                    padding: '2px 6px',
+                                    fontWeight: 900,
+                                    padding: '2px 7px',
                                     borderRadius: '6px',
                                   }}
                                 >
-                                  📅 HOY
+                                  🟢 TICKET DE HOY
                                 </span>
                               ) : (
                                 <span
                                   style={{
                                     background: '#fef3c7',
                                     color: '#b45309',
-                                    border: '1px solid #fde047',
+                                    border: '1.5px solid #f59e0b',
                                     fontSize: '9.5px',
                                     fontWeight: 900,
-                                    padding: '2px 6px',
+                                    padding: '2px 7px',
                                     borderRadius: '6px',
                                     display: 'inline-flex',
                                     alignItems: 'center',
@@ -10239,10 +10451,16 @@ export const AppMovilPage: React.FC = () => {
                                   }}
                                 >
                                   <i className="fa-solid fa-clock-rotate-left"></i>
-                                  FECHA: {fechaViajeStr}
+                                  ⚠️ DÍA ANTERIOR ({fechaViajeStr})
                                 </span>
                               )}
                             </div>
+                            {!esHoy && (viaje.procesoActualId || 1) < 4 && (
+                              <div style={{ fontSize: '10.5px', color: '#b45309', fontWeight: 800, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <i className="fa-solid fa-triangle-exclamation text-amber-600"></i>
+                                <span>Ticket abierto en fecha anterior — Pendiente de cierre/liquidación</span>
+                              </div>
+                            )}
                             <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a', marginTop: '3px' }}>
                               <i className="fa-solid fa-user mr-1 text-slate-400"></i> {viaje.nombreConductor || viaje.choferNombre || 'Chofer Asignado'}
                             </div>
@@ -14002,6 +14220,88 @@ export const AppMovilPage: React.FC = () => {
                   &times;
                 </button>
               </div>
+            </div>
+
+            {/* Estado de Notificaciones Nativas en Pantalla Bloqueada y Prueba (Requisito 3) */}
+            <div
+              style={{
+                background: permisoNotificaciones === 'granted' ? '#f0fdf4' : '#eff6ff',
+                border: permisoNotificaciones === 'granted' ? '1.5px solid #86efac' : '1.5px solid #93c5fd',
+                borderRadius: '14px',
+                padding: '12px 14px',
+                marginBottom: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
+                    style={{
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '50%',
+                      background: permisoNotificaciones === 'granted' ? '#16a34a' : '#2563eb',
+                      boxShadow: permisoNotificaciones === 'granted' ? '0 0 8px #16a34a' : 'none',
+                    }}
+                  ></span>
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: permisoNotificaciones === 'granted' ? '#166534' : '#1e40af' }}>
+                    {permisoNotificaciones === 'granted'
+                      ? 'Avisos en Teléfono Activos (Pantalla Bloqueada + Sonido)'
+                      : 'Avisos en Teléfono Pendientes de Autorizar'}
+                  </span>
+                </div>
+                {permisoNotificaciones !== 'granted' ? (
+                  <button
+                    type="button"
+                    onClick={solicitarPermisoNotificaciones}
+                    style={{
+                      background: '#2563eb',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '5px 12px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Permitir Avisos
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      emitirNotificacionTelefono(
+                        '🔔 Notificación de Prueba Transporte V2',
+                        '¡Prueba exitosa! Si escuchaste el sonido y vibró, tu teléfono está listo para avisarte incluso bloqueado.'
+                      );
+                      toast.success('Notificación de prueba enviada al teléfono');
+                    }}
+                    style={{
+                      background: '#16a34a',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '5px 12px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                    }}
+                  >
+                    <i className="fa-solid fa-mobile-screen"></i> Probar en Teléfono
+                  </button>
+                )}
+              </div>
+              <p style={{ margin: 0, fontSize: '11px', color: permisoNotificaciones === 'granted' ? '#15803d' : '#1d4ed8' }}>
+                {permisoNotificaciones === 'granted'
+                  ? 'Tu teléfono vibrará y sonará automáticamente cuando haya cambios en tu ruta o despachos, incluso si tienes la pantalla apagada o la app cerrada.'
+                  : 'Autoriza los permisos en tu navegador para que tu teléfono te avise al momento ante cualquier cambio o despacho.'}
+              </p>
             </div>
 
             {/* Listado de Notificaciones */}

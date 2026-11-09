@@ -9,8 +9,8 @@ const STATIC_ASSETS = [
   "/manifest.json",
   "/favicon.svg",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css",
-  "/assets/index-CFoPha5o.js",
   "/assets/index-DFisk4P7.css",
+  "/assets/index-X50B6BzH.js",
   "/assets/rolldown-runtime-XKyaHtl9.js",
   "/assets/vendor-excel-D_lWTlWp.js",
   "/assets/vendor-query-DagBFWEK.js",
@@ -195,3 +195,81 @@ self.addEventListener('fetch', (event) => {
       .catch(() => caches.match(req))
   );
 });
+
+// ==============================================================================
+// GESTIÓN DE NOTIFICACIONES PUSH NATIVAS (PANTALLA BLOQUEADA Y SEGUNDO PLANO)
+// ==============================================================================
+
+self.addEventListener('push', (event) => {
+  let data = {
+    titulo: 'Transporte V2',
+    mensaje: 'Nueva actualización en tu ruta o despacho.',
+    id: Date.now(),
+  };
+
+  if (event.data) {
+    try {
+      data = { ...data, ...event.data.json() };
+    } catch {
+      data.mensaje = event.data.text() || data.mensaje;
+    }
+  }
+
+  const title = data.titulo || 'Transporte V2 - Notificación';
+  const options = {
+    body: data.mensaje,
+    icon: '/favicon.svg',
+    badge: '/favicon.svg',
+    vibrate: [300, 100, 300, 100, 400],
+    data: {
+      url: '/movil',
+      id: data.id,
+      timestamp: Date.now(),
+    },
+    tag: `transporte-notif-${data.id || Date.now()}`,
+    renotify: true,
+    requireInteraction: true,
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Abrir o enfocar la app cuando el usuario toca la notificación en pantalla bloqueada
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  if (event.action === 'close') {
+    return;
+  }
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes('/movil') || client.url.includes('/app')) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('/movil');
+      }
+    })
+  );
+});
+
+// Mensaje directo desde la aplicación React para disparar notificación a nivel de SO
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    const { titulo, mensaje, id } = event.data;
+    self.registration.showNotification(titulo || 'Transporte V2', {
+      body: mensaje || 'Actualización en tu recorrido.',
+      icon: '/favicon.svg',
+      badge: '/favicon.svg',
+      vibrate: [300, 100, 300, 100, 400],
+      tag: `transporte-notif-${id || Date.now()}`,
+      renotify: true,
+      requireInteraction: true,
+      data: { url: '/movil', id },
+    });
+  }
+});
+

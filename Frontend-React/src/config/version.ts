@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 10,
-  patch: 1,
-  tag: 'v3.10.1',
+  patch: 7,
+  tag: 'v3.10.7',
   ultimaActualizacion: '2026-11-08',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Detección inteligente de condiciones especiales en Excel (leche ácida, búfala/vaca y tarifas especiales)',
+  descripcion: 'Rango de fechas visible en selector de semana activa y métricas auditadas por tipo de servicio (Ruta vs Transporte)',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

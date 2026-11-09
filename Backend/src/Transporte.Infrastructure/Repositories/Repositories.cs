@@ -11469,7 +11469,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
     public interface IControlCompaniasRepository
     {
-        Task<IEnumerable<ControlCompaniaDto>> ObtenerTodosAsync(DateTime? fecha = null, DateTime? fechaInicio = null, DateTime? fechaFin = null, string? estado = null, int? usuarioId = null, int? companiaId = null);
+        Task<IEnumerable<ControlCompaniaDto>> ObtenerTodosAsync(DateTime? fecha = null, DateTime? fechaInicio = null, DateTime? fechaFin = null, string? estado = null, int? usuarioId = null, int? companiaId = null, int? cicloId = null);
         Task<ControlCompaniaDto?> ObtenerPorIdAsync(long id);
         Task<ControlCompaniaDto?> ObtenerTicketActivoChoferAsync(int choferId);
         Task<IEnumerable<ControlCompaniaDto>> ObtenerTicketsActivosChoferAsync(int choferId, long? controlRutaId = null);
@@ -11492,7 +11492,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 ?? "Server=DESKTOP-0F548CM;Database=BD_TRANSPORTE_V2;Trusted_Connection=True;TrustServerCertificate=True;";
         }
 
-        public async Task<IEnumerable<ControlCompaniaDto>> ObtenerTodosAsync(DateTime? fecha = null, DateTime? fechaInicio = null, DateTime? fechaFin = null, string? estado = null, int? usuarioId = null, int? companiaId = null)
+        public async Task<IEnumerable<ControlCompaniaDto>> ObtenerTodosAsync(DateTime? fecha = null, DateTime? fechaInicio = null, DateTime? fechaFin = null, string? estado = null, int? usuarioId = null, int? companiaId = null, int? cicloId = null)
         {
             using var connection = new SqlConnection(_connectionString);
             var query = @"
@@ -11503,6 +11503,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     u.NombreCompleto AS NombreConductor,
                     cc.CompaniaId,
                     c.Nombre AS NombreCompania,
+                    ISNULL(c.TipoServicioId, 1) AS TipoServicioId,
                     cc.CicloId,
                     cc.LitrosDespachados,
                     cc.LitrosRecibidosCompania,
@@ -11523,17 +11524,37 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
             var parameters = new DynamicParameters();
 
+            if (cicloId.HasValue && cicloId.Value > 0)
+            {
+                var cicloFechas = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT FechaInicio, FechaFin FROM TB_CICLOS_OPERATIVOS WHERE Id = @cId", new { cId = cicloId.Value });
+                if (cicloFechas != null && cicloFechas.FechaInicio != null && cicloFechas.FechaFin != null)
+                {
+                    DateTime fIni = Convert.ToDateTime(cicloFechas.FechaInicio).Date;
+                    DateTime fFin = Convert.ToDateTime(cicloFechas.FechaFin).Date;
+                    query += " AND (cc.CicloId = @cicloId OR (cc.Fecha >= @fIniCiclo AND cc.Fecha <= @fFinCiclo))";
+                    parameters.Add("cicloId", cicloId.Value);
+                    parameters.Add("fIniCiclo", fIni);
+                    parameters.Add("fFinCiclo", fFin);
+                }
+                else
+                {
+                    query += " AND cc.CicloId = @cicloId";
+                    parameters.Add("cicloId", cicloId.Value);
+                }
+            }
+
             if (fecha.HasValue)
             {
                 query += " AND cc.Fecha = @fecha";
                 parameters.Add("fecha", fecha.Value.Date);
             }
-            if (fechaInicio.HasValue)
+            if (fechaInicio.HasValue && (!cicloId.HasValue || cicloId.Value <= 0))
             {
                 query += " AND cc.Fecha >= @fechaInicio";
                 parameters.Add("fechaInicio", fechaInicio.Value.Date);
             }
-            if (fechaFin.HasValue)
+            if (fechaFin.HasValue && (!cicloId.HasValue || cicloId.Value <= 0))
             {
                 query += " AND cc.Fecha <= @fechaFin";
                 parameters.Add("fechaFin", fechaFin.Value.Date);

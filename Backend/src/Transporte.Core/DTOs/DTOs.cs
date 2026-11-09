@@ -1780,6 +1780,7 @@ namespace Transporte.Core.DTOs
         public string? NombreConductor { get; set; }
         public int CompaniaId { get; set; }
         public string? NombreCompania { get; set; }
+        public int? TipoServicioId { get; set; } = 1;
         public int? CicloId { get; set; }
         public int LitrosDespachados { get; set; }
         public int? LitrosRecibidosCompania { get; set; }

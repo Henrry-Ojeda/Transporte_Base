@@ -29,7 +29,8 @@ namespace Transporte.API.Controllers
             [FromQuery] DateTime? fechaFin = null,
             [FromQuery] string? estado = null,
             [FromQuery] int? usuarioId = null,
-            [FromQuery] int? companiaId = null)
+            [FromQuery] int? companiaId = null,
+            [FromQuery] int? cicloId = null)
         {
             int userId = 1;
             var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirst("id")?.Value;
@@ -43,7 +44,7 @@ namespace Transporte.API.Controllers
 
             try
             {
-                var despachos = await _controlCompaniasRepository.ObtenerTodosAsync(fecha, fechaInicio, fechaFin, estado, filtroChofer, companiaId);
+                var despachos = await _controlCompaniasRepository.ObtenerTodosAsync(fecha, fechaInicio, fechaFin, estado, filtroChofer, companiaId, cicloId);
                 return Ok(despachos ?? Enumerable.Empty<ControlCompaniaDto>());
             }
             catch (Exception)

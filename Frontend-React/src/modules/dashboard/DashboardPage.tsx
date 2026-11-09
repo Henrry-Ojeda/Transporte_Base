@@ -60,9 +60,23 @@ interface DespachoItem {
   id?: number;
   companiaId?: number;
   companiaNombre?: string;
+  nombreCompania?: string;
+  tipoServicioId?: number;
   litrosDespachados?: number;
+  litrosRecibidosCompania?: number;
   litrosConfirmados?: number;
+  litros?: number;
+  fecha?: string;
+  estado?: string;
 }
+
+const formatearFechaCorta = (f?: string) => {
+  if (!f) return '';
+  const clean = f.split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return clean;
+};
 
 export const DashboardPage: React.FC = () => {
   const hoyStr = new Date().toISOString().split('T')[0];
@@ -129,6 +143,10 @@ export const DashboardPage: React.FC = () => {
     staleTime: 1000 * 60 * 5,
   });
 
+  const cicloSeleccionadoObj = useMemo(() => {
+    return ciclos.find((c: any) => c.id === cicloSeleccionado) || null;
+  }, [ciclos, cicloSeleccionado]);
+
   // Query principal del Dashboard
   const { data: dashboardData, isLoading, refetch } = useQuery({
     queryKey: ['dashboard-data', modoDashboard, fechaFiltro, cicloSeleccionado],
@@ -136,6 +154,12 @@ export const DashboardPage: React.FC = () => {
       let queryParams = '';
       if (modoDashboard === 'semana' && cicloSeleccionado) {
         queryParams = `cicloId=${cicloSeleccionado}`;
+        const cObj = ciclos.find((c: any) => c.id === cicloSeleccionado);
+        if (cObj?.fechaInicio && cObj?.fechaFin) {
+          const fIni = cObj.fechaInicio.split('T')[0];
+          const fFin = cObj.fechaFin.split('T')[0];
+          queryParams += `&fechaInicio=${fIni}&fechaFin=${fFin}`;
+        }
       } else {
         queryParams = `fecha=${fechaFiltro}`;
       }
@@ -168,54 +192,93 @@ export const DashboardPage: React.FC = () => {
       return val === 2 || String(val) === '2' || String(val || '').toUpperCase().includes('TRANSPORTE');
     };
 
-    // 1. RUTA (Por defecto todo es RUTA a menos que sea explícitamente TRANSPORTE = 2)
-    const rutasTipo1 = rutas.filter((r) => !esServicioTransporte(r));
-    const entregasTipo1 = entregas.filter((e) => !esServicioTransporte(e));
+    const esReceptoria = (item: any) => {
+      const cId = item.companiaId ?? item.CompaniaId;
+      const nom = String(item.companiaNombre ?? item.nombreCompania ?? item.nombre ?? '').toUpperCase();
+      return cId === 5028 || nom.includes('RECEPT') || nom.includes('SILO');
+    };
 
+    // 1. RUTA (TipoServicioId === 1)
+    const rutasTipo1 = rutas.filter((r) => !esServicioTransporte(r));
     const ltsRutaFincas = rutasTipo1.reduce((sum, r) => sum + (r.litros || r.litrosLeche || 0), 0);
     const fincasRutaCount = new Set(rutasTipo1.map((r) => r.fincaId || r.fincaNombre)).size;
-    const ltsRutaReceptoria = entregasTipo1.reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0);
-    const descargasRutaCount = entregasTipo1.length;
-    const mermaRutaLitros = Math.max(0, ltsRutaFincas - ltsRutaReceptoria);
+
+    const entregasTipo1 = entregas.filter((e) => !esServicioTransporte(e));
+    const descargasSilosRuta = entregasTipo1.filter((e) => esReceptoria(e));
+    const entregasParaSilos = descargasSilosRuta.length > 0 ? descargasSilosRuta : entregasTipo1;
+    const ltsRutaReceptoria = entregasParaSilos.reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0);
+    const descargasRutaCount = entregasParaSilos.length;
+
+    // Despachos de Ruta a Queseras / Clientes
+    const despachosTipo1 = despachos.filter((d) => !esServicioTransporte(d) && !esReceptoria(d));
+    const ltsRutaDespachada = despachosTipo1.reduce((sum, d) => sum + (d.litrosDespachados || d.litros || 0), 0);
+    const despachosRutaCount = despachosTipo1.length;
+    const queserasRutaCount = new Set(despachosTipo1.map((d) => d.companiaId || d.nombreCompania || d.companiaNombre)).size;
+
+    // Merma / Sobrante en Ruta (Entrada a Silos vs Fincas Recolectadas)
+    const diffRutaLitros = ltsRutaReceptoria - ltsRutaFincas;
+    const mermaRutaLitros = Math.abs(diffRutaLitros);
     const mermaRutaPct = ltsRutaFincas > 0 ? (mermaRutaLitros / ltsRutaFincas) * 100 : 0;
-    const ltsRutaEnTanque = Math.max(0, ltsRutaReceptoria);
+    const esSobranteRuta = diffRutaLitros > 0;
+
+    // Stock disponible en silos de ruta
+    const ltsRutaEnTanque = Math.max(0, ltsRutaReceptoria - ltsRutaDespachada);
 
     // 2. TRANSPORTE (TipoServicioId === 2)
     const rutasTipo2 = rutas.filter((r) => esServicioTransporte(r));
-    const entregasTipo2 = entregas.filter((e) => esServicioTransporte(e));
-
     const ltsTranspFincas = rutasTipo2.reduce((sum, r) => sum + (r.litros || r.litrosLeche || 0), 0);
     const fincasTranspCount = new Set(rutasTipo2.map((r) => r.fincaId || r.fincaNombre)).size;
+
+    const entregasTipo2 = entregas.filter((e) => esServicioTransporte(e));
     const ltsTranspReceptoria = entregasTipo2.reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0);
     const plantasTranspCount = entregasTipo2.length;
-    const mermaTranspLitros = Math.max(0, ltsTranspFincas - ltsTranspReceptoria);
-    const mermaTranspPct = ltsTranspFincas > 0 ? (mermaTranspLitros / ltsTranspFincas) * 100 : 0;
-    const ltsTranspEnTanque = Math.max(0, ltsTranspFincas - ltsTranspReceptoria);
 
-    // 3. CONSOLIDADO GENERAL
-    const ltsTotalLitrosGlobal = rutas.reduce((sum, r) => sum + (r.litros || r.litrosLeche || 0), 0);
-    const totalFincasGlobal = new Set(rutas.map((r) => r.fincaId || r.fincaNombre)).size;
-    const ltsTotalReceptoriaGlobal = entregas.reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0);
-    const totalPlantasGlobal = entregas.length;
-    const mermaGlobalLitros = Math.max(0, ltsTotalLitrosGlobal - ltsTotalReceptoriaGlobal);
+    const despachosTipo2 = despachos.filter((d) => esServicioTransporte(d));
+    const ltsTranspDespachada = despachosTipo2.reduce((sum, d) => sum + (d.litrosDespachados || d.litros || 0), 0) || ltsTranspReceptoria;
+    const despachosTranspCount = despachosTipo2.length || plantasTranspCount;
+
+    const diffTranspLitros = ltsTranspFincas - ltsTranspReceptoria;
+    const mermaTranspLitros = Math.max(0, diffTranspLitros);
+    const mermaTranspPct = ltsTranspFincas > 0 ? (mermaTranspLitros / ltsTranspFincas) * 100 : 0;
+    const ltsTranspEnTanque = Math.max(0, diffTranspLitros); // En viaje o pendiente de entrega
+
+    // 3. CONSOLIDADO GENERAL (RUTA + TRANSPORTE)
+    const ltsTotalLitrosGlobal = ltsRutaFincas + ltsTranspFincas;
+    const totalFincasGlobal = fincasRutaCount + fincasTranspCount;
+    const ltsTotalReceptoriaGlobal = ltsRutaReceptoria;
+    const totalPlantasGlobal = descargasRutaCount;
+    const ltsTotalDespachado = ltsRutaDespachada + ltsTranspDespachada;
+    const totalDespachosGlobalCount = despachosRutaCount + despachosTranspCount;
+    const ltsTotalEnTanqueGlobal = ltsRutaEnTanque;
+
+    const diffGlobalLitros = (ltsRutaReceptoria + ltsTranspReceptoria) - ltsTotalLitrosGlobal;
+    const mermaGlobalLitros = Math.abs(diffGlobalLitros);
     const mermaGlobalPct = ltsTotalLitrosGlobal > 0 ? (mermaGlobalLitros / ltsTotalLitrosGlobal) * 100 : 0;
-    const ltsTotalDespachado = despachos.reduce((sum, d) => sum + (d.litrosDespachados || 0), 0);
-    const totalRecibidoQueseras = despachos.reduce((sum, d) => sum + (d.litrosConfirmados || d.litrosDespachados || 0), 0);
-    const variacionQueseras = totalRecibidoQueseras - ltsTotalDespachado;
-    const variacionPct = ltsTotalDespachado > 0 ? (variacionQueseras / ltsTotalDespachado) * 100 : 0;
+    const esSobranteGlobal = diffGlobalLitros > 0;
+
+    const totalRecibidoQueseras = despachosTipo1.reduce((sum, d) => sum + (d.litrosRecibidosCompania || d.litrosConfirmados || d.litrosDespachados || d.litros || 0), 0);
+    const variacionQueseras = totalRecibidoQueseras - ltsRutaDespachada;
+    const variacionPct = ltsRutaDespachada > 0 ? (Math.abs(variacionQueseras) / ltsRutaDespachada) * 100 : 0;
 
     return {
       ltsRutaFincas,
       fincasRutaCount,
       ltsRutaReceptoria,
       descargasRutaCount,
+      ltsRutaDespachada,
+      despachosRutaCount,
+      queserasRutaCount,
+      diffRutaLitros,
       mermaRutaLitros,
       mermaRutaPct,
+      esSobranteRuta,
       ltsRutaEnTanque,
       ltsTranspFincas,
       fincasTranspCount,
       ltsTranspReceptoria,
       plantasTranspCount,
+      ltsTranspDespachada,
+      despachosTranspCount,
       mermaTranspLitros,
       mermaTranspPct,
       ltsTranspEnTanque,
@@ -223,9 +286,12 @@ export const DashboardPage: React.FC = () => {
       totalFincasGlobal,
       ltsTotalReceptoriaGlobal,
       totalPlantasGlobal,
+      ltsTotalDespachado,
+      totalDespachosGlobalCount,
+      ltsTotalEnTanqueGlobal,
       mermaGlobalLitros,
       mermaGlobalPct,
-      ltsTotalDespachado,
+      esSobranteGlobal,
       totalRecibidoQueseras,
       variacionQueseras,
       variacionPct,
@@ -531,7 +597,7 @@ export const DashboardPage: React.FC = () => {
             <select
               id="selectSemanaDashboard"
               className="form-input"
-              style={{ height: '38px', fontSize: '13px', minWidth: '280px', fontWeight: 600 }}
+              style={{ height: '38px', fontSize: '13px', minWidth: '320px', fontWeight: 600 }}
               value={cicloSeleccionado || ''}
               onChange={(e) => setCicloSeleccionado(e.target.value ? Number(e.target.value) : undefined)}
             >
@@ -540,13 +606,45 @@ export const DashboardPage: React.FC = () => {
                 const esActiva = String(c.estado || c.Estado || '').toUpperCase() === 'ABIERTO';
                 const semNum = c.numeroSemana || c.NumeroSemana || '';
                 const anio = c.año || c.Anio || (c.fechaInicio ? new Date(c.fechaInicio).getFullYear() : '');
+                const rangoFechas = c.fechaInicio && c.fechaFin
+                  ? `${formatearFechaCorta(c.fechaInicio)} al ${formatearFechaCorta(c.fechaFin)}`
+                  : '';
                 return (
                   <option key={c.id} value={c.id}>
-                    Semana #{semNum} ({anio}) {esActiva ? '★ [ACTIVA]' : ''}
+                    Semana #{semNum} ({anio}){rangoFechas ? ` • ${rangoFechas}` : ''} {esActiva ? '★ [ACTIVA]' : ''}
                   </option>
                 );
               })}
             </select>
+            {cicloSeleccionadoObj && (
+              <span
+                className="badge"
+                title="Rango de fechas de la semana operativa"
+                style={{
+                  background: 'rgba(59, 130, 246, 0.1)',
+                  color: '#2563eb',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <i className="fa-solid fa-calendar-days" style={{ color: '#3b82f6' }}></i>
+                <span>
+                  {cicloSeleccionadoObj.fechaInicio && cicloSeleccionadoObj.fechaFin
+                    ? `${formatearFechaCorta(cicloSeleccionadoObj.fechaInicio)} al ${formatearFechaCorta(cicloSeleccionadoObj.fechaFin)}`
+                    : 'Semana Operativa'}
+                </span>
+                {String(cicloSeleccionadoObj.estado || (cicloSeleccionadoObj as any).Estado || '').toUpperCase() === 'ABIERTO' && (
+                  <span style={{ color: '#16a34a', fontWeight: 800, marginLeft: '4px' }}>★ ACTIVA</span>
+                )}
+              </span>
+            )}
             <button
               type="button"
               className="btn btn-outline"
@@ -653,24 +751,30 @@ export const DashboardPage: React.FC = () => {
               <div className="kpi-content">
                 <span className="kpi-title">Despachada RUTA</span>
                 <div className="kpi-value">
-                  {metricas.ltsRutaReceptoria.toLocaleString()} <small>Lts</small>
+                  {metricas.ltsRutaDespachada.toLocaleString()} <small>Lts</small>
                 </div>
-                <span className="kpi-foot">0 Despachos a queseras</span>
+                <span className="kpi-foot">
+                  {metricas.despachosRutaCount} Despacho{metricas.despachosRutaCount === 1 ? '' : 's'} a {metricas.queserasRutaCount} quesera{metricas.queserasRutaCount === 1 ? '' : 's'}
+                </span>
               </div>
             </div>
 
-            {/* 5. Merma Ruta */}
+            {/* 5. Merma / Sobrante Ruta */}
             <div className="kpi-card glass-amber" id="cardMermaRuta">
               <div className="kpi-icon-wrap">
-                <i className="fa-solid fa-scale-unbalanced"></i>
+                <i className={`fa-solid ${metricas.esSobranteRuta ? 'fa-arrow-trend-up' : 'fa-scale-unbalanced'}`}></i>
               </div>
               <div className="kpi-content">
-                <span className="kpi-title">Merma RUTA</span>
-                <div className="kpi-value" id="kpiRutaMermaLitros">
-                  {metricas.mermaRutaLitros.toLocaleString()} <small>Lts</small>
+                <span className="kpi-title">{metricas.esSobranteRuta ? 'Sobrante RUTA' : 'Merma RUTA'}</span>
+                <div className="kpi-value" id="kpiRutaMermaLitros" style={{ color: metricas.esSobranteRuta ? '#16a34a' : '#ea580c' }}>
+                  {metricas.diffRutaLitros > 0 ? '+' : metricas.diffRutaLitros < 0 ? '-' : ''}{metricas.mermaRutaLitros.toLocaleString()} <small>Lts</small>
                 </div>
                 <span className="kpi-foot" id="kpiRutaMermaPct">
-                  {metricas.mermaRutaPct.toFixed(2)}% Merma
+                  {metricas.diffRutaLitros === 0
+                    ? '0.00% Merma (Cuadrado)'
+                    : metricas.esSobranteRuta
+                    ? `+${metricas.mermaRutaPct.toFixed(2)}% Sobrante en Silos`
+                    : `-${metricas.mermaRutaPct.toFixed(2)}% Merma en Ruta`}
                 </span>
               </div>
             </div>
@@ -682,11 +786,11 @@ export const DashboardPage: React.FC = () => {
             style={{
               marginTop: '10px',
               padding: '10px 16px',
-              background: 'rgba(59, 130, 246, 0.08)',
-              border: '1px solid rgba(59, 130, 246, 0.25)',
+              background: metricas.esSobranteRuta ? 'rgba(16, 185, 129, 0.08)' : 'rgba(59, 130, 246, 0.08)',
+              border: `1px solid ${metricas.esSobranteRuta ? 'rgba(16, 185, 129, 0.25)' : 'rgba(59, 130, 246, 0.25)'}`,
               borderRadius: '10px',
               fontSize: '12.5px',
-              color: '#1e3a8a',
+              color: metricas.esSobranteRuta ? '#065f46' : '#1e3a8a',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -695,21 +799,25 @@ export const DashboardPage: React.FC = () => {
             }}
           >
             <span>
-              <i className="fa-solid fa-scale-balanced" style={{ color: '#3b82f6', marginRight: '6px' }}></i>
-              <strong>Cuadre de Balance RUTA:</strong> Recolectado: {metricas.ltsRutaFincas.toLocaleString()} Lts |
-              Entregado: {metricas.ltsRutaReceptoria.toLocaleString()} Lts | Diferencia:{' '}
-              {metricas.mermaRutaLitros.toLocaleString()} Lts
+              <i className="fa-solid fa-scale-balanced" style={{ color: metricas.esSobranteRuta ? '#10b981' : '#3b82f6', marginRight: '6px' }}></i>
+              <strong>Cuadre de Balance RUTA:</strong> Recolectado en Fincas: {metricas.ltsRutaFincas.toLocaleString()} Lts |{' '}
+              Entregado en Silos: {metricas.ltsRutaReceptoria.toLocaleString()} Lts | Variación:{' '}
+              {metricas.diffRutaLitros > 0 ? '+' : ''}{metricas.diffRutaLitros.toLocaleString()} Lts
             </span>
             <span
               className="badge"
               style={{
-                background: metricas.mermaRutaPct <= 1 ? '#10b981' : '#f59e0b',
+                background: metricas.mermaRutaPct <= 0.5 ? '#10b981' : metricas.esSobranteRuta ? '#059669' : '#f59e0b',
                 color: 'white',
                 fontWeight: 800,
                 fontSize: '11px',
               }}
             >
-              {metricas.mermaRutaPct <= 1 ? '100% Cuadrado' : `${metricas.mermaRutaPct.toFixed(1)}% Desviación`}
+              {metricas.mermaRutaPct <= 0.5
+                ? '100% Cuadrado'
+                : metricas.esSobranteRuta
+                ? `+${metricas.mermaRutaPct.toFixed(1)}% Sobrante`
+                : `${metricas.mermaRutaPct.toFixed(1)}% Desviación`}
             </span>
           </div>
         </div>
@@ -807,9 +915,11 @@ export const DashboardPage: React.FC = () => {
               <div className="kpi-content">
                 <span className="kpi-title">Despachado TRANSPORTE</span>
                 <div className="kpi-value">
-                  {metricas.ltsTranspReceptoria.toLocaleString()} <small>Lts</small>
+                  {metricas.ltsTranspDespachada.toLocaleString()} <small>Lts</small>
                 </div>
-                <span className="kpi-foot">0 Entregas realizadas</span>
+                <span className="kpi-foot">
+                  {metricas.despachosTranspCount} Entrega{metricas.despachosTranspCount === 1 ? '' : 's'} realizada{metricas.despachosTranspCount === 1 ? '' : 's'} a planta
+                </span>
               </div>
             </div>
 
@@ -820,10 +930,10 @@ export const DashboardPage: React.FC = () => {
               </div>
               <div className="kpi-content">
                 <span className="kpi-title">Merma TRANSPORTE</span>
-                <div className="kpi-value">
+                <div className="kpi-value" id="kpiTranspMermaLitros" style={{ color: '#ea580c' }}>
                   {metricas.mermaTranspLitros.toLocaleString()} <small>Lts</small>
                 </div>
-                <span className="kpi-foot">{metricas.mermaTranspPct.toFixed(2)}% Merma</span>
+                <span className="kpi-foot" id="kpiTranspMermaPct">{metricas.mermaTranspPct.toFixed(2)}% Merma</span>
               </div>
             </div>
           </div>
@@ -848,19 +958,20 @@ export const DashboardPage: React.FC = () => {
           >
             <span>
               <i className="fa-solid fa-scale-balanced" style={{ color: '#8b5cf6', marginRight: '6px' }}></i>
-              <strong>Cuadre de Balance TRANSPORTE:</strong> Recolectado: {metricas.ltsTranspFincas.toLocaleString()} Lts
-              | Entregado: {metricas.ltsTranspReceptoria.toLocaleString()} Lts
+              <strong>Cuadre de Balance TRANSPORTE:</strong> Recolectado: {metricas.ltsTranspFincas.toLocaleString()} Lts |{' '}
+              Entregado en Planta: {metricas.ltsTranspReceptoria.toLocaleString()} Lts | Merma:{' '}
+              {metricas.mermaTranspLitros.toLocaleString()} Lts
             </span>
             <span
               className="badge"
               style={{
-                background: metricas.mermaTranspPct <= 1 ? '#10b981' : '#f59e0b',
+                background: metricas.mermaTranspPct <= 0.5 ? '#10b981' : '#f59e0b',
                 color: 'white',
                 fontWeight: 800,
                 fontSize: '11px',
               }}
             >
-              {metricas.mermaTranspPct <= 1 ? '100% Cuadrado' : `${metricas.mermaTranspPct.toFixed(1)}% Desviación`}
+              {metricas.mermaTranspPct <= 0.5 ? '100% Cuadrado' : `${metricas.mermaTranspPct.toFixed(1)}% Desviación`}
             </span>
           </div>
         </div>
@@ -905,7 +1016,7 @@ export const DashboardPage: React.FC = () => {
               </div>
             </div>
 
-            {/* 2. Total Ingresado Receptoría / Silos */}
+            {/* 2. Total Ingresado Silos */}
             <div className="kpi-card glass-emerald">
               <div className="kpi-icon-wrap">
                 <i className="fa-solid fa-truck-ramp-box"></i>
@@ -915,7 +1026,7 @@ export const DashboardPage: React.FC = () => {
                 <div className="kpi-value">
                   {metricas.ltsTotalReceptoriaGlobal.toLocaleString()} <small>Lts</small>
                 </div>
-                <span className="kpi-foot">{metricas.totalPlantasGlobal} Plantas / Receptorías</span>
+                <span className="kpi-foot">{metricas.descargasRutaCount} Descargas en Silos</span>
               </div>
             </div>
 
@@ -930,7 +1041,7 @@ export const DashboardPage: React.FC = () => {
               <div className="kpi-content">
                 <span className="kpi-title">Total en Tanque / Silos</span>
                 <div className="kpi-value" style={{ color: '#0891b2' }}>
-                  {metricas.ltsTotalReceptoriaGlobal.toLocaleString()} <small>Lts</small>
+                  {metricas.ltsTotalEnTanqueGlobal.toLocaleString()} <small>Lts</small>
                 </div>
                 <span className="kpi-foot" style={{ color: '#0e7490', fontWeight: 600 }}>
                   Stock en silos
@@ -948,21 +1059,23 @@ export const DashboardPage: React.FC = () => {
                 <div className="kpi-value">
                   {metricas.ltsTotalDespachado.toLocaleString()} <small>Lts</small>
                 </div>
-                <span className="kpi-foot">{despachos.length} Despachos realizados</span>
+                <span className="kpi-foot">{metricas.totalDespachosGlobalCount} Despachos realizados</span>
               </div>
             </div>
 
             {/* 5. Merma Total Global */}
             <div className="kpi-card glass-amber" id="cardMermaGlobal">
               <div className="kpi-icon-wrap">
-                <i className="fa-solid fa-scale-unbalanced"></i>
+                <i className={`fa-solid ${metricas.esSobranteGlobal ? 'fa-arrow-trend-up' : 'fa-scale-unbalanced'}`}></i>
               </div>
               <div className="kpi-content">
-                <span className="kpi-title">Merma Consolidada</span>
-                <div className="kpi-value">
-                  {metricas.mermaGlobalLitros.toLocaleString()} <small>Lts</small>
+                <span className="kpi-title">{metricas.esSobranteGlobal ? 'Variación Global (+)' : 'Merma Consolidada'}</span>
+                <div className="kpi-value" style={{ color: metricas.esSobranteGlobal ? '#16a34a' : '#ea580c' }}>
+                  {metricas.esSobranteGlobal ? '+' : '-'}{metricas.mermaGlobalLitros.toLocaleString()} <small>Lts</small>
                 </div>
-                <span className="kpi-foot">{metricas.mermaGlobalPct.toFixed(2)}% Merma Global</span>
+                <span className="kpi-foot">
+                  {metricas.esSobranteGlobal ? '+' : '-'}{metricas.mermaGlobalPct.toFixed(2)}% Global
+                </span>
               </div>
             </div>
           </div>
@@ -987,7 +1100,7 @@ export const DashboardPage: React.FC = () => {
           >
             <span>
               <i className="fa-solid fa-scale-balanced" style={{ color: '#059669', marginRight: '6px' }}></i>
-              <strong>Balance Operativo Global:</strong> Conciliación de litros entre recolección y receptoría en tiempo real.
+              <strong>Balance Operativo Global:</strong> Total Recolectado: {metricas.ltsTotalLitrosGlobal.toLocaleString()} Lts | Total Ingresado Silos/Plantas: {(metricas.ltsRutaReceptoria + metricas.ltsTranspReceptoria).toLocaleString()} Lts | Variación: {metricas.esSobranteGlobal ? '+' : '-'}{metricas.mermaGlobalLitros.toLocaleString()} Lts
             </span>
             <span
               className="badge"

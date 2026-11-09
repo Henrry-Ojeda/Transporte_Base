@@ -477,7 +477,7 @@ export const operacionesApi = {
     return res.data;
   },
 
-  editarRecoleccion: async (id: number, dto: { fincaId?: number; litros?: number; tipoLeche?: string; esAcida?: boolean; esDiferido?: boolean; observacion?: string; fotoComprobante?: string }): Promise<{ success: boolean; message: string }> => {
+  editarRecoleccion: async (id: number, dto: { fincaId?: number; litros?: number; tipoLeche?: string; esAcida?: boolean; esDiferido?: boolean; temperatura?: number; observacion?: string; fotoComprobante?: string }): Promise<{ success: boolean; message: string }> => {
     const res = await apiClient.put(`/rutas/${id}`, dto);
     return res.data;
   },

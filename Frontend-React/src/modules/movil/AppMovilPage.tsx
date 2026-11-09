@@ -398,6 +398,21 @@ export const AppMovilPage: React.FC = () => {
     }
   });
 
+  // Helper para obtener lista de IDs de fincas de una planificación
+  const getFincasIdsDePlan = (plan: PlanificacionRutaChoferDto | any): number[] => {
+    if (!plan) return [];
+    if (Array.isArray(plan.listaFincasIds) && plan.listaFincasIds.length > 0) {
+      return plan.listaFincasIds.map(Number);
+    }
+    if (typeof plan.fincasIds === 'string' && plan.fincasIds.trim()) {
+      return plan.fincasIds
+        .split(',')
+        .map((s: string) => Number(s.trim()))
+        .filter((n: number) => !isNaN(n) && n > 0);
+    }
+    return [];
+  };
+
   // Estados para Modal Timelapse de Viaje Móvil (Paradas, Horas, Litros, Trazabilidad)
   const [modalTimelapseMovil, setModalTimelapseMovil] = useState(false);
   const [viajeTimelapseMovil, setViajeTimelapseMovil] = useState<ControlRutaDto | null>(null);
@@ -410,7 +425,51 @@ export const AppMovilPage: React.FC = () => {
     setCargandoTimelapseMovil(true);
     try {
       const paradas = await operacionesApi.getFincasViaje(viaje.id);
-      setParadasTimelapseMovil(Array.isArray(paradas) ? paradas : []);
+      const paradasArray = Array.isArray(paradas) ? paradas : [];
+
+      // Buscar si existen fincas planificadas para este ticket o conductor en la fecha del ticket
+      const fViajeStr = (viaje.fecha || '').split('T')[0];
+      let plans = planificaciones;
+      if (!plans || plans.length === 0) {
+        try {
+          plans = await operacionesApi.getPlanificacionesChoferes(fViajeStr || hoyStr);
+          if (Array.isArray(plans)) setPlanificaciones(plans);
+        } catch {}
+      }
+
+      const plan = (plans || []).find(
+        (p) =>
+          (p.controlRutaId && p.controlRutaId === viaje.id) ||
+          (p.conductorId === viaje.usuarioId && (p.fecha || '').split('T')[0] === fViajeStr)
+      );
+
+      let todasParadas = [...paradasArray];
+
+      if (plan) {
+        const fincasIdsPlan = getFincasIdsDePlan(plan);
+        const yaIncluidas = new Set(
+          paradasArray.map((p) => Number(p.fincaId || (p as any).FincaId || 0))
+        );
+
+        fincasIdsPlan.forEach((fId) => {
+          if (!yaIncluidas.has(fId)) {
+            const fObj = fincas.find((f) => f.id === fId);
+            todasParadas.push({
+              id: -(fId),
+              fincaId: fId,
+              fincaNombre: fObj?.nombre || `Finca #${fId}`,
+              propietario: (fObj as any)?.propietario || '',
+              litros: 0,
+              esPlanificada: true,
+              controlRutaId: viaje.id,
+              esAcida: false,
+              tipoLeche: 'VACA',
+            } as any);
+          }
+        });
+      }
+
+      setParadasTimelapseMovil(todasParadas);
     } catch (err) {
       console.warn('Error al cargar paradas para timelapse:', err);
       setParadasTimelapseMovil([]);
@@ -442,6 +501,20 @@ export const AppMovilPage: React.FC = () => {
   });
   const [busquedaFincaAdmin, setBusquedaFincaAdmin] = useState('');
   const [guardandoLitrosAdmin, setGuardandoLitrosAdmin] = useState(false);
+  const inputFotoReciboAdminRef = useRef<HTMLInputElement | null>(null);
+
+  const handleSubirFotoReciboAdmin = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await comprimirImagenMovil(file);
+      setFormAdminLitros((prev) => ({ ...prev, fotoComprobante: base64 }));
+      toast.success('Foto del comprobante/recibo adjuntada');
+    } catch (err) {
+      toast.error('No se pudo procesar la foto');
+    }
+    e.target.value = '';
+  };
 
   const abrirModalAdminCargarLitros = (ticket: ControlRutaDto, paradaExistente?: any) => {
     setModalAdminCargarLitros({
@@ -450,9 +523,10 @@ export const AppMovilPage: React.FC = () => {
       paradaExistente: paradaExistente || null,
     });
     if (paradaExistente) {
+      const fId = Number(paradaExistente.fincaId || paradaExistente.FincaId || 0);
       setFormAdminLitros({
-        fincaId: Number(paradaExistente.fincaId || paradaExistente.FincaId || 0),
-        litros: String(paradaExistente.litros || paradaExistente.litrosLeche || paradaExistente.litrosCargados || ''),
+        fincaId: fId,
+        litros: Number(paradaExistente.litros || 0) > 0 ? String(paradaExistente.litros || paradaExistente.litrosLeche || paradaExistente.litrosCargados || '') : '',
         tipoLeche: paradaExistente.tipoLeche || 'VACA',
         esAcida: Boolean(paradaExistente.esAcida),
         esDiferido: Boolean(paradaExistente.esDiferido),
@@ -492,13 +566,19 @@ export const AppMovilPage: React.FC = () => {
 
     setGuardandoLitrosAdmin(true);
     try {
-      if (modalAdminCargarLitros.paradaExistente?.id) {
+      const esEdicionReal =
+        modalAdminCargarLitros.paradaExistente?.id &&
+        Number(modalAdminCargarLitros.paradaExistente.id) > 0 &&
+        !modalAdminCargarLitros.paradaExistente.esPlanificada;
+
+      if (esEdicionReal) {
         await operacionesApi.editarRecoleccion(modalAdminCargarLitros.paradaExistente.id, {
           fincaId: fId,
           litros: lts,
           tipoLeche: formAdminLitros.tipoLeche,
           esAcida: formAdminLitros.esAcida,
           esDiferido: formAdminLitros.esDiferido,
+          temperatura: formAdminLitros.temperatura ? Number(formAdminLitros.temperatura) : undefined,
           observacion: formAdminLitros.observacion,
           fotoComprobante: formAdminLitros.fotoComprobante || undefined,
         });
@@ -537,8 +617,7 @@ export const AppMovilPage: React.FC = () => {
       // Refrescar viajes en vivo
       cargarDatosAdminEnVivo();
       if (modalTimelapseMovil && viajeTimelapseMovil?.id === ticketId) {
-        const paradasActualizadas = await operacionesApi.getFincasViaje(ticketId);
-        setParadasTimelapseMovil(Array.isArray(paradasActualizadas) ? paradasActualizadas : []);
+        abrirTimelapseMovil(viajeTimelapseMovil);
       }
       if (choferEfectivoId === choferId) {
         cargarViajeActivo(choferId);
@@ -1970,19 +2049,6 @@ export const AppMovilPage: React.FC = () => {
     const nueva = d.toISOString().split('T')[0];
     setFechaLogistica(nueva);
     cargarDatosLogisticaAdmin(nueva);
-  };
-
-  const getFincasIdsDePlan = (plan: PlanificacionRutaChoferDto): number[] => {
-    if (Array.isArray(plan.listaFincasIds) && plan.listaFincasIds.length > 0) {
-      return plan.listaFincasIds.map(Number);
-    }
-    if (typeof plan.fincasIds === 'string' && plan.fincasIds.trim()) {
-      return plan.fincasIds
-        .split(',')
-        .map((s) => Number(s.trim()))
-        .filter((n) => !isNaN(n) && n > 0);
-    }
-    return [];
   };
 
   const handleGuardarPlanificacionMovil = async (e: React.FormEvent) => {
@@ -16621,9 +16687,9 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '10px', color: '#0369a1', fontWeight: 800 }}>TOTAL PARADAS</div>
-                  <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
-                    {paradasTimelapseMovil.length} Fincas
+                  <div style={{ fontSize: '10px', color: '#0369a1', fontWeight: 800 }}>PROGRESO RECOLECCIÓN</div>
+                  <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>
+                    {paradasTimelapseMovil.filter(p => Number(p.litros || p.litrosLeche || p.litrosCargados || 0) > 0 && !p.esPlanificada).length} / {paradasTimelapseMovil.length} Fincas
                   </div>
                 </div>
               </div>
@@ -16638,17 +16704,20 @@ export const AppMovilPage: React.FC = () => {
                 ) : paradasTimelapseMovil.length === 0 ? (
                   <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: '16px', border: '1.5px dashed #cbd5e1' }}>
                     <i className="fa-solid fa-map-location-dot text-3xl mb-2 text-slate-300"></i>
-                    <div style={{ fontWeight: 800, color: '#1e293b' }}>Sin paradas registradas aún</div>
+                    <div style={{ fontWeight: 800, color: '#1e293b' }}>Sin paradas planificadas ni registradas</div>
                     <p style={{ margin: '4px 0 0 0', fontSize: '12px' }}>
-                      El chofer aún no ha registrado litros en fincas para este recorrido.
+                      El chofer aún no tiene fincas asignadas o registradas en este ticket. Puedes agregar paradas con el botón inferior.
                     </p>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {paradasTimelapseMovil.map((p, idx) => {
                       const ltsParada = Number(p.litros || p.litrosLeche || p.litrosCargados || 0);
+                      const esRecolectada = ltsParada > 0 && !p.esPlanificada;
                       const fNom = p.fincaNombre || p.nombreFinca || fincas.find((f) => f.id === (p.fincaId || p.FincaId))?.nombre || `Finca #${p.fincaId || p.FincaId}`;
-                      const horaP = p.hora || (p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : `Parada #${idx + 1}`);
+                      const horaP = esRecolectada 
+                        ? (p.hora || (p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : `Parada #${idx + 1}`))
+                        : 'En ruta • Pendiente';
                       const esBufala = (p.tipoLeche || '').toUpperCase() === 'BUFALA';
                       const esAcida = Boolean(p.esAcida);
                       const foto = p.fotoComprobante || p.fotoRecibo;
@@ -16656,16 +16725,19 @@ export const AppMovilPage: React.FC = () => {
                       return (
                         <div
                           key={p.id || idx}
+                          onClick={() => esAdminReal && abrirModalAdminCargarLitros(v, p)}
                           style={{
-                            background: '#ffffff',
+                            background: esRecolectada ? '#ffffff' : '#fffdf7',
                             borderRadius: '14px',
-                            border: '1.5px solid #e2e8f0',
+                            border: esRecolectada ? '1.5px solid #e2e8f0' : '1.5px dashed #fde047',
                             padding: '12px 14px',
                             boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             gap: '10px',
+                            cursor: esAdminReal ? 'pointer' : 'default',
+                            transition: 'all 0.2s ease',
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -16674,8 +16746,8 @@ export const AppMovilPage: React.FC = () => {
                                 width: '32px',
                                 height: '32px',
                                 borderRadius: '10px',
-                                background: '#e0f2fe',
-                                color: '#0369a1',
+                                background: esRecolectada ? '#e0f2fe' : '#fef3c7',
+                                color: esRecolectada ? '#0369a1' : '#b45309',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -16716,18 +16788,27 @@ export const AppMovilPage: React.FC = () => {
 
                           <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                             <div>
-                              <div style={{ fontSize: '15px', fontWeight: 900, color: '#0284c7' }}>
-                                {ltsParada.toLocaleString()} L
+                              <div style={{ fontSize: '15px', fontWeight: 900, color: esRecolectada ? '#0284c7' : '#94a3b8' }}>
+                                {ltsParada > 0 ? `${ltsParada.toLocaleString()} L` : '0 L'}
                               </div>
-                              <div style={{ fontSize: '10px', color: '#16a34a', fontWeight: 800 }}>
-                                ✓ Recolectada
-                              </div>
+                              {esRecolectada ? (
+                                <div style={{ fontSize: '10px', color: '#16a34a', fontWeight: 800 }}>
+                                  ✓ Recolectada
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: '10px', color: '#d97706', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                  <i className="fa-solid fa-clock text-[9px]"></i> Pendiente
+                                </div>
+                              )}
                             </div>
 
                             {foto && (
                               <button
                                 type="button"
-                                onClick={() => setFotoReciboVerModal(foto)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFotoReciboVerModal(foto);
+                                }}
                                 style={{
                                   background: '#f8fafc',
                                   color: '#0284c7',
@@ -16749,7 +16830,10 @@ export const AppMovilPage: React.FC = () => {
                             {esAdminReal && (
                               <button
                                 type="button"
-                                onClick={() => abrirModalAdminCargarLitros(v, p)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  abrirModalAdminCargarLitros(v, p);
+                                }}
                                 style={{
                                   background: '#f1f5f9',
                                   color: '#334155',
@@ -16762,7 +16846,7 @@ export const AppMovilPage: React.FC = () => {
                                   justifyContent: 'center',
                                   cursor: 'pointer',
                                 }}
-                                title="Editar litros de esta parada"
+                                title="Ver / registrar datos de esta parada"
                               >
                                 <i className="fa-solid fa-pen text-xs"></i>
                               </button>
@@ -16771,7 +16855,10 @@ export const AppMovilPage: React.FC = () => {
                             {esAdminReal && ltsParada > 0 && (
                               <button
                                 type="button"
-                                onClick={() => handleLimpiarRecoleccionMovil(v, p)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleLimpiarRecoleccionMovil(v, p);
+                                }}
                                 style={{
                                   background: '#eff6ff',
                                   color: '#2563eb',
@@ -16839,6 +16926,17 @@ export const AppMovilPage: React.FC = () => {
         const ticket = modalAdminCargarLitros.ticket;
         const esEdicion = !!modalAdminCargarLitros.paradaExistente;
 
+        const fIdActual = Number(formAdminLitros.fincaId || (modalAdminCargarLitros.paradaExistente?.fincaId || (modalAdminCargarLitros.paradaExistente as any)?.FincaId || 0));
+        const fincaFijada = fIdActual > 0
+          ? fincas.find((f) => f.id === fIdActual) || (modalAdminCargarLitros.paradaExistente ? {
+              id: fIdActual,
+              nombre: modalAdminCargarLitros.paradaExistente.fincaNombre || modalAdminCargarLitros.paradaExistente.nombreFinca || `Finca #${fIdActual}`,
+              propietario: modalAdminCargarLitros.paradaExistente.propietario,
+              codigo: modalAdminCargarLitros.paradaExistente.codigo,
+            } : null)
+          : null;
+        const esFincaBloqueada = Boolean(modalAdminCargarLitros.paradaExistente && fincaFijada);
+
         const fincasFiltradas = fincas.filter((f) => {
           if (!busquedaFincaAdmin.trim()) return true;
           const q = busquedaFincaAdmin.toLowerCase();
@@ -16890,7 +16988,7 @@ export const AppMovilPage: React.FC = () => {
               >
                 <div>
                   <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900 }}>
-                    {esEdicion ? '✏️ Editar Parada de Leche' : '📝 Registrar Carga de Leche (Admin)'}
+                    {esEdicion ? '✏️ Detalle / Registro de Parada' : '📝 Registrar Carga de Leche (Admin)'}
                   </h3>
                   <div style={{ fontSize: '11.5px', color: '#d1fae5', marginTop: '2px' }}>
                     Ticket #{ticket.codigoTicket || ticket.id} • {ticket.nombreConductor || 'Chofer'} ({ticket.camionPlaca || 'S/P'})
@@ -16922,47 +17020,106 @@ export const AppMovilPage: React.FC = () => {
                 onSubmit={handleGuardarLitrosAdmin}
                 style={{ padding: '16px 18px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}
               >
-                {/* Selector de Finca con Buscador */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                    Finca Ganadera *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Filtrar finca por nombre o código..."
-                    value={busquedaFincaAdmin}
-                    onChange={(e) => setBusquedaFincaAdmin(e.target.value)}
+                {/* Cabecera / Identificación de la Finca (Vista Establecida 1:1) */}
+                {esFincaBloqueada && fincaFijada ? (
+                  <div
                     style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      border: '1.5px solid #cbd5e1',
-                      fontSize: '12.5px',
-                      marginBottom: '6px',
-                    }}
-                  />
-                  <select
-                    required
-                    value={formAdminLitros.fincaId}
-                    onChange={(e) => setFormAdminLitros((prev) => ({ ...prev, fincaId: Number(e.target.value) }))}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '10px',
-                      border: '1.5px solid #10b981',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      background: '#ffffff',
+                      background: '#f8fafc',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '14px',
+                      padding: '12px 14px',
+                      marginBottom: '2px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
                     }}
                   >
-                    <option value={0}>-- Selecciona la Finca Ganadera --</option>
-                    {fincasFiltradas.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.nombre} {f.codigo ? `(${f.codigo})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div
+                        style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '12px',
+                          background: '#e0f2fe',
+                          color: '#0284c7',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '18px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <i className="fa-solid fa-cow"></i>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a' }}>
+                          {fincaFijada.nombre}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginTop: '2px' }}>
+                          {(fincaFijada as any).propietarioNombre || (fincaFijada as any).propietario || 'Finca Asignada'}
+                          {fincaFijada.codigo ? ` • Cód: ${fincaFijada.codigo}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        background: '#e2e8f0',
+                        color: '#475569',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="fa-solid fa-lock text-[10px]"></i> Finca Fija
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                      Finca Ganadera *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Filtrar finca por nombre o código..."
+                      value={busquedaFincaAdmin}
+                      onChange={(e) => setBusquedaFincaAdmin(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: '1.5px solid #cbd5e1',
+                        fontSize: '12.5px',
+                        marginBottom: '6px',
+                      }}
+                    />
+                    <select
+                      required
+                      value={formAdminLitros.fincaId}
+                      onChange={(e) => setFormAdminLitros((prev) => ({ ...prev, fincaId: Number(e.target.value) }))}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #10b981',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        background: '#ffffff',
+                      }}
+                    >
+                      <option value={0}>-- Selecciona la Finca Ganadera --</option>
+                      {fincasFiltradas.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.nombre} {f.codigo ? `(${f.codigo})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Litros de Leche */}
                 <div>
@@ -16971,7 +17128,7 @@ export const AppMovilPage: React.FC = () => {
                       Litros Recolectados *
                     </label>
                     <div style={{ display: 'flex', gap: '4px' }}>
-                      {[100, 500, 1000].map((inc) => (
+                      {[50, 100, 200, 500, 1000].map((inc) => (
                         <button
                           key={inc}
                           type="button"
@@ -16984,7 +17141,7 @@ export const AppMovilPage: React.FC = () => {
                             border: '1px solid #cbd5e1',
                             borderRadius: '6px',
                             padding: '2px 6px',
-                            fontSize: '10px',
+                            fontSize: '10.5px',
                             fontWeight: 800,
                             cursor: 'pointer',
                           }}
@@ -17007,7 +17164,7 @@ export const AppMovilPage: React.FC = () => {
                       padding: '10px 12px',
                       borderRadius: '10px',
                       border: '1.5px solid #10b981',
-                      fontSize: '16px',
+                      fontSize: '17px',
                       fontWeight: 900,
                       color: '#065f46',
                     }}
@@ -17103,6 +17260,102 @@ export const AppMovilPage: React.FC = () => {
                       style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
                     />
                   </div>
+                </div>
+
+                {/* Foto Comprobante / Recibo de Finca (Requisito 2) */}
+                <div>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    <span><i className="fa-solid fa-camera mr-1 text-sky-600"></i> Foto / Comprobante de Recibo</span>
+                    {formAdminLitros.fotoComprobante ? (
+                      <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 800 }}>
+                        <i className="fa-solid fa-check mr-1"></i> Foto adjunta
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>Opcional</span>
+                    )}
+                  </label>
+
+                  <input
+                    ref={inputFotoReciboAdminRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    style={{ display: 'none' }}
+                    onChange={handleSubirFotoReciboAdmin}
+                  />
+
+                  {formAdminLitros.fotoComprobante ? (
+                    <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1.5px solid #93c5fd', background: '#000' }}>
+                      <img
+                        src={formAdminLitros.fotoComprobante}
+                        alt="Comprobante Finca"
+                        style={{ width: '100%', maxHeight: '180px', objectFit: 'contain', display: 'block' }}
+                      />
+                      <div style={{ position: 'absolute', top: '8px', right: '8px', display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setFotoReciboVerModal(formAdminLitros.fotoComprobante)}
+                          style={{
+                            background: 'rgba(2, 132, 199, 0.9)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '28px',
+                            height: '28px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                          }}
+                          title="Ver ampliada"
+                        >
+                          <i className="fa-solid fa-expand text-xs"></i>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormAdminLitros((prev) => ({ ...prev, fotoComprobante: '' }))}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.9)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '28px',
+                            height: '28px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                          }}
+                          title="Quitar foto"
+                        >
+                          <i className="fa-solid fa-xmark"></i>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => inputFotoReciboAdminRef.current?.click()}
+                      style={{
+                        width: '100%',
+                        height: '46px',
+                        borderRadius: '10px',
+                        border: '1.5px dashed #93c5fd',
+                        background: '#eff6ff',
+                        color: '#1d4ed8',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <i className="fa-solid fa-camera"></i>
+                      <span>Tomar Foto / Adjuntar Comprobante</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Botones de Acción */}

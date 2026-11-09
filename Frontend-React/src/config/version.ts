@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 10,
-  patch: 8,
-  tag: 'v3.10.8',
+  minor: 11,
+  patch: 1,
+  tag: 'v3.11.1',
   ultimaActualizacion: '2026-11-09',
-  tipoUltimoCambio: 'DISEÑO',
-  descripcion: 'Rango de fechas visible en selector de semana activa y métricas auditadas por tipo de servicio (Ruta vs Transporte)',
+  tipoUltimoCambio: 'DISEÑO_LOGICA',
+  descripcion: 'Timelapse con fincas asignadas en ruta, diferenciación de pendientes vs recolectadas, vista fija de finca con captura/adjunto de comprobante y recarga forzada v3.11.1',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

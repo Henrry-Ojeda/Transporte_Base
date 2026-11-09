@@ -7,6 +7,7 @@ import { SearchableSelect, type SelectOption } from '@/components/common/Searcha
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { operacionesApi } from '@/api/operaciones.api';
 import { catalogosApi } from '@/api/catalogos.api';
+import { useAuthStore } from '@/stores/authStore';
 import type {
   PlanificacionRutaChoferDto,
   GuardarPlanificacionRutaChoferDto,
@@ -47,6 +48,9 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
   esIntegrado = false,
 }) => {
   const queryClient = useQueryClient();
+  const { user, isAdmin, isSupervisor } = useAuthStore();
+  const puedePlanificarFuturo = isAdmin() || isSupervisor() || (user?.rol || '').toUpperCase() === 'SUPERVISOR';
+  const hoyStr = new Date().toISOString().split('T')[0];
 
   // Fecha operativa (por defecto hoy en YYYY-MM-DD o fecha inicial provista)
   const [fechaOperativa, setFechaOperativa] = useState<string>(() => {
@@ -85,14 +89,16 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
     const date = new Date(y, m - 1, d);
     date.setDate(date.getDate() + dias);
     const nextStr = date.toISOString().split('T')[0];
+    if (!puedePlanificarFuturo && nextStr > hoyStr) {
+      return; // Chofer o usuario no autorizado no puede avanzar más allá de hoy
+    }
     setFechaOperativa(nextStr);
     onFechaChange?.(nextStr);
   };
 
   const irAHoy = () => {
-    const hoy = new Date().toISOString().split('T')[0];
-    setFechaOperativa(hoy);
-    onFechaChange?.(hoy);
+    setFechaOperativa(hoyStr);
+    onFechaChange?.(hoyStr);
   };
 
   // Queries
@@ -100,6 +106,20 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
     queryKey: ['planificaciones-choferes', fechaOperativa],
     queryFn: () => operacionesApi.getPlanificacionesChoferes(fechaOperativa),
   });
+
+  // Query específica para la fecha que se está configurando en el modal si difiere de fechaOperativa
+  const { data: planificacionesFormFecha = [] } = useQuery<PlanificacionRutaChoferDto[]>({
+    queryKey: ['planificaciones-choferes', formFecha],
+    queryFn: () => operacionesApi.getPlanificacionesChoferes(formFecha),
+    enabled: Boolean(modalAbierto && formFecha && formFecha !== fechaOperativa),
+  });
+
+  const planificacionesEfectivas = useMemo(() => {
+    if (modalAbierto && formFecha && formFecha !== fechaOperativa) {
+      return planificacionesFormFecha;
+    }
+    return planificaciones;
+  }, [modalAbierto, formFecha, fechaOperativa, planificacionesFormFecha, planificaciones]);
 
   // Filtro Estricto: Solo tickets y asignaciones activas (excluir finalizados/cerrados)
   const esTicketActivo = (estado?: string) => {
@@ -190,10 +210,10 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
   // Capacidad de la cisterna seleccionada
   const capacidadCisterna = camionSeleccionado?.capacidadLitros || 0;
 
-  // Mapa de fincas ya asignadas a otros camiones en la misma fecha
+  // Mapa de fincas ya asignadas a otros camiones en la fecha efectiva seleccionada
   const fincasAsignadasEnFecha = useMemo(() => {
     const map = new Map<number, { camionPlaca: string; choferNombre: string; planId: number }>();
-    planificaciones.forEach((p) => {
+    planificacionesEfectivas.forEach((p) => {
       if (planificacionEditar && p.id === planificacionEditar.id) {
         return; // Excluir la planificación que se está editando
       }
@@ -206,7 +226,7 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
       });
     });
     return map;
-  }, [planificaciones, planificacionEditar]);
+  }, [planificacionesEfectivas, planificacionEditar]);
 
   const getFincaId = (f: any): number => Number(f?.fincaId ?? f?.FincaId ?? f?.id ?? f?.Id ?? 0);
   const getRutaId = (f: any): number => Number(f?.rutaId ?? f?.RutaId ?? 0);
@@ -362,9 +382,10 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
       return;
     }
 
-    // REGLA: Si dos choferes tienen o intentan confirmar la misma finca, se requiere confirmación explícita
+    // REGLA: Si dos choferes tienen o intentan confirmar la misma finca en la fecha del plan, se requiere confirmación explícita
     const fincasDuplicadas = formFincasSeleccionadas.filter((fId) => fincasAsignadasEnFecha.has(fId));
     if (fincasDuplicadas.length > 0) {
+      const fechaAviso = formFecha || fechaOperativa;
       const itemsList = fincasDuplicadas
         .map((fId) => {
           const fObj = fincasPromedios.find((f) => getFincaId(f) === fId);
@@ -378,12 +399,12 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
         title: '⚠️ Fincas compartidas entre choferes',
         html: `
           <div style="text-align: left; font-size: 13px; line-height: 1.6;">
-            <p>Las siguientes fincas seleccionadas ya están asignadas a otro camión hoy:</p>
+            <p>Las siguientes fincas seleccionadas ya están asignadas a otro camión en la fecha <strong>${fechaAviso}</strong>:</p>
             <ul style="background: #fffbeb; border: 1.5px solid #fde68a; border-radius: 8px; padding: 10px 18px; margin: 12px 0;">
               ${itemsList}
             </ul>
             <p style="color: #b45309; font-weight: 700; margin-bottom: 0;">
-              ¿Desea confirmar y mantener esta asignación compartida para ambos choferes?
+              ¿Desea confirmar y mantener esta asignación compartida para ambos choferes en esta fecha?
             </p>
           </div>
         `,
@@ -643,7 +664,12 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
               <input
                 type="date"
                 value={fechaOperativa}
-                onChange={(e) => setFechaOperativa(e.target.value)}
+                max={puedePlanificarFuturo ? undefined : hoyStr}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!puedePlanificarFuturo && val > hoyStr) return;
+                  setFechaOperativa(val);
+                }}
                 className="text-xs font-bold text-slate-800 bg-transparent border-none outline-none cursor-pointer"
               />
             </div>
@@ -1062,7 +1088,12 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
                   <input
                     type="date"
                     value={formFecha}
-                    onChange={(e) => setFormFecha(e.target.value)}
+                    max={puedePlanificarFuturo ? undefined : hoyStr}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!puedePlanificarFuturo && val > hoyStr) return;
+                      setFormFecha(val);
+                    }}
                     className="w-full h-10 px-3 text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 outline-none"
                     required
                   />

@@ -1479,6 +1479,10 @@ export const AppMovilPage: React.FC = () => {
     litrosRecibidos: number | string;
     observacion: string;
   } | null>(null);
+  const [fincasVerificarMovil, setFincasVerificarMovil] = useState<any[]>([]);
+  const [fincasVerificadasMovilIds, setFincasVerificadasMovilIds] = useState<Set<number>>(new Set());
+  const [cargandoFincasMovil, setCargandoFincasMovil] = useState<boolean>(false);
+  const [fotoZoomMovil, setFotoZoomMovil] = useState<string | null>(null);
 
   const [modalDevolverTicket, setModalDevolverTicket] = useState<{
     open: boolean;
@@ -1497,6 +1501,30 @@ export const AppMovilPage: React.FC = () => {
     numeroGuiaSADA: string;
     observacion: string;
   } | null>(null);
+
+  // Cargar fincas del ticket al abrir el modal de verificación de litros en receptoría
+  useEffect(() => {
+    const tId = modalVerificarLitros?.ticket?.id;
+    if (tId) {
+      setCargandoFincasMovil(true);
+      operacionesApi.getFincasViaje(tId)
+        .then((res) => {
+          const list = Array.isArray(res) ? res : [];
+          setFincasVerificarMovil(list);
+          setFincasVerificadasMovilIds(new Set());
+        })
+        .catch(() => {
+          setFincasVerificarMovil([]);
+          setFincasVerificadasMovilIds(new Set());
+        })
+        .finally(() => {
+          setCargandoFincasMovil(false);
+        });
+    } else {
+      setFincasVerificarMovil([]);
+      setFincasVerificadasMovilIds(new Set());
+    }
+  }, [modalVerificarLitros?.ticket?.id]);
 
   // Estado para la pantalla de Vinculación
   const [codigoInput, setCodigoInput] = useState('');
@@ -2041,6 +2069,14 @@ export const AppMovilPage: React.FC = () => {
         const unico = await operacionesApi.getViajeActivo(idBusqueda);
         if (unico && unico.id) lista = [unico];
         else lista = [];
+      }
+
+      // REGLA: Los choferes solo ven tickets y rutas de HOY hacia atrás, no planificaciones futuras
+      if (esChoferReal && Array.isArray(lista)) {
+        lista = lista.filter((t: any) => {
+          const f = t.fecha ? String(t.fecha).split('T')[0] : '';
+          return !f || f <= hoyStr;
+        });
       }
 
       setViajesChofer(lista);
@@ -15470,6 +15506,138 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                 </div>
 
+                {/* VERIFICACIÓN DE FINCAS Y COMPROBANTES / FOTOS */}
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '14px', border: '1.5px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>
+                      📋 Fincas a Verificar ({fincasVerificadasMovilIds.size}/{fincasVerificarMovil.length})
+                    </div>
+                    {fincasVerificarMovil.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (fincasVerificadasMovilIds.size === fincasVerificarMovil.length) {
+                            setFincasVerificadasMovilIds(new Set());
+                          } else {
+                            setFincasVerificadasMovilIds(new Set(fincasVerificarMovil.map((f, i) => Number(f.id || f.fincaId || i))));
+                          }
+                        }}
+                        style={{
+                          background: fincasVerificadasMovilIds.size === fincasVerificarMovil.length ? '#f0fdf4' : '#eff6ff',
+                          color: fincasVerificadasMovilIds.size === fincasVerificarMovil.length ? '#16a34a' : '#2563eb',
+                          border: fincasVerificadasMovilIds.size === fincasVerificarMovil.length ? '1px solid #86efac' : '1px solid #bfdbfe',
+                          borderRadius: '8px',
+                          padding: '4px 10px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {fincasVerificadasMovilIds.size === fincasVerificarMovil.length ? 'Deseleccionar' : 'Verificar TODAS'}
+                      </button>
+                    )}
+                  </div>
+
+                  {cargandoFincasMovil ? (
+                    <div style={{ textAlign: 'center', padding: '12px', fontSize: '11.5px', color: '#64748b' }}>
+                      <i className="fa-solid fa-spinner fa-spin"></i> Cargando fincas del ticket...
+                    </div>
+                  ) : fincasVerificarMovil.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '10px', fontSize: '11px', color: '#94a3b8' }}>
+                      Sin desglose de fincas para este ticket.
+                    </div>
+                  ) : (
+                    <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {fincasVerificarMovil.map((f, idx) => {
+                        const fid = Number(f.id || f.fincaId || idx);
+                        const verificado = fincasVerificadasMovilIds.has(fid);
+                        const foto = f.fotoComprobante || f.fotoReciboUrl;
+                        const lts = Number(f.litros || f.litrosLeche || 0);
+                        const nomFinca = f.fincaNombre || f.nombre || `Finca #${f.fincaId || fid}`;
+
+                        return (
+                          <div
+                            key={fid}
+                            onClick={() => {
+                              setFincasVerificadasMovilIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(fid)) next.delete(fid);
+                                else next.add(fid);
+                                return next;
+                              });
+                            }}
+                            style={{
+                              background: verificado ? '#f0fdf4' : '#ffffff',
+                              border: verificado ? '1.5px solid #86efac' : '1px solid #e2e8f0',
+                              borderRadius: '10px',
+                              padding: '8px 10px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              cursor: 'pointer',
+                              gap: '8px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                              <input
+                                type="checkbox"
+                                checked={verificado}
+                                onChange={(e) => {
+                                  setFincasVerificadasMovilIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(fid);
+                                    else next.delete(fid);
+                                    return next;
+                                  });
+                                }}
+                                style={{ width: '16px', height: '16px', accentColor: '#16a34a' }}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {nomFinca}
+                                </div>
+                                <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                                  {f.propietarioNombre || f.propietario || ''}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                              <span style={{ fontSize: '12px', fontWeight: 900, color: '#0f172a' }}>
+                                {lts.toLocaleString()} L
+                              </span>
+                              {foto ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setFotoZoomMovil(foto);
+                                  }}
+                                  style={{
+                                    background: '#ecfdf5',
+                                    border: '1px solid #a7f3d0',
+                                    color: '#059669',
+                                    borderRadius: '6px',
+                                    padding: '4px 7px',
+                                    fontSize: '11px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                  }}
+                                >
+                                  <i className="fa-solid fa-camera"></i>
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 {/* Input Litros Recibidos */}
                 <div>
                   <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
@@ -15563,6 +15731,52 @@ export const AppMovilPage: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* LIGHTBOX / ZOOM DE FOTO DE COMPROBANTE O RECIBO EN MÓVIL */}
+      {fotoZoomMovil && (
+        <div
+          onClick={() => setFotoZoomMovil(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 999999,
+            background: 'rgba(15, 23, 42, 0.92)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '16px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div style={{ alignSelf: 'flex-end', marginBottom: '8px' }}>
+            <button
+              type="button"
+              onClick={() => setFotoZoomMovil(null)}
+              style={{
+                background: 'rgba(255,255,255,0.2)',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '20px',
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <img
+            src={fotoZoomMovil}
+            alt="Comprobante Recibo Finca"
+            style={{ maxWidth: '100%', maxHeight: '78vh', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }}
+          />
+        </div>
+      )}
 
       {/* ===================================================================
           MODAL 2 RECEPTORÍA: DEVOLVER TICKET AL CHOFER

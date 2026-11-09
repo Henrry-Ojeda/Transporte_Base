@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 15,
-  patch: 9,
-  tag: 'v3.15.9',
+  minor: 16,
+  patch: 0,
+  tag: 'v3.16.0',
   ultimaActualizacion: '2026-11-09',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Cálculo 100% dinámico de mermas y métricas en Dashboard eliminando valores residuales v3.15.9',
+  descripcion: 'Planificación diaria independiente por fecha, soporte rol Supervisor, deduplicación choferes y tabla de verificación 1 a 1 y masiva en receptoría v3.16.0',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

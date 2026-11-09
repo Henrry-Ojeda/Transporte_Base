@@ -541,8 +541,15 @@ namespace Transporte.Infrastructure.Repositories
                 SELECT u.Id, u.Username, u.NombreCompleto, u.Cedula, 
                        ISNULL(c.Placa, u.VehiculoPlaca) AS VehiculoPlaca
                 FROM TB_USUARIOS u
-                LEFT JOIN TB_CAMIONES c ON u.Id = c.UsuarioId AND c.IsDeleted = 0
-                WHERE u.Rol = 'CHOFER' AND u.Activo = 1 AND u.IsDeleted = 0
+                OUTER APPLY (
+                    SELECT TOP 1 c2.Placa
+                    FROM TB_CAMIONES c2
+                    WHERE c2.UsuarioId = u.Id AND c2.IsDeleted = 0
+                    ORDER BY c2.Activo DESC, c2.Id DESC
+                ) c
+                WHERE (UPPER(u.Rol) = 'CHOFER' OR UPPER(u.Rol) = 'CONDUCTOR' OR u.RolId = 4)
+                  AND u.Activo = 1 
+                  AND u.IsDeleted = 0
                 ORDER BY u.NombreCompleto ASC";
             return await connection.QueryAsync<ChoferDto>(sql);
         }

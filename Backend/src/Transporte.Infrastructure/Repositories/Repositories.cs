@@ -46,11 +46,33 @@ namespace Transporte.Infrastructure.Repositories
             var user = await ObtenerPorIdAsync(usuarioId);
             if (user == null) return Enumerable.Empty<string>();
 
-            if (user.Rol == "ADMIN")
+            if (user.Rol == "ADMIN" || user.Rol == "SUPERADMIN")
             {
                 return new[] { "DASHBOARD", "RUTAS_ALL", "MERMAS", "SEMANAS", "LIQUIDACION", "CATALOGOS", "BCV" };
             }
-            return new[] { "RUTAS_OWN", "DASHBOARD" };
+
+            using var connection = new SqlConnection(_connectionString);
+            var sqlPermisos = @"
+                SELECT DISTINCT p.Codigo
+                FROM TB_USUARIOS u
+                INNER JOIN TB_ROL_PERMISOS rp ON (u.RolId = rp.RolId OR (u.RolId IS NULL AND rp.RolId = (SELECT TOP 1 Id FROM TB_ROLES WHERE Codigo = u.Rol)))
+                INNER JOIN TB_PERMISOS p ON rp.PermisoId = p.Id
+                WHERE u.Id = @usuarioId AND rp.Concedido = 1 AND p.Activo = 1";
+
+            var permisosDb = (await connection.QueryAsync<string>(sqlPermisos, new { usuarioId })).ToList();
+            if (string.Equals(user.Rol, "SUPERVISOR", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!permisosDb.Contains("DASHBOARD")) permisosDb.Add("DASHBOARD");
+                if (!permisosDb.Contains("RUTAS_ALL")) permisosDb.Add("RUTAS_ALL");
+                if (!permisosDb.Contains("MERMAS")) permisosDb.Add("MERMAS");
+                if (!permisosDb.Contains("CATALOGOS")) permisosDb.Add("CATALOGOS");
+            }
+            else if (permisosDb.Count == 0)
+            {
+                permisosDb.AddRange(new[] { "RUTAS_OWN", "DASHBOARD" });
+            }
+
+            return permisosDb;
         }
     }
 
@@ -2409,7 +2431,12 @@ namespace Transporte.Infrastructure.Repositories
                     u.Activo,
                     u.CreatedAt
                 FROM TB_USUARIOS u
-                LEFT JOIN TB_CAMIONES c ON u.Id = c.UsuarioId AND c.IsDeleted = 0
+                OUTER APPLY (
+                    SELECT TOP 1 c2.Id, c2.Placa, c2.MarcaModelo, c2.CapacidadLitros
+                    FROM TB_CAMIONES c2
+                    WHERE c2.UsuarioId = u.Id AND c2.IsDeleted = 0
+                    ORDER BY c2.Activo DESC, c2.Id DESC
+                ) c
                 WHERE (UPPER(u.Rol) = 'CHOFER' OR UPPER(u.Rol) = 'CONDUCTOR' OR u.RolId = 4)
                   AND u.IsDeleted = 0
                   AND u.Activo = 1
@@ -8679,7 +8706,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 LEFT JOIN TB_CAMIONES cam ON cam.UsuarioId = cr.UsuarioId AND cam.Activo = 1
                 WHERE {whereFecha}
                   AND (@cicloId IS NULL OR cr.CicloId = @cicloId)
-                  AND (UPPER(@rol) LIKE '%ADMIN%' OR @rol IN ('SUPERVISOR', 'GERENTE') OR cr.UsuarioId = @usuarioId)
+                  AND (UPPER(@rol) LIKE '%ADMIN%' OR @rol IN ('SUPERVISOR', 'GERENTE') OR (cr.UsuarioId = @usuarioId AND CAST(cr.Fecha AS DATE) <= CAST(GETDATE() AS DATE)))
                 ORDER BY cr.Fecha DESC, cr.Id DESC";
 
             return await connection.QueryAsync<ControlRutaDto>(sql, new { inicio, fin, cicloId, rol, usuarioId });

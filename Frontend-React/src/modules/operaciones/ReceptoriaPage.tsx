@@ -79,6 +79,9 @@ export const ReceptoriaPage: React.FC = () => {
     { id: '1', companiaId: 0, litrosDespachados: 0, tipoLeche: 'VACA', numeroGuiaSADA: '', observacion: '' }
   ]);
   const [obsRecepcionInput, setObsRecepcionInput] = useState<string>('');
+  const [fincasViajeVerificar, setFincasViajeVerificar] = useState<any[]>([]);
+  const [fincasVerificadasIds, setFincasVerificadasIds] = useState<Set<number>>(new Set());
+  const [cargandoFincasViaje, setCargandoFincasViaje] = useState<boolean>(false);
 
   const [formDespacho, setFormDespacho] = useState({
     camionId: 0,
@@ -352,7 +355,24 @@ export const ReceptoriaPage: React.FC = () => {
       { id: '1', companiaId: 0, litrosDespachados: lts, tipoLeche: 'VACA', numeroGuiaSADA: '', observacion: '' }
     ]);
     setObsRecepcionInput('');
+    setFincasViajeVerificar([]);
+    setFincasVerificadasIds(new Set());
+    setCargandoFincasViaje(true);
     setModalVerificarViaje(true);
+
+    if (viaje?.id) {
+      operacionesApi.getFincasViaje(viaje.id)
+        .then((fincas) => {
+          const list = Array.isArray(fincas) ? fincas : [];
+          setFincasViajeVerificar(list);
+        })
+        .catch(() => {
+          setFincasViajeVerificar([]);
+        })
+        .finally(() => {
+          setCargandoFincasViaje(false);
+        });
+    }
   };
 
   const recibirViajeMutation = useMutation({
@@ -2959,6 +2979,191 @@ export const ReceptoriaPage: React.FC = () => {
                     );
                   })()}
                 </div>
+              </div>
+
+              {/* TABLA DE VERIFICACIÓN DE FINCAS, LITROS Y RECIBOS */}
+              <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <i className="fa-solid fa-clipboard-check" style={{ color: '#2563eb' }}></i>
+                      Verificación de Fincas y Comprobantes ({fincasVerificadasIds.size} de {fincasViajeVerificar.length} verificadas)
+                    </span>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b' }}>
+                      Verifique los litros reportados y foto del ticket/recibo de cada finca (una a una o todas):
+                    </p>
+                  </div>
+                  {fincasViajeVerificar.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (fincasVerificadasIds.size === fincasViajeVerificar.length) {
+                          setFincasVerificadasIds(new Set());
+                        } else {
+                          setFincasVerificadasIds(new Set(fincasViajeVerificar.map((f, idx) => Number(f.id || f.fincaId || idx))));
+                        }
+                      }}
+                      className="btn btn-sm"
+                      style={{
+                        height: '30px',
+                        padding: '0 12px',
+                        fontSize: '11.5px',
+                        fontWeight: 700,
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        background: fincasVerificadasIds.size === fincasViajeVerificar.length ? '#f0fdf4' : '#eff6ff',
+                        color: fincasVerificadasIds.size === fincasViajeVerificar.length ? '#16a34a' : '#2563eb',
+                        border: fincasVerificadasIds.size === fincasViajeVerificar.length ? '1.5px solid #86efac' : '1.5px solid #bfdbfe',
+                      }}
+                    >
+                      <i className={fincasVerificadasIds.size === fincasViajeVerificar.length ? "fa-solid fa-square-check" : "fa-regular fa-square"}></i>
+                      {fincasVerificadasIds.size === fincasViajeVerificar.length ? 'Deseleccionar Todas' : 'Verificar TODAS'}
+                    </button>
+                  )}
+                </div>
+
+                {cargandoFincasViaje ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '12px' }}>
+                    <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i> Cargando fincas del ticket...
+                  </div>
+                ) : fincasViajeVerificar.length === 0 ? (
+                  <div style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', background: '#ffffff', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
+                    No hay fincas individuales registradas en este ticket.
+                  </div>
+                ) : (
+                  <div style={{ maxHeight: '210px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                      <thead style={{ background: '#f1f5f9', position: 'sticky', top: 0, zIndex: 2 }}>
+                        <tr style={{ borderBottom: '1.5px solid #cbd5e1', textAlign: 'left' }}>
+                          <th style={{ padding: '8px 10px', width: '38px', textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              title="Marcar / Desmarcar Todas"
+                              checked={fincasViajeVerificar.length > 0 && fincasVerificadasIds.size === fincasViajeVerificar.length}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFincasVerificadasIds(new Set(fincasViajeVerificar.map((f, idx) => Number(f.id || f.fincaId || idx))));
+                                } else {
+                                  setFincasVerificadasIds(new Set());
+                                }
+                              }}
+                              style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#2563eb' }}
+                            />
+                          </th>
+                          <th style={{ padding: '8px 10px', fontWeight: 700, color: '#475569' }}>Finca / Productor</th>
+                          <th style={{ padding: '8px 10px', fontWeight: 700, color: '#475569', textAlign: 'right' }}>Litros Campo</th>
+                          <th style={{ padding: '8px 10px', fontWeight: 700, color: '#475569', textAlign: 'center' }}>Tipo / Observación</th>
+                          <th style={{ padding: '8px 10px', fontWeight: 700, color: '#475569', textAlign: 'center' }}>Recibo / Foto</th>
+                          <th style={{ padding: '8px 10px', fontWeight: 700, color: '#475569', textAlign: 'center' }}>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fincasViajeVerificar.map((f, idx) => {
+                          const fid = Number(f.id || f.fincaId || idx);
+                          const verificado = fincasVerificadasIds.has(fid);
+                          const foto = f.fotoComprobante || f.fotoReciboUrl;
+                          const lts = Number(f.litros || f.litrosLeche || 0);
+                          const nomFinca = f.fincaNombre || f.nombre || `Finca #${f.fincaId || fid}`;
+                          const prop = f.propietarioNombre || f.propietario || '';
+
+                          return (
+                            <tr
+                              key={fid}
+                              onClick={() => {
+                                setFincasVerificadasIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(fid)) next.delete(fid);
+                                  else next.add(fid);
+                                  return next;
+                                });
+                              }}
+                              style={{
+                                borderBottom: '1px solid #f1f5f9',
+                                background: verificado ? '#f0fdf4' : idx % 2 === 0 ? '#ffffff' : '#fafafa',
+                                cursor: 'pointer',
+                                transition: 'background-color 0.15s',
+                              }}
+                            >
+                              <td style={{ padding: '8px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={verificado}
+                                  onChange={(e) => {
+                                    setFincasVerificadasIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (e.target.checked) next.add(fid);
+                                      else next.delete(fid);
+                                      return next;
+                                    });
+                                  }}
+                                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#16a34a' }}
+                                />
+                              </td>
+                              <td style={{ padding: '8px 10px' }}>
+                                <div style={{ fontWeight: 700, color: '#1e293b' }}>{nomFinca}</div>
+                                {prop && <div style={{ fontSize: '10.5px', color: '#64748b' }}>{prop}</div>}
+                              </td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>
+                                {lts.toLocaleString()} Lts
+                              </td>
+                              <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: f.esAcida ? '#fee2e2' : '#f1f5f9', color: f.esAcida ? '#dc2626' : '#475569', fontWeight: 600 }}>
+                                  {f.tipoLeche || 'VACA'} {f.esAcida ? '(Ácida)' : ''}
+                                </span>
+                                {f.observacion && (
+                                  <div style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '2px auto 0' }}>
+                                    {f.observacion}
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                                {foto ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setModalVerFotoRecibo(foto)}
+                                    className="btn btn-sm"
+                                    title="Ver foto del ticket / recibo"
+                                    style={{
+                                      padding: '3px 8px',
+                                      fontSize: '11px',
+                                      fontWeight: 700,
+                                      borderRadius: '6px',
+                                      color: '#16a34a',
+                                      borderColor: '#86efac',
+                                      background: '#f0fdf4',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    <i className="fa-solid fa-camera"></i> Ver Foto
+                                  </button>
+                                ) : (
+                                  <span style={{ color: '#94a3b8', fontSize: '11px' }}>Sin foto</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                {verificado ? (
+                                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '3px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <i className="fa-solid fa-circle-check"></i> Verificado
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px' }}>
+                                    Pendiente
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {/* SELECTOR VISUAL DE ACCIÓN */}

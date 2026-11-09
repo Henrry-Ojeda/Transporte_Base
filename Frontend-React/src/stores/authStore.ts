@@ -17,6 +17,7 @@ interface AuthState {
 
   // Verificaciones RBAC y Feature Flags SaaS
   isAdmin: () => boolean;
+  isSupervisor: () => boolean;
   isSuperAdmin: () => boolean;
   isAppHijo: () => boolean;
   hasPermission: (codigo: string) => boolean;
@@ -92,6 +93,13 @@ export const useAuthStore = create<AuthState>()(
         if (!user) return false;
         const rol = (user.rol || '').toUpperCase();
         return rol.includes('ADMIN') || rol === 'ADMINISTRADOR GENERAL';
+      },
+
+      isSupervisor: () => {
+        const user = get().user;
+        if (!user) return false;
+        const rol = (user.rol || '').toUpperCase();
+        return rol === 'SUPERVISOR' || rol.includes('SUPERVISOR');
       },
 
       isSuperAdmin: () => {

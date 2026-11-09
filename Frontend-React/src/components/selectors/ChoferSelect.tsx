@@ -35,11 +35,18 @@ export const ChoferSelect: React.FC<ChoferSelectProps> = ({
   });
 
   const options: SelectOption[] = useMemo(() => {
-    return choferes.map((u) => ({
-      value: u.id,
-      label: u.nombreCompleto || u.nombre || u.nombreUsuario || `Chofer #${u.id}`,
-      subLabel: u.nombreUsuario ? `Usuario: ${u.nombreUsuario} | Rol: ${u.rol || 'CHOFER'}` : undefined,
-    }));
+    const seen = new Set<number>();
+    const opts: SelectOption[] = [];
+    for (const u of choferes) {
+      if (!u || !u.id || seen.has(u.id)) continue;
+      seen.add(u.id);
+      opts.push({
+        value: u.id,
+        label: u.nombreCompleto || u.nombre || u.nombreUsuario || `Chofer #${u.id}`,
+        subLabel: u.nombreUsuario ? `Usuario: ${u.nombreUsuario} | Rol: ${u.rol || 'CHOFER'}` : undefined,
+      });
+    }
+    return opts;
   }, [choferes]);
 
   const handleChange = (val: string | number) => {

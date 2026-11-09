@@ -660,6 +660,27 @@ namespace Transporte.API.Controllers
         }
 
         /// <summary>
+        /// Obtiene la bitácora global de auditoría de todas las modificaciones del sistema (Solo SUPERADMIN y ADMIN).
+        /// </summary>
+        [HttpGet("logs-auditoria-global")]
+        public async Task<IActionResult> ObtenerLogsAuditoriaGlobal(
+            [FromQuery] DateTime? fechaDesde,
+            [FromQuery] DateTime? fechaHasta,
+            [FromQuery] string? tipoEntidad,
+            [FromQuery] string? busqueda,
+            [FromQuery] int limite = 200)
+        {
+            var rol = (User.FindFirstValue(ClaimTypes.Role) ?? "").ToUpper();
+            if (rol != "SUPERADMIN" && rol != "ADMIN" && rol != "SUPER_ADMIN")
+            {
+                return Forbid();
+            }
+
+            var logs = await _controlRutasRepository.ObtenerLogsAuditoriaGlobalAsync(fechaDesde, fechaHasta, tipoEntidad, busqueda, limite);
+            return Ok(logs);
+        }
+
+        /// <summary>
         /// Valida filas cargadas desde un archivo Excel antes de crear tickets.
         /// Verifica fincas, choferes, litros, fechas y detección de duplicados ya existentes.
         /// </summary>

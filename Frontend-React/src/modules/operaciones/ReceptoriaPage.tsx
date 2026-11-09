@@ -69,6 +69,17 @@ export const ReceptoriaPage: React.FC = () => {
     { id: '1', companiaId: 0, litrosDespachados: 0, tipoLeche: 'VACA', numeroGuiaSADA: '', observacion: '' }
   ]);
 
+  // Modal Verificar y Recibir Leche de Ruta (con Recargar y Despachar)
+  const [modalVerificarViaje, setModalVerificarViaje] = useState<boolean>(false);
+  const [viajeParaRecibir, setViajeParaRecibir] = useState<any | null>(null);
+  const [litrosRecibidosInput, setLitrosRecibidosInput] = useState<number>(0);
+  const [modoRecepcion, setModoRecepcion] = useState<'DEJAR_EN_RECEPTORIA' | 'RECARGAR_Y_DESPACHAR'>('DEJAR_EN_RECEPTORIA');
+  const [recargaSilosInput, setRecargaSilosInput] = useState<number>(0);
+  const [destinosRecarga, setDestinosRecarga] = useState<DestinoSalidaRow[]>([
+    { id: '1', companiaId: 0, litrosDespachados: 0, tipoLeche: 'VACA', numeroGuiaSADA: '', observacion: '' }
+  ]);
+  const [obsRecepcionInput, setObsRecepcionInput] = useState<string>('');
+
   const [formDespacho, setFormDespacho] = useState({
     camionId: 0,
     companiaId: 0,
@@ -329,6 +340,66 @@ export const ReceptoriaPage: React.FC = () => {
     onError: (err: any) => {
       toast.error(err.response?.data?.message || 'Error al eliminar entrega');
     },
+  });
+
+  const abrirModalVerificarViaje = (viaje: any) => {
+    const lts = Number(viaje.totalLitrosRecogidos || viaje.totalLitrosFinca || 0);
+    setViajeParaRecibir(viaje);
+    setLitrosRecibidosInput(lts);
+    setModoRecepcion('DEJAR_EN_RECEPTORIA');
+    setRecargaSilosInput(0);
+    setDestinosRecarga([
+      { id: '1', companiaId: 0, litrosDespachados: lts, tipoLeche: 'VACA', numeroGuiaSADA: '', observacion: '' }
+    ]);
+    setObsRecepcionInput('');
+    setModalVerificarViaje(true);
+  };
+
+  const recibirViajeMutation = useMutation({
+    mutationFn: async () => {
+      if (!viajeParaRecibir) return;
+      const payload: any = {
+        litrosRecibidos: Math.round(Number(litrosRecibidosInput)),
+        accion: modoRecepcion,
+        litrosCargadosAdicional: modoRecepcion === 'RECARGAR_Y_DESPACHAR' ? Math.round(Number(recargaSilosInput)) : 0,
+        observacion: obsRecepcionInput,
+      };
+      if (modoRecepcion === 'RECARGAR_Y_DESPACHAR') {
+        const dests = destinosRecarga
+          .filter((d) => d.companiaId > 0 && Number(d.litrosDespachados) > 0)
+          .map((d) => ({
+            companiaId: d.companiaId,
+            litrosDespachados: Math.round(Number(d.litrosDespachados)),
+            litros: Math.round(Number(d.litrosDespachados)),
+            tipoLeche: d.tipoLeche || 'VACA',
+            numeroGuiaSADA: d.numeroGuiaSADA || '',
+            observacion: d.observacion || '',
+          }));
+
+        if (dests.length === 0) {
+          throw new Error('Debe especificar al menos una planta o compañía de destino con litros mayores a 0.');
+        }
+        payload.destinos = dests;
+      }
+      return await operacionesApi.recibirEnReceptoria(viajeParaRecibir.id, payload);
+    },
+    onSuccess: () => {
+      toast.success(
+        modoRecepcion === 'RECARGAR_Y_DESPACHAR'
+          ? '¡Recepción verificada y Despacho a Compañía emitido exitosamente!'
+          : '¡Leche descargada en Silos y viaje finalizado con éxito!'
+      );
+      queryClient.invalidateQueries({ queryKey: ['viajes-activos-receptoria'] });
+      queryClient.invalidateQueries({ queryKey: ['despachos-companias'] });
+      queryClient.invalidateQueries({ queryKey: ['receptoria-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['receptoria-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-hoy'] });
+      setModalVerificarViaje(false);
+      setViajeParaRecibir(null);
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || err.message || 'Error al procesar la recepción');
+    }
   });
 
   // Cálculo de totales y balance
@@ -839,22 +910,30 @@ export const ReceptoriaPage: React.FC = () => {
                       <span style={{ fontWeight: 900, color: '#0284c7', fontSize: '16px' }}>
                         {(c.totalLitrosRecogidos || 0).toLocaleString()} <small style={{ fontSize: '11px', color: '#64748b' }}>Lts</small>
                       </span>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline"
-                        onClick={() => {
-                          setFormEntrega({
-                            ...formEntrega,
-                            usuarioId: c.choferId || 0,
-                            litros: c.totalLitrosRecogidos || 0,
-                            observacion: `Descarga de Viaje #${c.id} - ${c.camionPlaca || ''}`,
-                          });
-                          setMostrarFormulario(true);
-                        }}
-                        style={{ fontSize: '11.5px', fontWeight: 700, padding: '4px 10px', color: '#0284c7', borderColor: '#7dd3fc' }}
-                      >
-                        <i className="fa-solid fa-arrow-down-to-bracket"></i> Descargar a Silos
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => abrirModalVerificarViaje(c)}
+                          style={{
+                            fontSize: '11.5px',
+                            fontWeight: 800,
+                            padding: '5px 12px',
+                            background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                            border: 'none',
+                            color: '#ffffff',
+                            borderRadius: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)',
+                            cursor: 'pointer',
+                          }}
+                          title="Verificar litros y Descargar en Silos o Recargar y Despachar a Compañía"
+                        >
+                          <i className="fa-solid fa-clipboard-check"></i> Verificar y Recibir
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -2759,6 +2838,521 @@ export const ReceptoriaPage: React.FC = () => {
                 style={{ height: '36px', padding: '0 16px', fontWeight: 700 }}
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL VERIFICAR Y RECIBIR VIAJE (CON OPCIÓN RECARGAR Y DESPACHAR A COMPAÑÍA) */}
+      {modalVerificarViaje && viajeParaRecibir && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '16px',
+              maxWidth: '820px',
+              width: '100%',
+              maxHeight: '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              overflow: 'hidden',
+            }}
+          >
+            {/* ENCABEZADO DEL MODAL */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                color: '#ffffff',
+                padding: '16px 22px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <i className="fa-solid fa-truck-ramp-box"></i>
+                  Verificación y Recepción en Planta / Receptoría
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#e0f2fe', fontWeight: 500 }}>
+                  Viaje #{viajeParaRecibir.id} • {viajeParaRecibir.camionPlaca || 'Camión Cisterna'} • Conductor: {viajeParaRecibir.choferNombre || 'Asignado'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalVerificarViaje(false)}
+                style={{ background: 'transparent', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* CUERPO DEL MODAL */}
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* COMPARATIVA DE LITROS FINCA VS RECEPTORÍA */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                    Litros Recogidos en Finca
+                  </span>
+                  <div style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', marginTop: '4px' }}>
+                    {(Number(viajeParaRecibir.totalLitrosRecogidos || viajeParaRecibir.totalLitrosFinca || 0)).toLocaleString()}{' '}
+                    <small style={{ fontSize: '12px', color: '#64748b' }}>Lts</small>
+                  </div>
+                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>Reportado por conductor</span>
+                </div>
+
+                <div style={{ background: '#f0f9ff', border: '1.5px solid #bae6fd', borderRadius: '10px', padding: '12px 14px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    Litros Recibidos en Planta *
+                  </label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    required
+                    style={{ fontSize: '18px', fontWeight: 900, color: '#0369a1', height: '38px' }}
+                    value={litrosRecibidosInput || ''}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setLitrosRecibidosInput(val);
+                      if (modoRecepcion === 'RECARGAR_Y_DESPACHAR' && destinosRecarga.length === 1) {
+                        setDestinosRecarga([{ ...destinosRecarga[0], litrosDespachados: val + (Number(recargaSilosInput) || 0) }]);
+                      }
+                    }}
+                  />
+                  {/* Badge de diferencia */}
+                  {(() => {
+                    const lFinca = Number(viajeParaRecibir.totalLitrosRecogidos || viajeParaRecibir.totalLitrosFinca || 0);
+                    const dif = (Number(litrosRecibidosInput) || 0) - lFinca;
+                    const pct = lFinca > 0 ? ((Math.abs(dif) * 100) / lFinca).toFixed(2) : '0.00';
+                    if (dif === 0) {
+                      return (
+                        <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: 700, color: '#059669' }}>
+                          <i className="fa-solid fa-circle-check"></i> 100% Cuadrado (0 Lts de diferencia)
+                        </div>
+                      );
+                    }
+                    if (dif < 0) {
+                      return (
+                        <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: 700, color: '#e11d48' }}>
+                          <i className="fa-solid fa-triangle-exclamation"></i> Merma de Ruta: {dif.toLocaleString()} Lts (-{pct}%)
+                        </div>
+                      );
+                    }
+                    return (
+                      <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: 700, color: '#0284c7' }}>
+                        <i className="fa-solid fa-circle-info"></i> Favorable: +{dif.toLocaleString()} Lts (+{pct}%)
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* SELECTOR VISUAL DE ACCIÓN */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', textTransform: 'uppercase', marginBottom: '8px' }}>
+                  Seleccione el proceso a realizar:
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {/* OPCION 1: DEJAR EN RECEPTORIA */}
+                  <div
+                    onClick={() => setModoRecepcion('DEJAR_EN_RECEPTORIA')}
+                    style={{
+                      cursor: 'pointer',
+                      borderRadius: '12px',
+                      padding: '14px',
+                      border: modoRecepcion === 'DEJAR_EN_RECEPTORIA' ? '2.5px solid #0284c7' : '1.5px solid #e2e8f0',
+                      background: modoRecepcion === 'DEJAR_EN_RECEPTORIA' ? '#eff6ff' : '#ffffff',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      transition: 'all 0.15s ease-in-out',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: modoRecepcion === 'DEJAR_EN_RECEPTORIA' ? '#0284c7' : '#334155' }}>
+                        <i className="fa-solid fa-arrow-down-to-bracket" style={{ marginRight: '6px' }}></i>
+                        Solo Descargar a Silos
+                      </span>
+                      <input
+                        type="radio"
+                        checked={modoRecepcion === 'DEJAR_EN_RECEPTORIA'}
+                        onChange={() => setModoRecepcion('DEJAR_EN_RECEPTORIA')}
+                        style={{ accentColor: '#0284c7', width: '16px', height: '16px' }}
+                      />
+                    </div>
+                    <p style={{ margin: 0, fontSize: '11px', color: '#64748b', lineHeight: 1.3 }}>
+                      La leche se queda almacenada en los silos de la receptoría. Cierre del viaje.
+                    </p>
+                  </div>
+
+                  {/* OPCION 2: RECARGAR Y DESPACHAR */}
+                  <div
+                    onClick={() => {
+                      setModoRecepcion('RECARGAR_Y_DESPACHAR');
+                      if (destinosRecarga.length === 1 && destinosRecarga[0].litrosDespachados === 0) {
+                        setDestinosRecarga([{ ...destinosRecarga[0], litrosDespachados: Number(litrosRecibidosInput) || 0 }]);
+                      }
+                    }}
+                    style={{
+                      cursor: 'pointer',
+                      borderRadius: '12px',
+                      padding: '14px',
+                      border: modoRecepcion === 'RECARGAR_Y_DESPACHAR' ? '2.5px solid #9333ea' : '1.5px solid #e2e8f0',
+                      background: modoRecepcion === 'RECARGAR_Y_DESPACHAR' ? '#faf5ff' : '#ffffff',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      transition: 'all 0.15s ease-in-out',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: modoRecepcion === 'RECARGAR_Y_DESPACHAR' ? '#9333ea' : '#334155' }}>
+                        <i className="fa-solid fa-truck-fast" style={{ marginRight: '6px' }}></i>
+                        RECARGAR Y DESPACHAR
+                      </span>
+                      <input
+                        type="radio"
+                        checked={modoRecepcion === 'RECARGAR_Y_DESPACHAR'}
+                        onChange={() => {
+                          setModoRecepcion('RECARGAR_Y_DESPACHAR');
+                          if (destinosRecarga.length === 1 && destinosRecarga[0].litrosDespachados === 0) {
+                            setDestinosRecarga([{ ...destinosRecarga[0], litrosDespachados: Number(litrosRecibidosInput) || 0 }]);
+                          }
+                        }}
+                        style={{ accentColor: '#9333ea', width: '16px', height: '16px' }}
+                      />
+                    </div>
+                    <p style={{ margin: 0, fontSize: '11px', color: '#64748b', lineHeight: 1.3 }}>
+                      El camión continúa a planta/compañía. Permite recargar silos y añadir multi-destinos.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* CONTENIDO EXCLUSIVO: RECARGAR Y DESPACHAR */}
+              {modoRecepcion === 'RECARGAR_Y_DESPACHAR' && (
+                <div
+                  style={{
+                    background: '#faf5ff',
+                    border: '1.5px solid #d8b4fe',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                  }}
+                >
+                  {/* SECCIÓN 1: RECARGA DESDE SILOS */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', alignItems: 'center' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#6b21a8', marginBottom: '4px' }}>
+                        <i className="fa-solid fa-gas-pump" style={{ marginRight: '4px' }}></i>
+                        Litros adicionales desde Silos (Recarga)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        className="form-input"
+                        placeholder="0 (Si solo traslada lo de ruta)"
+                        value={recargaSilosInput || ''}
+                        onChange={(e) => {
+                          const val = Math.max(0, Number(e.target.value));
+                          setRecargaSilosInput(val);
+                          const total = (Number(litrosRecibidosInput) || 0) + val;
+                          if (destinosRecarga.length === 1) {
+                            setDestinosRecarga([{ ...destinosRecarga[0], litrosDespachados: total }]);
+                          }
+                        }}
+                        style={{ height: '36px', fontSize: '14px', fontWeight: 700 }}
+                      />
+                    </div>
+
+                    <div style={{ background: '#ffffff', border: '1px solid #e9d5ff', borderRadius: '8px', padding: '10px 14px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#7e22ce', textTransform: 'uppercase' }}>
+                        Total Disponible en Cisterna:
+                      </span>
+                      <div style={{ fontSize: '18px', fontWeight: 900, color: '#6b21a8' }}>
+                        {((Number(litrosRecibidosInput) || 0) + (Number(recargaSilosInput) || 0)).toLocaleString()}{' '}
+                        <small style={{ fontSize: '11px', color: '#9333ea' }}>Lts para despacho</small>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECCIÓN 2: MULTI-DESTINOS (COMPAÑÍAS / QUESERAS) */}
+                  <div style={{ borderTop: '1px solid #e9d5ff', paddingTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#581c87', textTransform: 'uppercase' }}>
+                        <i className="fa-solid fa-building-wheat" style={{ marginRight: '6px' }}></i>
+                        Destinos del Despacho ({destinosRecarga.length})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDestinosRecarga([
+                            ...destinosRecarga,
+                            {
+                              id: String(Date.now()),
+                              companiaId: 0,
+                              litrosDespachados: 0,
+                              tipoLeche: 'VACA',
+                              numeroGuiaSADA: '',
+                              observacion: '',
+                            },
+                          ]);
+                        }}
+                        style={{
+                          background: 'linear-gradient(135deg, #10b981, #059669)',
+                          border: 'none',
+                          color: '#ffffff',
+                          fontWeight: 700,
+                          fontSize: '11.5px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '5px 12px',
+                          borderRadius: '6px',
+                          boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
+                        }}
+                      >
+                        <i className="fa-solid fa-plus"></i> + Añadir Destino
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {destinosRecarga.map((dest, idx) => (
+                        <div
+                          key={dest.id}
+                          style={{
+                            background: '#ffffff',
+                            border: '1.5px solid #e9d5ff',
+                            borderRadius: '10px',
+                            padding: '12px 14px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: '#7e22ce', textTransform: 'uppercase', background: '#f3e8ff', padding: '2px 8px', borderRadius: '4px' }}>
+                              Destino #{idx + 1}
+                            </span>
+                            {destinosRecarga.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => setDestinosRecarga(destinosRecarga.filter((d) => d.id !== dest.id))}
+                                style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}
+                              >
+                                <i className="fa-solid fa-trash-can"></i> Quitar
+                              </button>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', alignItems: 'end' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                                Planta / Compañía *
+                              </label>
+                              <CompaniaSelect
+                                value={dest.companiaId || undefined}
+                                onChange={(val) => {
+                                  const updated = destinosRecarga.map((d) => (d.id === dest.id ? { ...d, companiaId: val || 0 } : d));
+                                  setDestinosRecarga(updated);
+                                }}
+                                placeholder="-- Seleccionar Planta --"
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                                Litros a Despachar *
+                              </label>
+                              <input
+                                type="number"
+                                className="form-input"
+                                required
+                                placeholder="Litros"
+                                value={dest.litrosDespachados || ''}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value);
+                                  const updated = destinosRecarga.map((d) => (d.id === dest.id ? { ...d, litrosDespachados: val } : d));
+                                  setDestinosRecarga(updated);
+                                }}
+                                style={{ height: '36px', fontSize: '13px', fontWeight: 700 }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                                Tipo de Leche
+                              </label>
+                              <TipoLecheSelect
+                                value={dest.tipoLeche}
+                                onChange={(val) => {
+                                  const updated = destinosRecarga.map((d) => (d.id === dest.id ? { ...d, tipoLeche: val } : d));
+                                  setDestinosRecarga(updated);
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                                Guía SADA
+                              </label>
+                              <input
+                                type="text"
+                                className="form-input"
+                                placeholder="N° Guía SADA"
+                                value={dest.numeroGuiaSADA}
+                                onChange={(e) => {
+                                  const updated = destinosRecarga.map((d) => (d.id === dest.id ? { ...d, numeroGuiaSADA: e.target.value } : d));
+                                  setDestinosRecarga(updated);
+                                }}
+                                style={{ height: '36px', fontSize: '12px' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div style={{ marginTop: '8px' }}>
+                            <input
+                              type="text"
+                              className="form-input"
+                              placeholder="Observación del destino (opcional)"
+                              value={dest.observacion}
+                              onChange={(e) => {
+                                const updated = destinosRecarga.map((d) => (d.id === dest.id ? { ...d, observacion: e.target.value } : d));
+                                setDestinosRecarga(updated);
+                              }}
+                              style={{ height: '32px', fontSize: '12px' }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* BALANCE DE DESTINOS VS TOTAL CISTERNA */}
+                    {(() => {
+                      const totalCisterna = (Number(litrosRecibidosInput) || 0) + (Number(recargaSilosInput) || 0);
+                      const sumaDest = destinosRecarga.reduce((acc, d) => acc + (Number(d.litrosDespachados) || 0), 0);
+                      const difDest = totalCisterna - sumaDest;
+                      return (
+                        <div
+                          style={{
+                            marginTop: '10px',
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            background: difDest === 0 ? '#ecfdf5' : '#fffbeb',
+                            border: `1px solid ${difDest === 0 ? '#a7f3d0' : '#fde68a'}`,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                          }}
+                        >
+                          <span style={{ color: difDest === 0 ? '#065f46' : '#92400e' }}>
+                            {difDest === 0 ? (
+                              <>
+                                <i className="fa-solid fa-circle-check" style={{ marginRight: '6px' }}></i>
+                                Cuadre exacto: {sumaDest.toLocaleString()} Lts asignados a los destinos
+                              </>
+                            ) : (
+                              <>
+                                <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '6px' }}></i>
+                                Asignados {sumaDest.toLocaleString()} Lts de {totalCisterna.toLocaleString()} Lts en cisterna (Dif: {difDest > 0 ? `+${difDest}` : difDest} Lts)
+                              </>
+                            )}
+                          </span>
+                          <span style={{ color: '#6b21a8' }}>Total Cisterna: {totalCisterna.toLocaleString()} Lts</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* OBSERVACIÓN GENERAL */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                  Observaciones Generales de la Recepción:
+                </label>
+                <textarea
+                  className="form-input"
+                  rows={2}
+                  placeholder="Detalles sobre temperatura, acidez, condiciones de la leche, etc."
+                  value={obsRecepcionInput}
+                  onChange={(e) => setObsRecepcionInput(e.target.value)}
+                  style={{ fontSize: '12.5px', resize: 'vertical' }}
+                />
+              </div>
+            </div>
+
+            {/* BOTONES DEL MODAL */}
+            <div
+              style={{
+                padding: '14px 22px',
+                background: '#f8fafc',
+                borderTop: '1px solid #e2e8f0',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                alignItems: 'center',
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setModalVerificarViaje(false)}
+                style={{ height: '38px', padding: '0 16px', fontWeight: 600 }}
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={recibirViajeMutation.isPending || (Number(litrosRecibidosInput) <= 0)}
+                onClick={() => recibirViajeMutation.mutate()}
+                style={{
+                  height: '38px',
+                  padding: '0 20px',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  background: modoRecepcion === 'RECARGAR_Y_DESPACHAR' ? 'linear-gradient(135deg, #9333ea, #7e22ce)' : '#0284c7',
+                  border: 'none',
+                  borderRadius: '8px',
+                  boxShadow: modoRecepcion === 'RECARGAR_Y_DESPACHAR' ? '0 4px 12px rgba(147, 51, 234, 0.3)' : '0 4px 12px rgba(2, 132, 199, 0.3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                }}
+              >
+                {recibirViajeMutation.isPending ? (
+                  <>
+                    <i className="fa-solid fa-spinner fa-spin"></i> Procesando...
+                  </>
+                ) : modoRecepcion === 'RECARGAR_Y_DESPACHAR' ? (
+                  <>
+                    <i className="fa-solid fa-paper-plane"></i> Confirmar Recarga y Despacho a Compañía
+                  </>
+                ) : (
+                  <>
+                    <i className="fa-solid fa-arrow-down-to-bracket"></i> Confirmar Descarga en Silos
+                  </>
+                )}
               </button>
             </div>
           </div>

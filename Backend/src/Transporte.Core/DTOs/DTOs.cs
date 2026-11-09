@@ -1742,6 +1742,7 @@ namespace Transporte.Core.DTOs
         public int? LitrosCargadosAdicional { get; set; }
         public int? CompaniaDestinoId { get; set; }
         public string? Observacion { get; set; }
+        public List<DestinoEnvioRutaDto>? Destinos { get; set; }
     }
 
     public class EntregarDirectoCompaniaDto
@@ -1847,6 +1848,7 @@ namespace Transporte.Core.DTOs
         public int LitrosDespachados { get; set; }
         public int Litros { get; set; } // Alias para soportar "litros" o "litrosDespachados" desde Frontend
         public string? TipoLeche { get; set; }
+        public string? NumeroGuiaSADA { get; set; }
         public string? Observacion { get; set; }
     }
 
@@ -1915,6 +1917,7 @@ namespace Transporte.Core.DTOs
         public string Motivo { get; set; } = string.Empty;
         public int UsuarioId { get; set; }
         public string? NombreUsuario { get; set; }
+        public string? RolUsuario { get; set; }
         public DateTime Fecha { get; set; }
     }
 

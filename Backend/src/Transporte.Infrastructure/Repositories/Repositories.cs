@@ -8400,6 +8400,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
         Task<IEnumerable<EntregaItemDto>> ObtenerEntregasDeViajeAsync(long controlRutaId);
         Task<bool> EditarEntregaDeViajeAuditadoAsync(long controlRutaId, long entregaId, EditarEntregaViajeAuditadoDto dto, int usuarioId, string rol);
         Task<IEnumerable<LogModificacionControlDto>> ObtenerLogsModificacionesControlAsync(long controlRutaId);
+        Task<IEnumerable<LogModificacionControlDto>> ObtenerLogsAuditoriaGlobalAsync(DateTime? fechaDesde, DateTime? fechaHasta, string? tipoEntidad, string? busqueda, int limite = 200);
         Task<ValidarCargaMasivaExcelResponseDto> ValidarCargaMasivaExcelAsync(ValidarCargaMasivaExcelRequestDto dto, int usuarioId, string rol);
         Task<EjecutarCargaMasivaExcelResponseDto> EjecutarCargaMasivaExcelAsync(EjecutarCargaMasivaExcelRequestDto dto, int usuarioId, string rol);
     }
@@ -9689,15 +9690,86 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             {
                 // RECARGAR_Y_DESPACHAR -> Sale a compañía
                 int recarga = dto.LitrosCargadosAdicional ?? 0;
+                int totalLitrosDespacho = dto.LitrosRecibidos + recarga;
+                int choferDespacho = (viaje.UsuarioId != null && (int)viaje.UsuarioId > 0) ? (int)viaje.UsuarioId : usuarioId;
+                var fecha = (DateTime)viaje.Fecha;
+                var cicloId = (int?)viaje.CicloId;
+
+                var insertCompSql = @"
+                    INSERT INTO TB_CONTROL_COMPANIAS 
+                    (Fecha, UsuarioId, CompaniaId, CicloId, LitrosDespachados, LitrosRecibidosCompania, DiferenciaLitros, PorcentajeMerma, Estado, TipoLeche, Observacion, ControlRutaId, FechaSalida, CreatedAt, CreatedBy)
+                    VALUES 
+                    (@fecha, @choferDespacho, @companiaId, @cicloId, @litrosDespacho, NULL, 0, 0.00, 'EN VIA', @tipoLeche, @obs, @controlRutaId, GETDATE(), GETDATE(), @usuarioId);
+                    SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
+
+                int primerCompaniaId = 0;
+                int totalDespachadoReal = 0;
+
+                if (dto.Destinos != null && dto.Destinos.Count > 0)
+                {
+                    foreach (var d in dto.Destinos)
+                    {
+                        int ltsItem = d.LitrosDespachados > 0 ? d.LitrosDespachados : d.Litros;
+                        if (d.CompaniaId <= 0 || ltsItem <= 0) continue;
+                        if (primerCompaniaId == 0) primerCompaniaId = d.CompaniaId;
+
+                        var tipoLeche = string.IsNullOrWhiteSpace(d.TipoLeche) ? "VACA" : d.TipoLeche.Trim().ToUpper();
+                        var obsItem = $"Recarga y Despacho desde Receptoría (Viaje #{controlRutaId}). {d.Observacion ?? dto.Observacion}".Trim();
+
+                        await connection.ExecuteAsync(insertCompSql, new
+                        {
+                            fecha,
+                            choferDespacho,
+                            companiaId = d.CompaniaId,
+                            cicloId,
+                            litrosDespacho = ltsItem,
+                            tipoLeche,
+                            obs = obsItem,
+                            controlRutaId,
+                            usuarioId
+                        });
+                        totalDespachadoReal += ltsItem;
+                    }
+                }
+                else if (dto.CompaniaDestinoId.HasValue && dto.CompaniaDestinoId.Value > 0)
+                {
+                    primerCompaniaId = dto.CompaniaDestinoId.Value;
+                    var tipoLeche = "VACA";
+                    var obsItem = $"Recarga y Despacho desde Receptoría (Viaje #{controlRutaId}). {dto.Observacion}".Trim();
+                    await connection.ExecuteAsync(insertCompSql, new
+                    {
+                        fecha,
+                        choferDespacho,
+                        companiaId = primerCompaniaId,
+                        cicloId,
+                        litrosDespacho = totalLitrosDespacho,
+                        tipoLeche,
+                        obs = obsItem,
+                        controlRutaId,
+                        usuarioId
+                    });
+                    totalDespachadoReal = totalLitrosDespacho;
+                }
+
+                if (primerCompaniaId == 0 && dto.CompaniaDestinoId.HasValue)
+                {
+                    primerCompaniaId = dto.CompaniaDestinoId.Value;
+                }
+
+                int finalDespachado = totalDespachadoReal > 0 ? totalDespachadoReal : totalLitrosDespacho;
+
                 var rows = await connection.ExecuteAsync(@"
                     UPDATE TB_CONTROL_RUTAS
                     SET LitrosRecibidosReceptoria = @litrosRecibidos,
                         DiferenciaReceptoria = @diferenciaRec,
                         LitrosCargadosAdicional = @recarga,
-                        CompaniaDestinoId = @companiaDestinoId,
+                        TotalLitrosReceptoria = @litrosRecibidos,
+                        CompaniaDestinoId = @primerCompaniaId,
                         TipoDestino = 'RECEPTORIA_Y_COMPANIA',
                         ProcesoActualId = 3,
+                        Estado = 'RECEPCIONADO',
                         FechaLlegadaReceptoria = ISNULL(FechaLlegadaReceptoria, GETDATE()),
+                        FechaSalida = GETDATE(),
                         ModifiedAt = GETDATE(),
                         ModifiedBy = @usuarioId
                     WHERE Id = @controlRutaId",
@@ -9706,7 +9778,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         litrosRecibidos = dto.LitrosRecibidos,
                         diferenciaRec,
                         recarga,
-                        companiaDestinoId = dto.CompaniaDestinoId,
+                        primerCompaniaId = primerCompaniaId > 0 ? primerCompaniaId : (int?)null,
                         usuarioId,
                         controlRutaId
                     });
@@ -9718,8 +9790,26 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     {
                         controlRutaId,
                         usuarioId,
-                        obs = $"Recepción validada ({dto.LitrosRecibidos} L). Recarga adicional: {recarga} L. Despachado a Compañía ID: {dto.CompaniaDestinoId}. {dto.Observacion}".Trim()
+                        obs = $"Recepción verificada ({dto.LitrosRecibidos} L). Recarga adicional: {recarga} L. Despachado a Compañía ({finalDespachado} L). {dto.Observacion}".Trim()
                     });
+
+                try
+                {
+                    await connection.ExecuteAsync(@"
+                        INSERT INTO TB_LOG_MODIFICACIONES_CONTROL 
+                        (ControlRutaId, TipoEntidad, EntidadId, TipoAccion, ValoresAnteriores, ValoresNuevos, Motivo, UsuarioId, Fecha)
+                        VALUES 
+                        (@controlRutaId, 'RECEPTORIA', @controlRutaId, 'RECARGAR_Y_DESPACHAR', @valAnt, @valNue, @motivo, @usuarioId, GETDATE());",
+                        new
+                        {
+                            controlRutaId,
+                            valAnt = $"LitrosFinca={totalFinca}",
+                            valNue = $"LitrosRecibidos={dto.LitrosRecibidos}, RecargaSilos={recarga}, TotalDespachado={finalDespachado}, CompaniaId={primerCompaniaId}",
+                            motivo = $"Recarga y despacho a compañía desde Receptoría. {dto.Observacion}".Trim(),
+                            usuarioId
+                        });
+                }
+                catch { /* Tolerante */ }
 
                 return rows > 0;
             }
@@ -11564,12 +11654,54 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     l.Motivo,
                     l.UsuarioId,
                     u.NombreCompleto AS NombreUsuario,
+                    u.Rol AS RolUsuario,
                     l.Fecha
                 FROM TB_LOG_MODIFICACIONES_CONTROL l
                 INNER JOIN TB_USUARIOS u ON l.UsuarioId = u.Id
                 WHERE l.ControlRutaId = @controlRutaId
                 ORDER BY l.Fecha DESC, l.Id DESC";
             return await connection.QueryAsync<LogModificacionControlDto>(sql, new { controlRutaId });
+        }
+
+        public async Task<IEnumerable<LogModificacionControlDto>> ObtenerLogsAuditoriaGlobalAsync(
+            DateTime? fechaDesde, DateTime? fechaHasta, string? tipoEntidad, string? busqueda, int limite = 200)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            var sql = @"
+                SELECT TOP (@limite)
+                    l.Id,
+                    l.ControlRutaId,
+                    l.TipoEntidad,
+                    l.EntidadId,
+                    l.TipoAccion,
+                    l.ValoresAnteriores,
+                    l.ValoresNuevos,
+                    l.Motivo,
+                    l.UsuarioId,
+                    ISNULL(u.NombreCompleto, u.Email) AS NombreUsuario,
+                    u.Rol AS RolUsuario,
+                    l.Fecha
+                FROM TB_LOG_MODIFICACIONES_CONTROL l
+                LEFT JOIN TB_USUARIOS u ON l.UsuarioId = u.Id
+                WHERE 1 = 1
+                  AND (@fechaDesde IS NULL OR l.Fecha >= @fechaDesde)
+                  AND (@fechaHasta IS NULL OR l.Fecha <= @fechaHasta)
+                  AND (@tipoEntidad IS NULL OR @tipoEntidad = '' OR l.TipoEntidad = @tipoEntidad)
+                  AND (@busqueda IS NULL OR @busqueda = '' 
+                       OR l.Motivo LIKE '%' + @busqueda + '%' 
+                       OR l.TipoAccion LIKE '%' + @busqueda + '%' 
+                       OR CAST(l.ControlRutaId AS VARCHAR) LIKE '%' + @busqueda + '%' 
+                       OR u.NombreCompleto LIKE '%' + @busqueda + '%')
+                ORDER BY l.Fecha DESC, l.Id DESC";
+
+            return await connection.QueryAsync<LogModificacionControlDto>(sql, new
+            {
+                limite = Math.Max(1, Math.Min(limite, 500)),
+                fechaDesde,
+                fechaHasta,
+                tipoEntidad,
+                busqueda
+            });
         }
 
         private async Task _RecalcularMetricasTicketAsync(SqlConnection connection, long controlRutaId, int usuarioId)

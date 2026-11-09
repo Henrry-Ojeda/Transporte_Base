@@ -25,6 +25,7 @@ import {
   Trash2,
   X,
   Search,
+  ShieldAlert,
 } from 'lucide-react';
 import { operacionesApi } from '@/api/operaciones.api';
 import { catalogosApi } from '@/api/catalogos.api';
@@ -106,6 +107,126 @@ export const ViajesTicketsPage: React.FC = () => {
     observacion: '',
     motivo: '',
   });
+
+  // Modal Bitácora Global de Auditoría (Superadmin / Admin)
+  const [modalAuditoriaGlobal, setModalAuditoriaGlobal] = useState(false);
+  const [filtroAuditEntidad, setFiltroAuditEntidad] = useState('');
+  const [filtroAuditBusqueda, setFiltroAuditBusqueda] = useState('');
+  const [filtroAuditDesde, setFiltroAuditDesde] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().split('T')[0];
+  });
+  const [filtroAuditHasta, setFiltroAuditHasta] = useState(() => new Date().toISOString().split('T')[0]);
+
+  const { data: logsAuditoriaGlobal = [], isLoading: isLoadingAudit, refetch: refetchAudit } = useQuery({
+    queryKey: ['logs-auditoria-global', filtroAuditDesde, filtroAuditHasta, filtroAuditEntidad, filtroAuditBusqueda],
+    queryFn: () => operacionesApi.getLogsAuditoriaGlobal({
+      fechaDesde: filtroAuditDesde ? `${filtroAuditDesde}T00:00:00` : undefined,
+      fechaHasta: filtroAuditHasta ? `${filtroAuditHasta}T23:59:59` : undefined,
+      tipoEntidad: filtroAuditEntidad || undefined,
+      busqueda: filtroAuditBusqueda || undefined,
+      limite: 300,
+    }),
+    enabled: modalAuditoriaGlobal,
+  });
+
+  const columnasAuditoriaGlobal: ColumnDef<any>[] = useMemo(() => [
+    {
+      header: 'Fecha / Hora',
+      accessorKey: 'fecha',
+      cell: (row) => {
+        const f = row.fecha;
+        return (
+          <div className="text-xs">
+            <div className="font-semibold text-slate-800">
+              {f ? new Date(f).toLocaleDateString('es-VE') : '-'}
+            </div>
+            <div className="text-[10px] text-slate-500 font-mono">
+              {f ? new Date(f).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Ticket / Entidad',
+      accessorKey: 'controlRutaId',
+      cell: (row) => (
+        <div>
+          <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded text-xs">
+            Ticket #{row.controlRutaId}
+          </span>
+          <div className="text-[10px] text-slate-500 font-semibold uppercase mt-0.5">
+            {row.tipoEntidad} {row.entidadId ? `(ID ${row.entidadId})` : ''}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'Acción',
+      accessorKey: 'tipoAccion',
+      cell: (row) => {
+        const accion = row.tipoAccion || '';
+        let badgeColor = 'bg-slate-100 text-slate-700 border-slate-300';
+        if (accion.includes('RECARGAR') || accion.includes('DESPACHAR')) {
+          badgeColor = 'bg-purple-100 text-purple-800 border-purple-300';
+        } else if (accion.includes('EDITAR') || accion.includes('MODIFICAR')) {
+          badgeColor = 'bg-amber-100 text-amber-800 border-amber-300';
+        } else if (accion.includes('ELIMINAR') || accion.includes('LIMPIAR')) {
+          badgeColor = 'bg-rose-100 text-rose-800 border-rose-300';
+        } else if (accion.includes('REVERTIR')) {
+          badgeColor = 'bg-orange-100 text-orange-800 border-orange-300';
+        } else if (accion.includes('CREAR')) {
+          badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+        }
+        return (
+          <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${badgeColor}`}>
+            {accion}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Valores Anteriores',
+      accessorKey: 'valoresAnteriores',
+      cell: (row) => (
+        <span className="text-[11px] font-mono text-slate-600 max-w-[200px] truncate block" title={row.valoresAnteriores}>
+          {row.valoresAnteriores || '—'}
+        </span>
+      ),
+    },
+    {
+      header: 'Valores Nuevos',
+      accessorKey: 'valoresNuevos',
+      cell: (row) => (
+        <span className="text-[11px] font-mono font-semibold text-emerald-700 max-w-[240px] truncate block" title={row.valoresNuevos}>
+          {row.valoresNuevos || '—'}
+        </span>
+      ),
+    },
+    {
+      header: 'Motivo / Detalle',
+      accessorKey: 'motivo',
+      cell: (row) => (
+        <span className="text-xs text-slate-700 font-medium max-w-[260px] truncate block" title={row.motivo}>
+          {row.motivo || '—'}
+        </span>
+      ),
+    },
+    {
+      header: 'Usuario Responsable',
+      accessorKey: 'nombreUsuario',
+      cell: (row) => (
+        <div className="text-xs">
+          <div className="font-bold text-slate-800">{row.nombreUsuario || `Usuario #${row.usuarioId}`}</div>
+          <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">
+            {row.rolUsuario || 'USUARIO'}
+          </span>
+        </div>
+      ),
+    },
+  ], []);
 
   // Formulario iniciar nuevo viaje
   const [formIniciar, setFormIniciar] = useState({
@@ -1325,6 +1446,17 @@ export const ViajesTicketsPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {(isAdmin || (user?.rol || '').toUpperCase().includes('ADMIN')) && (
+            <button
+              type="button"
+              onClick={() => setModalAuditoriaGlobal(true)}
+              className="btn btn-outline text-xs font-bold h-9 px-3.5 flex items-center gap-1.5 border border-purple-300 rounded-lg text-purple-700 bg-purple-50 hover:bg-purple-100 shadow-xs"
+              title="Ver bitácora global de auditoría de todas las modificaciones y creaciones del sistema"
+            >
+              <ShieldAlert className="w-4 h-4 text-purple-600" /> Auditoría Global
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleImprimirBitacora}
@@ -3420,6 +3552,116 @@ export const ViajesTicketsPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL BITÁCORA GLOBAL DE AUDITORÍA (SUPERADMIN / ADMIN) */}
+      {modalAuditoriaGlobal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-6xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-purple-700 to-indigo-800 text-white p-4 px-6 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-purple-300" />
+                  Bitácora Global de Auditoría (Superadmin)
+                </h3>
+                <p className="text-xs text-purple-200 mt-0.5">
+                  Registro inmutable de todas las creaciones, ediciones, limpiezas y reversiones operativas
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalAuditoriaGlobal(false)}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Filtros Bar */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600">Desde:</span>
+                <input
+                  type="date"
+                  value={filtroAuditDesde}
+                  onChange={(e) => setFiltroAuditDesde(e.target.value)}
+                  className="form-input text-xs h-8 rounded border-slate-300 px-2"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600">Hasta:</span>
+                <input
+                  type="date"
+                  value={filtroAuditHasta}
+                  onChange={(e) => setFiltroAuditHasta(e.target.value)}
+                  className="form-input text-xs h-8 rounded border-slate-300 px-2"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600">Entidad:</span>
+                <select
+                  value={filtroAuditEntidad}
+                  onChange={(e) => setFiltroAuditEntidad(e.target.value)}
+                  className="form-select text-xs h-8 rounded border-slate-300 px-2 font-medium"
+                >
+                  <option value="">TODAS LAS ENTIDADES</option>
+                  <option value="RECEPTORIA">RECEPTORÍA</option>
+                  <option value="FINCA">FINCA / PARADA</option>
+                  <option value="ENTREGA_PLANTA">ENTREGA A PLANTA</option>
+                  <option value="CONTROL_COMPANIA">CONTROL COMPAÑÍA</option>
+                  <option value="CONTROL_RUTA">TICKET / VIAJE</option>
+                </select>
+              </div>
+
+              <div className="flex-1 min-w-[200px]">
+                <input
+                  type="text"
+                  placeholder="Buscar por motivo, acción o ticket..."
+                  value={filtroAuditBusqueda}
+                  onChange={(e) => setFiltroAuditBusqueda(e.target.value)}
+                  className="form-input text-xs h-8 w-full rounded border-slate-300 px-3"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => refetchAudit()}
+                className="btn btn-outline text-xs font-bold h-8 px-3 flex items-center gap-1 border border-purple-300 rounded text-purple-700 bg-white hover:bg-purple-50"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${isLoadingAudit ? 'animate-spin' : ''}`} /> Recargar
+              </button>
+            </div>
+
+            {/* Content DataTable */}
+            <div className="p-4 overflow-y-auto flex-1">
+              <DataTable
+                data={logsAuditoriaGlobal}
+                columns={columnasAuditoriaGlobal}
+                isLoading={isLoadingAudit}
+                searchPlaceholder="Filtrar registros de auditoría..."
+                exportFileName={`Auditoria_Global_${filtroAuditDesde}_al_${filtroAuditHasta}`}
+                pageSizeDefault={20}
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 px-6 bg-slate-100 border-t border-slate-200 flex justify-between items-center text-xs text-slate-600">
+              <span className="font-semibold">
+                Mostrando {logsAuditoriaGlobal.length} registros auditados guardados en base de datos
+              </span>
+              <button
+                type="button"
+                onClick={() => setModalAuditoriaGlobal(false)}
+                className="px-4 py-1.5 bg-slate-700 text-white rounded font-bold hover:bg-slate-800 transition-colors"
+              >
+                Cerrar Bitácora
+              </button>
+            </div>
           </div>
         </div>
       )}

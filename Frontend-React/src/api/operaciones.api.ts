@@ -109,6 +109,17 @@ export const operacionesApi = {
     return Array.isArray(res.data) ? res.data : [];
   },
 
+  getLogsAuditoriaGlobal: async (params?: {
+    fechaDesde?: string;
+    fechaHasta?: string;
+    tipoEntidad?: string;
+    busqueda?: string;
+    limite?: number;
+  }): Promise<any[]> => {
+    const res = await apiClient.get<any[]>('/control-rutas/logs-auditoria-global', { params });
+    return Array.isArray(res.data) ? res.data : [];
+  },
+
   editarFincaViajeAuditado: async (id: number, rutaId: number, dto: { fincaId: number; litros: number; esAcida?: boolean; esDiferido?: boolean; tipoLeche?: string; motivo?: string; motivoModificacion?: string; observacion?: string }): Promise<{ message: string }> => {
     const payload = {
       fincaId: dto.fincaId,
@@ -378,6 +389,14 @@ export const operacionesApi = {
     litrosCargadosAdicional?: number;
     companiaDestinoId?: number;
     observacion?: string;
+    destinos?: Array<{
+      companiaId: number;
+      litrosDespachados?: number;
+      litros?: number;
+      tipoLeche?: string;
+      numeroGuiaSADA?: string;
+      observacion?: string;
+    }>;
   }): Promise<{ success?: boolean; message?: string }> => {
     try {
       const res = await apiClient.post(`/control-rutas/${id}/recibir-receptoria`, {
@@ -386,6 +405,7 @@ export const operacionesApi = {
         litrosCargadosAdicional: dto.litrosCargadosAdicional,
         companiaDestinoId: dto.companiaDestinoId,
         observacion: dto.observacion,
+        destinos: dto.destinos,
       });
       return res.data;
     } catch {
@@ -395,6 +415,7 @@ export const operacionesApi = {
         litrosCargadosAdicional: dto.litrosCargadosAdicional,
         companiaDestinoId: dto.companiaDestinoId,
         observacion: dto.observacion,
+        destinos: dto.destinos,
       });
       return res.data;
     }

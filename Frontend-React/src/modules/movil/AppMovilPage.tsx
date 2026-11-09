@@ -11,6 +11,7 @@ import { combustibleApi } from '@/api/combustible.api';
 import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.api';
 import { finanzasApi } from '@/api/finanzas.api';
 import { useAuthStore } from '@/stores/authStore';
+import { updateAppIcon } from '@/utils/pwaIcons';
 import type {
   FincaDto,
   DespachoCompaniaDto,
@@ -34,6 +35,7 @@ interface DispositivoMovilData {
   token: string;
   empresaCodigo: string;
   empresaNombre: string;
+  empresaLogo?: string;
   id: number;
   username: string;
   nombreCompleto: string;
@@ -132,6 +134,14 @@ export const AppMovilPage: React.FC = () => {
       if (host.includes('campoverde')) return 'Lácteos Campo Verde';
       if (host.includes('vergel')) return 'Transporte Vergel & Carrillo';
       return '';
+    } catch {
+      return '';
+    }
+  });
+
+  const [logoGuardado, setLogoGuardado] = useState<string>(() => {
+    try {
+      return localStorage.getItem('movil_tenant_logo') || localStorage.getItem('app_empresa_logo') || '';
     } catch {
       return '';
     }
@@ -441,6 +451,28 @@ export const AppMovilPage: React.FC = () => {
       return null;
     }
   });
+
+  // Efecto para sincronizar dinámicamente el logotipo de la empresa como icono del móvil
+  useEffect(() => {
+    const l = dispositivo?.empresaLogo || logoGuardado;
+    if (l) {
+      updateAppIcon(l);
+    } else {
+      catalogosApi.getEmpresaConfig()
+        .then((res: any) => {
+          const fetchedLogo = res?.logoUrl || res?.LogoUrl;
+          if (fetchedLogo) {
+            setLogoGuardado(fetchedLogo);
+            try {
+              localStorage.setItem('movil_tenant_logo', fetchedLogo);
+              localStorage.setItem('app_empresa_logo', fetchedLogo);
+            } catch {}
+            updateAppIcon(fetchedLogo);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [dispositivo?.empresaLogo]);
 
   // Fincas en Caché Local
   const [fincas, setFincas] = useState<FincaDto[]>(() => {
@@ -4277,24 +4309,48 @@ export const AppMovilPage: React.FC = () => {
             textAlign: 'center',
           }}
         >
-          {/* Logo / Cabecera */}
-          <div
-            style={{
-              width: '74px',
-              height: '74px',
-              borderRadius: '22px',
-              background: 'linear-gradient(135deg, #0284c7, #2563eb)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px auto',
-              fontSize: '32px',
-              color: '#ffffff',
-              boxShadow: '0 10px 25px rgba(2, 132, 199, 0.35)',
-            }}
-          >
-            <i className="fa-solid fa-truck-droplet"></i>
-          </div>
+          {/* Logo / Cabecera Dinámica (Toma el logo de la empresa como icono del móvil) */}
+          {logoGuardado ? (
+            <div
+              style={{
+                width: '78px',
+                height: '78px',
+                borderRadius: '22px',
+                background: '#ffffff',
+                border: '2px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px auto',
+                boxShadow: '0 10px 25px rgba(0, 0, 0, 0.08)',
+                padding: '8px',
+              }}
+            >
+              <img
+                src={logoGuardado}
+                alt="Logo Empresa"
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+              />
+            </div>
+          ) : (
+            <div
+              style={{
+                width: '74px',
+                height: '74px',
+                borderRadius: '22px',
+                background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px auto',
+                fontSize: '32px',
+                color: '#ffffff',
+                boxShadow: '0 10px 25px rgba(2, 132, 199, 0.35)',
+              }}
+            >
+              <i className="fa-solid fa-truck-droplet"></i>
+            </div>
+          )}
 
           <h1 style={{ fontSize: '21px', fontWeight: 900, margin: '0 0 4px 0', letterSpacing: '-0.5px', color: '#0f172a' }}>
             Rutas de Leche
@@ -4341,16 +4397,23 @@ export const AppMovilPage: React.FC = () => {
                   width: '36px',
                   height: '36px',
                   borderRadius: '10px',
-                  background: '#dbeafe',
+                  background: logoGuardado ? '#ffffff' : '#dbeafe',
                   color: '#0284c7',
+                  border: logoGuardado ? '1px solid #e2e8f0' : 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: '17px',
                   flexShrink: 0,
+                  overflow: 'hidden',
+                  padding: logoGuardado ? '3px' : '0',
                 }}
               >
-                <i className="fa-solid fa-mobile-screen-button"></i>
+                {logoGuardado ? (
+                  <img src={logoGuardado} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                ) : (
+                  <i className="fa-solid fa-mobile-screen-button"></i>
+                )}
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '10px', color: '#0284c7', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.5px' }}>
@@ -4840,7 +4903,14 @@ export const AppMovilPage: React.FC = () => {
                 <i className={`fa-solid ${isOnline ? 'fa-signal' : 'fa-plane'}`}></i>
                 {isOnline ? 'En Línea' : 'Offline'}
               </span>
-              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
+              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                {(dispositivo.empresaLogo || logoGuardado) && (
+                  <img
+                    src={dispositivo.empresaLogo || logoGuardado}
+                    alt="Logo"
+                    style={{ width: '16px', height: '16px', objectFit: 'contain', borderRadius: '3px' }}
+                  />
+                )}
                 {dispositivo.empresaNombre}
               </span>
               <span

@@ -21,29 +21,34 @@ namespace Transporte.API.Controllers
     {
         private readonly IAuthRepository _authRepository;
         private readonly IUsuariosRepository _usuariosRepository;
+        private readonly ICatalogosRepository _catalogosRepository;
         private readonly IConfiguration _config;
         private readonly Transporte.Core.Interfaces.ITenantService _tenantService;
 
         public AuthController(
             IAuthRepository authRepository, 
             IUsuariosRepository usuariosRepository,
+            ICatalogosRepository catalogosRepository,
             IConfiguration config,
             Transporte.Core.Interfaces.ITenantService tenantService)
         {
             _authRepository = authRepository;
             _usuariosRepository = usuariosRepository;
+            _catalogosRepository = catalogosRepository;
             _config = config;
             _tenantService = tenantService;
         }
 
         [HttpGet("tenant")]
         [AllowAnonymous]
-        public IActionResult GetTenantInfo()
+        public async Task<IActionResult> GetTenantInfo()
         {
+            var config = await _catalogosRepository.ObtenerEmpresaConfigAsync();
             return Ok(new
             {
                 codigo = _tenantService.GetTenantCode(),
                 nombre = _tenantService.GetTenantName(),
+                logoUrl = config?.LogoUrl,
                 modulos = _tenantService.GetModulosActivos()
             });
         }
@@ -347,12 +352,14 @@ namespace Transporte.API.Controllers
             var usuarioDb = await _usuariosRepository.ObtenerUsuarioPorIdAsync(usuarioId);
             bool permisoCrear = usuarioDb?.PermisoCrearViaje ?? false;
 
+            var empresaCfg = await _catalogosRepository.ObtenerEmpresaConfigAsync();
+
             return Ok(new VincularDispositivoResponseDto
             {
                 Token = tokenString,
                 EmpresaCodigo = tenantCode,
                 EmpresaNombre = empresaNombre,
-                EmpresaLogo = null,
+                EmpresaLogo = empresaCfg?.LogoUrl,
                 Id = usuarioId,
                 Username = username,
                 NombreCompleto = nombreCompleto,

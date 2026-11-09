@@ -2,6 +2,8 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
+import apiClient from '@/api/client';
+import { updateAppIcon } from '@/utils/pwaIcons';
 
 import { LoginPage } from '@/modules/auth/LoginPage';
 import { ProtectedRoute } from '@/components/common/ProtectedRoute';
@@ -97,10 +99,36 @@ const HomeRedirect: React.FC = () => {
   return <Navigate to="/dashboard" replace />;
 };
 
+// Componente global para sincronizar el logo de la empresa como icono de la app (PWA, Favicon y Móvil)
+const DynamicAppIconSync: React.FC = () => {
+  React.useEffect(() => {
+    try {
+      const savedLogo = localStorage.getItem('app_empresa_logo') || localStorage.getItem('movil_tenant_logo');
+      if (savedLogo) {
+        updateAppIcon(savedLogo);
+      }
+
+      apiClient.get<any>('/catalogos/empresa')
+        .then((res) => {
+          const logo = res.data?.logoUrl || res.data?.LogoUrl;
+          if (logo) {
+            localStorage.setItem('app_empresa_logo', logo);
+            localStorage.setItem('movil_tenant_logo', logo);
+            updateAppIcon(logo);
+          }
+        })
+        .catch(() => {});
+    } catch {}
+  }, []);
+
+  return null;
+};
+
 export const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
+        <DynamicAppIconSync />
         <BrowserRouter>
           <SessionMonitor />
           <Routes>

@@ -22,8 +22,8 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 15,
-  patch: 3,
-  tag: 'v3.15.3',
+  patch: 4,
+  tag: 'v3.15.4',
   ultimaActualizacion: '2026-11-09',
   tipoUltimoCambio: 'DISEÑO',
   descripcion: 'Timelapse con fincas asignadas en ruta, diferenciación de pendientes vs recolectadas, vista fija de finca con captura/adjunto de comprobante y recarga forzada v3.11.1',

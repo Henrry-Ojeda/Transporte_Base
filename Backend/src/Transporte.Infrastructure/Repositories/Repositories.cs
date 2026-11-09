@@ -4982,7 +4982,6 @@ namespace Transporte.Infrastructure.Repositories
                 LEFT JOIN TB_CONTROL_RUTAS cr ON e.ControlRutaId = cr.Id
                 WHERE CAST(e.Fecha AS DATE) = @fecha 
                   AND e.CompaniaId = 5028
-                  AND (cr.TipoServicioId = 1 OR cr.TipoServicioId IS NULL)
 
                 UNION ALL
 
@@ -5051,7 +5050,6 @@ namespace Transporte.Infrastructure.Repositories
                     LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
                     LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
                     WHERE CAST(cr.Fecha AS DATE) = @fecha
-                      AND (cr.TipoServicioId = 1 OR cr.TipoServicioId IS NULL)
                     ORDER BY cr.Id ASC";
 
                 var fallback = (await connection.QueryAsync<dynamic>(sqlRutasFallback, new { fecha = fecha.Date })).ToList();
@@ -10790,7 +10788,6 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 LEFT JOIN TB_CONTROL_RUTAS cr ON e.ControlRutaId = cr.Id
                 WHERE CAST(e.Fecha AS DATE) = @fecha 
                   AND e.CompaniaId = 5028
-                  AND (cr.TipoServicioId = 1 OR cr.TipoServicioId IS NULL)
 
                 UNION ALL
 
@@ -10859,7 +10856,6 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
                     LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
                     WHERE CAST(cr.Fecha AS DATE) = @fecha
-                      AND (cr.TipoServicioId = 1 OR cr.TipoServicioId IS NULL)
                     ORDER BY cr.Id ASC";
 
                 var fallback = (await connection.QueryAsync<dynamic>(sqlRutasFallback, new { fecha = fecha.Date })).ToList();

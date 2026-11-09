@@ -8,6 +8,7 @@ namespace Transporte.API.Controllers
 {
     [ApiController]
     [Route("api/pagos-usuarios")]
+    [Route("api/pagosusuarios")]
     [Authorize]
     public class PagosUsuariosController : ControllerBase
     {

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 
 export interface ColumnDef<T> {
-  header: string;
+  header: React.ReactNode;
   accessorKey?: keyof T | string;
   cell?: (row: T) => React.ReactNode;
   className?: string;

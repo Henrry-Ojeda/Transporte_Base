@@ -305,45 +305,211 @@ export const LiquidacionesPage: React.FC = () => {
     return Array.from(map.values());
   }, [preliquidacion, filtroEstado, filtroBanco, modoAgrupacion]);
 
+  // Selección múltiple para Unificación de Pagos (1:1 con V2_3_11_26)
+  const [fincasSeleccionadas, setFincasSeleccionadas] = useState<number[]>([]);
+  const [procesandoLote, setProcesandoLote] = useState(false);
+
+  const fincasPorProductor = useMemo(() => {
+    const map: Record<string, PreliquidacionFincaDto[]> = {};
+    preliquidacion.forEach((p) => {
+      const key = (p.propietarioNombre || '').trim().toUpperCase();
+      if (!key) return;
+      if (!map[key]) map[key] = [];
+      map[key].push(p);
+    });
+    return map;
+  }, [preliquidacion]);
+
+  const toggleFinca = (fincaId: number) => {
+    setFincasSeleccionadas((prev) =>
+      prev.includes(fincaId) ? prev.filter((id) => id !== fincaId) : [...prev, fincaId]
+    );
+  };
+
+  const toggleTodos = (checked: boolean) => {
+    if (checked) {
+      const idsPendientes = preliquidacionVisual.filter((f) => !f.pagado).map((f) => f.fincaId);
+      setFincasSeleccionadas(idsPendientes);
+    } else {
+      setFincasSeleccionadas([]);
+    }
+  };
+
+  const seleccionarFincasDeProductor = (propietarioNombre: string) => {
+    const key = (propietarioNombre || '').trim().toUpperCase();
+    const fincas = fincasPorProductor[key] || [];
+    const idsPendientes = fincas.filter((f) => !f.pagado).map((f) => f.fincaId);
+    if (idsPendientes.length === 0) {
+      toast.info(`Todas las fincas de ${propietarioNombre} ya se encuentran pagadas.`);
+      return;
+    }
+    setFincasSeleccionadas((prev) => Array.from(new Set([...prev, ...idsPendientes])));
+    toast.success(`Se seleccionaron ${idsPendientes.length} finca(s) de ${propietarioNombre}`);
+  };
+
+  const cancelarSeleccion = () => {
+    setFincasSeleccionadas([]);
+  };
+
+  const fincasSeleccionadasObjetos = useMemo(() => {
+    return preliquidacion.filter((f) => fincasSeleccionadas.includes(f.fincaId));
+  }, [preliquidacion, fincasSeleccionadas]);
+
+  const resumenSeleccion = useMemo(() => {
+    const totalLitros = fincasSeleccionadasObjetos.reduce((acc, f) => acc + (f.totalLitros || 0), 0);
+    const totalUSD = fincasSeleccionadasObjetos.reduce((acc, f) => acc + (f.totalBrutoUSD || 0), 0);
+    const totalAdelantosUSD = fincasSeleccionadasObjetos.reduce((acc, f) => acc + (f.totalAdelantosUSD || 0), 0);
+    const totalNetoUSD = fincasSeleccionadasObjetos.reduce((acc, f) => acc + (f.totalNetoUSD || 0), 0);
+    const totalNetoBs = fincasSeleccionadasObjetos.reduce((acc, f) => acc + (f.totalNetoBs || 0), 0);
+    return { totalLitros, totalUSD, totalAdelantosUSD, totalNetoUSD, totalNetoBs };
+  }, [fincasSeleccionadasObjetos]);
+
+  const ejecutarPagoUnificado = async () => {
+    if (fincasSeleccionadasObjetos.length === 0) return;
+
+    const { value: referencia, isConfirmed } = await Swal.fire({
+      title: '¿Confirmar Pago Unificado / Por Lote?',
+      html: `
+        <div style="text-align: left; font-size: 13px; line-height: 1.5; color: #cbd5e1;">
+          <p style="margin-bottom: 8px;">Se registrará el pago para <strong>${fincasSeleccionadasObjetos.length} fincas</strong> seleccionadas:</p>
+          <div style="background: rgba(255,255,255,0.06); padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #334155;">
+            <div><strong>Fincas:</strong> ${fincasSeleccionadasObjetos.map((f) => f.fincaNombre).join(', ')}</div>
+            <div><strong>Total Litros:</strong> ${resumenSeleccion.totalLitros.toLocaleString()} Lts</div>
+            <div><strong>Total Bruto:</strong> $${resumenSeleccion.totalUSD.toFixed(2)}</div>
+            <div><strong>Total Adelantos:</strong> -$${resumenSeleccion.totalAdelantosUSD.toFixed(2)}</div>
+            <div style="font-size: 15px; font-weight: 800; color: #34d399; margin-top: 4px;">
+              Total Neto a Pagar: Bs. ${resumenSeleccion.totalNetoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} ($${resumenSeleccion.totalNetoUSD.toFixed(2)} USD)
+            </div>
+          </div>
+          <label style="display: block; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">N° Referencia Bancaria (Opcional):</label>
+        </div>
+      `,
+      input: 'text',
+      inputPlaceholder: 'Ej: REF-9823412',
+      showCancelButton: true,
+      confirmButtonText: '<i class="fa-solid fa-credit-card"></i> Confirmar y Registrar Pagos',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#64748b',
+      background: '#1e293b',
+      color: '#fff',
+    });
+
+    if (!isConfirmed) return;
+
+    setProcesandoLote(true);
+    let exitos = 0;
+    try {
+      const cicloId = cicloSeleccionadoId || cicloActivo?.id || 0;
+      for (const f of fincasSeleccionadasObjetos) {
+        await finanzasApi.pagarPreliquidacion({
+          fincaId: f.fincaId,
+          cicloId,
+          referenciaPago: referencia || 'PAGO-LOTE-UNIFICADO',
+          montoUSD: f.totalNetoUSD,
+          montoBs: f.totalNetoBs,
+          tasaBCV: f.tasaBCV || cicloActivo?.tasaBCVCierre || 0,
+        });
+        exitos++;
+      }
+      toast.success(`Se procesaron exitosamente ${exitos} pagos.`);
+      setFincasSeleccionadas([]);
+      queryClient.invalidateQueries({ queryKey: ['preliquidacion'] });
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al procesar pagos en lote');
+    } finally {
+      setProcesandoLote(false);
+    }
+  };
+
   // Columnas para DataTable (Master Rule #2)
   const columns: ColumnDef<PreliquidacionFincaDto>[] = [
     {
-      header: 'CÓDIGO & FINCA',
-      accessorKey: 'fincaNombre',
-      sortable: true,
+      header: (
+        <div style={{ textAlign: 'center' }}>
+          <input
+            type="checkbox"
+            checked={
+              preliquidacionVisual.filter((f) => !f.pagado).length > 0 &&
+              preliquidacionVisual.filter((f) => !f.pagado).every((f) => fincasSeleccionadas.includes(f.fincaId))
+            }
+            onChange={(e) => toggleTodos(e.target.checked)}
+            title="Seleccionar todas las fincas pendientes para unificar"
+            style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#2563eb' }}
+          />
+        </div>
+      ),
+      width: '44px',
       cell: (row) => (
-        <div>
-          <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '13px' }}>{row.fincaNombre}</div>
-          <span style={{ fontSize: '11px', color: '#0284c7', fontFamily: 'monospace', fontWeight: 700 }}>
-            {row.fincaCodigo ? `#${row.fincaCodigo}` : `ID #${row.fincaId}`}
-          </span>
+        <div style={{ textAlign: 'center' }}>
+          <input
+            type="checkbox"
+            checked={fincasSeleccionadas.includes(row.fincaId)}
+            disabled={row.pagado}
+            onChange={() => toggleFinca(row.fincaId)}
+            title={row.pagado ? 'Finca ya pagada' : 'Seleccionar para unificar o pagar en lote'}
+            style={{
+              width: '18px',
+              height: '18px',
+              cursor: row.pagado ? 'not-allowed' : 'pointer',
+              accentColor: '#2563eb',
+              opacity: row.pagado ? 0.35 : 1,
+            }}
+          />
         </div>
       ),
     },
     {
-      header: 'PROPIETARIO & PAGO',
-      accessorKey: 'propietarioNombre',
+      header: 'FINCA / PRODUCTOR',
+      accessorKey: 'fincaNombre',
       sortable: true,
-      cell: (row) => (
-        <div style={{ fontSize: '12px' }}>
-          <div style={{ fontWeight: 700, color: '#1e293b' }}>
-            <i className="fa-regular fa-user" style={{ color: '#64748b', marginRight: '5px' }}></i>
-            {row.propietarioNombre}
+      cell: (row) => {
+        const propKey = (row.propietarioNombre || '').trim().toUpperCase();
+        const fincasProp = propKey ? fincasPorProductor[propKey] || [] : [];
+        const tieneVarias = fincasProp.length > 1;
+
+        return (
+          <div>
+            <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '13px' }}>{row.fincaNombre}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '1px' }}>
+              <span style={{ fontSize: '11px', color: '#0284c7', fontFamily: 'monospace', fontWeight: 700 }}>
+                {row.fincaCodigo ? `#${row.fincaCodigo}` : `ID #${row.fincaId}`}
+              </span>
+              <span style={{ fontSize: '11.5px', color: '#475569', fontWeight: 600 }}>
+                <i className="fa-regular fa-user" style={{ color: '#64748b', marginRight: '3px' }}></i>
+                {row.propietarioNombre}
+              </span>
+            </div>
+            {tieneVarias && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  seleccionarFincasDeProductor(row.propietarioNombre);
+                }}
+                className="btn btn-sm"
+                style={{
+                  marginTop: '4px',
+                  padding: '2px 7px',
+                  fontSize: '10.5px',
+                  fontWeight: 800,
+                  background: '#eff6ff',
+                  color: '#2563eb',
+                  border: '1.5px solid #bfdbfe',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+                title="Seleccionar todas las fincas de este productor para unificar pago"
+              >
+                <i className="fa-solid fa-link"></i> Unir Pagos ({fincasProp.length} Fincas)
+              </button>
+            )}
           </div>
-          {row.numeroCuenta && (
-            <div style={{ color: '#475569', fontSize: '11px', marginTop: '2px', fontFamily: 'monospace' }}>
-              <i className="fa-solid fa-building-columns" style={{ color: '#0284c7', marginRight: '4px' }}></i>
-              {row.bancoNombre ? `${row.bancoNombre}: ` : ''}{row.numeroCuenta}
-            </div>
-          )}
-          {row.pagoMovil && (
-            <div style={{ color: '#059669', fontSize: '11px', marginTop: '2px', fontFamily: 'monospace', fontWeight: 600 }}>
-              <i className="fa-solid fa-mobile-screen" style={{ marginRight: '4px' }}></i>
-              PM: {row.pagoMovil}
-            </div>
-          )}
-        </div>
-      ),
+        );
+      },
     },
     {
       header: 'LITROS TOTALES',
@@ -918,6 +1084,117 @@ export const LiquidacionesPage: React.FC = () => {
             );
           }}
         />
+
+        {/* PANEL FLOTANTE DE UNIFICACIÓN / PAGOS EN LOTE 1:1 CON V2_3_11_26 */}
+        {fincasSeleccionadas.length > 0 && (
+          <div
+            id="panelBarraUnificarPagos"
+            style={{
+              marginTop: '16px',
+              background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+              color: '#ffffff',
+              borderRadius: '12px',
+              padding: '16px 20px',
+              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
+              border: '1.5px solid #3b82f6',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '14px',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <span
+                    className="badge"
+                    style={{
+                      background: '#2563eb',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      fontSize: '11.5px',
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                    }}
+                  >
+                    <i className="fa-solid fa-link"></i> UNIFICACIÓN DE PAGOS
+                  </span>
+                  <span style={{ fontWeight: 800, fontSize: '13.5px', color: '#93c5fd' }}>
+                    {fincasSeleccionadas.length} Finca{fincasSeleccionadas.length > 1 ? 's' : ''} Seleccionada{fincasSeleccionadas.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#cbd5e1' }}>
+                  <span>
+                    Litros: <strong style={{ color: '#38bdf8' }}>{resumenSeleccion.totalLitros.toLocaleString()} Lts</strong>
+                  </span>
+                  <span>
+                    Bruto: <strong style={{ color: '#38bdf8' }}>${resumenSeleccion.totalUSD.toFixed(2)}</strong>
+                  </span>
+                  <span>
+                    Adelantos:{' '}
+                    <strong style={{ color: resumenSeleccion.totalAdelantosUSD > 0 ? '#ef4444' : '#94a3b8' }}>
+                      -${resumenSeleccion.totalAdelantosUSD.toFixed(2)}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>TOTAL NETO A PAGAR:</span>
+                  <strong style={{ fontSize: '18px', color: '#34d399' }}>
+                    Bs. {resumenSeleccion.totalNetoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                  </strong>
+                  <small style={{ color: '#6ee7b7', display: 'block', fontSize: '11px' }}>
+                    (${resumenSeleccion.totalNetoUSD.toFixed(2)} USD)
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelarSeleccion}
+                  className="btn btn-outline"
+                  style={{
+                    color: '#cbd5e1',
+                    border: '1px solid #475569',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <i className="fa-solid fa-xmark"></i> Desmarcar
+                </button>
+                <button
+                  type="button"
+                  onClick={ejecutarPagoUnificado}
+                  disabled={procesandoLote}
+                  className="btn btn-primary"
+                  style={{
+                    background: '#10b981',
+                    border: 'none',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    padding: '9px 18px',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                    cursor: procesandoLote ? 'wait' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <i className={procesandoLote ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-credit-card'}></i>{' '}
+                  {procesandoLote ? 'Procesando...' : `Realizar Pago Unificado (${fincasSeleccionadas.length} Fincas)`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* MODAL COMPROBANTE OFICIAL DE PAGO Y WHATSAPP */}

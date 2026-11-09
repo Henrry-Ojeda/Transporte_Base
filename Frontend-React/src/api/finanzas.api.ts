@@ -11,7 +11,16 @@ export const finanzasApi = {
   // SEMANAS / CICLOS
   getCiclos: async (): Promise<CicloSemanalDto[]> => {
     const res = await apiClient.get<CicloSemanalDto[]>('/ciclos');
-    return Array.isArray(res.data) ? res.data : [];
+    const list = Array.isArray(res.data) ? res.data : [];
+    // Desde la semana 46 en adelante no debe verse en ningún lado si no está ABIERTO
+    return list.filter((c) => {
+      const num = c.numeroSemana;
+      const estado = (c.estado || '').toUpperCase();
+      if (num && num >= 46 && estado !== 'ABIERTO' && estado !== 'ACTIVO') {
+        return false;
+      }
+      return true;
+    });
   },
   getCicloActivo: async (): Promise<CicloSemanalDto> => {
     const res = await apiClient.get<CicloSemanalDto>('/catalogos/ciclo-activo');
@@ -215,11 +224,11 @@ export const finanzasApi = {
   getPagosPersonal: async (usuarioId?: number): Promise<PagoPersonalDto[]> => {
     const params: Record<string, any> = {};
     if (usuarioId) params.usuarioId = usuarioId;
-    const res = await apiClient.get<PagoPersonalDto[]>('/pagosusuarios', { params });
+    const res = await apiClient.get<PagoPersonalDto[]>('/pagos-usuarios', { params });
     return Array.isArray(res.data) ? res.data : [];
   },
   crearPagoPersonal: async (dto: { usuarioId: number; fecha: string; montoUSD: number; tipoPago: string; descripcion?: string; referenciaBancaria?: string }): Promise<{ id: number; message: string }> => {
-    const res = await apiClient.post('/pagosusuarios', dto);
+    const res = await apiClient.post('/pagos-usuarios', dto);
     return res.data;
   },
 };

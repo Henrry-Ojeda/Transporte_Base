@@ -9,7 +9,8 @@ import type { PerfilUsuarioDto, ActualizarPerfilDto } from '@/types';
 export const PerfilPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user, updateUser } = useAuthStore();
+  const { user, updateUser, isAppHijo } = useAuthStore();
+  const esHijo = isAppHijo();
 
   const [cambiarPassword, setCambiarPassword] = useState(false);
   const [mostrarPassActual, setMostrarPassActual] = useState(false);
@@ -327,7 +328,7 @@ export const PerfilPage: React.FC = () => {
                       gap: '5px',
                     }}
                   >
-                    <i className="fa-solid fa-shield-halved"></i> {perfil?.rol || user?.rol || 'USUARIO'}
+                    <i className="fa-solid fa-shield-halved"></i> {esHijo && ((perfil?.rol || user?.rol || '').toUpperCase() === 'SUPERADMIN') ? 'ADMIN' : (perfil?.rol || user?.rol || 'USUARIO')}
                   </span>
                 </div>
 

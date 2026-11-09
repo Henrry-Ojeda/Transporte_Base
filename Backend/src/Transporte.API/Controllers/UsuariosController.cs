@@ -15,10 +15,20 @@ namespace Transporte.API.Controllers
     public class UsuariosController : ControllerBase
     {
         private readonly IUsuariosRepository _usuariosRepository;
+        private readonly Transporte.Core.Interfaces.ITenantService _tenantService;
 
-        public UsuariosController(IUsuariosRepository usuariosRepository)
+        public UsuariosController(
+            IUsuariosRepository usuariosRepository,
+            Transporte.Core.Interfaces.ITenantService tenantService)
         {
             _usuariosRepository = usuariosRepository;
+            _tenantService = tenantService;
+        }
+
+        private bool IsAppHijo()
+        {
+            var tenantCode = _tenantService.GetTenantCode();
+            return !string.IsNullOrEmpty(tenantCode) && !tenantCode.Equals("PRODUCTO_BASE", StringComparison.OrdinalIgnoreCase);
         }
 
         private bool IsCallerSuperAdmin()
@@ -31,6 +41,18 @@ namespace Transporte.API.Controllers
         public async Task<IActionResult> ObtenerUsuarios([FromQuery] string? rol = null, [FromQuery] bool soloActivos = false)
         {
             var usuarios = await _usuariosRepository.ObtenerUsuariosAsync(rol, soloActivos);
+            if (IsAppHijo())
+            {
+                // En apps hijas los usuarios con rol SUPERADMIN se muestran visualmente como ADMIN
+                foreach (var u in usuarios)
+                {
+                    if (u.Rol != null && u.Rol.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase))
+                    {
+                        u.Rol = "ADMIN";
+                        u.RolNombre = "Administrador General";
+                    }
+                }
+            }
             return Ok(usuarios);
         }
 
@@ -39,6 +61,11 @@ namespace Transporte.API.Controllers
         {
             var usuario = await _usuariosRepository.ObtenerUsuarioPorIdAsync(id);
             if (usuario == null) return NotFound(new { message = "Usuario no encontrado." });
+            if (IsAppHijo() && usuario.Rol != null && usuario.Rol.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase))
+            {
+                usuario.Rol = "ADMIN";
+                usuario.RolNombre = "Administrador General";
+            }
             return Ok(usuario);
         }
 
@@ -46,9 +73,9 @@ namespace Transporte.API.Controllers
         public async Task<IActionResult> ObtenerRoles()
         {
             var roles = await _usuariosRepository.ObtenerRolesAsync();
-            if (!IsCallerSuperAdmin())
+            if (IsAppHijo() || !IsCallerSuperAdmin())
             {
-                // El rol Administrador no puede ver ni asignar el rol SUPERADMIN
+                // En app hijas o cuando no es SuperAdmin, el rol SUPERADMIN no se visualiza ni se asigna
                 roles = roles.Where(r => !r.Codigo.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase));
             }
             return Ok(roles);
@@ -69,6 +96,12 @@ namespace Transporte.API.Controllers
 
             if (string.IsNullOrWhiteSpace(dto.NombreCompleto))
                 return BadRequest(new { message = "El nombre completo es obligatorio." });
+
+            // En apps hijas nunca se puede crear un usuario con el rol SUPERADMIN
+            if (IsAppHijo() && dto.Rol?.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return BadRequest(new { message = "En las empresas cliente (apps hijas) no se puede crear el rol SUPERADMIN. El rol máximo es ADMIN." });
+            }
 
             // Solo el SuperAdmin puede asignar el rol SUPERADMIN
             if (dto.Rol?.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase) == true && !IsCallerSuperAdmin())
@@ -94,6 +127,12 @@ namespace Transporte.API.Controllers
         {
             var target = await _usuariosRepository.ObtenerUsuarioPorIdAsync(id);
             if (target == null) return NotFound(new { message = "Usuario no encontrado." });
+
+            // En apps hijas nunca se puede asignar el rol SUPERADMIN
+            if (IsAppHijo() && dto.Rol?.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return BadRequest(new { message = "En las empresas cliente (apps hijas) no se puede asignar el rol SUPERADMIN. El rol asignable es ADMIN." });
+            }
 
             // El Administrador no puede editar al SuperAdmin
             if (target.Rol?.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase) == true && !IsCallerSuperAdmin())

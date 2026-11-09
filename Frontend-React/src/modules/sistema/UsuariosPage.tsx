@@ -12,6 +12,7 @@ import type { UsuarioDto, GuardarUsuarioDto, CamionDto } from '@/types';
 export const UsuariosPage: React.FC = () => {
   const queryClient = useQueryClient();
   const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin());
+  const esHijo = useAuthStore((state) => state.isAppHijo());
   const currentUser = useAuthStore((state) => state.user);
 
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -282,7 +283,10 @@ export const UsuariosPage: React.FC = () => {
       accessorKey: 'rol',
       sortable: true,
       cell: (row) => {
-        const rol = (row.rol || '').toUpperCase();
+        let rol = (row.rol || '').toUpperCase();
+        if (esHijo && rol === 'SUPERADMIN') {
+          rol = 'ADMIN';
+        }
         if (rol === 'SUPERADMIN') {
           return (
             <span
@@ -869,7 +873,7 @@ export const UsuariosPage: React.FC = () => {
                         padding: '0 12px',
                       }}
                     >
-                      {isSuperAdmin && (
+                      {!esHijo && isSuperAdmin && (
                         <option value="SUPERADMIN">SUPERADMIN (Super Administrador / Propietario)</option>
                       )}
                       <option value="ADMIN">ADMIN (Administrador)</option>

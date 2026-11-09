@@ -116,17 +116,23 @@ namespace Transporte.API.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
             var tokenString = tokenHandler.WriteToken(token);
 
+            string tenantCode = _tenantService.GetTenantCode();
+            bool isHijo = !string.IsNullOrEmpty(tenantCode) && !tenantCode.Equals("PRODUCTO_BASE", StringComparison.OrdinalIgnoreCase);
+            bool isSuperAdminReal = user.Rol.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase);
+            string rolDisplay = isHijo && isSuperAdminReal ? "ADMIN" : user.Rol;
+
             return Ok(new LoginResponseDto
             {
                 Id = user.Id,
                 Username = user.Username,
                 NombreCompleto = user.NombreCompleto,
-                Rol = user.Rol,
+                Rol = rolDisplay,
+                EsSuperAdmin = isSuperAdminReal,
                 PermisoCrearViaje = user.PermisoCrearViaje,
                 Token = tokenString,
                 Permisos = permisos,
                 ModulosHabilitados = _tenantService.GetModulosActivos(),
-                EmpresaCodigo = _tenantService.GetTenantCode(),
+                EmpresaCodigo = tenantCode,
                 EmpresaNombre = _tenantService.GetTenantName()
             });
         }
@@ -143,16 +149,22 @@ namespace Transporte.API.Controllers
 
             var permisos = await _authRepository.ObtenerPermisosUsuarioAsync(user.Id);
 
+            string tenantCodeMe = _tenantService.GetTenantCode();
+            bool isHijoMe = !string.IsNullOrEmpty(tenantCodeMe) && !tenantCodeMe.Equals("PRODUCTO_BASE", StringComparison.OrdinalIgnoreCase);
+            bool isSuperAdminRealMe = user.Rol.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase);
+            string rolDisplayMe = isHijoMe && isSuperAdminRealMe ? "ADMIN" : user.Rol;
+
             return Ok(new
             {
                 id = user.Id,
                 username = user.Username,
                 nombreCompleto = user.NombreCompleto,
-                rol = user.Rol,
+                rol = rolDisplayMe,
+                esSuperAdmin = isSuperAdminRealMe,
                 permisoCrearViaje = user.PermisoCrearViaje,
                 permisos,
                 modulosHabilitados = _tenantService.GetModulosActivos(),
-                empresaCodigo = _tenantService.GetTenantCode(),
+                empresaCodigo = tenantCodeMe,
                 empresaNombre = _tenantService.GetTenantName()
             });
         }
@@ -166,6 +178,13 @@ namespace Transporte.API.Controllers
 
             var perfil = await _usuariosRepository.ObtenerPerfilAsync(userId);
             if (perfil == null) return NotFound(new { message = "Perfil de usuario no encontrado." });
+
+            string tenantCodePerfil = _tenantService.GetTenantCode();
+            bool isHijoPerfil = !string.IsNullOrEmpty(tenantCodePerfil) && !tenantCodePerfil.Equals("PRODUCTO_BASE", StringComparison.OrdinalIgnoreCase);
+            if (isHijoPerfil && perfil.Rol.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase))
+            {
+                perfil.Rol = "ADMIN";
+            }
             return Ok(perfil);
         }
 

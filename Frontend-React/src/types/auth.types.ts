@@ -10,6 +10,7 @@ export interface AuthUser {
   username: string;
   nombreCompleto: string;
   rol: string;
+  esSuperAdmin?: boolean;
   fotoUrl?: string;
   permisoCrearViaje?: boolean;
   permisos: string[];
@@ -24,6 +25,7 @@ export interface LoginResponseDto {
   username: string;
   nombreCompleto: string;
   rol: string;
+  esSuperAdmin?: boolean;
   fotoUrl?: string;
   permisoCrearViaje?: boolean;
   permisos: string[];

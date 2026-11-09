@@ -17,6 +17,7 @@ namespace Transporte.Core.DTOs
         public string Username { get; set; } = string.Empty;
         public string NombreCompleto { get; set; } = string.Empty;
         public string Rol { get; set; } = string.Empty;
+        public bool EsSuperAdmin { get; set; } = false;
         public string? FotoUrl { get; set; }
         public bool PermisoCrearViaje { get; set; } = false;
         public IEnumerable<string> Permisos { get; set; } = Enumerable.Empty<string>();

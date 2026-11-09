@@ -9,8 +9,9 @@ import type { PermisoModuloDto, RolDto, CrearRolDto } from '@/types';
 
 export const PermisosPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const { isSuperAdmin } = useAuthStore();
+  const { isSuperAdmin, isAppHijo } = useAuthStore();
   const esSuperAdmin = isSuperAdmin();
+  const esHijo = isAppHijo();
 
   // Pestaña activa: 'matriz' | 'roles'
   const [tabActiva, setTabActiva] = useState<'matriz' | 'roles'>('matriz');
@@ -340,8 +341,9 @@ export const PermisosPage: React.FC = () => {
     },
   ];
 
-  // Lista de códigos de roles para los pills de la matriz
-  const listaRolesPills = roles.length > 0 ? roles.map((r) => r.codigo.toUpperCase()) : ['ADMIN', 'OPERADOR', 'CHOFER', 'TALLER'];
+  // Lista de roles filtrados (en app hijos nunca se expone SUPERADMIN)
+  const rolesDisponibles = esHijo ? roles.filter((r) => r.codigo !== 'SUPERADMIN') : roles;
+  const listaRolesPills = rolesDisponibles.length > 0 ? rolesDisponibles.map((r) => r.codigo.toUpperCase()) : ['ADMIN', 'OPERADOR', 'CHOFER', 'TALLER'];
 
   return (
     <div style={{ paddingBottom: '40px' }}>
@@ -625,7 +627,7 @@ export const PermisosPage: React.FC = () => {
       {tabActiva === 'roles' && esSuperAdmin && (
         <div>
           <DataTable
-            data={roles}
+            data={rolesDisponibles}
             columns={columnsRoles}
             isLoading={cargandoRoles}
             searchPlaceholder="Buscar rol por código, nombre o descripción..."

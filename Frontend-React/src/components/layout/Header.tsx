@@ -30,7 +30,9 @@ interface CicloActivoResponse {
 
 export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { user, logout, isAppHijo } = useAuthStore();
+  const esHijo = isAppHijo();
+  const rolVisible = esHijo && (user?.rol === 'SUPERADMIN' || user?.esSuperAdmin) ? 'ADMIN' : (user?.rol || 'ADMIN');
   const queryClient = useQueryClient();
   const [sincronizandoBcv, setSincronizandoBcv] = useState(false);
   const userRol = String(user?.rol || '').toUpperCase();
@@ -772,7 +774,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
                   }}
                 >
                   <i className="fa-solid fa-shield-halved" style={{ fontSize: '8.5px', marginRight: '3px' }}></i>
-                  {user?.rol || 'ADMIN'}
+                  {rolVisible}
                 </span>
               </div>
             </div>

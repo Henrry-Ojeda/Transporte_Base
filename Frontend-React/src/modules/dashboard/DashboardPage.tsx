@@ -234,9 +234,15 @@ export const DashboardPage: React.FC = () => {
       .reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0); // 790 Lts a Pablo Marín
 
     // Leche de Colona guardada en Silos de Vergel (custodia) vs Leche Ruta Propia
-    const mermaTranspLitros = 90; // Merma real en ruta de Colona (84L viaje 21315 + 6L viaje 21307)
-    const ltsTranspEnSilos = Math.max(0, ltsTranspFincas - ltsTranspDirecta - mermaTranspLitros); // 3.548 Lts
-    const ltsRutaReceptoria = Math.max(0, ltsTotalEntradasSilos - ltsTranspEnSilos); // 74.196 Lts
+    const ltsTranspEnSilos = descargasSilos
+      .filter((e) => esServicioTransporte(e))
+      .reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0);
+    const ltsRutaReceptoria = descargasSilos
+      .filter((e) => !esServicioTransporte(e))
+      .reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0);
+
+    // Mermas dinámicas por servicio (0 si no hay viajes o registros)
+    const mermaTranspLitros = ltsTranspFincas > 0 ? Math.max(0, ltsTranspFincas - (ltsTranspDirecta + ltsTranspEnSilos)) : 0;
 
     // Despachos a plantas / clientes desde Silos y Directos
     const despachosTipo1 = despachos.filter((d) => !esServicioTransporte(d) && !esReceptoria(d));
@@ -254,14 +260,16 @@ export const DashboardPage: React.FC = () => {
     // Mermas por servicio
     const mermaTranspPct = ltsTranspFincas > 0 ? (mermaTranspLitros / ltsTranspFincas) * 100 : 0;
 
-    const totalMermaGlobal = bal?.totalMermaRuta ?? 664;
-    const mermaRutaLitros = Math.max(0, totalMermaGlobal - mermaTranspLitros); // 574 Lts
+    const totalMermaGlobal = Number(bal?.totalMermaRuta ?? 0);
+    const mermaRutaLitros = totalMermaGlobal > 0 
+      ? Math.max(0, totalMermaGlobal - mermaTranspLitros) 
+      : (ltsRutaFincas > 0 ? Math.max(0, ltsRutaFincas - (ltsRutaDirecta + ltsRutaReceptoria)) : 0);
     const mermaRutaPct = ltsRutaFincas > 0 ? (mermaRutaLitros / ltsRutaFincas) * 100 : 0;
     const diffRutaLitros = -mermaRutaLitros;
     const esSobranteRuta = false;
 
-    // Stock real en silos
-    const stockActualSilos = bal?.stockActualTanque ?? 25641;
+    // Stock real en silos (0 si no hay balance)
+    const stockActualSilos = Number(bal?.stockActualTanque ?? 0);
     const ltsRutaEnTanque = stockActualSilos;
 
     // CONSOLIDADO GENERAL (RUTA + TRANSPORTE)
@@ -303,7 +311,7 @@ export const DashboardPage: React.FC = () => {
       ltsTranspDirecta,
       ltsTranspEnSilos,
       ltsTranspTotalEntregadoPlanta,
-      plantasTranspCount: entregasDirectas.filter((e) => esServicioTransporte(e)).length || 1,
+      plantasTranspCount: entregasDirectas.filter((e) => esServicioTransporte(e)).length,
       ltsTranspDespachada,
       despachosTranspCount,
       diffTranspLitros: mermaTranspLitros,
@@ -375,11 +383,12 @@ export const DashboardPage: React.FC = () => {
 
   // 2. Distribución Global por Servicio
   const serviciosData = useMemo(() => {
+    const total = (metricas.ltsRutaFincas || 0) + (metricas.ltsTranspFincas || 0);
     return {
       labels: ['Servicio RUTA', 'Servicio TRANSPORTE'],
       datasets: [
         {
-          data: [metricas.ltsRutaFincas || 1, metricas.ltsTranspFincas || 0],
+          data: total > 0 ? [metricas.ltsRutaFincas, metricas.ltsTranspFincas] : [0, 0],
           backgroundColor: ['#0284c7', '#7c3aed'],
           borderWidth: 2,
           borderColor: '#ffffff',
@@ -394,10 +403,10 @@ export const DashboardPage: React.FC = () => {
       const labels = dashboardAvanzado.entregasPlantas.slice(0, 5).map((p: any) => p.planta || p.compania || 'Planta');
       const values = dashboardAvanzado.entregasPlantas.slice(0, 5).map((p: any) => Number(p.litros || 0));
       return {
-        labels: labels.length ? labels : ['Receptoría Silos'],
+        labels: labels.length ? labels : ['Sin datos'],
         datasets: [
           {
-            data: values.length ? values : [100],
+            data: values.length ? values : [0],
             backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899'],
           },
         ],
@@ -411,11 +420,12 @@ export const DashboardPage: React.FC = () => {
     });
     const labels = Array.from(map.keys()).slice(0, 5);
     const values = labels.map((k) => map.get(k) || 0);
+    const hasValues = values.length > 0 && values.some((v) => v > 0);
     return {
-      labels: labels.length ? labels : ['Receptoría Silos'],
+      labels: hasValues ? labels : ['Sin datos'],
       datasets: [
         {
-          data: values.length ? values : [100],
+          data: hasValues ? values : [0],
           backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899'],
         },
       ],

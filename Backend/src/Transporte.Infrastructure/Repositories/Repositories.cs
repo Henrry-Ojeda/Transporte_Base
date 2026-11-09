@@ -7827,6 +7827,51 @@ namespace Transporte.Infrastructure.Repositories
                         hallazgosDirectos.AppendLine("=== FIN DE MAYORES MERMAS ===\n");
                     }
                 }
+
+                // Detección automática si pide análisis de fincas con problemas, leche ácida o calidad
+                if ((mensaje ?? "").IndexOf("finca", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (mensaje ?? "").IndexOf("problema", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (mensaje ?? "").IndexOf("acida", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (mensaje ?? "").IndexOf("ácida", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (mensaje ?? "").IndexOf("dañada", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (mensaje ?? "").IndexOf("calidad", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (mensaje ?? "").IndexOf("peor", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    var fincasConProblemas = await connection.QueryAsync<dynamic>(@"
+                        SELECT TOP 10 
+                            f.Id, f.Nombre AS Finca,
+                            SUM(CASE WHEN r.EsAcida = 1 THEN r.Litros ELSE 0 END) AS LitrosAcida,
+                            COUNT(CASE WHEN r.EsAcida = 1 THEN 1 END) AS ViajesConAcida,
+                            COUNT(r.Id) AS TotalViajes,
+                            SUM(r.Litros) AS TotalLitros,
+                            MAX(r.Fecha) AS UltimaFecha
+                        FROM TB_RUTAS_RECOLECCION r
+                        JOIN TB_FINCAS f ON r.FincaId = f.Id
+                        GROUP BY f.Id, f.Nombre
+                        HAVING SUM(CASE WHEN r.EsAcida = 1 THEN r.Litros ELSE 0 END) > 0
+                        ORDER BY LitrosAcida DESC");
+
+                    if (fincasConProblemas.Any())
+                    {
+                        hallazgosDirectos.AppendLine("=== ⚠️ AUDITORÍA DE FINCAS CON MAYORES PROBLEMAS DE LECHE ÁCIDA EN LA BASE DE DATOS ===");
+                        int ranking = 1;
+                        foreach (var fp in fincasConProblemas)
+                        {
+                            decimal ltsAcida = (decimal)(fp.LitrosAcida ?? 0m);
+                            int viajesAcida = (int)(fp.ViajesConAcida ?? 0);
+                            decimal totalLts = (decimal)(fp.TotalLitros ?? 0m);
+                            decimal pctAcida = totalLts > 0 ? (ltsAcida / totalLts) * 100m : 0m;
+                            string ultF = fp.UltimaFecha != null ? ((DateTime)fp.UltimaFecha).ToString("dd/MM/yyyy") : "N/A";
+
+                            hallazgosDirectos.AppendLine($"{ranking}. FINCA: {fp.Finca}");
+                            hallazgosDirectos.AppendLine($"   • Total Leche Ácida Descartada: {ltsAcida:N0} Litros en {viajesAcida} viaje(s)");
+                            hallazgosDirectos.AppendLine($"   • Porcentaje de Leche Dañada/Ácida: {pctAcida:N1}% de su producción total ({totalLts:N0} Lts)");
+                            hallazgosDirectos.AppendLine($"   • Última Incidencia Registrada: {ultF}");
+                            ranking++;
+                        }
+                        hallazgosDirectos.AppendLine("=== FIN DE FINCAS CON PROBLEMA ===\n");
+                    }
+                }
             }
             catch { }
 
@@ -8187,17 +8232,28 @@ namespace Transporte.Infrastructure.Repositories
             string p = (pregunta ?? "").ToLower().Trim();
             var sb = new System.Text.StringBuilder();
 
-            // Si hay hallazgos directos encontrados para una cifra o ticket específico, mostrarlos de inmediato
+            // Si hay hallazgos directos encontrados para una cifra, ticket o auditoría específica, mostrarlos de inmediato
             if (!string.IsNullOrWhiteSpace(hallazgosDirectos))
             {
                 sb.AppendLine("📊 **AUDITORÍA DE DATOS EXACTOS ENCONTRADOS EN LA BASE DE DATOS**\n");
                 sb.AppendLine(hallazgosDirectos);
-                sb.AppendLine("💡 **Causa del Saldo / Descuadre:**");
-                sb.AppendLine("Un saldo o merma negativa (como faltante de litros) ocurre cuando el volumen recolectado en las fincas no cuenta con la recepción asentada en Receptoría o no se completó el despacho a Planta.");
-                sb.AppendLine("\n**¿Cómo solucionarlo en el sistema?**");
-                sb.AppendLine("1. Ve a **🥛 Receptoría & Tanque** o **🚚 Rutas de Recolección**.");
-                sb.AppendLine("2. Localiza el Ticket / Control de Viaje correspondiente.");
-                sb.AppendLine("3. Haz clic en **`⚖️ Recibir en Receptoría`** o **`✏️ Editar`** para ingresar los litros reales medidos o ajustar la carga.");
+
+                if (hallazgosDirectos.Contains("PROBLEMAS DE LECHE ÁCIDA"))
+                {
+                    sb.AppendLine("💡 **Impacto Operativo & Recomendaciones:**");
+                    sb.AppendLine("1. La leche ácida o descompuesta no se remunera ($0.00 / Litro) para proteger la contabilidad de la empresa, pero genera pérdida de flete y merma en cisterna.");
+                    sb.AppendLine("2. **Inspección Técnica:** Se recomienda enviar a un supervisor técnico a verificar los equipos de enfriamiento y tanques de frío en las fincas con mayor reincidencia.");
+                    sb.AppendLine("3. **Protocolo del Conductor:** En la App Móvil o formato físico, el chofer debe realizar la prueba de alcohol antes de vaciar las pimpinas en el camión cisterna para evitar contaminar la leche buena del resto de la ruta.");
+                }
+                else
+                {
+                    sb.AppendLine("💡 **Causa del Saldo / Descuadre:**");
+                    sb.AppendLine("Un saldo o merma negativa (como faltante de litros) ocurre cuando el volumen recolectado en las fincas no cuenta con la recepción asentada en Receptoría o no se completó el despacho a Planta.");
+                    sb.AppendLine("\n**¿Cómo solucionarlo en el sistema?**");
+                    sb.AppendLine("1. Ve a **🥛 Receptoría & Tanque** o **🚚 Rutas de Recolección**.");
+                    sb.AppendLine("2. Localiza el Ticket / Control de Viaje correspondiente.");
+                    sb.AppendLine("3. Haz clic en **`⚖️ Recibir en Receptoría`** o **`✏️ Editar`** para ingresar los litros reales medidos o ajustar la carga.");
+                }
                 return sb.ToString();
             }
 
@@ -8350,7 +8406,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 {
                     parts = new[]
                     {
-                        new { text = "Eres el Asistente Virtual y Consultor Experto del Sistema Transporte V2. Tienes acceso a datos SQL en vivo. Responde SIEMPRE 100% en ESPAÑOL, DIRECTO A LOS DATOS Y TICKETS REALES, sin respuestas teóricas abstractas." }
+                        new { text = "Eres el Asistente Virtual y Consultor Experto del Sistema Transporte V2. Tienes acceso a datos SQL en vivo. Responde SIEMPRE 100% en ESPAÑOL, DIRECTO A LOS DATOS Y TICKETS REALES, sin respuestas teóricas abstractas. NUNCA dejes la respuesta incompleta ni a medias; asegúrate de concluir todas tus explicaciones y tablas con una recomendación operativa clara." }
                     }
                 },
                 contents = new[]
@@ -8366,14 +8422,14 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 generationConfig = new
                 {
                     temperature = 0.15,
-                    maxOutputTokens = 2500
+                    maxOutputTokens = 8192
                 }
             };
 
             string json = System.Text.Json.JsonSerializer.Serialize(requestBody);
 
-            // Intentar con múltiples modelos Gemini en cascada con reintentos
-            string[] modelos = new[] { "gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite", "gemma-4-31b-it" };
+            // Intentar con modelos Gemini ultra-rápidos en cascada con reintentos
+            string[] modelos = new[] { "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3-flash-preview", "gemini-3.5-flash" };
             Exception? ultimoError = null;
 
             foreach (var modelo in modelos)

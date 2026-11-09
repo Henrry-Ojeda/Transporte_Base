@@ -92,36 +92,56 @@ apiClient.interceptors.response.use(
     const status = error.response?.status;
     const url = error.config?.url || '';
 
-    // Manejo sincronizado de expiración de sesión (401 o 403 cuando el token ya no es aceptado)
-    if (status === 401 || (status === 403 && !url.includes('/auth/login'))) {
-      const serverData = error.response?.data;
-      const isTokenIssue = status === 401 || (typeof serverData === 'string' && (serverData.includes('Token') || serverData.includes('Unauthorized') || serverData.includes('expir')));
-      
-      if (isTokenIssue && !url.includes('/auth/login')) {
-        // 1. Limpiar credenciales y sesión inmediatamente
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem(AUTH_TOKEN_KEY);
-          localStorage.removeItem('token');
-          localStorage.removeItem('transporte_last_activity');
-        }
+    // Manejo global estricto: si cualquier API devuelve 401, 403 o indica que se cerró la sesión, pasar inmediatamente a /login
+    const serverData = error.response?.data;
+    const dataStr = typeof serverData === 'string'
+      ? serverData.toLowerCase()
+      : JSON.stringify(serverData || {}).toLowerCase();
 
-        // 2. Notificar al store de autenticación
-        if (onSessionExpiredHandler) {
-          onSessionExpiredHandler('Tu sesión en el servidor ha finalizado. Por favor inicia sesión nuevamente.');
-        }
+    const isSessionClosed =
+      status === 401 ||
+      (status === 403 && !url.includes('/auth/login')) ||
+      dataStr.includes('cerró la sesión') ||
+      dataStr.includes('cerro la sesion') ||
+      dataStr.includes('sesion cerrada') ||
+      dataStr.includes('sesión cerrada') ||
+      dataStr.includes('sesion expirada') ||
+      dataStr.includes('sesión expirada') ||
+      dataStr.includes('session expired') ||
+      dataStr.includes('token expirado') ||
+      dataStr.includes('token inválido') ||
+      dataStr.includes('token invalido') ||
+      dataStr.includes('token vencido') ||
+      dataStr.includes('token no proporcionado') ||
+      dataStr.includes('unauthorized') ||
+      dataStr.includes('no autorizado') ||
+      dataStr.includes('debe iniciar sesión') ||
+      dataStr.includes('debe iniciar sesion');
 
-        // 3. Redirigir de inmediato a la pantalla de Login sin mostrar popups con código HTML
-        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-          window.location.replace('/login');
-        }
-
-        // 4. Retornar promesa en suspensión silenciosa para no saturar la vista con errores ni banners
-        return new Promise(() => {});
+    if (isSessionClosed && !url.includes('/auth/login')) {
+      // 1. Limpiar credenciales y sesión inmediatamente en localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem('token');
+        localStorage.removeItem('transporte_auth_store');
+        localStorage.removeItem('transporte_last_activity');
       }
+
+      // 2. Notificar al store de autenticación para resetear estado
+      if (onSessionExpiredHandler) {
+        onSessionExpiredHandler('Tu sesión ha finalizado. Por favor inicia sesión nuevamente.');
+      }
+
+      // 3. Redirigir de inmediato a la pantalla de Login
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.replace('/login');
+      }
+
+      // 4. Retornar promesa en suspensión silenciosa para no saturar la vista con errores ni banners
+      return new Promise(() => {});
     }
 
     // Normalizar mensaje de error legible y prevenir volcado de código HTML (ej. 502 Bad Gateway)
-    const serverData = error.response?.data;
     let errorMessage = 'Ocurrió un error inesperado al comunicarse con el servidor.';
 
     if (status === 502 || status === 503 || status === 504) {

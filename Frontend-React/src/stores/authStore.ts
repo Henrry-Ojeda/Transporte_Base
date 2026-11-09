@@ -51,6 +51,8 @@ export const useAuthStore = create<AuthState>()(
 
       logout: (message?: string) => {
         localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem('token');
+        localStorage.removeItem('transporte_auth_store');
         localStorage.removeItem('transporte_last_activity');
         if (onLogoutListener) {
           try {
@@ -66,7 +68,7 @@ export const useAuthStore = create<AuthState>()(
           sessionExpiredMessage: message || null,
         });
         if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-          window.location.href = '/login';
+          window.location.replace('/login');
         }
       },
 

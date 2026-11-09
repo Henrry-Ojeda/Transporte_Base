@@ -24,6 +24,90 @@ export const isTokenExpired = (token: string | null): boolean => {
   }
 };
 
+/**
+ * Detecta si un mensaje o respuesta indica que la sesión se cerró o expiró
+ */
+export const isSessionExpiredString = (text?: string | null): boolean => {
+  if (!text) return false;
+  const s = text.toLowerCase();
+  return (
+    s.includes('cerró la sesión') ||
+    s.includes('cerro la sesion') ||
+    s.includes('sesión se cerró') ||
+    s.includes('sesion se cerro') ||
+    s.includes('sesión se ha cerrado') ||
+    s.includes('sesion se ha cerrado') ||
+    s.includes('sesion cerrada') ||
+    s.includes('sesión cerrada') ||
+    s.includes('sesion expirada') ||
+    s.includes('sesión expirada') ||
+    s.includes('sesión vencida') ||
+    s.includes('sesion vencida') ||
+    s.includes('sesión no válida') ||
+    s.includes('sesion no valida') ||
+    s.includes('sesión terminada') ||
+    s.includes('sesion terminada') ||
+    s.includes('session expired') ||
+    s.includes('session closed') ||
+    s.includes('session terminated') ||
+    s.includes('token expirado') ||
+    s.includes('token expired') ||
+    s.includes('token inválido') ||
+    s.includes('token invalido') ||
+    s.includes('invalid token') ||
+    s.includes('token vencido') ||
+    s.includes('token no proporcionado') ||
+    s.includes('unauthorized') ||
+    s.includes('no autorizado') ||
+    s.includes('debe iniciar sesión') ||
+    s.includes('debe iniciar sesion') ||
+    s.includes('inicia sesión nuevamente') ||
+    s.includes('inicia sesion nuevamente') ||
+    s.includes('tiempo de sesión agotado') ||
+    s.includes('tiempo de sesion agotado') ||
+    s.includes('idx10223') ||
+    s.includes('lifetime validation failed') ||
+    s.includes('securitytokenexpiredexception') ||
+    s.includes('securitytokeninvalidlifetimeexception')
+  );
+};
+
+// Callbacks para eventos de sesión expirada
+type SessionExpiredHandler = (message: string) => void;
+let onSessionExpiredHandler: SessionExpiredHandler | null = null;
+
+export const setSessionExpiredHandler = (handler: SessionExpiredHandler) => {
+  onSessionExpiredHandler = handler;
+};
+
+/**
+ * Forzar cierre de sesión inmediato y cambio de página a /login
+ */
+export const forceRedirectToLogin = (message?: string) => {
+  if (typeof window === 'undefined') return;
+
+  // 1. Limpiar credenciales y almacenamiento local
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem('token');
+    localStorage.removeItem('transporte_auth_store');
+    localStorage.removeItem('transporte_last_activity');
+    sessionStorage.clear();
+  } catch {}
+
+  // 2. Notificar al store de autenticación para resetear estado global
+  try {
+    if (onSessionExpiredHandler) {
+      onSessionExpiredHandler(message || 'Tu sesión ha finalizado. Por favor inicia sesión nuevamente.');
+    }
+  } catch {}
+
+  // 3. Forzar cambio de página a /login inmediatamente
+  if (window.location.pathname !== '/login') {
+    window.location.replace('/login');
+  }
+};
+
 // Interceptor de Solicitudes: Adjuntar Token JWT y Header Multi-Inquilino
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
@@ -32,28 +116,20 @@ apiClient.interceptors.request.use(
     const isPublic = url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/vincular-dispositivo') || url.includes('/public');
     const isLoginPage = typeof window !== 'undefined' && window.location.pathname === '/login';
 
-    // Si el token ya expiró en el cliente, cerrar sesión proactivamente para evitar 401/403
+    // Si el token ya expiró en el cliente, cerrar sesión proactivamente y redirigir a /login
     if (token && isTokenExpired(token) && !isPublic) {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem(AUTH_TOKEN_KEY);
-        localStorage.removeItem('token');
-        localStorage.removeItem('transporte_last_activity');
-      }
-      if (onSessionExpiredHandler) {
-        onSessionExpiredHandler('Tu sesión ha expirado por límite de tiempo. Inicia sesión nuevamente.');
-      }
-      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-        window.location.replace('/login');
-      }
+      forceRedirectToLogin('Tu sesión ha expirado por límite de tiempo. Inicia sesión nuevamente.');
       const controller = new AbortController();
       config.signal = controller.signal;
       controller.abort('Sesión expirada');
       return config;
     }
 
-    // Si no hay token de sesión (o estamos en la pantalla de Login) y no es endpoint público,
-    // abortar la petición silenciosamente antes de viajar por red para evitar 401 en consola
-    if ((!token || isLoginPage) && !isPublic) {
+    // Si no hay token de sesión y no es endpoint público, redirigir a /login
+    if (!token && !isPublic) {
+      if (!isLoginPage) {
+        forceRedirectToLogin('No se detectó una sesión activa. Por favor inicia sesión.');
+      }
       const controller = new AbortController();
       config.signal = controller.signal;
       controller.abort('Sesión no iniciada');
@@ -72,20 +148,29 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Callbacks para eventos de sesión expirada
-type SessionExpiredHandler = (message: string) => void;
-let onSessionExpiredHandler: SessionExpiredHandler | null = null;
-
-export const setSessionExpiredHandler = (handler: SessionExpiredHandler) => {
-  onSessionExpiredHandler = handler;
-};
-
 // Interceptor de Respuestas: Manejo global de 401/403 y normalización de errores
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Si el backend devolvió HTTP 200 pero el cuerpo indica que la sesión se cerró
+    const data = response?.data;
+    if (data && !response.config?.url?.includes('/auth/login')) {
+      const dataStr = typeof data === 'string'
+        ? data.toLowerCase()
+        : JSON.stringify(data).toLowerCase();
+
+      if (isSessionExpiredString(dataStr)) {
+        forceRedirectToLogin('Tu sesión ha finalizado. Por favor inicia sesión nuevamente.');
+        return new Promise(() => {});
+      }
+    }
+    return response;
+  },
   (error: AxiosError<any>) => {
-    // Si la solicitud fue cancelada deliberadamente (ej. no autenticado o en login), suprimirla en silencio
+    // Si la solicitud fue cancelada deliberadamente
     if (axios.isCancel(error) || error.name === 'CanceledError' || error.message === 'Sesión no iniciada' || error.message === 'Sesión expirada') {
+      if ((error.message === 'Sesión no iniciada' || error.message === 'Sesión expirada') && typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        forceRedirectToLogin('Tu sesión ha finalizado. Por favor inicia sesión nuevamente.');
+      }
       return new Promise(() => {});
     }
 
@@ -94,50 +179,21 @@ apiClient.interceptors.response.use(
 
     // Manejo global estricto: si cualquier API devuelve 401, 403 o indica que se cerró la sesión, pasar inmediatamente a /login
     const serverData = error.response?.data;
-    const dataStr = typeof serverData === 'string'
-      ? serverData.toLowerCase()
-      : JSON.stringify(serverData || {}).toLowerCase();
+    const dataStr = (
+      (typeof serverData === 'string' ? serverData : JSON.stringify(serverData || {})) +
+      ' ' +
+      (error.message || '') +
+      ' ' +
+      (error.response?.headers?.['www-authenticate'] || '')
+    ).toLowerCase();
 
     const isSessionClosed =
       status === 401 ||
       (status === 403 && !url.includes('/auth/login')) ||
-      dataStr.includes('cerró la sesión') ||
-      dataStr.includes('cerro la sesion') ||
-      dataStr.includes('sesion cerrada') ||
-      dataStr.includes('sesión cerrada') ||
-      dataStr.includes('sesion expirada') ||
-      dataStr.includes('sesión expirada') ||
-      dataStr.includes('session expired') ||
-      dataStr.includes('token expirado') ||
-      dataStr.includes('token inválido') ||
-      dataStr.includes('token invalido') ||
-      dataStr.includes('token vencido') ||
-      dataStr.includes('token no proporcionado') ||
-      dataStr.includes('unauthorized') ||
-      dataStr.includes('no autorizado') ||
-      dataStr.includes('debe iniciar sesión') ||
-      dataStr.includes('debe iniciar sesion');
+      isSessionExpiredString(dataStr);
 
     if (isSessionClosed && !url.includes('/auth/login')) {
-      // 1. Limpiar credenciales y sesión inmediatamente en localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem(AUTH_TOKEN_KEY);
-        localStorage.removeItem('token');
-        localStorage.removeItem('transporte_auth_store');
-        localStorage.removeItem('transporte_last_activity');
-      }
-
-      // 2. Notificar al store de autenticación para resetear estado
-      if (onSessionExpiredHandler) {
-        onSessionExpiredHandler('Tu sesión ha finalizado. Por favor inicia sesión nuevamente.');
-      }
-
-      // 3. Redirigir de inmediato a la pantalla de Login
-      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-        window.location.replace('/login');
-      }
-
-      // 4. Retornar promesa en suspensión silenciosa para no saturar la vista con errores ni banners
+      forceRedirectToLogin('Tu sesión ha finalizado. Por favor inicia sesión nuevamente.');
       return new Promise(() => {});
     }
 

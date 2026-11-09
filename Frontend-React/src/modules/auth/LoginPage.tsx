@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { User, Lock, Eye, EyeOff, LogIn, AlertTriangle, Loader2, Building2 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/api/auth.api';
+import { isTokenExpired, AUTH_TOKEN_KEY } from '@/api/client';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -35,10 +36,17 @@ export const LoginPage: React.FC = () => {
     return () => { mounted = false; };
   }, []);
 
-  // Si ya está autenticado, redirigir al inicio
+  // Si ya está autenticado con credencial válida, redirigir al inicio; de lo contrario, limpiar estado
   useEffect(() => {
-    if (isAuthenticated) {
+    const activeToken = typeof window !== 'undefined'
+      ? (localStorage.getItem(AUTH_TOKEN_KEY) || localStorage.getItem('token'))
+      : null;
+
+    if (isAuthenticated && activeToken && !isTokenExpired(activeToken)) {
       navigate('/', { replace: true });
+    } else if (isAuthenticated && (!activeToken || isTokenExpired(activeToken))) {
+      // Estado desfasado: corregir inmediatamente a no autenticado para permitir login
+      useAuthStore.getState().logout();
     }
   }, [isAuthenticated, navigate]);
 

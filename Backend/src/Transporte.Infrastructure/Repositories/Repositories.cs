@@ -4605,7 +4605,7 @@ namespace Transporte.Infrastructure.Repositories
             {
                 stockInicial = tanqueDiarioInicial.Value;
             }
-            else
+            else if (cId == 0)
             {
                 // Priorizar el ciclo ABIERTO / ACTIVO
                 var ciclo = await connection.QueryFirstOrDefaultAsync<(int Id, string Codigo, DateTime FechaInicio, DateTime FechaFin, decimal StockInicialTanques)>(

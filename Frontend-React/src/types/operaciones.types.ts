@@ -206,5 +206,58 @@ export interface FincaPromedioDto {
   promedioLitros: number;
 }
 
+export interface ResumenProcesoDto {
+  tipoProceso: number;
+  nombre: string;
+  descripcion: string;
+  totalLitros: number;
+  cantidadMovimientos: number;
+  porcentajeDelTotal: number;
+  impactoTanque: string;
+}
+
+export interface MovimientoLecheDto {
+  id: number;
+  fecha: string;
+  tipoProceso: number;
+  tipoProcesoNombre: string;
+  ticketReferencia: string;
+  conductor: string;
+  camionPlaca?: string;
+  origen: string;
+  destino: string;
+  litrosEntradaTanque: number;
+  litrosSalidaTanque: number;
+  litrosEntregaDirecta: number;
+  saldoTanque: number;
+  litrosVerificados?: number;
+  diferenciaVerificacion?: number;
+  infoVerificacion?: string;
+  estado: string;
+  observacion?: string;
+}
+
+export interface BalanceVolumetricoDto {
+  cicloId?: number;
+  codigoCiclo?: string;
+  fechaInicio?: string;
+  fechaFin?: string;
+  stockInicialTanque: number;
+  totalRecolectadoFincas: number;
+  totalEntradasTanque: number;
+  totalSalidasTanque: number;
+  stockActualTanque: number;
+  totalEntregasDirectas: number;
+  totalComercializadoCompanias: number;
+  totalMermaRuta: number;
+  diferenciaDescuadre: number;
+  proceso1_FincaReceptoria: ResumenProcesoDto;
+  proceso2_FincaReceptoriaCompania: ResumenProcesoDto;
+  proceso3_FincaCompania: ResumenProcesoDto;
+  proceso4_ReceptoriaCompania: ResumenProcesoDto;
+  movimientos: MovimientoLecheDto[];
+}
+
+
 
 

@@ -6,6 +6,7 @@ import type {
   RutaLogisticaDto,
   DespachoCompaniaDto,
   BalanceVolumetricoResumenDto,
+  BalanceVolumetricoDto,
   ControlTanquesDiarioDto,
   PlanificacionRutaChoferDto,
   GuardarPlanificacionRutaChoferDto,
@@ -567,6 +568,21 @@ export const operacionesApi = {
 
   confirmarCierreTanques: async (fecha: string): Promise<{ success: boolean; message: string }> => {
     const res = await apiClient.post('/receptoria/control-tanques-diario/confirmar-cierre', { fecha });
+    return res.data;
+  },
+
+  // BALANCE VOLUMÉTRICO Y AUDITORÍA 1:1
+  getBalanceVolumetrico: async (cicloId?: number, fechaInicio?: string, fechaFin?: string): Promise<BalanceVolumetricoDto> => {
+    const params: Record<string, any> = {};
+    if (cicloId) params.cicloId = cicloId;
+    if (fechaInicio) params.fechaInicio = fechaInicio;
+    if (fechaFin) params.fechaFin = fechaFin;
+    const res = await apiClient.get<BalanceVolumetricoDto>('/receptoria/balance-volumetrico', { params });
+    return res.data;
+  },
+
+  updateStockInicialTanques: async (cicloId: number, stockInicial: number): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.put(`/ciclos/${cicloId}/stock-inicial`, { stockInicial });
     return res.data;
   },
 };

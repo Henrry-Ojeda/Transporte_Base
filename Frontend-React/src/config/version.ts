@@ -22,10 +22,10 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 10,
-  patch: 7,
-  tag: 'v3.10.7',
-  ultimaActualizacion: '2026-11-08',
-  tipoUltimoCambio: 'DISEÑO_LOGICA',
+  patch: 8,
+  tag: 'v3.10.8',
+  ultimaActualizacion: '2026-11-09',
+  tipoUltimoCambio: 'DISEÑO',
   descripcion: 'Rango de fechas visible en selector de semana activa y métricas auditadas por tipo de servicio (Ruta vs Transporte)',
 };
 

@@ -4934,7 +4934,20 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<ControlTanquesDiarioDto?> ObtenerControlTanquesDiarioAsync(DateTime fecha, string rol)
         {
             using var connection = new SqlConnection(_connectionString);
-            var sql = "SELECT * FROM TB_CONTROL_TANQUES_DIARIO WHERE Fecha = @fecha";
+            var sql = @"
+                SELECT 
+                    Id, Fecha,
+                    Tanque1Inicial, Tanque2Inicial, Tanque3Inicial, Tanque4Inicial, Tanque5Inicial, TotalInicialLitros,
+                    AperturaConfirmada, AperturaConfirmadaPorId, AperturaConfirmadaPorNombre, AperturaConfirmadaAt,
+                    TotalEntradasRutasLitros, TotalSalidasPlantasLitros,
+                    Tanque1Final, Tanque2Final, Tanque3Final, Tanque4Final, Tanque5Final, TotalFinalFisicoLitros,
+                    TotalFinalTeoricoLitros AS TotalTeoricoLitros,
+                    DiferenciaLitros AS DiferenciaMermaLitros,
+                    CierreConfirmado, CierreConfirmadoPorId, CierreConfirmadoPorNombre, CierreConfirmadoAt,
+                    Estado, FilasRecepcionJson, Observaciones
+                FROM TB_CONTROL_TANQUES_DIARIO 
+                WHERE Fecha = @fecha";
+
             var record = await connection.QueryFirstOrDefaultAsync<ControlTanquesDiarioDto>(sql, new { fecha = fecha.Date });
 
             bool esAdmin = rol.Equals("ADMIN", StringComparison.OrdinalIgnoreCase) || rol.Equals("ADMINISTRADOR", StringComparison.OrdinalIgnoreCase);
@@ -4951,63 +4964,121 @@ namespace Transporte.Infrastructure.Repositories
             int t5Ini = prevDia?.Tanque5Final ?? 0;
             int totalIni = prevDia?.TotalFinalFisicoLitros ?? (t1Ini + t2Ini + t3Ini + t4Ini + t5Ini);
 
-            // Obtener recepciones del día de TB_CONTROL_RUTAS
-            var sqlRutasDia = @"
+            // Obtener Entradas y Salidas reales del día (Servicio Tipo 1: RUTA)
+            var sqlMovimientos = @"
+                -- ENTRADAS A SILOS (CompaniaId = 5028 - Receptoría)
                 SELECT 
-                    cr.Id,
-                    CONVERT(varchar(10), cr.Fecha, 120) AS FechaStr,
-                    ISNULL(u.NombreCompleto, u.Username) AS ChoferNombre,
-                    ISNULL(rl.Nombre, ISNULL(cr.Observacion, 'Ruta')) AS RutaNombre,
-                    ISNULL(cr.TotalLitrosFinca, 0) AS LitrosRuta,
-                    ISNULL(cr.LitrosRecibidosReceptoria, ISNULL(cr.TotalLitrosReceptoria, cr.TotalLitrosFinca)) AS LitrosRecepcion
-                FROM TB_CONTROL_RUTAS cr
-                LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
-                LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
-                WHERE CAST(cr.Fecha AS DATE) = @fecha
-                ORDER BY cr.Id ASC";
+                    e.Id,
+                    CONVERT(varchar(10), e.Fecha, 120) AS FechaStr,
+                    ISNULL(u.NombreCompleto, u.Username) AS Chofer,
+                    e.Litros AS Litros,
+                    'ENTRADA' AS TipoMovimiento,
+                    ISNULL(e.TipoLeche, 'VACA') AS TipoLeche,
+                    ISNULL(cr.DiferenciaLitros, 0) AS Diferencias,
+                    'GENERAL' AS PorTipoLeche,
+                    ISNULL(cr.Observacion, 'Descarga Silos') AS Detalle
+                FROM TB_ENTREGAS_COMPANIA e
+                LEFT JOIN TB_USUARIOS u ON e.UsuarioId = u.Id
+                LEFT JOIN TB_CONTROL_RUTAS cr ON e.ControlRutaId = cr.Id
+                WHERE CAST(e.Fecha AS DATE) = @fecha 
+                  AND e.CompaniaId = 5028
+                  AND (cr.TipoServicioId = 1 OR cr.TipoServicioId IS NULL)
 
-            var controles = (await connection.QueryAsync<dynamic>(sqlRutasDia, new { fecha = fecha.Date })).ToList();
+                UNION ALL
+
+                -- SALIDAS / DESPACHOS A PLANTAS / QUESERAS DESDE SILOS
+                SELECT 
+                    e.Id,
+                    CONVERT(varchar(10), e.Fecha, 120) AS FechaStr,
+                    'Despacho: ' + ISNULL(c.Nombre, 'Planta') AS Chofer,
+                    e.Litros AS Litros,
+                    'SALIDA' AS TipoMovimiento,
+                    ISNULL(e.TipoLeche, 'VACA') AS TipoLeche,
+                    ISNULL(cc.DiferenciaLitros, 0) AS Diferencias,
+                    'GENERAL' AS PorTipoLeche,
+                    'Salida Cisterna a ' + ISNULL(c.Nombre, 'Cliente') AS Detalle
+                FROM TB_ENTREGAS_COMPANIA e
+                INNER JOIN TB_COMPANIAS c ON e.CompaniaId = c.Id
+                LEFT JOIN TB_CONTROL_COMPANIAS cc ON e.ControlCompaniaId = cc.Id
+                WHERE CAST(e.Fecha AS DATE) = @fecha 
+                  AND e.CompaniaId != 5028 
+                  AND e.ControlRutaId IS NULL
+
+                ORDER BY TipoMovimiento DESC, Id ASC";
+
+            var movimientos = (await connection.QueryAsync<dynamic>(sqlMovimientos, new { fecha = fecha.Date })).ToList();
             var filasAuto = new List<object>();
             int sumEntradas = 0;
+            int sumSalidas = 0;
 
-            for (int i = 0; i < 15; i++)
+            int filaId = 1;
+            foreach (var m in movimientos)
             {
-                if (i < controles.Count)
-                {
-                    var c = controles[i];
-                    int lRuta = (int)(c.LitrosRuta ?? 0);
-                    int lRecep = (int)(c.LitrosRecepcion ?? lRuta);
-                    int dif = lRuta - lRecep;
-                    sumEntradas += lRecep;
+                string mov = (string)m.TipoMovimiento;
+                int lts = (int)(m.Litros ?? 0);
+                if (mov == "ENTRADA") sumEntradas += lts;
+                else sumSalidas += lts;
 
-                    filasAuto.Add(new
-                    {
-                        id = i + 1,
-                        fecha = (string)c.FechaStr,
-                        choferRuta = $"{c.ChoferNombre} / {c.RutaNombre}",
-                        litrosRuta = lRuta,
-                        litrosRecepcion = lRecep,
-                        diferencia = dif
-                    });
-                }
-                else
+                filasAuto.Add(new
                 {
+                    id = filaId++,
+                    fecha = (string)m.FechaStr,
+                    chofer = (string)m.Chofer,
+                    litros = lts,
+                    tipoMovimiento = mov,
+                    tipoLeche = (string)m.TipoLeche,
+                    diferencias = (int)(m.Diferencias ?? 0),
+                    porTipoLeche = (string)m.PorTipoLeche,
+                    detalle = (string)m.Detalle
+                });
+            }
+
+            // Si no hubiera entregas en TB_ENTREGAS_COMPANIA pero sí controles de ruta registrados
+            if (filasAuto.Count == 0)
+            {
+                var sqlRutasFallback = @"
+                    SELECT 
+                        cr.Id,
+                        CONVERT(varchar(10), cr.Fecha, 120) AS FechaStr,
+                        ISNULL(u.NombreCompleto, u.Username) AS Chofer,
+                        ISNULL(cr.LitrosRecibidosReceptoria, ISNULL(cr.TotalLitrosReceptoria, cr.TotalLitrosFinca)) AS Litros,
+                        'ENTRADA' AS TipoMovimiento,
+                        'VACA' AS TipoLeche,
+                        ISNULL(cr.DiferenciaLitros, 0) AS Diferencias,
+                        'GENERAL' AS PorTipoLeche,
+                        ISNULL(rl.Nombre, 'Ruta') AS Detalle
+                    FROM TB_CONTROL_RUTAS cr
+                    LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
+                    LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
+                    WHERE CAST(cr.Fecha AS DATE) = @fecha
+                      AND (cr.TipoServicioId = 1 OR cr.TipoServicioId IS NULL)
+                    ORDER BY cr.Id ASC";
+
+                var fallback = (await connection.QueryAsync<dynamic>(sqlRutasFallback, new { fecha = fecha.Date })).ToList();
+                foreach (var fb in fallback)
+                {
+                    int lts = (int)(fb.Litros ?? 0);
+                    sumEntradas += lts;
                     filasAuto.Add(new
                     {
-                        id = i + 1,
-                        fecha = "",
-                        choferRuta = "",
-                        litrosRuta = 0,
-                        litrosRecepcion = 0,
-                        diferencia = 0
+                        id = filaId++,
+                        fecha = (string)fb.FechaStr,
+                        chofer = (string)fb.Chofer,
+                        litros = lts,
+                        tipoMovimiento = "ENTRADA",
+                        tipoLeche = (string)fb.TipoLeche,
+                        diferencias = (int)(fb.Diferencias ?? 0),
+                        porTipoLeche = (string)fb.PorTipoLeche,
+                        detalle = (string)fb.Detalle
                     });
                 }
             }
+
             string jsonAuto = System.Text.Json.JsonSerializer.Serialize(filasAuto);
 
             if (record != null)
             {
-                bool esPasadoOConfirmado = record.CierreConfirmado || record.Fecha.Date < DateTime.UtcNow.Date;
+                bool esPasadoOConfirmado = record.CierreConfirmado;
                 record.PuedeModificar = esAdmin || !esPasadoOConfirmado;
 
                 // Si no tiene tanques iniciales cargados, auto-asignar del día previo
@@ -5021,13 +5092,14 @@ namespace Transporte.Infrastructure.Repositories
                     record.TotalInicialLitros = totalIni;
                 }
 
-                // Si no tiene filas de recepción registradas pero hay controles de ruta del día, auto-llenar
+                // Si no tiene filas de recepción registradas o están vacías, auto-llenar con los movimientos de hoy
                 if (string.IsNullOrWhiteSpace(record.FilasRecepcionJson) || record.FilasRecepcionJson == "[]" || record.TotalEntradasRutasLitros == 0)
                 {
-                    if (controles.Count > 0)
+                    if (filasAuto.Count > 0)
                     {
                         record.FilasRecepcionJson = jsonAuto;
                         record.TotalEntradasRutasLitros = sumEntradas;
+                        record.TotalSalidasPlantasLitros = sumSalidas;
                     }
                 }
 
@@ -5045,6 +5117,7 @@ namespace Transporte.Infrastructure.Repositories
                 TotalInicialLitros = totalIni,
                 FilasRecepcionJson = jsonAuto,
                 TotalEntradasRutasLitros = sumEntradas,
+                TotalSalidasPlantasLitros = sumSalidas,
                 PuedeModificar = true,
                 Estado = "BORRADOR"
             };
@@ -10491,7 +10564,20 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
         public async Task<ControlTanquesDiarioDto?> ObtenerControlTanquesDiarioAsync(DateTime fecha, string rol)
         {
             using var connection = new SqlConnection(_connectionString);
-            var sql = "SELECT * FROM TB_CONTROL_TANQUES_DIARIO WHERE Fecha = @fecha";
+            var sql = @"
+                SELECT 
+                    Id, Fecha,
+                    Tanque1Inicial, Tanque2Inicial, Tanque3Inicial, Tanque4Inicial, Tanque5Inicial, TotalInicialLitros,
+                    AperturaConfirmada, AperturaConfirmadaPorId, AperturaConfirmadaPorNombre, AperturaConfirmadaAt,
+                    TotalEntradasRutasLitros, TotalSalidasPlantasLitros,
+                    Tanque1Final, Tanque2Final, Tanque3Final, Tanque4Final, Tanque5Final, TotalFinalFisicoLitros,
+                    TotalFinalTeoricoLitros AS TotalTeoricoLitros,
+                    DiferenciaLitros AS DiferenciaMermaLitros,
+                    CierreConfirmado, CierreConfirmadoPorId, CierreConfirmadoPorNombre, CierreConfirmadoAt,
+                    Estado, FilasRecepcionJson, Observaciones
+                FROM TB_CONTROL_TANQUES_DIARIO 
+                WHERE Fecha = @fecha";
+
             var record = await connection.QueryFirstOrDefaultAsync<ControlTanquesDiarioDto>(sql, new { fecha = fecha.Date });
 
             bool esAdmin = rol.Equals("ADMIN", StringComparison.OrdinalIgnoreCase) || rol.Equals("ADMINISTRADOR", StringComparison.OrdinalIgnoreCase);
@@ -10508,63 +10594,121 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             int t5Ini = prevDia?.Tanque5Final ?? 0;
             int totalIni = prevDia?.TotalFinalFisicoLitros ?? (t1Ini + t2Ini + t3Ini + t4Ini + t5Ini);
 
-            // Obtener recepciones del día de TB_CONTROL_RUTAS
-            var sqlRutasDia = @"
+            // Obtener Entradas y Salidas reales del día (Servicio Tipo 1: RUTA)
+            var sqlMovimientos = @"
+                -- ENTRADAS A SILOS (CompaniaId = 5028 - Receptoría)
                 SELECT 
-                    cr.Id,
-                    CONVERT(varchar(10), cr.Fecha, 120) AS FechaStr,
-                    ISNULL(u.NombreCompleto, u.Username) AS ChoferNombre,
-                    ISNULL(rl.Nombre, ISNULL(cr.Observacion, 'Ruta')) AS RutaNombre,
-                    ISNULL(cr.TotalLitrosFinca, 0) AS LitrosRuta,
-                    ISNULL(cr.LitrosRecibidosReceptoria, ISNULL(cr.TotalLitrosReceptoria, cr.TotalLitrosFinca)) AS LitrosRecepcion
-                FROM TB_CONTROL_RUTAS cr
-                LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
-                LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
-                WHERE CAST(cr.Fecha AS DATE) = @fecha
-                ORDER BY cr.Id ASC";
+                    e.Id,
+                    CONVERT(varchar(10), e.Fecha, 120) AS FechaStr,
+                    ISNULL(u.NombreCompleto, u.Username) AS Chofer,
+                    e.Litros AS Litros,
+                    'ENTRADA' AS TipoMovimiento,
+                    ISNULL(e.TipoLeche, 'VACA') AS TipoLeche,
+                    ISNULL(cr.DiferenciaLitros, 0) AS Diferencias,
+                    'GENERAL' AS PorTipoLeche,
+                    ISNULL(cr.Observacion, 'Descarga Silos') AS Detalle
+                FROM TB_ENTREGAS_COMPANIA e
+                LEFT JOIN TB_USUARIOS u ON e.UsuarioId = u.Id
+                LEFT JOIN TB_CONTROL_RUTAS cr ON e.ControlRutaId = cr.Id
+                WHERE CAST(e.Fecha AS DATE) = @fecha 
+                  AND e.CompaniaId = 5028
+                  AND (cr.TipoServicioId = 1 OR cr.TipoServicioId IS NULL)
 
-            var controles = (await connection.QueryAsync<dynamic>(sqlRutasDia, new { fecha = fecha.Date })).ToList();
+                UNION ALL
+
+                -- SALIDAS / DESPACHOS A PLANTAS / QUESERAS DESDE SILOS
+                SELECT 
+                    e.Id,
+                    CONVERT(varchar(10), e.Fecha, 120) AS FechaStr,
+                    'Despacho: ' + ISNULL(c.Nombre, 'Planta') AS Chofer,
+                    e.Litros AS Litros,
+                    'SALIDA' AS TipoMovimiento,
+                    ISNULL(e.TipoLeche, 'VACA') AS TipoLeche,
+                    ISNULL(cc.DiferenciaLitros, 0) AS Diferencias,
+                    'GENERAL' AS PorTipoLeche,
+                    'Salida Cisterna a ' + ISNULL(c.Nombre, 'Cliente') AS Detalle
+                FROM TB_ENTREGAS_COMPANIA e
+                INNER JOIN TB_COMPANIAS c ON e.CompaniaId = c.Id
+                LEFT JOIN TB_CONTROL_COMPANIAS cc ON e.ControlCompaniaId = cc.Id
+                WHERE CAST(e.Fecha AS DATE) = @fecha 
+                  AND e.CompaniaId != 5028 
+                  AND e.ControlRutaId IS NULL
+
+                ORDER BY TipoMovimiento DESC, Id ASC";
+
+            var movimientos = (await connection.QueryAsync<dynamic>(sqlMovimientos, new { fecha = fecha.Date })).ToList();
             var filasAuto = new List<object>();
             int sumEntradas = 0;
+            int sumSalidas = 0;
 
-            for (int i = 0; i < 15; i++)
+            int filaId = 1;
+            foreach (var m in movimientos)
             {
-                if (i < controles.Count)
-                {
-                    var c = controles[i];
-                    int lRuta = (int)(c.LitrosRuta ?? 0);
-                    int lRecep = (int)(c.LitrosRecepcion ?? lRuta);
-                    int dif = lRuta - lRecep;
-                    sumEntradas += lRecep;
+                string mov = (string)m.TipoMovimiento;
+                int lts = (int)(m.Litros ?? 0);
+                if (mov == "ENTRADA") sumEntradas += lts;
+                else sumSalidas += lts;
 
-                    filasAuto.Add(new
-                    {
-                        id = i + 1,
-                        fecha = (string)c.FechaStr,
-                        choferRuta = $"{c.ChoferNombre} / {c.RutaNombre}",
-                        litrosRuta = lRuta,
-                        litrosRecepcion = lRecep,
-                        diferencia = dif
-                    });
-                }
-                else
+                filasAuto.Add(new
                 {
+                    id = filaId++,
+                    fecha = (string)m.FechaStr,
+                    chofer = (string)m.Chofer,
+                    litros = lts,
+                    tipoMovimiento = mov,
+                    tipoLeche = (string)m.TipoLeche,
+                    diferencias = (int)(m.Diferencias ?? 0),
+                    porTipoLeche = (string)m.PorTipoLeche,
+                    detalle = (string)m.Detalle
+                });
+            }
+
+            // Si no hubiera entregas en TB_ENTREGAS_COMPANIA pero sí controles de ruta registrados
+            if (filasAuto.Count == 0)
+            {
+                var sqlRutasFallback = @"
+                    SELECT 
+                        cr.Id,
+                        CONVERT(varchar(10), cr.Fecha, 120) AS FechaStr,
+                        ISNULL(u.NombreCompleto, u.Username) AS Chofer,
+                        ISNULL(cr.LitrosRecibidosReceptoria, ISNULL(cr.TotalLitrosReceptoria, cr.TotalLitrosFinca)) AS Litros,
+                        'ENTRADA' AS TipoMovimiento,
+                        'VACA' AS TipoLeche,
+                        ISNULL(cr.DiferenciaLitros, 0) AS Diferencias,
+                        'GENERAL' AS PorTipoLeche,
+                        ISNULL(rl.Nombre, 'Ruta') AS Detalle
+                    FROM TB_CONTROL_RUTAS cr
+                    LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
+                    LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
+                    WHERE CAST(cr.Fecha AS DATE) = @fecha
+                      AND (cr.TipoServicioId = 1 OR cr.TipoServicioId IS NULL)
+                    ORDER BY cr.Id ASC";
+
+                var fallback = (await connection.QueryAsync<dynamic>(sqlRutasFallback, new { fecha = fecha.Date })).ToList();
+                foreach (var fb in fallback)
+                {
+                    int lts = (int)(fb.Litros ?? 0);
+                    sumEntradas += lts;
                     filasAuto.Add(new
                     {
-                        id = i + 1,
-                        fecha = "",
-                        choferRuta = "",
-                        litrosRuta = 0,
-                        litrosRecepcion = 0,
-                        diferencia = 0
+                        id = filaId++,
+                        fecha = (string)fb.FechaStr,
+                        chofer = (string)fb.Chofer,
+                        litros = lts,
+                        tipoMovimiento = "ENTRADA",
+                        tipoLeche = (string)fb.TipoLeche,
+                        diferencias = (int)(fb.Diferencias ?? 0),
+                        porTipoLeche = (string)fb.PorTipoLeche,
+                        detalle = (string)fb.Detalle
                     });
                 }
             }
+
             string jsonAuto = System.Text.Json.JsonSerializer.Serialize(filasAuto);
 
             if (record != null)
             {
-                bool esPasadoOConfirmado = record.CierreConfirmado || record.Fecha.Date < DateTime.UtcNow.Date;
+                bool esPasadoOConfirmado = record.CierreConfirmado;
                 record.PuedeModificar = esAdmin || !esPasadoOConfirmado;
 
                 // Si no tiene tanques iniciales cargados, auto-asignar del día previo
@@ -10578,13 +10722,14 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     record.TotalInicialLitros = totalIni;
                 }
 
-                // Si no tiene filas de recepción registradas pero hay controles de ruta del día, auto-llenar
+                // Si no tiene filas de recepción registradas o están vacías, auto-llenar con los movimientos de hoy
                 if (string.IsNullOrWhiteSpace(record.FilasRecepcionJson) || record.FilasRecepcionJson == "[]" || record.TotalEntradasRutasLitros == 0)
                 {
-                    if (controles.Count > 0)
+                    if (filasAuto.Count > 0)
                     {
                         record.FilasRecepcionJson = jsonAuto;
                         record.TotalEntradasRutasLitros = sumEntradas;
+                        record.TotalSalidasPlantasLitros = sumSalidas;
                     }
                 }
 
@@ -10602,6 +10747,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 TotalInicialLitros = totalIni,
                 FilasRecepcionJson = jsonAuto,
                 TotalEntradasRutasLitros = sumEntradas,
+                TotalSalidasPlantasLitros = sumSalidas,
                 PuedeModificar = true,
                 Estado = "BORRADOR"
             };

@@ -24,6 +24,17 @@ export const LoginPage: React.FC = () => {
   // Resolución 100% dinámica de la empresa desde SaaS Master (cero datos duros)
   useEffect(() => {
     let mounted = true;
+    if (typeof window !== 'undefined') {
+      const host = window.location.hostname.toLowerCase();
+      if (host && !host.includes('localhost') && host !== '127.0.0.1') {
+        const stored = localStorage.getItem('movil_tenant_domain');
+        if (stored && stored !== host) {
+          localStorage.removeItem('movil_tenant_domain');
+          localStorage.removeItem('movil_tenant_empresa');
+        }
+      }
+    }
+
     authApi.getTenantInfo()
       .then((info) => {
         if (mounted && info?.nombre) {
@@ -43,6 +54,19 @@ export const LoginPage: React.FC = () => {
       : null;
 
     if (isAuthenticated && activeToken && !isTokenExpired(activeToken)) {
+      // Comprobar consistencia estricta de empresa para evitar contaminación cruzada entre tenants
+      const user = useAuthStore.getState().user;
+      const userCod = ((user as any)?.empresaCodigo || '').toUpperCase();
+      const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+      const isCampoVerde = host.includes('campoverde');
+      const isVergel = host.includes('vergel');
+
+      if ((isCampoVerde && userCod.includes('VERGEL')) || (isVergel && userCod.includes('CAMPO'))) {
+        console.warn('Sesión de otra empresa detectada. Limpiando para permitir login limpio en la empresa actual.');
+        useAuthStore.getState().logout();
+        return;
+      }
+
       navigate('/', { replace: true });
     } else if (isAuthenticated && (!activeToken || isTokenExpired(activeToken))) {
       // Estado desfasado: corregir inmediatamente a no autenticado para permitir login

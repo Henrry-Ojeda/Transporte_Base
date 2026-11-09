@@ -1812,7 +1812,8 @@ export const UsuariosPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      const linkApp = `${window.location.origin}/movil`;
+                      const empCod = currentUser?.empresaCodigo || (window.location.hostname.includes('campoverde') ? 'CAMPO_VERDE' : 'VERGEL_CARRILLO');
+                      const linkApp = `${window.location.origin}/movil?empresa=${encodeURIComponent(empCod)}`;
                       navigator.clipboard.writeText(linkApp);
                       toast.success('Enlace de la app copiado');
                     }}
@@ -1839,8 +1840,10 @@ export const UsuariosPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  const linkApp = `${window.location.origin}/movil`;
-                  const msg = `🚚 *Acceso Móvil - Control de Rutas*\n\nHola *${datosVinculacion.nombreCompleto}*, para ingresar a la App Móvil desde tu teléfono:\n\n1️⃣ Abre este enlace en el navegador de tu teléfono:\n👉 ${linkApp}\n\n2️⃣ Escribe tu Código de Activación:\n🔑 *${datosVinculacion.codigo}*\n\n_Tu teléfono quedará configurado automáticamente para trabajar con o sin señal (Offline)._`;
+                  const empCod = currentUser?.empresaCodigo || (window.location.hostname.includes('campoverde') ? 'CAMPO_VERDE' : 'VERGEL_CARRILLO');
+                  const empNombre = currentUser?.empresaNombre || (window.location.hostname.includes('campoverde') ? 'Productos Lácteos Campo Verde' : 'Transporte Vergel & Carrillo');
+                  const linkApp = `${window.location.origin}/movil?empresa=${encodeURIComponent(empCod)}`;
+                  const msg = `🚚 *Acceso Móvil - ${empNombre}*\n\nHola *${datosVinculacion.nombreCompleto}*, para ingresar a la App Móvil desde tu teléfono:\n\n1️⃣ Abre este enlace en el navegador de tu teléfono:\n👉 ${linkApp}\n\n2️⃣ Escribe tu Código de Activación:\n🔑 *${datosVinculacion.codigo}*\n\n_Tu teléfono quedará vinculado exclusivamente a ${empNombre} para trabajar con o sin señal (Offline)._`;
                   const cleanTel = (datosVinculacion.telefono || '').replace(/\D/g, '');
                   const waUrl = cleanTel
                     ? `https://wa.me/${cleanTel.startsWith('58') ? cleanTel : '58' + cleanTel.replace(/^0/, '')}?text=${encodeURIComponent(msg)}`

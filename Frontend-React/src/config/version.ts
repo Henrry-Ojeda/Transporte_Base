@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 15,
-  patch: 7,
-  tag: 'v3.15.7',
+  patch: 8,
+  tag: 'v3.15.8',
   ultimaActualizacion: '2026-11-09',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Validación robusta en perfil y mapeo estricto de SUPERADMIN a ADMIN en apps hijas v3.15.7',
+  descripcion: 'Segregación estricta de tenant en App Móvil, Login y Web sin contaminación cruzada v3.15.8',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

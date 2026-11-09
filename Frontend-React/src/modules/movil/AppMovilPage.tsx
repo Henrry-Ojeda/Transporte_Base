@@ -112,30 +112,66 @@ export const AppMovilPage: React.FC = () => {
   // Estado de Red (Online / Offline)
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
 
+  // Resolver empresa y dominio estrictamente según el hostname actual o parámetro en la URL
+  const currentTenant = (() => {
+    const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const urlEmpresa = (params?.get('empresa') || params?.get('tenant') || '').toUpperCase();
+
+    if (host.includes('campoverde') || urlEmpresa.includes('CAMPO')) {
+      return {
+        domain: 'lacteos-campoverde.vercel.app',
+        nombre: 'Productos Lácteos Campo Verde',
+        codigo: 'CAMPO_VERDE',
+      };
+    }
+    if (host.includes('vergel') || urlEmpresa.includes('VERGEL')) {
+      return {
+        domain: 'transporte-vergel-carrillo.vercel.app',
+        nombre: 'Transporte Vergel & Carrillo',
+        codigo: 'VERGEL_CARRILLO',
+      };
+    }
+    if (host.includes('base') || urlEmpresa.includes('BASE')) {
+      return {
+        domain: 'transporte-base.vercel.app',
+        nombre: 'Sistema de Transporte Base (Demo)',
+        codigo: 'PRODUCTO_BASE',
+      };
+    }
+    return {
+      domain: host || 'localhost',
+      nombre: 'Sistema de Transporte',
+      codigo: 'PRODUCTO_BASE',
+    };
+  })();
+
   // Tenant / Base de Datos Guardada en este Dispositivo
   const [tenantDomain, setTenantDomain] = useState<string>(() => {
+    const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+    if (host && !host.includes('localhost') && host !== '127.0.0.1') {
+      return currentTenant.domain;
+    }
     try {
       const saved = localStorage.getItem('movil_tenant_domain');
       if (saved) return saved;
-      const host = typeof window !== 'undefined' ? window.location.hostname : '';
-      if (host.includes('campoverde')) return 'lacteos-campoverde.vercel.app';
-      if (host.includes('vergel')) return 'transporte-vergel-carrillo.vercel.app';
-      return host || 'transporte-vergel-carrillo.vercel.app';
+      return currentTenant.domain;
     } catch {
-      return 'transporte-vergel-carrillo.vercel.app';
+      return currentTenant.domain;
     }
   });
 
   const [empresaGuardada, setEmpresaGuardada] = useState<string>(() => {
+    const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+    if (host && !host.includes('localhost') && host !== '127.0.0.1') {
+      return currentTenant.nombre;
+    }
     try {
       const saved = localStorage.getItem('movil_tenant_empresa');
       if (saved) return saved;
-      const host = typeof window !== 'undefined' ? window.location.hostname : '';
-      if (host.includes('campoverde')) return 'Lácteos Campo Verde';
-      if (host.includes('vergel')) return 'Transporte Vergel & Carrillo';
-      return '';
+      return currentTenant.nombre;
     } catch {
-      return '';
+      return currentTenant.nombre;
     }
   });
 
@@ -442,11 +478,26 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
-  // Estado del Dispositivo Vinculado
+  // Estado del Dispositivo Vinculado (con validación estricta de pertenencia a la empresa actual)
   const [dispositivo, setDispositivo] = useState<DispositivoMovilData | null>(() => {
     try {
+      const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+      const isCampoVerde = host.includes('campoverde');
+      const isVergel = host.includes('vergel');
+
       const saved = localStorage.getItem('movil_device_info');
-      return saved ? JSON.parse(saved) : null;
+      if (!saved) return null;
+      const parsed: DispositivoMovilData = JSON.parse(saved);
+      if (!parsed) return null;
+
+      const dIsVergel = (parsed.empresaCodigo || '').toUpperCase().includes('VERGEL') || (parsed.empresaNombre || '').toLowerCase().includes('vergel');
+      const dIsCampo = (parsed.empresaCodigo || '').toUpperCase().includes('CAMPO') || (parsed.empresaNombre || '').toLowerCase().includes('campo');
+
+      // Si el dispositivo guardado pertenece a otra empresa, forzar solicitud de código/clave
+      if ((isCampoVerde && dIsVergel) || (isVergel && dIsCampo)) {
+        return null;
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -613,9 +664,12 @@ export const AppMovilPage: React.FC = () => {
   const [choferSimuladoId, setChoferSimuladoId] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('movil_chofer_simulado_id');
-      return saved ? Number(saved) : 13; // 13 = Julio Atencio
+      if (saved) return Number(saved);
+      const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+      if (host.includes('vergel')) return 13; // Julio Atencio exclusivamente en Vergel Carrillo
+      return 0;
     } catch {
-      return 13;
+      return 0;
     }
   });
 
@@ -1052,6 +1106,45 @@ export const AppMovilPage: React.FC = () => {
   // Salvaguarda: Rehidratar viaje activo y paradas de LocalStorage si la memoria quedó vacía
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const host = window.location.hostname.toLowerCase();
+      const isCampoVerde = host.includes('campoverde');
+      const isVergel = host.includes('vergel');
+
+      // Limpieza automática si el dispositivo guardado en LocalStorage pertenece a la otra empresa
+      const savedDev = localStorage.getItem('movil_device_info');
+      if (savedDev) {
+        try {
+          const d = JSON.parse(savedDev);
+          const dIsVergel = (d.empresaCodigo || '').toUpperCase().includes('VERGEL') || (d.empresaNombre || '').toLowerCase().includes('vergel');
+          const dIsCampo = (d.empresaCodigo || '').toUpperCase().includes('CAMPO') || (d.empresaNombre || '').toLowerCase().includes('campo');
+          if ((isCampoVerde && dIsVergel) || (isVergel && dIsCampo)) {
+            localStorage.removeItem('movil_device_info');
+            localStorage.removeItem('movil_viaje_activo');
+            localStorage.removeItem('movil_paradas_activo');
+            localStorage.removeItem('movil_cargas_local');
+            localStorage.removeItem('movil_fincas_cache');
+            localStorage.removeItem('movil_despacho_activo');
+            localStorage.removeItem('movil_despachos_activos');
+            localStorage.removeItem('movil_entregas_chofer');
+            localStorage.removeItem('movil_chofer_simulado_id');
+            setDispositivo(null);
+            setViajeActivo(null);
+            setParadasViajeActivo([]);
+          }
+        } catch {}
+      }
+
+      // Limpiar tenant_domain en LocalStorage si apunta a la otra empresa
+      const savedTenant = localStorage.getItem('movil_tenant_domain');
+      if (savedTenant) {
+        if ((isCampoVerde && savedTenant.includes('vergel')) || (isVergel && savedTenant.includes('campoverde'))) {
+          localStorage.removeItem('movil_tenant_domain');
+          localStorage.removeItem('movil_tenant_empresa');
+          setTenantDomain(currentTenant.domain);
+          setEmpresaGuardada(currentTenant.nombre);
+        }
+      }
+
       const params = new URLSearchParams(window.location.search);
       if (params.get('reset') === '1' || params.get('logout') === '1' || params.get('nuevo') === '1') {
         localStorage.removeItem('movil_device_info');
@@ -1092,10 +1185,24 @@ export const AppMovilPage: React.FC = () => {
   // Auto-sintetizar dispositivo si el usuario ya inició sesión en la plataforma
   useEffect(() => {
     if (!dispositivo && authUser && authToken) {
+      const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+      const isCampoVerde = host.includes('campoverde');
+      const isVergel = host.includes('vergel');
+      const userCod = ((authUser as any)?.empresaCodigo || '').toUpperCase();
+      const userNom = (authUser.empresaNombre || '').toLowerCase();
+
+      // Validación estricta: nunca sintetizar si el usuario web es de otra empresa
+      if (isCampoVerde && (userCod.includes('VERGEL') || userNom.includes('vergel'))) {
+        return;
+      }
+      if (isVergel && (userCod.includes('CAMPO') || userNom.includes('campo'))) {
+        return;
+      }
+
       const dispData: DispositivoMovilData = {
         token: authToken,
-        empresaCodigo: (authUser as any).empresaCodigo || 'EMPRESA',
-        empresaNombre: authUser.empresaNombre || 'Transporte',
+        empresaCodigo: (authUser as any).empresaCodigo || currentTenant.codigo,
+        empresaNombre: authUser.empresaNombre || currentTenant.nombre,
         id: authUser.id,
         username: authUser.username,
         nombreCompleto: authUser.nombreCompleto,
@@ -1112,7 +1219,7 @@ export const AppMovilPage: React.FC = () => {
         localStorage.setItem('movil_device_info', JSON.stringify(dispData));
       } catch {}
     }
-  }, [authUser, authToken, dispositivo]);
+  }, [authUser, authToken, dispositivo, currentTenant]);
 
   // Fecha de hoy por defecto
   const hoyStr = new Date().toISOString().split('T')[0];
@@ -1173,11 +1280,11 @@ export const AppMovilPage: React.FC = () => {
   };
 
   // Chofer efectivo: si es Admin, usa el chofer seleccionado para auditar/supervisar; si no, usa el propio dispositivo
-  const choferEfectivoId = esAdminReal ? (choferSimuladoId || 13) : (dispositivo?.id || 13);
+  const choferEfectivoId = esAdminReal ? (choferSimuladoId || 0) : (dispositivo?.id || 0);
   const choferEfectivoNombre = useMemo(() => {
     if (!esAdminReal && dispositivo?.nombreCompleto) return dispositivo.nombreCompleto;
     const encontrado = choferesLista.find((c) => c.id === choferSimuladoId || (c as any).usuarioId === choferSimuladoId);
-    return encontrado?.nombreCompleto || 'Julio Atencio';
+    return encontrado?.nombreCompleto || dispositivo?.nombreCompleto || 'Conductor';
   }, [esAdminReal, choferSimuladoId, choferesLista, dispositivo]);
 
   // Permiso de creación de ruta para el Chofer (o Admin ilimitado)
@@ -2958,17 +3065,17 @@ export const AppMovilPage: React.FC = () => {
       }));
 
       // Determinar dominio y empresa automáticamente a partir del código de vinculación
-      let nuevoDominio = 'transporte-vergel-carrillo.vercel.app';
+      let nuevoDominio = currentTenant.domain;
       const codUpper = (res.empresaCodigo || '').toUpperCase();
       if (codUpper.includes('CAMPO')) {
         nuevoDominio = 'lacteos-campoverde.vercel.app';
       } else if (codUpper.includes('VERGEL')) {
         nuevoDominio = 'transporte-vergel-carrillo.vercel.app';
-      } else if (tenantDomain) {
-        nuevoDominio = tenantDomain;
+      } else if (currentTenant.domain) {
+        nuevoDominio = currentTenant.domain;
       }
 
-      const nuevoNombreEmpresa = res.empresaNombre || (codUpper.includes('CAMPO') ? 'Lácteos Campo Verde' : 'Transporte Vergel & Carrillo');
+      const nuevoNombreEmpresa = res.empresaNombre || (codUpper.includes('CAMPO') ? 'Productos Lácteos Campo Verde' : (codUpper.includes('VERGEL') ? 'Transporte Vergel & Carrillo' : currentTenant.nombre));
 
       setTenantDomain(nuevoDominio);
       setEmpresaGuardada(nuevoNombreEmpresa);
@@ -3085,7 +3192,7 @@ export const AppMovilPage: React.FC = () => {
         })
       );
 
-      const empNombre = res.empresaNombre || empresaGuardada;
+      const empNombre = res.empresaNombre || currentTenant.nombre;
       setEmpresaGuardada(empNombre);
       localStorage.setItem('movil_tenant_empresa', empNombre);
 
@@ -4277,11 +4384,12 @@ export const AppMovilPage: React.FC = () => {
   // VISTA 1: DISPOSITIVO NO VINCULADO (ACTIVACIÓN NEUTRA)
   // =========================================================================
   if (!dispositivo) {
-    const nombreEmpresaActual = empresaGuardada || (
-      typeof window !== 'undefined' && window.location.hostname.includes('campoverde')
-        ? 'Lácteos Campo Verde'
-        : 'Transporte Vergel & Carrillo'
-    );
+    const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+    const nombreEmpresaActual = host.includes('campoverde')
+      ? 'Productos Lácteos Campo Verde'
+      : (host.includes('vergel')
+          ? 'Transporte Vergel & Carrillo'
+          : (empresaGuardada || currentTenant.nombre || 'Sistema de Transporte'));
 
     return (
       <div

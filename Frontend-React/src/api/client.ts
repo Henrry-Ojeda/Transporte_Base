@@ -140,8 +140,15 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     if (typeof window !== 'undefined' && config.headers) {
-      const storedTenant = localStorage.getItem('movil_tenant_domain');
-      config.headers['X-Tenant-Domain'] = storedTenant || window.location.hostname;
+      const host = window.location.hostname.toLowerCase();
+      // En dominios reales de producción o subdominios, el host actual es prioritario e inmutable
+      if (host && !host.includes('localhost') && host !== '127.0.0.1') {
+        config.headers['X-Tenant-Domain'] = host;
+      } else {
+        // Solo en entorno local de pruebas (localhost) permitir override controlado
+        const storedTenant = localStorage.getItem('movil_tenant_domain');
+        config.headers['X-Tenant-Domain'] = storedTenant || host || 'localhost';
+      }
     }
     return config;
   },

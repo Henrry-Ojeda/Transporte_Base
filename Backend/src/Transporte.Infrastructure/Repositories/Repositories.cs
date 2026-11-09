@@ -7621,6 +7621,7 @@ namespace Transporte.Infrastructure.Repositories
                 ?? configuration.GetConnectionString("BD_TRANSPORTE")
                 ?? "";
             _geminiApiKey = configuration["Gemini:ApiKey"] 
+                ?? Environment.GetEnvironmentVariable("Gemini__ApiKey")
                 ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") 
                 ?? "";
         }
@@ -7738,6 +7739,93 @@ namespace Transporte.Infrastructure.Repositories
                         }
                         hallazgosDirectos.AppendLine("=== FIN DE REGISTROS EXACTOS ===");
                         hallazgosDirectos.AppendLine();
+                    }
+                }
+
+                // Búsqueda inteligente por nombre de chofer o conductor si se menciona en el mensaje (ej: 'JULIO')
+                var choferesEncontrados = await connection.QueryAsync<dynamic>(@"
+                    SELECT Id, NombreCompleto FROM TB_USUARIOS 
+                    WHERE Rol IN ('CHOFER', 'CONDUCTOR', 'OPERADOR') AND Activo = 1");
+
+                var choferMatch = choferesEncontrados.FirstOrDefault(c => {
+                    string n = (string)(c.NombreCompleto ?? "");
+                    if (string.IsNullOrWhiteSpace(n)) return false;
+                    var palabras = n.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    return palabras.Any(p => p.Length >= 4 && (mensaje ?? "").IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0);
+                });
+
+                if (choferMatch != null)
+                {
+                    int choferId = (int)choferMatch.Id;
+                    string nombreChofer = (string)choferMatch.NombreCompleto;
+
+                    var ultimosViajesChofer = await connection.QueryAsync<dynamic>(@"
+                        SELECT TOP 5 cr.Id, cr.Fecha, cr.TotalLitrosFinca, cr.TotalLitrosReceptoria,
+                               cr.LitrosRecibidosReceptoria, cr.DiferenciaLitros, cr.DiferenciaReceptoria,
+                               cr.MermaTotalLitros, cr.PorcentajeMerma, cr.Estado, cr.Observacion,
+                               co.Codigo AS CicloCodigo
+                        FROM TB_CONTROL_RUTAS cr
+                        LEFT JOIN TB_CICLOS_OPERATIVOS co ON cr.CicloId = co.Id
+                        WHERE cr.UsuarioId = @choferId
+                        ORDER BY cr.Fecha DESC, cr.Id DESC", new { choferId });
+
+                    if (ultimosViajesChofer.Any())
+                    {
+                        hallazgosDirectos.AppendLine($"=== 🔎 ÚLTIMOS TICKETS / VIAJES ENCONTRADOS DEL CONDUCTOR: {nombreChofer} ===");
+                        foreach (var v in ultimosViajesChofer)
+                        {
+                            string fStr = v.Fecha != null ? ((DateTime)v.Fecha).ToString("dd/MM/yyyy") : "Sin fecha";
+                            decimal fincasLts = v.TotalLitrosFinca != null ? (decimal)v.TotalLitrosFinca : 0m;
+                            decimal recepLts = v.TotalLitrosReceptoria != null ? (decimal)v.TotalLitrosReceptoria : (v.LitrosRecibidosReceptoria != null ? (decimal)v.LitrosRecibidosReceptoria : 0m);
+                            decimal dif = v.DiferenciaLitros != null ? (decimal)v.DiferenciaLitros : (v.DiferenciaReceptoria != null ? (decimal)v.DiferenciaReceptoria : (recepLts - fincasLts));
+
+                            hallazgosDirectos.AppendLine($"• Control de Viaje #{v.Id} | Fecha: {fStr} | Estado: {v.Estado} | Ciclo: {v.CicloCodigo ?? "N/A"}");
+                            hallazgosDirectos.AppendLine($"  - Litros en Finca: {fincasLts:N0} L | Litros en Receptoría: {recepLts:N0} L | Diferencia: {dif:+0;-0;0} L (Merma: {v.PorcentajeMerma ?? 0}%)");
+
+                            var fincasV = await connection.QueryAsync<dynamic>(@"
+                                SELECT f.Nombre AS Finca, r.Litros, r.EsAcida 
+                                FROM TB_RUTAS_RECOLECCION r 
+                                INNER JOIN TB_FINCAS f ON r.FincaId = f.Id 
+                                WHERE r.ControlRutaId = @cid", new { cid = v.Id });
+
+                            if (fincasV.Any())
+                            {
+                                var desg = string.Join(", ", fincasV.Select(f => $"{f.Finca}: {f.Litros} L"));
+                                hallazgosDirectos.AppendLine($"  - Fincas Recogidas: {desg}");
+                            }
+                        }
+                        hallazgosDirectos.AppendLine("=== FIN DE TICKETS DEL CONDUCTOR ===\n");
+                    }
+                }
+
+                // Detección automática si pide análisis de mermas o descuadres
+                if ((mensaje ?? "").IndexOf("merma", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (mensaje ?? "").IndexOf("descuadre", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (mensaje ?? "").IndexOf("faltante", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    var mayoresMermas = await connection.QueryAsync<dynamic>(@"
+                        SELECT TOP 5 cr.Id, cr.Fecha, u.NombreCompleto AS Conductor,
+                               cr.TotalLitrosFinca, cr.TotalLitrosReceptoria, cr.LitrosRecibidosReceptoria,
+                               cr.DiferenciaLitros, cr.DiferenciaReceptoria, cr.MermaTotalLitros, cr.PorcentajeMerma,
+                               cr.Estado, co.Codigo AS CicloCodigo
+                        FROM TB_CONTROL_RUTAS cr
+                        LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
+                        LEFT JOIN TB_CICLOS_OPERATIVOS co ON cr.CicloId = co.Id
+                        WHERE cr.DiferenciaLitros < 0 OR cr.DiferenciaReceptoria < 0 OR cr.MermaTotalLitros < 0
+                        ORDER BY ISNULL(cr.DiferenciaLitros, ISNULL(cr.DiferenciaReceptoria, cr.MermaTotalLitros)) ASC, cr.Fecha DESC");
+
+                    if (mayoresMermas.Any())
+                    {
+                        hallazgosDirectos.AppendLine("=== ⚠️ TICKETS RECIENTES CON MAYORES MERMAS / FALTANTES DETECTADOS ===");
+                        foreach (var m in mayoresMermas)
+                        {
+                            string fStr = m.Fecha != null ? ((DateTime)m.Fecha).ToString("dd/MM/yyyy") : "Sin fecha";
+                            decimal fincasLts = m.TotalLitrosFinca != null ? (decimal)m.TotalLitrosFinca : 0m;
+                            decimal recepLts = m.TotalLitrosReceptoria != null ? (decimal)m.TotalLitrosReceptoria : (m.LitrosRecibidosReceptoria != null ? (decimal)m.LitrosRecibidosReceptoria : 0m);
+                            decimal dif = m.DiferenciaLitros != null ? (decimal)m.DiferenciaLitros : (m.DiferenciaReceptoria != null ? (decimal)m.DiferenciaReceptoria : (recepLts - fincasLts));
+                            hallazgosDirectos.AppendLine($"• Ticket #{m.Id} ({fStr}) - Chofer: {m.Conductor} | Faltante: {dif:N0} Lts ({m.PorcentajeMerma ?? 0}% Merma) | Fincas: {fincasLts:N0} L -> Recibido: {recepLts:N0} L");
+                        }
+                        hallazgosDirectos.AppendLine("=== FIN DE MAYORES MERMAS ===\n");
                     }
                 }
             }
@@ -8286,7 +8374,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             string json = System.Text.Json.JsonSerializer.Serialize(requestBody);
 
             // Intentar con múltiples modelos Gemini en cascada con reintentos
-            string[] modelos = new[] { "gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash", "gemma-4-31b-it", "gemini-3.6-flash" };
+            string[] modelos = new[] { "gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite", "gemma-4-31b-it" };
             Exception? ultimoError = null;
 
             foreach (var modelo in modelos)

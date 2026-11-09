@@ -72,3 +72,4 @@ export const updateAppIcon = (logoUrl?: string, appTitle: string = 'Rutas de Lec
     console.error('Error al actualizar icono dinámico de la app:', err);
   }
 };
+

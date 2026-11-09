@@ -74,6 +74,46 @@ namespace Transporte.API.Controllers
             var id = await _notificacionesRepository.CrearNotificacionAsync(dto);
             return Ok(new { success = true, id });
         }
+
+        [HttpPost("suscribir-push")]
+        public async Task<IActionResult> SuscribirPush([FromBody] SuscripcionPushDto dto)
+        {
+            var userId = GetCurrentUserId();
+            if (userId <= 0) return Unauthorized(new { message = "Usuario no identificado." });
+            if (string.IsNullOrWhiteSpace(dto.Endpoint) || string.IsNullOrWhiteSpace(dto.P256dh) || string.IsNullOrWhiteSpace(dto.Auth))
+            {
+                return BadRequest(new { message = "Datos de suscripción incompletos." });
+            }
+
+            var ok = await _notificacionesRepository.GuardarSuscripcionPushAsync(userId, dto);
+            return Ok(new { success = ok, message = "Dispositivo suscrito a notificaciones Push a nivel de SO." });
+        }
+
+        [HttpGet("vapid-public-key")]
+        [AllowAnonymous]
+        public IActionResult ObtenerVapidPublicKey()
+        {
+            return Ok(new { publicKey = "BLaD6DOWHSNTZ2TVY91CnRLuOCb8p9NpUv4AGslQ_Cp1vg3oiHA7MIR-qF74ZxzkHKp1ucbg2kVMU61S4IpxRHo" });
+        }
+
+        [HttpPost("probar-push-diferido")]
+        public async Task<IActionResult> ProbarPushDiferido([FromQuery] int segundos = 5)
+        {
+            var userId = GetCurrentUserId();
+            if (userId <= 0) return Unauthorized(new { message = "Usuario no identificado." });
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(Math.Max(1, segundos) * 1000);
+                await _notificacionesRepository.EnviarWebPushAsync(
+                    userId, 
+                    "🚨 AVISO DE RUTA (Pantalla Bloqueada)", 
+                    "Prueba de notificación recibida con la pantalla apagada / teléfono bloqueado."
+                );
+            });
+
+            return Ok(new { success = true, message = $"Notificación programada en {segundos} segundos. ¡Bloquea tu pantalla ahora para probarla!" });
+        }
     }
 }
 

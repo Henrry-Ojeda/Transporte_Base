@@ -534,7 +534,14 @@ export const catalogosApi = {
   // CHOFERES & CONDUCTORES
   getChoferes: async (): Promise<ChoferDto[]> => {
     const res = await apiClient.get<ChoferDto[]>('/catalogos/choferes');
-    return Array.isArray(res.data) ? res.data : [];
+    const list = Array.isArray(res.data) ? res.data : [];
+    // REGLA ABSOLUTA: SOLO USUARIOS ACTIVOS == 1 CON ROL CHOFER EN TODO EL SISTEMA
+    return list.filter((ch) => {
+      const esActivo = ch.activo === true || (ch as any).activo === 1 || (ch as any).Activo === true || (ch as any).Activo === 1;
+      const rol = String((ch as any).rol || (ch as any).Rol || 'CHOFER').toUpperCase();
+      const esChofer = rol === 'CHOFER' || rol === 'CONDUCTOR';
+      return esActivo && esChofer;
+    });
   },
 
   // CAMIONES

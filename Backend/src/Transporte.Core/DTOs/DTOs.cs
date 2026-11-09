@@ -2611,6 +2611,14 @@ namespace Transporte.Core.DTOs
         public long? ReferenciaId { get; set; }
     }
 
+    public class SuscripcionPushDto
+    {
+        public string Endpoint { get; set; } = string.Empty;
+        public string P256dh { get; set; } = string.Empty;
+        public string Auth { get; set; } = string.Empty;
+        public string? UserAgent { get; set; }
+    }
+
     // =========================================================================
     // DTOs PARA PLANIFICACIÓN DE RUTAS - CHOFERES (ASIGNACIÓN DIARIA DE CAMIONES)
     // =========================================================================

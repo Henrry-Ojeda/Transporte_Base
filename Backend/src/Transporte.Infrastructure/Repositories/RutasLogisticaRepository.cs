@@ -30,10 +30,12 @@ namespace Transporte.Infrastructure.Repositories
     {
         private readonly string _connectionString;
         private readonly Transporte.Core.Interfaces.ITenantService? _tenantService;
+        private readonly INotificacionesRepository? _notificacionesRepo;
 
-        public RutasLogisticaRepository(IConfiguration configuration, Transporte.Core.Interfaces.ITenantService? tenantService = null)
+        public RutasLogisticaRepository(IConfiguration configuration, Transporte.Core.Interfaces.ITenantService? tenantService = null, INotificacionesRepository? notificacionesRepo = null)
         {
             _tenantService = tenantService;
+            _notificacionesRepo = notificacionesRepo;
             _connectionString = tenantService?.GetConnectionString() 
                 ?? configuration.GetConnectionString("DefaultConnection") 
                 ?? configuration.GetConnectionString("BD_TRANSPORTE") 
@@ -685,6 +687,11 @@ namespace Transporte.Infrastructure.Repositories
                             Fecha = dto.Fecha.Date,
                             ticketIdEfectivo
                         });
+
+                    if (_notificacionesRepo != null)
+                    {
+                        _ = Task.Run(() => _notificacionesRepo.EnviarWebPushAsync(dto.ConductorId, tituloNotif, mensajeNotif, "/movil"));
+                    }
                 }
             }
             catch (Exception ex)
@@ -781,6 +788,12 @@ namespace Transporte.Infrastructure.Repositories
                             fecha = fecha.Date,
                             controlRutaId
                         });
+
+                    if (_notificacionesRepo != null)
+                    {
+                        var msgPush = $"Tu recorrido en Ticket #{controlRutaId} fue actualizado: ahora tienes {fincasSeleccionadas.Count} fincas asignadas.";
+                        _ = Task.Run(() => _notificacionesRepo.EnviarWebPushAsync(conductorId, "📋 Recorrido Actualizado por Supervisor", msgPush, "/movil"));
+                    }
                 }
             }
             catch { /* Tolerante */ }

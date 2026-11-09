@@ -41,5 +41,24 @@ export const notificacionesApi = {
     const res = await apiClient.post('/notificaciones/enviar', dto);
     return res.data;
   },
+
+  getVapidPublicKey: async (): Promise<string> => {
+    try {
+      const res = await apiClient.get<{ publicKey: string }>('/notificaciones/vapid-public-key');
+      return res.data?.publicKey || 'BLaD6DOWHSNTZ2TVY91CnRLuOCb8p9NpUv4AGslQ_Cp1vg3oiHA7MIR-qF74ZxzkHKp1ucbg2kVMU61S4IpxRHo';
+    } catch {
+      return 'BLaD6DOWHSNTZ2TVY91CnRLuOCb8p9NpUv4AGslQ_Cp1vg3oiHA7MIR-qF74ZxzkHKp1ucbg2kVMU61S4IpxRHo';
+    }
+  },
+
+  suscribirPush: async (dto: { endpoint: string; p256dh: string; auth: string; userAgent?: string }): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.post('/notificaciones/suscribir-push', dto);
+    return res.data;
+  },
+
+  probarPushDiferido: async (segundos = 5): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.post('/notificaciones/probar-push-diferido', null, { params: { segundos } });
+    return res.data;
+  },
 };
 

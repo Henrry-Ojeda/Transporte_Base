@@ -1,5 +1,5 @@
 // Service Worker para Rutas Móvil (Offline-First / PWA Ultra-Resiliente)
-const CACHE_NAME = 'rutas-movil-v3.12.1';
+const CACHE_NAME = 'rutas-movil-v3.13.1';
 const STATIC_ASSETS = [
   "/",
   "/app",
@@ -9,8 +9,8 @@ const STATIC_ASSETS = [
   "/manifest.json",
   "/favicon.svg",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css",
-  "/assets/index-BjJ9M6df.js",
   "/assets/index-DFisk4P7.css",
+  "/assets/index-DSCNDYXV.js",
   "/assets/rolldown-runtime-XKyaHtl9.js",
   "/assets/vendor-excel-D_lWTlWp.js",
   "/assets/vendor-query-DagBFWEK.js",
@@ -220,15 +220,16 @@ self.addEventListener('push', (event) => {
     body: data.mensaje,
     icon: '/favicon.svg',
     badge: '/favicon.svg',
-    vibrate: [300, 100, 300, 100, 400],
+    vibrate: [500, 200, 500, 200, 500],
     data: {
-      url: '/movil',
+      url: data.url || '/movil',
       id: data.id,
       timestamp: Date.now(),
     },
     tag: `transporte-notif-${data.id || Date.now()}`,
     renotify: true,
     requireInteraction: true,
+    silent: false,
   };
 
   event.waitUntil(self.registration.showNotification(title, options));

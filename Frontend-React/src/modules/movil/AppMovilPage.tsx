@@ -220,6 +220,103 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
+  // Convertir VAPID Public Key en Uint8Array para Web Push
+  const urlB64ToUint8Array = (base64String: string) => {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  // Suscribir dispositivo a Web Push en el servidor para notificaciones con pantalla bloqueada
+  const suscribirWebPushDispositivo = async () => {
+    try {
+      if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        return false;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      if (!reg || !reg.pushManager) return false;
+
+      const vapidKey = await notificacionesApi.getVapidPublicKey();
+      const convertedKey = urlB64ToUint8Array(vapidKey);
+
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedKey,
+        });
+      }
+
+      if (sub) {
+        const rawKey = sub.getKey ? sub.getKey('p256dh') : null;
+        const key = rawKey ? btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(rawKey)))) : '';
+        const rawAuth = sub.getKey ? sub.getKey('auth') : null;
+        const auth = rawAuth ? btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(rawAuth)))) : '';
+
+        await notificacionesApi.suscribirPush({
+          endpoint: sub.endpoint,
+          p256dh: key,
+          auth: auth,
+          userAgent: navigator.userAgent,
+        });
+        console.log('✅ WebPush registrado exitosamente para pantalla apagada.');
+        return true;
+      }
+    } catch (err) {
+      console.warn('Error suscribiendo Web Push:', err);
+    }
+    return false;
+  };
+
+  // Probar notificación diferida de 5 segundos para que el usuario bloquee la pantalla
+  const probarNotificacionPantallaApagada = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      toast.error('Tu dispositivo no soporta notificaciones nativas.');
+      return;
+    }
+    if (Notification.permission !== 'granted') {
+      const p = await Notification.requestPermission();
+      setPermisoNotificaciones(p);
+      if (p !== 'granted') {
+        toast.error('Debes autorizar las notificaciones en tu navegador primero.');
+        return;
+      }
+    }
+
+    toast.loading('Sincronizando Push con el servidor...', { duration: 1500 });
+    await suscribirWebPushDispositivo();
+
+    try {
+      await notificacionesApi.probarPushDiferido(5);
+      await Swal.fire({
+        title: '🔒 ¡BLOQUEA TU PANTALLA YA!',
+        html: `
+          <div style="font-size: 13.5px; text-align: left; line-height: 1.5; color: #cbd5e1;">
+            <p>Se ha enviado la orden al servidor para enviar una <strong>notificación push a nivel de sistema</strong> en <strong>5 segundos</strong>.</p>
+            <div style="background: rgba(16, 185, 129, 0.15); border: 1.5px solid #10b981; padding: 12px; border-radius: 10px; margin: 10px 0; color: #a7f3d0; text-align: center;">
+              <strong style="font-size: 16px;">⏱️ Pulsa el botón de bloqueo de tu teléfono AHORA.</strong>
+            </div>
+            <p style="font-size: 12px; color: #94a3b8; margin: 0;">Tu teléfono vibrará y sonará con la pantalla completamente apagada.</p>
+          </div>
+        `,
+        icon: 'info',
+        confirmButtonText: '¡Bloqueando pantalla!',
+        confirmButtonColor: '#2563eb',
+        background: '#1e293b',
+        color: '#fff',
+        timer: 4500,
+        timerProgressBar: true,
+      });
+    } catch (err: any) {
+      toast.error('Error al programar prueba: ' + (err?.response?.data?.message || err.message));
+    }
+  };
+
   // Solicitar permiso explícito mediante gesto del usuario
   const solicitarPermisoNotificaciones = async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -231,6 +328,7 @@ export const AppMovilPage: React.FC = () => {
       setPermisoNotificaciones(res);
       if (res === 'granted') {
         toast.success('¡Avisos de teléfono activados!');
+        await suscribirWebPushDispositivo();
         await emitirNotificacionTelefono(
           '🔔 Notificaciones Activadas en tu Teléfono',
           'Ahora recibirás avisos de cambios de ruta y despachos, incluso con la pantalla bloqueada.'
@@ -1431,7 +1529,10 @@ export const AppMovilPage: React.FC = () => {
   useEffect(() => {
     if (isOnline) {
       catalogosApi.getChoferes().then((ch) => {
-        if (Array.isArray(ch) && ch.length > 0) setChoferesLista(ch);
+        if (Array.isArray(ch) && ch.length > 0) {
+          const soloActivos = ch.filter((c) => c.activo === true || (c as any).activo === 1);
+          setChoferesLista(soloActivos);
+        }
       }).catch(() => {});
 
       operacionesApi.getRutasLogistica().then((rutas: any) => {
@@ -2033,7 +2134,7 @@ export const AppMovilPage: React.FC = () => {
       ]);
       setPlanificaciones(Array.isArray(plans) ? plans : []);
       setRutasLogisticas(Array.isArray(rutas) ? rutas : []);
-      setChoferesLista(Array.isArray(chofs) ? chofs : []);
+      setChoferesLista(Array.isArray(chofs) ? chofs.filter((c) => c.activo === true || (c as any).activo === 1) : []);
       setCamionesLista(Array.isArray(cams) ? cams : []);
       setFincasPromedio(Array.isArray(proms) ? proms : []);
     } catch (err) {
@@ -4683,6 +4784,46 @@ export const AppMovilPage: React.FC = () => {
               }}
             >
               Activar
+            </button>
+          </div>
+        )}
+
+        {permisoNotificaciones === 'granted' && (
+          <div
+            style={{
+              background: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              borderRadius: '10px',
+              padding: '6px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#166534', fontWeight: 700 }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#16a34a' }}></span>
+              <span>Avisos de ruta activos (Pantalla bloqueada)</span>
+            </div>
+            <button
+              type="button"
+              onClick={probarNotificacionPantallaApagada}
+              style={{
+                background: '#16a34a',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                fontSize: '10.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+              title="Programa un push en 5 segundos para que apagues tu pantalla y verifiques que suena y vibra"
+            >
+              <i className="fa-solid fa-mobile-screen"></i> Probar en Bloqueo (5s)
             </button>
           </div>
         )}
@@ -12839,7 +12980,9 @@ export const AppMovilPage: React.FC = () => {
                     }}
                   >
                     <option value={0}>-- Selecciona Chofer --</option>
-                    {choferesLista.map((ch) => (
+                    {choferesLista
+                      .filter((ch) => ch.activo === true || (ch as any).activo === 1)
+                      .map((ch) => (
                       <option key={ch.id} value={ch.id}>
                         {ch.nombreCompleto} {ch.cedula ? `(C.I. ${ch.cedula})` : ''}
                       </option>
@@ -14338,13 +14481,7 @@ export const AppMovilPage: React.FC = () => {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => {
-                      emitirNotificacionTelefono(
-                        '🔔 Notificación de Prueba Transporte V2',
-                        '¡Prueba exitosa! Si escuchaste el sonido y vibró, tu teléfono está listo para avisarte incluso bloqueado.'
-                      );
-                      toast.success('Notificación de prueba enviada al teléfono');
-                    }}
+                    onClick={probarNotificacionPantallaApagada}
                     style={{
                       background: '#16a34a',
                       color: '#ffffff',
@@ -14358,8 +14495,9 @@ export const AppMovilPage: React.FC = () => {
                       alignItems: 'center',
                       gap: '5px',
                     }}
+                    title="Programa un push en 5 segundos para que apagues tu pantalla y verifiques que suena y vibra"
                   >
-                    <i className="fa-solid fa-mobile-screen"></i> Probar en Teléfono
+                    <i className="fa-solid fa-mobile-screen"></i> Probar en Bloqueo (5s)
                   </button>
                 )}
               </div>
@@ -15016,7 +15154,9 @@ export const AppMovilPage: React.FC = () => {
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px', background: '#ffffff', fontWeight: 700 }}
                 >
                   <option value={0}>-- Sin Conductor Específico --</option>
-                  {(choferesLista || []).map((c: any) => (
+                  {(choferesLista || [])
+                    .filter((c: any) => c.activo === true || c.activo === 1)
+                    .map((c: any) => (
                     <option key={c.id} value={c.id}>
                       {c.nombreCompleto || c.nombre}
                     </option>

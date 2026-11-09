@@ -385,10 +385,13 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
           ) : (
             <i className="fa-solid fa-cow brand-icon"></i>
           )}
-          <div>
-            <span className="brand-title">
-              {empresaConfig?.nombre || empresaConfig?.nombreEmpresa || 'RUTAS DE LECHE'}
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="brand-title">RUTAS DE LECHE</span>
+            {(empresaConfig?.nombre || empresaConfig?.nombreEmpresa) && (
+              <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', lineHeight: 1 }}>
+                {empresaConfig?.nombre || empresaConfig?.nombreEmpresa}
+              </span>
+            )}
           </div>
         </div>
       </div>

@@ -4297,10 +4297,10 @@ export const AppMovilPage: React.FC = () => {
           </div>
 
           <h1 style={{ fontSize: '21px', fontWeight: 900, margin: '0 0 4px 0', letterSpacing: '-0.5px', color: '#0f172a' }}>
-            {nombreEmpresaActual}
+            Rutas de Leche
           </h1>
           <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 14px 0', fontWeight: 600 }}>
-            Sistema Móvil de Gestión & Recolección de Leche
+            Terminal Móvil de Conductor {nombreEmpresaActual ? `• ${nombreEmpresaActual}` : ''}
           </p>
 
           <div style={{ marginBottom: '18px' }}>
@@ -4357,7 +4357,7 @@ export const AppMovilPage: React.FC = () => {
                   Paso 1: Instalación
                 </div>
                 <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
-                  Descarga la App de {nombreEmpresaActual}
+                  Descarga la App de Rutas de Leche
                 </div>
               </div>
             </div>

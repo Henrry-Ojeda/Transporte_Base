@@ -9731,24 +9731,61 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 catch { /* Tolerante */ }
             }
 
-            // Si se especificaron fincas personalizadas/modificadas, sincronizar paradas con Litros = 0
-            if (nuevoId > 0 && dto.FincaIds != null && dto.FincaIds.Any())
+            // Sincronizar paradas iniciales del viaje con Litros = 0 (Precarga automática de fincas del circuito)
+            if (nuevoId > 0)
             {
-                foreach (var fId in dto.FincaIds.Distinct())
+                var fincasInicialesIds = new List<int>();
+                if (dto.FincaIds != null && dto.FincaIds.Any())
                 {
-                    try
+                    fincasInicialesIds.AddRange(dto.FincaIds);
+                }
+                else
+                {
+                    var rutasAConsultar = new List<int>();
+                    if (primaryRutaId.HasValue && primaryRutaId.Value > 0) rutasAConsultar.Add(primaryRutaId.Value);
+                    if (dto.RutasLogisticasIds != null && dto.RutasLogisticasIds.Any()) rutasAConsultar.AddRange(dto.RutasLogisticasIds);
+                    rutasAConsultar = rutasAConsultar.Distinct().ToList();
+
+                    if (rutasAConsultar.Any())
                     {
-                        var sqlParada = @"
-                            IF NOT EXISTS (SELECT 1 FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @nuevoId AND FincaId = @fId)
-                            BEGIN
-                                INSERT INTO TB_RUTAS_RECOLECCION
-                                (ControlRutaId, FincaId, Litros, EsAcida, TipoLeche, Fecha, CreatedAt, Observacion)
-                                VALUES
-                                (@nuevoId, @fId, 0, 0, 'VACA', @fecha, GETDATE(), 'Asignada en inicio de ruta [ORIGEN_PLANIFICACION]');
-                            END";
-                        await connection.ExecuteAsync(sqlParada, new { nuevoId, fId, fecha });
+                        var fIdsRuta = await connection.QueryAsync<int>(
+                            "SELECT Id FROM TB_FINCAS WHERE RutaId IN @rutasAConsultar AND Activo = 1 AND (IsDeleted = 0 OR IsDeleted IS NULL) ORDER BY OrdenRuta, Nombre",
+                            new { rutasAConsultar });
+                        fincasInicialesIds.AddRange(fIdsRuta);
                     }
-                    catch { /* Tolerante */ }
+                }
+
+                if (fincasInicialesIds.Any())
+                {
+                    int cicloEfectivoId = cicloId ?? 0;
+                    if (cicloEfectivoId <= 0)
+                    {
+                        cicloEfectivoId = await connection.ExecuteScalarAsync<int?>(
+                            "SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS WHERE @fecha >= CAST(FechaInicio AS DATE) AND @fecha <= CAST(FechaFin AS DATE)",
+                            new { fecha }) ?? 0;
+                        if (cicloEfectivoId <= 0)
+                        {
+                            cicloEfectivoId = await connection.ExecuteScalarAsync<int?>(
+                                "SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS ORDER BY FechaInicio DESC") ?? 1;
+                        }
+                    }
+
+                    foreach (var fId in fincasInicialesIds.Distinct())
+                    {
+                        try
+                        {
+                            var sqlParada = @"
+                                IF NOT EXISTS (SELECT 1 FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @nuevoId AND FincaId = @fId)
+                                BEGIN
+                                    INSERT INTO TB_RUTAS_RECOLECCION
+                                    (ControlRutaId, FincaId, CicloId, UsuarioId, Fecha, Litros, EsAcida, TipoLeche, EsDiferido, CreatedAt, Observacion)
+                                    VALUES
+                                    (@nuevoId, @fId, @cicloEfectivoId, @conductorEfectivo, @fecha, 0, 0, 'VACA', 0, GETDATE(), 'Asignada en inicio de ruta [ORIGEN_PLANIFICACION]');
+                                END";
+                            await connection.ExecuteAsync(sqlParada, new { nuevoId, fId, cicloEfectivoId, conductorEfectivo, fecha });
+                        }
+                        catch { /* Tolerante */ }
+                    }
                 }
             }
 
@@ -9807,7 +9844,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 "SELECT * FROM TB_CONTROL_RUTAS WHERE Id = @ControlRutaId", new { dto.ControlRutaId });
             if (viaje == null) throw new InvalidOperationException("El Viaje / Ticket no existe.");
 
-            if (rol == "CHOFER" && (int)viaje.UsuarioId != usuarioId)
+            bool esAdminOSuper = rol.Contains("ADMIN", StringComparison.OrdinalIgnoreCase) || 
+                                 rol.Equals("SUPERVISOR", StringComparison.OrdinalIgnoreCase) ||
+                                 rol.Equals("GERENTE", StringComparison.OrdinalIgnoreCase);
+
+            if (!esAdminOSuper && rol.Equals("CHOFER", StringComparison.OrdinalIgnoreCase) && (int)viaje.UsuarioId != usuarioId)
                 throw new UnauthorizedAccessException("No tienes permiso para agregar fincas a viajes de otro chofer.");
 
             if ((int)viaje.ProcesoActualId != 1)
@@ -9825,6 +9866,22 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             DateTime fechaEfectiva = dto.Fecha ?? (DateTime)viaje.Fecha;
             string tipoLecheEfectivo = string.IsNullOrWhiteSpace(dto.TipoLeche) ? "VACA" : dto.TipoLeche.ToUpper();
             bool esDiferidoEfectivo = dto.EsDiferido;
+
+            // Resolver CicloId y ChoferId efectivos para cumplir restricciones de NOT NULL en TB_RUTAS_RECOLECCION
+            int? efectivoCicloId = (int?)viaje.CicloId;
+            if (!efectivoCicloId.HasValue || efectivoCicloId.Value <= 0)
+            {
+                efectivoCicloId = await connection.ExecuteScalarAsync<int?>(
+                    "SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS WHERE @fechaEfectiva >= CAST(FechaInicio AS DATE) AND @fechaEfectiva <= CAST(FechaFin AS DATE)",
+                    new { fechaEfectiva });
+                if (!efectivoCicloId.HasValue || efectivoCicloId.Value <= 0)
+                {
+                    efectivoCicloId = await connection.ExecuteScalarAsync<int?>(
+                        "SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS ORDER BY FechaInicio DESC") ?? 1;
+                }
+            }
+
+            int efectivoChoferId = (int?)viaje.UsuarioId ?? usuarioId;
 
             // Unificación Anti-Duplicados: Si la finca ya existe en este viaje/ticket (tenga 0 litros o litros previos), se actualiza
             var paradaExistenteId = await connection.ExecuteScalarAsync<long?>(@"
@@ -9884,10 +9941,10 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
                 nuevaRutaId = await connection.ExecuteScalarAsync<long>(sqlInsertRuta, new
                 {
-                    cicloId = (int?)viaje.CicloId,
+                    cicloId = efectivoCicloId.Value,
                     fecha = fechaEfectiva,
                     fincaId = dto.FincaId,
-                    choferId = (int)viaje.UsuarioId,
+                    choferId = efectivoChoferId,
                     litros = dto.Litros,
                     esAcida = dto.EsAcida,
                     tipoLeche = tipoLecheEfectivo,

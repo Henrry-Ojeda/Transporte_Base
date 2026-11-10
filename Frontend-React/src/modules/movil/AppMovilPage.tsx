@@ -31,7 +31,7 @@ import { syncEngine } from '@/lib/syncEngine';
 import { getTimestampParada, formatFechaHoraParada } from '@/utils/timelapseUtils';
 import { CompaniaSelect } from '@/components/selectors/CompaniaSelect';
 import { ChoferSelect } from '@/components/selectors/ChoferSelect';
-import { viajeEstaEnviadoAReceptoria } from '@/utils/procesoViaje';
+import { viajeEstaEnviadoAReceptoria, esReceptoriaPrincipal } from '@/utils/procesoViaje';
 
 interface DispositivoMovilData {
   token: string;
@@ -639,7 +639,7 @@ export const AppMovilPage: React.FC = () => {
     if (!d) return false;
     if (Number(d.companiaId) === 5028) return true;
     const nom = (d.nombreCompania || (d as any).companiaNombre || '').toUpperCase();
-    return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA');
+    return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA') || esReceptoriaPrincipal(d) || esReceptoriaPrincipal(nom);
   };
 
   // Persistir despachos activos en LocalStorage
@@ -4341,10 +4341,10 @@ export const AppMovilPage: React.FC = () => {
     const yaAsignado = (viajeActivo as any)._litrosEntregados || (viajeActivo as any).litrosEntregadosCompania || viajeActivo.totalLitrosEntregados || 0;
     const faltante = Math.max(0, totalCamion - yaAsignado);
 
-    // Identificar compañía receptoría y transporte por defecto
+    // Identificar compañía receptoría y transporte por defecto (ej. COLONA, Campo Verde)
     const compRecep = (comps || []).find((c) => {
       const nom = (c.nombre || '').toUpperCase();
-      return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA');
+      return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA') || esReceptoriaPrincipal(c);
     });
 
     const compTranspDefault = (comps || []).find((c) => {

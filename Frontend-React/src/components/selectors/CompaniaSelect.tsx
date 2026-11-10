@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { catalogosApi } from '@/api/catalogos.api';
 import { SearchableSelect, type SelectOption } from '@/components/common/SearchableSelect';
+import { esReceptoriaPrincipal } from '@/utils/procesoViaje';
 import type { CompaniaDto } from '@/types';
 
 interface CompaniaSelectProps {
@@ -34,11 +35,16 @@ export const CompaniaSelect: React.FC<CompaniaSelectProps> = ({
   });
 
   const options: SelectOption[] = useMemo(() => {
-    return companias.map((c) => ({
-      value: c.id,
-      label: c.nombre,
-      subLabel: c.contacto ? `Contacto: ${c.contacto}` : undefined,
-    }));
+    return companias.map((c) => {
+      const esRecep = esReceptoriaPrincipal(c);
+      return {
+        value: c.id,
+        label: esRecep ? `🏢 ${c.nombre} (Receptoría Principal)` : c.nombre,
+        subLabel: esRecep
+          ? '🏢 Planta Matriz / Receptoría Principal de Silos'
+          : (c.contacto ? `Contacto: ${c.contacto}` : undefined),
+      };
+    });
   }, [companias]);
 
   const handleChange = (val: string | number) => {

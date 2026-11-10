@@ -11,7 +11,7 @@ import { CamionSelect, ChoferSelect, CompaniaSelect, TipoLecheSelect } from '@/c
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import Swal from 'sweetalert2';
 import type { CompaniaDto, CamionDto, UsuarioDto, DespachoCompaniaDto, ControlRutaDto } from '@/types';
-import { viajeEstaEnviadoAReceptoria } from '@/utils/procesoViaje';
+import { viajeEstaEnviadoAReceptoria, esReceptoriaPrincipal } from '@/utils/procesoViaje';
 
 export const ReceptoriaPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -446,7 +446,30 @@ export const ReceptoriaPage: React.FC = () => {
     setTicketsFincasValidadas((prev) => new Set(prev).add(viajeParaRecibir.id));
     toast.success('¡Litros y Recibos de Fincas Validados Exitosamente!');
     setModalValidarFincasTicket(false);
-    setModalVerificarViaje(true);
+    if (despachoSeleccionado && Number(despachoSeleccionado.controlRutaId) === Number(viajeParaRecibir.id)) {
+      setModalConfirmar(true);
+    } else {
+      setModalVerificarViaje(true);
+    }
+  };
+
+  const abrirModalValidarFincasDesdeDespacho = (despacho: any) => {
+    setDespachoSeleccionado(despacho);
+    const cRutaId = Number(despacho.controlRutaId || 0);
+    if (!cRutaId) {
+      toast.error('Este despacho no tiene ticket de recolección de ruta vinculado.');
+      return;
+    }
+    const viajeCorrespondiente = viajesActivos.find((v) => v.id === cRutaId) || {
+      id: cRutaId,
+      camionPlaca: despacho.camionPlaca,
+      choferNombre: despacho.nombreConductor || (despacho as any).conductorNombre,
+      totalLitrosRecogidos: despacho.litrosDespachados,
+      procesoActualId: 3,
+      estado: 'RECEPCIONADO',
+      nombreCompaniaDestino: despacho.nombreCompania || (despacho as any).companiaNombre,
+    };
+    abrirModalValidarFincas(viajeCorrespondiente);
   };
 
   const abrirModalVerificarViaje = (viaje: any) => {
@@ -731,11 +754,36 @@ export const ReceptoriaPage: React.FC = () => {
     ...companiasUnicasHoy.map((cp) => ({ value: cp, label: cp }))
   ], [companiasUnicasHoy]);
 
-  // Bandeja 1: Camiones en espera
+  // Bandeja 1: Camiones en espera (Entradas a Planta / Receptoría)
   const camionesEnEspera = useMemo(() => {
-    return viajesActivos.filter(
-      (v) => v.estadoProceso === 'EN_RECOLECCION' || v.estadoProceso === 'EN_ESPERA' || v.estadoProceso === 'RECOLECCION'
-    );
+    return viajesActivos.filter((v: any) => {
+      const procId = Number(v.procesoActualId || 1);
+      const est = String(v.estado || '').toUpperCase().trim();
+      const codP = String(v.codigoProceso || '').toUpperCase().trim();
+      const tipoDest = String(v.tipoDestino || '').toUpperCase().trim();
+      const nomDest = String(v.nombreCompaniaDestino || '').toUpperCase().trim();
+
+      // Si ya está totalmente cerrado y liquidado en receptoría (proceso 4 o estado FINALIZADO/CERRADO)
+      if (procId >= 4 || est === 'FINALIZADO' || est === 'CERRADO') return false;
+
+      // Si tiene destino a Receptoría o la Receptoría Principal (Campo Verde, Vergel, etc.)
+      if (tipoDest === 'RECEPTORIA' || esReceptoriaPrincipal(nomDest) || procId === 2) return true;
+
+      // Tickets activos o en recolección que no han sido cerrados
+      return (
+        procId === 1 ||
+        est === 'ACTIVO' ||
+        est === 'EN PROCESO' ||
+        est === 'EN RECOLECCION' ||
+        est === 'RECEPCIONADO' ||
+        est === 'EN_ESPERA' ||
+        codP === 'INICIO' ||
+        codP === 'RUTA' ||
+        codP === 'RECOLECCION' ||
+        codP === 'RECIBIDO' ||
+        codP === 'EN_RECEPTORIA'
+      );
+    });
   }, [viajesActivos]);
 
   // Bandeja 2: Salidas a queseras (En espera de verificación en planta)
@@ -1302,9 +1350,27 @@ export const ReceptoriaPage: React.FC = () => {
                           <span style={{ fontSize: '11.5px', color: '#64748b', fontWeight: 500 }}>• {placaCamion}</span>
                         </div>
 
-                        <div style={{ fontSize: '12.5px', color: '#475569', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <i className="fa-solid fa-building-wheat" style={{ color: '#9333ea' }}></i>
-                          <span>Destino: <strong style={{ color: '#1e293b' }}>{nombreComp}</strong></span>
+                        <div style={{ fontSize: '12.5px', color: '#475569', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <i className="fa-solid fa-building-wheat" style={{ color: '#9333ea' }}></i>
+                            <span>Destino: <strong style={{ color: '#1e293b' }}>{nombreComp}</strong></span>
+                          </div>
+                          {esReceptoriaPrincipal(nombreComp) && (
+                            <span
+                              className="badge"
+                              style={{
+                                background: '#dcfce7',
+                                color: '#166534',
+                                border: '1px solid #86efac',
+                                fontWeight: 800,
+                                fontSize: '10px',
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              🏢 PLANTA PRINCIPAL
+                            </span>
+                          )}
                         </div>
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#faf5ff', border: '1px solid #e9d5ff', padding: '8px 10px', borderRadius: '6px', margin: '8px 0' }}>
@@ -1334,6 +1400,34 @@ export const ReceptoriaPage: React.FC = () => {
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {d.controlRutaId && (
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => abrirModalValidarFincasDesdeDespacho(d)}
+                            style={{
+                              width: '100%',
+                              fontWeight: 700,
+                              fontSize: '11.5px',
+                              background: ticketsFincasValidadas.has(Number(d.controlRutaId)) ? '#dcfce7' : '#ecfdf5',
+                              border: `1.5px solid ${ticketsFincasValidadas.has(Number(d.controlRutaId)) ? '#86efac' : '#a7f3d0'}`,
+                              color: ticketsFincasValidadas.has(Number(d.controlRutaId)) ? '#15803d' : '#047857',
+                              padding: '7px',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                            }}
+                            title="Auditar y validar litros y recibos de cada finca antes de confirmar"
+                          >
+                            <i className={`fa-solid ${ticketsFincasValidadas.has(Number(d.controlRutaId)) ? 'fa-circle-check text-green-600' : 'fa-clipboard-check text-emerald-600'}`}></i>
+                            {ticketsFincasValidadas.has(Number(d.controlRutaId)) ? '✅ Fincas & Recibos Auditados' : '📋 Auditar Fincas & Recibos'}
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           className="btn btn-sm"
@@ -1341,7 +1435,11 @@ export const ReceptoriaPage: React.FC = () => {
                             setDespachoSeleccionado(d);
                             setLitrosConfirmadosInput(Number(d.litrosDespachados || (d as any).LitrosDespachados || 0));
                             setObsConfirmacionInput('');
-                            setModalConfirmar(true);
+                            if (d.controlRutaId && !ticketsFincasValidadas.has(Number(d.controlRutaId))) {
+                              abrirModalValidarFincasDesdeDespacho(d);
+                            } else {
+                              setModalConfirmar(true);
+                            }
                           }}
                           style={{
                             width: '100%',

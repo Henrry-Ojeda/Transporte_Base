@@ -1,12 +1,49 @@
 import type { ControlRutaDto } from '@/types';
 
 /**
+ * Detecta de forma inteligente y dinámica si una compañía o nombre de destino
+ * corresponde a la Planta / Receptoría Principal del sistema SaaS
+ * (ej: Lácteos Campo Verde, Vergel Carrillo, Silos de Recepción, Planta Matriz, etc.)
+ */
+export const esReceptoriaPrincipal = (nombreOCompania: any): boolean => {
+  if (!nombreOCompania) return false;
+  let nom = '';
+  if (typeof nombreOCompania === 'string') {
+    nom = nombreOCompania.toUpperCase().trim();
+  } else if (typeof nombreOCompania === 'object') {
+    nom = String(
+      nombreOCompania.nombre ||
+      nombreOCompania.nombreCompania ||
+      nombreOCompania.companiaNombre ||
+      nombreOCompania.nombreCompaniaDestino ||
+      ''
+    ).toUpperCase().trim();
+    if (nombreOCompania.esReceptoria === true || Number(nombreOCompania.id || nombreOCompania.companiaId) === 5028) {
+      return true;
+    }
+  }
+  if (!nom) return false;
+
+  return (
+    nom.includes('RECEPTORIA') ||
+    nom.includes('RECEPTORÍA') ||
+    nom.includes('CAMPO VERDE') ||
+    nom.includes('CAMPOVERDE') ||
+    nom.includes('VERGEL') ||
+    nom.includes('PLANTA') ||
+    nom.includes('MATRIZ') ||
+    nom.includes('SILO') ||
+    nom.includes('BASE')
+  );
+};
+
+/**
  * Determina estrictamente si un viaje de ruta ha concluido su fase de recolección en campo
- * y ha sido efectivamente despachado / enviado a Receptoría de Planta.
+ * y ha sido efectivamente despachado / enviado a Receptoría de Planta o Compañía.
  * 
  * REGLA MAESTRA DE NEGOCIO:
  * Los procesos operativos se respetan obligatoriamente (incluso para ADMIN y SUPER ADMIN).
- * Si un chofer aún no ha terminado la ruta ni ha enviado el viaje a receptoría,
+ * Si un chofer aún no ha terminado la ruta ni ha enviado el viaje a receptoría o compañía,
  * la vista de Receptoría NO debe permitir verificar litros ni descargar en silos.
  */
 export const viajeEstaEnviadoAReceptoria = (viaje: Partial<ControlRutaDto> | any): boolean => {
@@ -17,17 +54,29 @@ export const viajeEstaEnviadoAReceptoria = (viaje: Partial<ControlRutaDto> | any
   const codigoProceso = String(viaje.codigoProceso || viaje.CodigoProceso || '').toUpperCase().trim();
   const tipoDestino = String(viaje.tipoDestino || viaje.TipoDestino || '').toUpperCase().trim();
   const fechaLlegada = viaje.fechaLlegadaReceptoria || viaje.FechaLlegadaReceptoria;
+  const nomDestino = String(
+    viaje.nombreCompaniaDestino ||
+    viaje.NombreCompaniaDestino ||
+    viaje.companiaNombre ||
+    viaje.nombreCompania ||
+    ''
+  ).toUpperCase().trim();
 
-  // Si tiene llegada registrada a receptoría o destino fijado a RECEPTORIA
-  if (fechaLlegada || tipoDestino === 'RECEPTORIA') return true;
+  // Si tiene llegada registrada a receptoría o destino fijado a RECEPTORIA o Receptoría Principal
+  if (fechaLlegada || tipoDestino === 'RECEPTORIA' || esReceptoriaPrincipal(nomDestino)) {
+    return true;
+  }
 
-  // ProcesoActualId: 1 = En Ruta / Recolección, 2 = Recibido / Llegada Receptoría, 3 = Descargado / Verificado, 4 = Finalizado
+  // ProcesoActualId: 1 = En Ruta / Recolección, 2 = Recibido / Llegada Receptoría, 3 = Descargado / Despachado, 4 = Finalizado
   if (procesoId >= 2) return true;
 
-  // Si los códigos de proceso o estado indican que ya arribó a receptoría o está finalizado
+  // Si los códigos de proceso o estado indican que ya arribó a receptoría o está despachado / finalizado
   if (
     codigoProceso === 'RECIBIDO' ||
     codigoProceso === 'EN_RECEPTORIA' ||
+    codigoProceso === 'COMPANIA' ||
+    codigoProceso === 'EN_VIA' ||
+    codigoProceso === 'RECEPCIONADO' ||
     codigoProceso === 'ENTREGADO' ||
     codigoProceso === 'FINALIZADO'
   ) {
@@ -37,6 +86,8 @@ export const viajeEstaEnviadoAReceptoria = (viaje: Partial<ControlRutaDto> | any
   if (
     estado === 'RECIBIDO' ||
     estado === 'EN RECEPTORIA' ||
+    estado === 'RECEPCIONADO' ||
+    estado === 'EN VIA' ||
     estado === 'ENTREGADO' ||
     estado === 'FINALIZADO' ||
     estado === 'CERRADO'
@@ -46,4 +97,5 @@ export const viajeEstaEnviadoAReceptoria = (viaje: Partial<ControlRutaDto> | any
 
   return false;
 };
+
 

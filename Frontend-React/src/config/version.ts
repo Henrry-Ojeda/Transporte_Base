@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 17,
-  patch: 8,
-  tag: 'v3.17.8',
+  patch: 9,
+  tag: 'v3.17.9',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Secuencia cronológica ascendente estricta con registro de fecha/hora en paradas y timelapse, resolución de asignación de fincas a propietarios y sincronización bidireccional de tickets en planificación y control de rutas v3.17.8',
+  descripcion: 'Detección inteligente y dinámica de Receptoría Principal (Campo Verde/Vergel/Planta), disponibilidad y auditoría de fincas y recibos en Receptoría y Despachos, botones explícitos de envío v3.17.9',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

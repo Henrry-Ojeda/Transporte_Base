@@ -10015,7 +10015,16 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
                 // Registrar entrada a Receptoría en TB_ENTREGAS_COMPANIA (evitar duplicados si ya existe)
                 var compReceptoriaId = await connection.ExecuteScalarAsync<int?>(
-                    "SELECT TOP 1 Id FROM TB_COMPANIAS WHERE Nombre LIKE '%RECEPTORIA%' AND Activo = 1") ?? 5028;
+                    @"SELECT TOP 1 Id FROM TB_COMPANIAS 
+                      WHERE (UPPER(Nombre) LIKE '%RECEPTOR%' OR UPPER(Nombre) LIKE '%CAMPO%VERDE%' OR UPPER(Nombre) LIKE '%VERGEL%' OR UPPER(Nombre) LIKE '%PLANTA%') 
+                        AND Activo = 1 
+                      ORDER BY CASE 
+                        WHEN UPPER(Nombre) LIKE '%RECEPTOR%' THEN 1 
+                        WHEN UPPER(Nombre) LIKE '%CAMPO%VERDE%' THEN 2 
+                        WHEN UPPER(Nombre) LIKE '%VERGEL%' THEN 3 
+                        ELSE 4 END, Id ASC")
+                    ?? await connection.ExecuteScalarAsync<int?>("SELECT TOP 1 Id FROM TB_COMPANIAS WHERE Activo = 1 ORDER BY Id ASC")
+                    ?? 5028;
 
                 var entregaExistenteId = await connection.ExecuteScalarAsync<int?>(
                     "SELECT TOP 1 Id FROM TB_ENTREGAS_COMPANIA WHERE ControlRutaId = @controlRutaId AND CompaniaId = @compReceptoriaId",

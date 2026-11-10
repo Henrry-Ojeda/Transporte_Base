@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/authStore';
 import type { ControlRutaDto, FincaDto, CamionDto, CompaniaDto, DespachoCompaniaDto, PlanificacionRutaChoferDto } from '@/types';
 import { PlanificacionRutasChoferesPage } from './PlanificacionRutasChoferesPage';
 import { getTimestampParada, formatFechaHoraParada } from '@/utils/timelapseUtils';
+import { esReceptoriaPrincipal } from '@/utils/procesoViaje';
 
 interface RutaDetalleFinca {
   id: number;
@@ -2541,10 +2542,10 @@ export const RecoleccionRutasPage: React.FC = () => {
     const yaAsignado = item._litrosEntregados || 0;
     const faltante = Math.max(0, totalCamion - yaAsignado);
 
-    // Identificar compañías por defecto para Receptoría y Transporte (ej. COLONA)
+    // Identificar compañías por defecto para Receptoría y Transporte (ej. COLONA, Campo Verde)
     const compRecep = companias.find((c) => {
       const nom = (c.nombre || '').toUpperCase();
-      return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA');
+      return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA') || esReceptoriaPrincipal(c);
     });
 
     const compTranspDefault = companias.find((c) => {
@@ -4199,7 +4200,30 @@ export const RecoleccionRutasPage: React.FC = () => {
                               </span>
                             </div>
                           ) : (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'auto auto auto', gap: '5px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleAbrirReceptoria(item)}
+                                className="btn btn-sm"
+                                style={{
+                                  background: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  border: '1px solid #bfdbfe',
+                                  fontWeight: 700,
+                                  fontSize: '11px',
+                                  padding: '6px 8px',
+                                  borderRadius: '6px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '4px',
+                                  boxShadow: '0 1px 3px rgba(29,78,216,0.1)',
+                                }}
+                                title="Enviar carga de la cisterna a Receptoría / Planta Principal"
+                              >
+                                <i className="fa-solid fa-truck-ramp-box"></i> Receptoría
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() => handleAbrirCompania(item)}
@@ -4210,17 +4234,17 @@ export const RecoleccionRutasPage: React.FC = () => {
                                   border: '1px solid #e9d5ff',
                                   fontWeight: 700,
                                   fontSize: '11px',
-                                  padding: '6px 10px',
+                                  padding: '6px 8px',
                                   borderRadius: '6px',
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  gap: '5px',
+                                  gap: '4px',
                                   boxShadow: '0 1px 3px rgba(126,34,206,0.1)',
                                 }}
-                                title="Despachar o entregar leche a Receptoría o Compañías / Queseras"
+                                title="Despachar a Compañías / Queseras externas"
                               >
-                                <i className="fa-solid fa-building"></i> Receptoría/Compañía
+                                <i className="fa-solid fa-building"></i> Compañía
                               </button>
 
                               <button

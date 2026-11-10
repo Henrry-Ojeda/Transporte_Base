@@ -11,6 +11,7 @@ import { CamionSelect, ChoferSelect, CompaniaSelect, TipoLecheSelect } from '@/c
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import Swal from 'sweetalert2';
 import type { CompaniaDto, CamionDto, UsuarioDto, DespachoCompaniaDto, ControlRutaDto } from '@/types';
+import { viajeEstaEnviadoAReceptoria } from '@/utils/procesoViaje';
 
 export const ReceptoriaPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -346,6 +347,27 @@ export const ReceptoriaPage: React.FC = () => {
   });
 
   const abrirModalVerificarViaje = (viaje: any) => {
+    // REGLA OBLIGATORIA: Los procesos se respetan (incluso para ADMIN y SUPER ADMIN)
+    if (!viajeEstaEnviadoAReceptoria(viaje)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Proceso Operativo en Curso',
+        html: `<div style="text-align: left; font-size: 13.5px; line-height: 1.5;">
+          <p>El conductor <b>${viaje.choferNombre || 'asignado'}</b> aún se encuentra <b>recolectando en fincas</b> con la cisterna <b>${viaje.camionPlaca || ''}</b>.</p>
+          <div style="background: #fffbeb; border: 1.5px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 12px; border-radius: 8px; margin: 12px 0; color: #92400e;">
+            ⚠️ <b>Respeto Obligatorio del Proceso:</b><br/>
+            Aunque usted sea Administrador, no se puede verificar litros ni descargar en Receptoría mientras el chofer no haya finalizado su recorrido en campo y enviado la cisterna a Planta.
+          </div>
+          <p style="color: #64748b; font-size: 12px; margin: 0;">
+            Una vez el conductor finalice la ruta y despache a Receptoría desde su terminal móvil, se habilitará la recepción de la carga.
+          </p>
+        </div>`,
+        confirmButtonColor: '#0284c7',
+        confirmButtonText: 'Entendido',
+      });
+      return;
+    }
+
     const lts = Number(viaje.totalLitrosRecogidos || viaje.totalLitrosFinca || 0);
     setViajeParaRecibir(viaje);
     setLitrosRecibidosInput(lts);
@@ -900,63 +922,122 @@ export const ReceptoriaPage: React.FC = () => {
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px' }}>
-                {camionesEnEspera.map((c) => (
-                  <div
-                    key={c.id}
-                    style={{
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '10px',
-                      padding: '14px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '14px' }}>
-                        <i className="fa-solid fa-truck" style={{ color: '#0284c7', marginRight: '6px' }}></i>
-                        {c.camionPlaca || 'Camión Cisterna'}
-                      </span>
-                      <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', fontWeight: 800 }}>
-                        Viaje #{c.id}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#475569' }}>
-                      <i className="fa-regular fa-user" style={{ marginRight: '6px' }}></i>
-                      {c.choferNombre || 'Chofer Asignado'}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
-                      <span style={{ fontWeight: 900, color: '#0284c7', fontSize: '16px' }}>
-                        {(c.totalLitrosRecogidos || 0).toLocaleString()} <small style={{ fontSize: '11px', color: '#64748b' }}>Lts</small>
-                      </span>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          onClick={() => abrirModalVerificarViaje(c)}
-                          style={{
-                            fontSize: '11.5px',
-                            fontWeight: 800,
-                            padding: '5px 12px',
-                            background: 'linear-gradient(135deg, #0284c7, #0369a1)',
-                            border: 'none',
-                            color: '#ffffff',
-                            borderRadius: '6px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)',
-                            cursor: 'pointer',
-                          }}
-                          title="Verificar litros y Descargar en Silos o Recargar y Despachar a Compañía"
-                        >
-                          <i className="fa-solid fa-clipboard-check"></i> Verificar y Recibir
-                        </button>
+                {camionesEnEspera.map((c) => {
+                  const enviadoARecep = viajeEstaEnviadoAReceptoria(c);
+                  return (
+                    <div
+                      key={c.id}
+                      style={{
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '10px',
+                        padding: '14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '14px' }}>
+                          <i className="fa-solid fa-truck" style={{ color: '#0284c7', marginRight: '6px' }}></i>
+                          {c.camionPlaca || 'Camión Cisterna'}
+                        </span>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <span
+                            className="badge"
+                            style={{
+                              background: enviadoARecep ? '#dcfce7' : '#fef3c7',
+                              color: enviadoARecep ? '#15803d' : '#b45309',
+                              fontWeight: 800,
+                              fontSize: '11px',
+                              border: enviadoARecep ? '1px solid #bbf7d0' : '1px solid #fde68a',
+                            }}
+                          >
+                            <i className={`fa-solid ${enviadoARecep ? 'fa-building-wheat' : 'fa-clock'} mr-1`}></i>
+                            {enviadoARecep ? 'En Planta' : 'En Recolección'}
+                          </span>
+                          <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', fontWeight: 800 }}>
+                            Viaje #{c.id}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#475569' }}>
+                        <i className="fa-regular fa-user" style={{ marginRight: '6px' }}></i>
+                        {c.choferNombre || 'Chofer Asignado'}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
+                        <span style={{ fontWeight: 900, color: '#0284c7', fontSize: '16px' }}>
+                          {(c.totalLitrosRecogidos || 0).toLocaleString()} <small style={{ fontSize: '11px', color: '#64748b' }}>Lts</small>
+                        </span>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          {enviadoARecep ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              onClick={() => abrirModalVerificarViaje(c)}
+                              style={{
+                                fontSize: '11.5px',
+                                fontWeight: 800,
+                                padding: '5px 12px',
+                                background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                                border: 'none',
+                                color: '#ffffff',
+                                borderRadius: '6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)',
+                                cursor: 'pointer',
+                              }}
+                              title="Verificar litros y Descargar en Silos o Recargar y Despachar a Compañía"
+                            >
+                              <i className="fa-solid fa-clipboard-check"></i> Verificar y Recibir
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              onClick={() => {
+                                Swal.fire({
+                                  icon: 'warning',
+                                  title: 'Proceso Operativo en Curso',
+                                  html: `<div style="text-align: left; font-size: 13.5px; line-height: 1.5;">
+                                    <p>El conductor <b>${c.choferNombre || 'asignado'}</b> aún se encuentra <b>recolectando en fincas</b> con la cisterna <b>${c.camionPlaca || ''}</b>.</p>
+                                    <div style="background: #fffbeb; border: 1.5px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 12px; border-radius: 8px; margin: 12px 0; color: #92400e;">
+                                      ⚠️ <b>Respeto Obligatorio del Proceso:</b><br/>
+                                      Aunque usted sea Administrador, no se puede verificar litros ni descargar en Receptoría mientras el chofer no haya finalizado su recorrido en campo y enviado la cisterna a Planta.
+                                    </div>
+                                    <p style="color: #64748b; font-size: 12px; margin: 0;">
+                                      Una vez el conductor finalice la ruta y despache a Receptoría desde su terminal móvil, se habilitará la recepción de la carga.
+                                    </p>
+                                  </div>`,
+                                  confirmButtonColor: '#0284c7',
+                                  confirmButtonText: 'Entendido',
+                                });
+                              }}
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                padding: '5px 10px',
+                                background: '#fffbeb',
+                                border: '1.5px solid #fde68a',
+                                color: '#b45309',
+                                borderRadius: '6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                cursor: 'pointer',
+                              }}
+                              title="El chofer no ha terminado la ruta ni ha enviado a receptoría"
+                            >
+                              <i className="fa-solid fa-lock"></i> Chofer en Recolección (Pendiente Envío)
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

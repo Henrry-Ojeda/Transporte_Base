@@ -30,6 +30,7 @@ import { dbLocal } from '@/lib/dbLocal';
 import { syncEngine } from '@/lib/syncEngine';
 import { CompaniaSelect } from '@/components/selectors/CompaniaSelect';
 import { ChoferSelect } from '@/components/selectors/ChoferSelect';
+import { viajeEstaEnviadoAReceptoria } from '@/utils/procesoViaje';
 
 interface DispositivoMovilData {
   token: string;
@@ -1826,7 +1827,7 @@ export const AppMovilPage: React.FC = () => {
             // Recargar automáticamente todas las vistas según el modo activo sin requerir refresh manual
             cargarViajeActivo();
             cargarDespachoActivo();
-            cargarDatosAdminEnVivo();
+            cargarDatosAdminEnVivo(true);
             cargarDatosLogisticaAdmin();
             if (modalTimelapseMovil && viajeTimelapseMovil?.id) {
               operacionesApi.getFincasViaje(viajeTimelapseMovil.id).then((p) => {
@@ -1858,7 +1859,7 @@ export const AppMovilPage: React.FC = () => {
       if (modoActivo === 'CHOFER') {
         cargarViajeActivo();
       } else if (modoActivo === 'ADMIN') {
-        cargarDatosAdminEnVivo();
+        cargarDatosAdminEnVivo(true);
         if (tabActiva === 'admin_logistica') {
           cargarDatosLogisticaAdmin();
         }
@@ -2539,9 +2540,12 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
-  // Funciones Módulo Administrador Móvil
-  const cargarDatosAdminEnVivo = async () => {
-    setCargandoViajesEnVivo(true);
+  // Funciones Módulo Administrador Móvil con actualización interna/silenciosa en segundo plano
+  const cargarDatosAdminEnVivo = async (silentParam?: boolean | any) => {
+    const silent = typeof silentParam === 'boolean' ? silentParam : false;
+    if (!silent && viajesEnVivo.length === 0) {
+      setCargandoViajesEnVivo(true);
+    }
     try {
       // Cargar todos los controles disponibles (sin restringir por fecha de hoy para ver tickets activos de días anteriores como #21303)
       const viajes = await operacionesApi.getControles();
@@ -2922,6 +2926,12 @@ export const AppMovilPage: React.FC = () => {
       const ticketId = modalVerificarLitros.ticket.id;
       const t = modalVerificarLitros.ticket as any;
       const esDespachoCompania = Boolean(t?.companiaId || t?.companiaNombre || t?.esDespachoCompania || t?.tipo === 'DESPACHO');
+
+      // REGLA OBLIGATORIA: Los procesos se respetan (incluso para ADMIN y SUPER ADMIN)
+      if (!esDespachoCompania && !viajeEstaEnviadoAReceptoria(t)) {
+        toast.error('El chofer aún no ha finalizado la ruta ni ha enviado el viaje a Receptoría. El proceso debe respetarse obligatoriamente.');
+        return;
+      }
 
       let res: any;
       if (esDespachoCompania) {
@@ -10630,6 +10640,7 @@ export const AppMovilPage: React.FC = () => {
                     const merma = ltsRecibidos > 0 ? ltsRecibidos - ltsChofer : 0;
                     const paradas = (t as any).paradas || [];
                     const chofNom = (t as any).conductorNombre || (t as any).choferNombre || 'Chofer';
+                    const enviadoARecep = viajeEstaEnviadoAReceptoria(t);
 
                     return (
                       <div
@@ -10653,13 +10664,14 @@ export const AppMovilPage: React.FC = () => {
                                 style={{
                                   fontSize: '10px',
                                   fontWeight: 800,
-                                  background: '#e0e7ff',
-                                  color: '#3730a3',
+                                  background: enviadoARecep ? '#dcfce7' : '#fef3c7',
+                                  color: enviadoARecep ? '#15803d' : '#b45309',
                                   padding: '2px 6px',
                                   borderRadius: '5px',
+                                  border: enviadoARecep ? '1px solid #bbf7d0' : '1px solid #fde68a',
                                 }}
                               >
-                                {t.estado || 'EN RECEPTORIA'}
+                                {enviadoARecep ? '🏭 EN PLANTA' : '⏳ EN RECOLECCIÓN'}
                               </span>
                             </div>
                             <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>
@@ -10728,35 +10740,78 @@ export const AppMovilPage: React.FC = () => {
                             <span>Timelapse</span>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setModalVerificarLitros({
-                                open: true,
-                                ticket: t,
-                                litrosRecibidos: ltsRecibidos > 0 ? ltsRecibidos : ltsChofer,
-                                observacion: '',
-                              })
-                            }
-                            style={{
-                              flex: 1,
-                              background: '#eff6ff',
-                              color: '#1d4ed8',
-                              border: '1.5px solid #bfdbfe',
-                              borderRadius: '10px',
-                              padding: '9px 10px',
-                              fontSize: '12px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '6px',
-                            }}
-                          >
-                            <i className="fa-solid fa-scale-balanced"></i>
-                            <span>Verificar Litros</span>
-                          </button>
+                          {enviadoARecep ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setModalVerificarLitros({
+                                  open: true,
+                                  ticket: t,
+                                  litrosRecibidos: ltsRecibidos > 0 ? ltsRecibidos : ltsChofer,
+                                  observacion: '',
+                                })
+                              }
+                              style={{
+                                flex: 1,
+                                background: '#eff6ff',
+                                color: '#1d4ed8',
+                                border: '1.5px solid #bfdbfe',
+                                borderRadius: '10px',
+                                padding: '9px 10px',
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                              }}
+                            >
+                              <i className="fa-solid fa-scale-balanced"></i>
+                              <span>Verificar Litros</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                Swal.fire({
+                                  icon: 'warning',
+                                  title: 'Ruta aún en Recolección',
+                                  html: `<div style="text-align: left; font-size: 13px; line-height: 1.5;">
+                                    <p>El chofer <b>${chofNom}</b> aún <b>no ha finalizado su recolección en fincas ni ha enviado la carga a Receptoría</b>.</p>
+                                    <div style="background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; padding: 8px 10px; border-radius: 6px; margin: 10px 0; color: #92400e;">
+                                      ⚠️ <b>Respeto Obligatorio del Proceso:</b><br/>
+                                      Aunque tenga rol de Administrador, los procesos operativos deben respetarse. La cisterna debe ser finalizada y despachada por el chofer a receptoría para poder verificar litros en planta.
+                                    </div>
+                                    <p style="color: #64748b; font-size: 11.5px; margin: 0;">
+                                      Una vez el chofer finalice su ruta de fincas y la envíe a Receptoría, este botón se activará automáticamente para registrar la descarga en planta.
+                                    </p>
+                                  </div>`,
+                                  confirmButtonColor: '#0284c7',
+                                  confirmButtonText: 'Entendido',
+                                });
+                              }}
+                              style={{
+                                flex: 1,
+                                background: '#fffbeb',
+                                color: '#b45309',
+                                border: '1.5px solid #fde68a',
+                                borderRadius: '10px',
+                                padding: '9px 8px',
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '5px',
+                              }}
+                              title="El chofer no ha finalizado la recolección ni ha enviado la cisterna a receptoría"
+                            >
+                              <i className="fa-solid fa-lock"></i>
+                              <span>Chofer en Ruta (Pendiente Envío)</span>
+                            </button>
+                          )}
 
                           <button
                             type="button"
@@ -11120,7 +11175,7 @@ export const AppMovilPage: React.FC = () => {
                 </div>
                 <button
                   type="button"
-                  onClick={cargarDatosAdminEnVivo}
+                  onClick={() => cargarDatosAdminEnVivo(false)}
                   style={{
                     background: 'rgba(255,255,255,0.15)',
                     border: 'none',
@@ -11438,9 +11493,9 @@ export const AppMovilPage: React.FC = () => {
                 </button>
               </div>
 
-              {cargandoViajesEnVivo ? (
+              {cargandoViajesEnVivo && viajesEnVivo.length === 0 ? (
                 <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
-                  <i className="fa-solid fa-spinner fa-spin mr-2"></i> Rastreador en vivo actualizándose...
+                  <i className="fa-solid fa-spinner fa-spin mr-2"></i> Cargando viajes en vivo...
                 </div>
               ) : viajesAMostrar.length === 0 ? (
                 <div

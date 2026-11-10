@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 17,
-  patch: 0,
-  tag: 'v3.17.0',
+  patch: 1,
+  tag: 'v3.17.1',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil Híbrida: Eliminación de permiso temporal de ruta para choferes, y soporte total para continuar agregando fincas adicionales en rutas seleccionadas v3.17.0',
+  descripcion: 'Respeto estricto del flujo operativo en Receptoría (bloqueo de verificación si el chofer no ha finalizado ni enviado la carga) y actualización silenciosa interna de viajes en vivo en terminal móvil v3.17.1',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

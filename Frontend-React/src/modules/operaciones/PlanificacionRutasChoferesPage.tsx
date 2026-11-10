@@ -86,8 +86,7 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
   // Navegación de fecha
   const cambiarFecha = (dias: number) => {
     const [y, m, d] = fechaOperativa.split('-').map(Number);
-    const date = new Date(y, m - 1, d);
-    date.setDate(date.getDate() + dias);
+    const date = new Date(Date.UTC(y, m - 1, d + dias, 12, 0, 0));
     const nextStr = date.toISOString().split('T')[0];
     if (!puedePlanificarFuturo && nextStr > hoyStr) {
       return; // Chofer o usuario no autorizado no puede avanzar más allá de hoy
@@ -159,6 +158,9 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
       queryClient.invalidateQueries({ queryKey: ['planificaciones-choferes'] });
       queryClient.invalidateQueries({ queryKey: ['controles-rutas'] });
       queryClient.invalidateQueries({ queryKey: ['viajes-rutas'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-fincas-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-despachos-hoy'] });
       setModalAbierto(false);
       Swal.fire({
         icon: 'success',
@@ -183,6 +185,11 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
     mutationFn: (id: number) => operacionesApi.eliminarPlanificacionChofer(id),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['planificaciones-choferes'] });
+      queryClient.invalidateQueries({ queryKey: ['controles-rutas'] });
+      queryClient.invalidateQueries({ queryKey: ['viajes-rutas'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-fincas-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-despachos-hoy'] });
       Swal.fire({
         icon: 'success',
         title: 'Planificación Eliminada',
@@ -695,6 +702,7 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
                   const val = e.target.value;
                   if (!puedePlanificarFuturo && val > hoyStr) return;
                   setFechaOperativa(val);
+                  onFechaChange?.(val);
                 }}
                 className="text-xs font-bold text-slate-800 bg-transparent border-none outline-none cursor-pointer"
               />

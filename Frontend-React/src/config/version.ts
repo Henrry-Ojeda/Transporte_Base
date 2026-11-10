@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 17,
-  patch: 4,
-  tag: 'v3.17.4',
+  patch: 5,
+  tag: 'v3.17.5',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Opción de código de verificación en login sin sesión, redirección móvil inteligente, usuario exacto @username en tabla web y autenticación estricta v3.17.4',
+  descripcion: 'Sincronización reactiva 1:1 entre Planificación de Flota y Control de Rutas & Camiones, sincronización de fechas y resolución de asignaciones v3.17.5',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

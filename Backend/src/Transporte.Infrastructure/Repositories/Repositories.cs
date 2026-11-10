@@ -8682,9 +8682,9 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     pt.Icono AS IconoProceso,
                     cr.RutaLogisticaId,
                     rl.Nombre AS RutaLogisticaNombre,
-                    cam.Id AS CamionId,
-                    cam.Placa AS CamionPlaca,
-                    cam.CapacidadLitros AS CapacidadCamionLitros,
+                    COALESCE(cam.Id, cam_plan.Id) AS CamionId,
+                    COALESCE(cam.Placa, cam_plan.Placa) AS CamionPlaca,
+                    COALESCE(cam.CapacidadLitros, cam_plan.CapacidadLitros) AS CapacidadCamionLitros,
                     cr.TipoDestino,
                     cr.LitrosRecibidosReceptoria,
                     cr.DiferenciaReceptoria,
@@ -8706,6 +8706,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 LEFT JOIN TB_USUARIOS uc ON cr.CerradoPor = uc.Id
                 LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
                 LEFT JOIN TB_CAMIONES cam ON cam.UsuarioId = cr.UsuarioId AND cam.Activo = 1
+                LEFT JOIN TB_PLANIFICACION_RUTAS_CHOFERES plc ON plc.ControlRutaId = cr.Id AND plc.Activo = 1
+                LEFT JOIN TB_CAMIONES cam_plan ON cam_plan.Id = plc.CamionId
                 WHERE {whereFecha}
                   AND (@cicloId IS NULL OR cr.CicloId = @cicloId)
                   AND (UPPER(@rol) LIKE '%ADMIN%' OR @rol IN ('SUPERVISOR', 'GERENTE') OR (cr.UsuarioId = @usuarioId AND CAST(cr.Fecha AS DATE) <= CAST(GETDATE() AS DATE)))
@@ -8728,6 +8730,9 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                        pt.Icono AS IconoProceso,
                        cr.RutaLogisticaId,
                        rl.Nombre AS RutaLogisticaNombre,
+                       COALESCE(cam.Id, cam_plan.Id) AS CamionId,
+                       COALESCE(cam.Placa, cam_plan.Placa) AS CamionPlaca,
+                       COALESCE(cam.CapacidadLitros, cam_plan.CapacidadLitros) AS CapacidadCamionLitros,
                        cr.TipoDestino,
                        cr.LitrosRecibidosReceptoria,
                        cr.DiferenciaReceptoria,
@@ -8749,6 +8754,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 LEFT JOIN TB_USUARIOS uc ON cr.CerradoPor = uc.Id
                 LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
                 LEFT JOIN TB_CAMIONES cam ON cam.UsuarioId = cr.UsuarioId AND cam.Activo = 1
+                LEFT JOIN TB_PLANIFICACION_RUTAS_CHOFERES plc ON plc.ControlRutaId = cr.Id AND plc.Activo = 1
+                LEFT JOIN TB_CAMIONES cam_plan ON cam_plan.Id = plc.CamionId
                 WHERE cr.Id = @id";
             return await connection.QueryFirstOrDefaultAsync<ControlRutaDto>(sql, new { id });
         }
@@ -9197,9 +9204,9 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     pt.Icono AS IconoProceso,
                     cr.RutaLogisticaId,
                     rl.Nombre AS RutaLogisticaNombre,
-                    cam.Id AS CamionId,
-                    cam.Placa AS CamionPlaca,
-                    cam.CapacidadLitros AS CapacidadCamionLitros,
+                    COALESCE(cam.Id, cam_plan.Id) AS CamionId,
+                    COALESCE(cam.Placa, cam_plan.Placa) AS CamionPlaca,
+                    COALESCE(cam.CapacidadLitros, cam_plan.CapacidadLitros) AS CapacidadCamionLitros,
                     cr.TipoDestino,
                     cr.LitrosRecibidosReceptoria,
                     cr.DiferenciaReceptoria,
@@ -9221,6 +9228,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 LEFT JOIN TB_USUARIOS uc ON cr.CerradoPor = uc.Id
                 LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
                 LEFT JOIN TB_CAMIONES cam ON cam.UsuarioId = cr.UsuarioId AND cam.Activo = 1
+                LEFT JOIN TB_PLANIFICACION_RUTAS_CHOFERES plc ON plc.ControlRutaId = cr.Id AND plc.Activo = 1
+                LEFT JOIN TB_CAMIONES cam_plan ON cam_plan.Id = plc.CamionId
                 WHERE cr.UsuarioId = @choferId 
                   AND UPPER(ISNULL(cr.Estado, '')) NOT IN ('FINALIZADO', 'CERRADO', 'ENTREGADO', 'CUADRADO')
                   AND ISNULL(cr.ProcesoActualId, 1) < 4
@@ -9262,9 +9271,9 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     pt.Icono AS IconoProceso,
                     cr.RutaLogisticaId,
                     rl.Nombre AS RutaLogisticaNombre,
-                    cam.Id AS CamionId,
-                    cam.Placa AS CamionPlaca,
-                    cam.CapacidadLitros AS CapacidadCamionLitros,
+                    COALESCE(cam.Id, cam_plan.Id) AS CamionId,
+                    COALESCE(cam.Placa, cam_plan.Placa) AS CamionPlaca,
+                    COALESCE(cam.CapacidadLitros, cam_plan.CapacidadLitros) AS CapacidadCamionLitros,
                     cr.TipoDestino,
                     cr.LitrosRecibidosReceptoria,
                     cr.DiferenciaReceptoria,
@@ -9286,6 +9295,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 LEFT JOIN TB_USUARIOS uc ON cr.CerradoPor = uc.Id
                 LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
                 LEFT JOIN TB_CAMIONES cam ON cam.UsuarioId = cr.UsuarioId AND cam.Activo = 1
+                LEFT JOIN TB_PLANIFICACION_RUTAS_CHOFERES plc ON plc.ControlRutaId = cr.Id AND plc.Activo = 1
+                LEFT JOIN TB_CAMIONES cam_plan ON cam_plan.Id = plc.CamionId
                 WHERE cr.UsuarioId = @choferId 
                   AND (
                       (@fecha IS NOT NULL AND CAST(cr.Fecha AS DATE) = CAST(@fecha AS DATE))

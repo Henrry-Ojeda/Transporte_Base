@@ -504,6 +504,14 @@ export const RecoleccionRutasPage: React.FC = () => {
     refetchInterval: 8000,
   });
 
+  const cambiarModoVista = (modo: 'planificacion' | 'viajes' | 'fincas') => {
+    setModoVista(modo);
+    refetchViajes();
+    refetchPlanificaciones();
+    refetchRecolecciones();
+    refetchDespachos();
+  };
+
   const { data: camiones = [] } = useQuery<CamionDto[]>({
     queryKey: ['camiones'],
     queryFn: () => catalogosApi.getCamiones(true),
@@ -1988,15 +1996,17 @@ export const RecoleccionRutasPage: React.FC = () => {
     if (esChofer && user) {
       list = list.filter(
         (v) =>
+          v.usuarioId === user.id ||
           v.choferId === user.id ||
           (v as any).conductorId === user.id ||
           ((user as any).camionId && v.camionId === (user as any).camionId) ||
+          (v.nombreConductor && v.nombreConductor.toLowerCase().includes((user.nombreCompleto || '').toLowerCase())) ||
           (v.choferNombre && v.choferNombre.toLowerCase().includes((user.nombreCompleto || '').toLowerCase()))
       );
     }
     // Filtrado estricto por Fecha Operativa seleccionada
     if (fechaFiltro) {
-      list = list.filter((v) => (v.fecha || '').split('T')[0] === fechaFiltro);
+      list = list.filter((v) => (v.fecha ? String(v.fecha).substring(0, 10) : '') === fechaFiltro);
     }
     // Si el usuario escribe una búsqueda específica (ej: número de ticket), no restringir por estado
     const tieneBusqueda = Boolean(busquedaTexto.trim());
@@ -2036,7 +2046,7 @@ export const RecoleccionRutasPage: React.FC = () => {
     }
     // Filtrado estricto por Fecha Operativa seleccionada
     if (fechaFiltro) {
-      list = list.filter((d) => (d.fecha || '').split('T')[0] === fechaFiltro);
+      list = list.filter((d) => (d.fecha ? String(d.fecha).substring(0, 10) : '') === fechaFiltro);
     }
     const tieneBusqueda = Boolean(busquedaTexto.trim());
     if (!tieneBusqueda && filtroEstadoTicket === 'activos') {
@@ -2175,7 +2185,7 @@ export const RecoleccionRutasPage: React.FC = () => {
     return recolecciones.filter((r: any) => {
       // 0. Filtro estricto por Fecha Operativa seleccionada (nunca mezclar fechas diferentes)
       if (fechaFiltro) {
-        const fechaItem = r.fecha ? String(r.fecha).split('T')[0] : '';
+        const fechaItem = r.fecha ? String(r.fecha).substring(0, 10) : '';
         if (fechaItem && fechaItem !== fechaFiltro) return false;
       }
 
@@ -3200,7 +3210,7 @@ export const RecoleccionRutasPage: React.FC = () => {
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() => setModoVista('planificacion')}
+              onClick={() => cambiarModoVista('planificacion')}
               style={{
                 minHeight: '38px',
                 height: 'auto',
@@ -3243,7 +3253,7 @@ export const RecoleccionRutasPage: React.FC = () => {
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() => setModoVista('viajes')}
+              onClick={() => cambiarModoVista('viajes')}
               style={{
                 minHeight: '38px',
                 height: 'auto',
@@ -3286,7 +3296,7 @@ export const RecoleccionRutasPage: React.FC = () => {
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() => setModoVista('fincas')}
+              onClick={() => cambiarModoVista('fincas')}
               style={{
                 minHeight: '38px',
                 height: 'auto',
@@ -3649,13 +3659,13 @@ export const RecoleccionRutasPage: React.FC = () => {
                   (!esRuta && item.esConfirmado);
 
                 const esAbierto = !esFinalizado && (item.estado === 'ABIERTO' || item.procesoActualId === 1);
-                const esMiTicket = item.usuarioId === user?.id || item.conductorId === user?.id;
+                const esMiTicket = item.usuarioId === user?.id || item.conductorId === user?.id || (item as any).choferId === user?.id;
                 const tieneRutaLogistica = Boolean((item.rutaLogisticaId && item.rutaLogisticaId > 0) || item.rutaLogisticaNombre || item.rutaNombre);
                 const planCorrespondiente = planificaciones.find(
                   (p) =>
                     p.controlRutaId === item.id ||
                     (p.camionId === item.camionId &&
-                      (p.conductorId === item.conductorId || (item as any).choferId === p.conductorId))
+                      (p.conductorId === item.usuarioId || p.conductorId === item.conductorId || (item as any).choferId === p.conductorId))
                 );
 
                 const fincasTicketRaw = esRuta

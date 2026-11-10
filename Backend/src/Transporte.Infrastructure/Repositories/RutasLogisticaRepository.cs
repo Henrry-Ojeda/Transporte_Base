@@ -1006,9 +1006,21 @@ namespace Transporte.Infrastructure.Repositories
                     throw new InvalidOperationException($"No se puede eliminar la planificación porque el ticket #{crId} ya tiene {totalLeche:N0} litros de leche recolectados en ruta.");
                 }
 
-                // Si todas las paradas eran 0 litros, limpiar paradas vacías y el ticket abierto
-                await connection.ExecuteAsync("DELETE FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @crId AND (Litros = 0 OR Litros IS NULL)", new { crId });
-                await connection.ExecuteAsync("DELETE FROM TB_CONTROL_RUTAS WHERE Id = @crId AND Estado = 'ABIERTO' AND (TotalLitrosFinca = 0 OR TotalLitrosFinca IS NULL)", new { crId });
+                // 1. Desvincular de planificaciones para evitar conflicto de FK
+                try { await connection.ExecuteAsync("UPDATE TB_PLANIFICACION_RUTAS_CHOFERES SET ControlRutaId = NULL WHERE ControlRutaId = @crId", new { crId }); } catch { }
+
+                // 2. Limpiar paradas vacías (0 litros)
+                try { await connection.ExecuteAsync("DELETE FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @crId AND (Litros = 0 OR Litros IS NULL)", new { crId }); } catch { }
+
+                // 3. Limpiar logs y tablas hijas con FK hacia TB_CONTROL_RUTAS
+                try { await connection.ExecuteAsync("DELETE FROM TB_LOG_MODIFICACIONES_CONTROL WHERE ControlRutaId = @crId", new { crId }); } catch { }
+                try { await connection.ExecuteAsync("DELETE FROM TB_HISTORIAL_PROCESOS_TICKET WHERE ControlRutaId = @crId", new { crId }); } catch { }
+                try { await connection.ExecuteAsync("DELETE FROM TB_NOTIFICACIONES_PUSH WHERE TicketId = @crId", new { crId }); } catch { }
+                try { await connection.ExecuteAsync("DELETE FROM TB_ENTREGAS_COMPANIA WHERE ControlRutaId = @crId", new { crId }); } catch { }
+                try { await connection.ExecuteAsync("DELETE FROM TB_CONTROL_COMPANIAS WHERE ControlRutaId = @crId", new { crId }); } catch { }
+
+                // 4. Eliminar el ticket abierto vacío
+                try { await connection.ExecuteAsync("DELETE FROM TB_CONTROL_RUTAS WHERE Id = @crId AND Estado = 'ABIERTO' AND (TotalLitrosFinca = 0 OR TotalLitrosFinca IS NULL)", new { crId }); } catch { }
             }
 
             var rows = await connection.ExecuteAsync("DELETE FROM TB_PLANIFICACION_RUTAS_CHOFERES WHERE Id = @id", new { id });

@@ -9367,6 +9367,14 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             var choferId = (int)control.UsuarioId;
             var fecha = (DateTime)control.Fecha;
 
+            // Desvincular de planificaciones activas
+            try { await connection.ExecuteAsync("UPDATE TB_PLANIFICACION_RUTAS_CHOFERES SET ControlRutaId = NULL WHERE ControlRutaId = @id", new { id }); } catch { }
+
+            // Limpiar logs y tablas hijas con FK hacia TB_CONTROL_RUTAS (ej: FK_LogModificacionesControl_Ticket)
+            try { await connection.ExecuteAsync("DELETE FROM TB_LOG_MODIFICACIONES_CONTROL WHERE ControlRutaId = @id", new { id }); } catch { }
+            try { await connection.ExecuteAsync("DELETE FROM TB_HISTORIAL_PROCESOS_TICKET WHERE ControlRutaId = @id", new { id }); } catch { }
+            try { await connection.ExecuteAsync("DELETE FROM TB_NOTIFICACIONES_PUSH WHERE TicketId = @id", new { id }); } catch { }
+
             await connection.ExecuteAsync("DELETE FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @id", new { id });
             await connection.ExecuteAsync(@"
                 DELETE FROM TB_ENTREGAS_COMPANIA 
@@ -9377,7 +9385,6 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 DELETE FROM TB_CONTROL_COMPANIAS 
                 WHERE Observacion LIKE '%#' + CAST(@id AS VARCHAR) + '%'
                    OR Observacion LIKE '%Viaje #' + CAST(@id AS VARCHAR) + '%'", new { id });
-            await connection.ExecuteAsync("DELETE FROM TB_HISTORIAL_PROCESOS_TICKET WHERE ControlRutaId = @id", new { id });
             var rows = await connection.ExecuteAsync("DELETE FROM TB_CONTROL_RUTAS WHERE Id = @id", new { id });
             return rows > 0;
         }

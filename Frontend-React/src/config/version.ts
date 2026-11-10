@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 0,
-  tag: 'v3.18.0',
+  patch: 1,
+  tag: 'v3.18.1',
   ultimaActualizacion: '2026-11-10',
-  tipoUltimoCambio: 'ESTRUCTURA',
-  descripcion: 'Atributo estructural EsPrincipal en TB_COMPANIAS para gestión determinista de Planta Matriz / Receptoría Principal de Silos en BD, DTOs, filtros y vistas v3.18.0',
+  tipoUltimoCambio: 'DISEÑO_LOGICA',
+  descripcion: 'Corrección de eliminación en cascada de tickets y planificaciones para resolver restricción FK_LogModificacionesControl_Ticket v3.18.1',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

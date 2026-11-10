@@ -1783,11 +1783,21 @@ export const AppMovilPage: React.FC = () => {
             // AVISO DIRECTO AL TELÉFONO (Vibración + Sonido + Notificación en Pantalla Bloqueada vía Service Worker)
             emitirNotificacionTelefono(nReciente.titulo, nReciente.mensaje, nReciente.id);
 
-            // AUTO-ACTUALIZACIÓN INMEDIATA:
-            // Al recibir una notificación (ej. cambio en la ruta, finca agregada, entrega confirmada),
-            // recargar automáticamente el viaje y las paradas activas del chofer sin requerir refresh manual
+            // AUTO-ACTUALIZACIÓN INMEDIATA MULTI-ROL:
+            // Al recibir una notificación (recolección de leche, nueva finca, cambio de ruta, confirmación, etc.):
+            // Recargar automáticamente todas las vistas según el modo activo sin requerir refresh manual
             cargarViajeActivo();
             cargarDespachoActivo();
+            cargarDatosAdminEnVivo();
+            cargarDatosLogisticaAdmin();
+            if (modalTimelapseMovil && viajeTimelapseMovil?.id) {
+              operacionesApi.getFincasViaje(viajeTimelapseMovil.id).then((p) => {
+                if (Array.isArray(p)) setParadasTimelapseMovil(p);
+              }).catch(() => {});
+            }
+            if (modoActivo === 'TALLER') {
+              cargarDatosTaller();
+            }
           }
 
           setNotificaciones(data);
@@ -1798,19 +1808,28 @@ export const AppMovilPage: React.FC = () => {
     };
 
     pollingNotificaciones();
-    // Consultar cada 8 segundos para respuesta casi instantánea a cambios de ruta
-    const interval = setInterval(pollingNotificaciones, 8000);
+    // Consultar cada 6 segundos para respuesta casi instantánea a cambios de ruta y cargas en vivo
+    const interval = setInterval(pollingNotificaciones, 6000);
     return () => clearInterval(interval);
-  }, [dispositivo, isOnline]);
+  }, [dispositivo, authUser, isOnline, modoActivo, tabActiva, modalTimelapseMovil, viajeTimelapseMovil?.id]);
 
-  // Sincronización continua en segundo plano cada 20s para el Chofer (auto-actualización silenciosa)
+  // Sincronización continua en segundo plano cada 12s para todas las vistas (auto-actualización silenciosa)
   useEffect(() => {
-    if (!dispositivo || !isOnline || modoActivo !== 'CHOFER') return;
+    if (!isOnline) return;
     const intervalAutoSync = setInterval(() => {
-      cargarViajeActivo();
-    }, 20000);
+      if (modoActivo === 'CHOFER') {
+        cargarViajeActivo();
+      } else if (modoActivo === 'ADMIN') {
+        cargarDatosAdminEnVivo();
+        if (tabActiva === 'admin_logistica') {
+          cargarDatosLogisticaAdmin();
+        }
+      } else if (modoActivo === 'TALLER') {
+        cargarDatosTaller();
+      }
+    }, 12000);
     return () => clearInterval(intervalAutoSync);
-  }, [dispositivo, isOnline, modoActivo, viajeSeleccionadoId]);
+  }, [isOnline, modoActivo, tabActiva, fechaLogistica, viajeSeleccionadoId]);
 
   // Helper para persistencia segura de cargas locales tolerante a cuota de localStorage
   const guardarCargasLocalSeguro = (listaCargas: CargaOffline[]) => {
@@ -1845,9 +1864,14 @@ export const AppMovilPage: React.FC = () => {
     const handleSyncComplete = (e: any) => {
       const detail = e.detail;
       if (detail && detail.totalSubidos > 0) {
-        if (dispositivo?.id) {
-          operacionesApi.getViajeActivo(dispositivo.id).then((v) => {
-            if (v && v.id) setViajeActivo(v);
+        cargarViajeActivo();
+        cargarDatosAdminEnVivo();
+        if (tabActiva === 'admin_logistica') {
+          cargarDatosLogisticaAdmin();
+        }
+        if (modalTimelapseMovil && viajeTimelapseMovil?.id) {
+          operacionesApi.getFincasViaje(viajeTimelapseMovil.id).then((p) => {
+            if (Array.isArray(p)) setParadasTimelapseMovil(p);
           }).catch(() => {});
         }
       }

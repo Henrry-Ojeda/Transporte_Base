@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 16,
-  patch: 1,
-  tag: 'v3.16.1',
+  patch: 2,
+  tag: 'v3.16.2',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Auto-selección de fincas al elegir ruta en móvil, scroll estable sin saltos, modal con mayor área visible y sincronización síncrona infalible de cargas v3.16.1',
+  descripcion: 'Auto-actualización reactiva e inmediata de vistas de Administrador en app móvil al recibir notificaciones de recolección de leche v3.16.2',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

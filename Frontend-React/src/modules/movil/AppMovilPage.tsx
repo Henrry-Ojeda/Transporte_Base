@@ -3446,6 +3446,7 @@ export const AppMovilPage: React.FC = () => {
       setParadasViajeActivo([]);
       setLoginUsername('');
       setLoginPassword('');
+      setModoLogin('codigo');
       setModoActivo('CHOFER');
       setTabActiva('principal');
       toast.info('Sesión cerrada.');
@@ -4791,30 +4792,6 @@ export const AppMovilPage: React.FC = () => {
             >
               <button
                 type="button"
-                onClick={() => setModoLogin('credenciales')}
-                style={{
-                  padding: '9px 6px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: modoLogin === 'credenciales' ? '#ffffff' : 'transparent',
-                  color: modoLogin === 'credenciales' ? '#0284c7' : '#64748b',
-                  fontWeight: 800,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  boxShadow: modoLogin === 'credenciales' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s',
-                }}
-              >
-                <i className="fa-solid fa-user-lock"></i>
-                <span>Usuario y Clave</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={() => setModoLogin('codigo')}
                 style={{
                   padding: '9px 6px',
@@ -4835,6 +4812,30 @@ export const AppMovilPage: React.FC = () => {
               >
                 <i className="fa-solid fa-hashtag"></i>
                 <span>Código 6 Dígitos</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setModoLogin('credenciales')}
+                style={{
+                  padding: '9px 6px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: modoLogin === 'credenciales' ? '#ffffff' : 'transparent',
+                  color: modoLogin === 'credenciales' ? '#0284c7' : '#64748b',
+                  fontWeight: 800,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  boxShadow: modoLogin === 'credenciales' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <i className="fa-solid fa-user-lock"></i>
+                <span>Usuario y Clave</span>
               </button>
             </div>
 

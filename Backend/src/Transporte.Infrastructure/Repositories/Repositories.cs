@@ -32,18 +32,7 @@ namespace Transporte.Infrastructure.Repositories
             var u = (username ?? "").Trim();
             return await connection.QueryFirstOrDefaultAsync<Usuario>(@"
                 SELECT TOP 1 * FROM TB_USUARIOS 
-                WHERE (
-                    LOWER(Username) = LOWER(@u)
-                    OR LOWER(Username) LIKE LOWER(@u) + '.%'
-                    OR LOWER(NombreCompleto) = LOWER(@u)
-                    OR REPLACE(LOWER(NombreCompleto), ' ', '') = LOWER(@u)
-                ) AND Activo = 1
-                ORDER BY 
-                    CASE 
-                        WHEN LOWER(Username) = LOWER(@u) THEN 1 
-                        WHEN LOWER(NombreCompleto) = LOWER(@u) THEN 2 
-                        ELSE 3 
-                    END", 
+                WHERE LOWER(Username) = LOWER(@u) AND Activo = 1", 
                 new { u });
         }
 

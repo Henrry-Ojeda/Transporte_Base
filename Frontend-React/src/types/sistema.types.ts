@@ -16,7 +16,8 @@ export interface CrearRolDto {
 
 export interface UsuarioDto {
   id: number;
-  nombreUsuario: string;
+  username: string;
+  nombreUsuario?: string;
   nombreCompleto: string;
   email?: string;
   rol: string; // ADMIN, CHOFER, OPERADOR, LIQUIDADOR

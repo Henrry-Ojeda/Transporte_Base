@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 17,
-  patch: 3,
-  tag: 'v3.17.3',
+  patch: 4,
+  tag: 'v3.17.4',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Separación estricta de dominios, remoción de permiso crear ruta temporal en Usuarios, indicador de versión v3.17.3 en footer y data maestra para Producto Base',
+  descripcion: 'Opción de código de verificación en login sin sesión, redirección móvil inteligente, usuario exacto @username en tabla web y autenticación estricta v3.17.4',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

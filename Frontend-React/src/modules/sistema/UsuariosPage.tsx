@@ -265,14 +265,33 @@ export const UsuariosPage: React.FC = () => {
               flexShrink: 0,
             }}
           >
-            {(row.nombreCompleto || row.nombreUsuario || 'U').charAt(0).toUpperCase()}
+            {(row.nombreCompleto || row.username || row.nombreUsuario || 'U').charAt(0).toUpperCase()}
           </div>
           <div>
             <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '13.5px' }}>
-              {row.nombreCompleto || row.nombreUsuario}
+              {row.nombreCompleto || row.username || row.nombreUsuario}
             </div>
-            <div style={{ fontSize: '11.5px', color: '#64748b', fontFamily: 'monospace' }}>
-              @{row.nombreUsuario} {row.cedula ? `• C.I: ${row.cedula}` : ''}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+              <span
+                style={{
+                  fontSize: '11.5px',
+                  fontWeight: 800,
+                  color: '#0284c7',
+                  background: '#e0f2fe',
+                  border: '1px solid #bae6fd',
+                  padding: '1px 8px',
+                  borderRadius: '6px',
+                  fontFamily: 'monospace',
+                }}
+                title="Usuario exacto de inicio de sesión"
+              >
+                @{row.username || row.nombreUsuario}
+              </span>
+              {row.cedula && (
+                <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  C.I: {row.cedula}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -528,7 +547,7 @@ export const UsuariosPage: React.FC = () => {
         searchFilter={(row, term) =>
           Boolean(
             (row.nombreCompleto && row.nombreCompleto.toLowerCase().includes(term)) ||
-            (row.nombreUsuario && row.nombreUsuario.toLowerCase().includes(term)) ||
+            ((row.username || row.nombreUsuario) && (row.username || row.nombreUsuario)!.toLowerCase().includes(term)) ||
             (row.rol && row.rol.toLowerCase().includes(term)) ||
             (row.cedula && row.cedula.toLowerCase().includes(term))
           )

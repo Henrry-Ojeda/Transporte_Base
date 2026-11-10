@@ -134,7 +134,12 @@ const HomeRedirect: React.FC = () => {
     }
   }
 
-  if (rol === 'CHOFER' || tieneDispositivoValido) {
+  const isMobileDevice = typeof window !== 'undefined' && (
+    window.innerWidth <= 768 ||
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+  );
+
+  if (rol === 'CHOFER' || tieneDispositivoValido || (!isAuthenticated && isMobileDevice)) {
     return <Navigate to="/movil" replace />;
   }
   if (!isAuthenticated) {

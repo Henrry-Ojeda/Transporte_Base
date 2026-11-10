@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { User, Lock, Eye, EyeOff, LogIn, AlertTriangle, Loader2, Building2 } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, LogIn, AlertTriangle, Loader2, Building2, Hash, Smartphone, KeyRound } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/api/auth.api';
 import { isTokenExpired, AUTH_TOKEN_KEY } from '@/api/client';
@@ -20,6 +20,9 @@ export const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [empresaNombre, setEmpresaNombre] = useState<string>(defaultNombre);
+  const [modoAcceso, setModoAcceso] = useState<'credenciales' | 'codigo'>('credenciales');
+  const [codigoInput, setCodigoInput] = useState('');
+  const [vinculando, setVinculando] = useState(false);
 
   // Resolución 100% dinámica de la empresa desde SaaS Master (cero datos duros)
   useEffect(() => {
@@ -113,6 +116,63 @@ export const LoginPage: React.FC = () => {
     }
   };
 
+  const handleVincularCodigo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = codigoInput.replace(/\D/g, '').trim();
+    if (clean.length < 6) {
+      setError('El código de verificación debe contener 6 dígitos numéricos');
+      return;
+    }
+
+    setVinculando(true);
+    setError(null);
+    clearExpiredMessage();
+
+    try {
+      const res = await authApi.vincularDispositivo({
+        codigo: clean,
+        deviceInfo: `${navigator.userAgent} (${navigator.platform})`,
+      });
+
+      const nuevoNombreEmpresa = res.empresaNombre || empresaNombre;
+      const dispData = {
+        token: res.token,
+        empresaCodigo: res.empresaCodigo,
+        empresaNombre: nuevoNombreEmpresa,
+        id: res.id,
+        username: res.username,
+        nombreCompleto: res.nombreCompleto,
+        rol: res.rol,
+        permisos: res.permisos || [],
+        camionId: res.camionId,
+        placaCamion: res.placaCamion,
+        modulosHabilitados: res.modulosHabilitados || [],
+      };
+
+      localStorage.setItem('movil_device_info', JSON.stringify(dispData));
+      localStorage.setItem(AUTH_TOKEN_KEY, res.token);
+      localStorage.setItem('token', res.token);
+
+      login(res.token, {
+        id: res.id,
+        username: res.username,
+        nombreCompleto: res.nombreCompleto,
+        rol: res.rol,
+        permisos: Array.isArray(res.permisos) ? res.permisos : [],
+        modulosHabilitados: res.modulosHabilitados,
+        empresaCodigo: res.empresaCodigo,
+        empresaNombre: nuevoNombreEmpresa,
+      });
+
+      navigate('/movil', { replace: true });
+    } catch (err: any) {
+      console.error('Error al vincular con código:', err);
+      setError(err.response?.data?.message || err.message || 'Código de verificación inválido o expirado. Consulta con tu supervisor.');
+    } finally {
+      setVinculando(false);
+    }
+  };
+
   return (
     <div 
       className="min-h-screen w-full bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden select-none"
@@ -167,135 +227,301 @@ export const LoginPage: React.FC = () => {
           )}
         </div>
 
-        {/* Formulario */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Campo Usuario */}
-          <div>
-            <label 
-              className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2"
-              style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#334155', textTransform: 'uppercase', marginBottom: '0.5rem' }}
-            >
-              Usuario
-            </label>
-            <div className="relative flex items-center" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <div 
-                className="absolute left-4 flex items-center pointer-events-none text-slate-400"
-                style={{ position: 'absolute', left: '1rem', display: 'flex', alignItems: 'center', pointerEvents: 'none', color: '#94a3b8' }}
-              >
-                <User className="w-5 h-5" style={{ width: '1.25rem', height: '1.25rem' }} />
-              </div>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Nombre de usuario"
-                autoComplete="username"
-                required
-                disabled={loading}
-                style={{
-                  width: '100%',
-                  paddingLeft: '3.25rem',
-                  paddingRight: '1rem',
-                  paddingTop: '0.85rem',
-                  paddingBottom: '0.85rem',
-                  borderRadius: '0.75rem',
-                  border: '1px solid #cbd5e1',
-                  backgroundColor: '#f8fafc',
-                  fontSize: '0.875rem',
-                  color: '#1e293b',
-                  outline: 'none'
-                }}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition disabled:opacity-60 font-medium"
-              />
-            </div>
-          </div>
-
-          {/* Campo Contraseña */}
-          <div>
-            <label 
-              className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2"
-              style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#334155', textTransform: 'uppercase', marginBottom: '0.5rem' }}
-            >
-              Contraseña
-            </label>
-            <div className="relative flex items-center" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <div 
-                className="absolute left-4 flex items-center pointer-events-none text-slate-400"
-                style={{ position: 'absolute', left: '1rem', display: 'flex', alignItems: 'center', pointerEvents: 'none', color: '#94a3b8' }}
-              >
-                <Lock className="w-5 h-5" style={{ width: '1.25rem', height: '1.25rem' }} />
-              </div>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                required
-                disabled={loading}
-                style={{
-                  width: '100%',
-                  paddingLeft: '3.25rem',
-                  paddingRight: '3rem',
-                  paddingTop: '0.85rem',
-                  paddingBottom: '0.85rem',
-                  borderRadius: '0.75rem',
-                  border: '1px solid #cbd5e1',
-                  backgroundColor: '#f8fafc',
-                  fontSize: '0.875rem',
-                  color: '#1e293b',
-                  outline: 'none'
-                }}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition disabled:opacity-60 font-medium"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                tabIndex={-1}
-                className="absolute right-4 flex items-center text-slate-400 hover:text-slate-600 transition cursor-pointer p-1"
-                style={{ position: 'absolute', right: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer', background: 'none', border: 'none', color: '#94a3b8' }}
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" style={{ width: '1.25rem', height: '1.25rem' }} /> : <Eye className="w-5 h-5" style={{ width: '1.25rem', height: '1.25rem' }} />}
-              </button>
-            </div>
-          </div>
-
-          {/* Botón de Acceso */}
+        {/* SELECTOR DE PESTAÑAS: USUARIO/CLAVE VS CÓDIGO 6 DÍGITOS */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '6px',
+            background: '#f1f5f9',
+            padding: '4px',
+            borderRadius: '14px',
+            marginBottom: '1.25rem',
+          }}
+        >
           <button
-            type="submit"
-            disabled={loading}
+            type="button"
+            onClick={() => { setModoAcceso('credenciales'); setError(null); }}
             style={{
-              width: '100%',
-              marginTop: '0.75rem',
-              padding: '0.875rem 1rem',
-              borderRadius: '0.75rem',
+              padding: '9px 6px',
+              borderRadius: '10px',
               border: 'none',
-              background: 'linear-gradient(to right, #2563eb, #4f46e5)',
-              color: '#ffffff',
-              fontSize: '0.875rem',
-              fontWeight: 700,
+              background: modoAcceso === 'credenciales' ? '#ffffff' : 'transparent',
+              color: modoAcceso === 'credenciales' ? '#2563eb' : '#64748b',
+              fontWeight: 800,
+              fontSize: '12.5px',
+              cursor: 'pointer',
+              boxShadow: modoAcceso === 'credenciales' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.5rem',
-              cursor: 'pointer',
-              boxShadow: '0 10px 15px -3px rgba(37, 99, 235, 0.3)'
+              gap: '6px',
+              transition: 'all 0.2s',
             }}
-            className="w-full mt-2 py-3.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 active:scale-[0.99] transition duration-150 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
           >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Validando credenciales...</span>
-              </>
-            ) : (
-              <>
-                <LogIn className="w-5 h-5" style={{ width: '1.25rem', height: '1.25rem' }} />
-                <span>Entrar al Sistema</span>
-              </>
-            )}
+            <User className="w-4 h-4" />
+            <span>Usuario y Clave</span>
           </button>
-        </form>
+
+          <button
+            type="button"
+            onClick={() => { setModoAcceso('codigo'); setError(null); }}
+            style={{
+              padding: '9px 6px',
+              borderRadius: '10px',
+              border: 'none',
+              background: modoAcceso === 'codigo' ? '#ffffff' : 'transparent',
+              color: modoAcceso === 'codigo' ? '#059669' : '#64748b',
+              fontWeight: 800,
+              fontSize: '12.5px',
+              cursor: 'pointer',
+              boxShadow: modoAcceso === 'codigo' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              transition: 'all 0.2s',
+            }}
+          >
+            <Hash className="w-4 h-4" />
+            <span>Código 6 Dígitos</span>
+          </button>
+        </div>
+
+        {modoAcceso === 'codigo' ? (
+          /* FORMULARIO DE ACCESO POR CÓDIGO DE 6 DÍGITOS */
+          <form onSubmit={handleVincularCodigo} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div style={{ textAlign: 'center', marginBottom: '0.25rem' }}>
+              <div style={{ fontSize: '11px', color: '#059669', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.8px', marginBottom: '4px' }}>
+                Acceso Móvil / Terminal
+              </div>
+              <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                Ingresa el código numérico de 6 dígitos para acceder al sistema.
+              </p>
+            </div>
+
+            <div>
+              <label 
+                className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2"
+                style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#059669', textTransform: 'uppercase', marginBottom: '0.5rem', textAlign: 'center' }}
+              >
+                Código de Verificación
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={7}
+                value={codigoInput}
+                onChange={(e) => setCodigoInput(e.target.value.replace(/\D/g, ''))}
+                placeholder="000 000"
+                autoFocus
+                disabled={vinculando}
+                required
+                style={{
+                  width: '100%',
+                  height: '56px',
+                  borderRadius: '0.75rem',
+                  border: '2px solid #059669',
+                  backgroundColor: '#f0fdf4',
+                  fontSize: '1.75rem',
+                  fontWeight: 900,
+                  letterSpacing: '8px',
+                  textAlign: 'center',
+                  color: '#059669',
+                  outline: 'none',
+                  boxShadow: '0 4px 15px rgba(5, 150, 105, 0.15)',
+                }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={vinculando || codigoInput.trim().length < 6}
+              style={{
+                width: '100%',
+                marginTop: '0.5rem',
+                padding: '0.875rem 1rem',
+                borderRadius: '0.75rem',
+                border: 'none',
+                background: codigoInput.trim().length >= 6 ? 'linear-gradient(to right, #10b981, #059669)' : '#cbd5e1',
+                color: '#ffffff',
+                fontSize: '0.875rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                cursor: codigoInput.trim().length >= 6 ? 'pointer' : 'not-allowed',
+                boxShadow: codigoInput.trim().length >= 6 ? '0 10px 15px -3px rgba(16, 185, 129, 0.3)' : 'none',
+              }}
+            >
+              {vinculando ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Verificando código...</span>
+                </>
+              ) : (
+                <>
+                  <KeyRound className="w-5 h-5" />
+                  <span>Vincular y Entrar</span>
+                </>
+              )}
+            </button>
+
+            <div style={{ textAlign: 'center', marginTop: '0.25rem' }}>
+              <button
+                type="button"
+                onClick={() => navigate('/movil')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#0284c7',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  textDecoration: 'underline',
+                }}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>¿Estás en un teléfono? Ir a la App Móvil de Rutas</span>
+              </button>
+            </div>
+          </form>
+        ) : (
+          /* FORMULARIO DE ACCESO POR CREDENCIALES (USUARIO Y CONTRASEÑA) */
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {/* Campo Usuario */}
+            <div>
+              <label 
+                className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2"
+                style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#334155', textTransform: 'uppercase', marginBottom: '0.5rem' }}
+              >
+                Usuario
+              </label>
+              <div className="relative flex items-center" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <div 
+                  className="absolute left-4 flex items-center pointer-events-none text-slate-400"
+                  style={{ position: 'absolute', left: '1rem', display: 'flex', alignItems: 'center', pointerEvents: 'none', color: '#94a3b8' }}
+                >
+                  <User className="w-5 h-5" style={{ width: '1.25rem', height: '1.25rem' }} />
+                </div>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Nombre de usuario exacto (ej: alfredy.4)"
+                  autoComplete="username"
+                  required
+                  disabled={loading}
+                  style={{
+                    width: '100%',
+                    paddingLeft: '3.25rem',
+                    paddingRight: '1rem',
+                    paddingTop: '0.85rem',
+                    paddingBottom: '0.85rem',
+                    borderRadius: '0.75rem',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#f8fafc',
+                    fontSize: '0.875rem',
+                    color: '#1e293b',
+                    outline: 'none'
+                  }}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition disabled:opacity-60 font-medium"
+                />
+              </div>
+            </div>
+
+            {/* Campo Contraseña */}
+            <div>
+              <label 
+                className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2"
+                style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#334155', textTransform: 'uppercase', marginBottom: '0.5rem' }}
+              >
+                Contraseña
+              </label>
+              <div className="relative flex items-center" style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <div 
+                  className="absolute left-4 flex items-center pointer-events-none text-slate-400"
+                  style={{ position: 'absolute', left: '1rem', display: 'flex', alignItems: 'center', pointerEvents: 'none', color: '#94a3b8' }}
+                >
+                  <Lock className="w-5 h-5" style={{ width: '1.25rem', height: '1.25rem' }} />
+                </div>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  required
+                  disabled={loading}
+                  style={{
+                    width: '100%',
+                    paddingLeft: '3.25rem',
+                    paddingRight: '3rem',
+                    paddingTop: '0.85rem',
+                    paddingBottom: '0.85rem',
+                    borderRadius: '0.75rem',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#f8fafc',
+                    fontSize: '0.875rem',
+                    color: '#1e293b',
+                    outline: 'none'
+                  }}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition disabled:opacity-60 font-medium"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  tabIndex={-1}
+                  className="absolute right-4 flex items-center text-slate-400 hover:text-slate-600 transition cursor-pointer p-1"
+                  style={{ position: 'absolute', right: '1rem', display: 'flex', alignItems: 'center', cursor: 'pointer', background: 'none', border: 'none', color: '#94a3b8' }}
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" style={{ width: '1.25rem', height: '1.25rem' }} /> : <Eye className="w-5 h-5" style={{ width: '1.25rem', height: '1.25rem' }} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Botón de Acceso */}
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                width: '100%',
+                marginTop: '0.75rem',
+                padding: '0.875rem 1rem',
+                borderRadius: '0.75rem',
+                border: 'none',
+                background: 'linear-gradient(to right, #2563eb, #4f46e5)',
+                color: '#ffffff',
+                fontSize: '0.875rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                cursor: 'pointer',
+                boxShadow: '0 10px 15px -3px rgba(37, 99, 235, 0.3)'
+              }}
+              className="w-full mt-2 py-3.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 active:scale-[0.99] transition duration-150 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Validando credenciales...</span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-5 h-5" style={{ width: '1.25rem', height: '1.25rem' }} />
+                  <span>Entrar al Sistema</span>
+                </>
+              )}
+            </button>
+          </form>
+        )}
       </div>
 
       <div className="relative z-10 mt-6 text-center" style={{ marginTop: '1.5rem', textAlign: 'center' }}>

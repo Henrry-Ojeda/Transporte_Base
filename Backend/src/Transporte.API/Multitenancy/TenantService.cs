@@ -31,7 +31,7 @@ namespace Transporte.API.Multitenancy
         private readonly ILogger<TenantService> _logger;
 
         private static readonly ConcurrentDictionary<string, (TenantInfo info, DateTime cachedAt)> _tenantCache = new();
-        private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
+        private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(5);
 
         public static void InvalidateCache() => _tenantCache.Clear();
 
@@ -232,11 +232,13 @@ namespace Transporte.API.Multitenancy
                 ConnectionString = AdjustConnectionStringForEnvironment(fallbackConn),
                 Estado = "ACTIVA",
                 FechaVencimiento = DateTime.UtcNow.AddYears(1),
-                Modulos = new List<string> { "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LECHE_BUFALA", "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE", "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_HISTORIAL_BCV" }
+                Modulos = isCampo 
+                    ? new List<string> { "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE", "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_HISTORIAL_BCV" }
+                    : new List<string> { "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LECHE_BUFALA", "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE", "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_HISTORIAL_BCV", "MOD_ASISTENTE_IA" }
             };
 
-            // Cachear fallback por 15 segundos para reintentar prontamente la conexión con DB_SAAS_MASTER
-            _tenantCache[host] = (_currentTenant, DateTime.UtcNow.AddMinutes(-9.75));
+            // Cachear fallback por 5 segundos para reintentar prontamente la conexión con DB_SAAS_MASTER
+            _tenantCache[host] = (_currentTenant, DateTime.UtcNow);
         }
 
         private static void cleanHost(ref string host)

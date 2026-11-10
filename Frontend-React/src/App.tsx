@@ -9,6 +9,7 @@ import { LoginPage } from '@/modules/auth/LoginPage';
 import { ProtectedRoute } from '@/components/common/ProtectedRoute';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { SessionMonitor } from '@/components/common/SessionMonitor';
+import { TenantModuleMonitor } from '@/components/common/TenantModuleMonitor';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 
 // Dashboard
@@ -164,6 +165,7 @@ export const App: React.FC = () => {
         <DynamicAppIconSync />
         <BrowserRouter>
           <SessionMonitor />
+          <TenantModuleMonitor />
           <Routes>
           {/* Redirección raíz autónoma: choferes y móviles van a /movil directamente (resiliente offline) */}
           <Route index element={<HomeRedirect />} />

@@ -1,7 +1,7 @@
 {
-  "name": "Rutas de Transporte Móvil",
-  "short_name": "Rutas Móvil",
-  "description": "Terminal móvil para choferes y recolección offline de leche",
+  "name": "Rutas de Leche",
+  "short_name": "Rutas de Leche",
+  "description": "Sistema de Gestión y Liquidación de Leche",
   "start_url": "/movil",
   "display": "standalone",
   "background_color": "#0f172a",

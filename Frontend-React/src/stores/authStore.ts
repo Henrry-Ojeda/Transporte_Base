@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AuthUser, PermisoAccion } from '@/types';
 import { AUTH_TOKEN_KEY, setSessionExpiredHandler } from '@/api/client';
+import { authApi } from '@/api/auth.api';
 
 interface AuthState {
   token: string | null;
@@ -14,6 +15,7 @@ interface AuthState {
   logout: (message?: string) => void;
   updateUser: (partial: Partial<AuthUser>) => void;
   clearExpiredMessage: () => void;
+  syncModulosTenant: () => Promise<{ updated: boolean; prevMods: string[]; newMods: string[] }>;
 
   // Verificaciones RBAC y Feature Flags SaaS
   isAdmin: () => boolean;
@@ -135,29 +137,67 @@ export const useAuthStore = create<AuthState>()(
         return get().hasPermission(codigo);
       },
 
+      syncModulosTenant: async () => {
+        try {
+          const res = await authApi.getTenantInfo();
+          if (res && Array.isArray(res.modulos)) {
+            const currentMods = get().user?.modulosHabilitados || [];
+            const newMods = res.modulos.map((m) => m.toUpperCase());
+
+            const sonIguales =
+              currentMods.length === newMods.length &&
+              currentMods.every((m) => newMods.includes(m.toUpperCase()));
+
+            if (!sonIguales) {
+              const currentUser = get().user;
+              if (currentUser) {
+                const updatedUser = {
+                  ...currentUser,
+                  modulosHabilitados: newMods,
+                  empresaCodigo: res.codigo || currentUser.empresaCodigo,
+                  empresaNombre: res.nombre || currentUser.empresaNombre,
+                };
+                set({ user: updatedUser });
+                localStorage.setItem('transporte_user', JSON.stringify(updatedUser));
+                return { updated: true, prevMods: currentMods, newMods };
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Error en syncModulosTenant:', err);
+        }
+        return { updated: false, prevMods: [], newMods: [] };
+      },
+
       hasTenantModule: (moduloCodigo: string) => {
         const user = get().user;
         const code = moduloCodigo.toUpperCase();
 
         if (user?.modulosHabilitados && Array.isArray(user.modulosHabilitados)) {
-          if (code === 'MOD_LECHE_BUFALA' || code === 'MOD_BUFALA' || code === 'BUFALA') {
+          if (code === 'MOD_LECHE_BUFALA' || code === 'MOD_BUFALA' || code === 'BUFALA' || code === 'LECHE_BUFALA') {
             return user.modulosHabilitados.some((m: string) => {
               const u = m.toUpperCase();
               return u === 'MOD_LECHE_BUFALA' || u === 'MOD_BUFALA' || u === 'BUFALA' || u === 'LECHE_BUFALA';
             });
           }
-          return user.modulosHabilitados.includes(code);
+          if (code === 'MOD_ASISTENTE_IA' || code === 'ASISTENTE' || code === 'ASISTENTE_IA' || code === 'CHATBOT') {
+            return user.modulosHabilitados.some((m: string) => {
+              const u = m.toUpperCase();
+              return u === 'MOD_ASISTENTE_IA' || u === 'ASISTENTE' || u === 'ASISTENTE_IA' || u === 'CHATBOT';
+            });
+          }
+          return user.modulosHabilitados.some((m: string) => m.toUpperCase() === code);
         }
 
-        // Si el usuario pertenece explícitamente a CAMPO_VERDE y no tiene módulos devueltos, búfala está desactivada por defecto
-        if (code === 'MOD_LECHE_BUFALA' || code === 'MOD_BUFALA' || code === 'BUFALA') {
-          const emp = (user?.empresaCodigo || '').toUpperCase();
-          if (emp.includes('CAMPO_VERDE') || emp.includes('CAMPOVERDE')) {
+        // Si el usuario pertenece a CAMPO_VERDE y aún no tiene módulos cargados, búfala y asistente IA están apagados por defecto
+        const emp = (user?.empresaCodigo || '').toUpperCase();
+        if (emp.includes('CAMPO_VERDE') || emp.includes('CAMPOVERDE')) {
+          if (code === 'MOD_LECHE_BUFALA' || code === 'MOD_BUFALA' || code === 'BUFALA' || code === 'LECHE_BUFALA' || code === 'MOD_ASISTENTE_IA') {
             return false;
           }
         }
 
-        return true;
+        return false;
       },
 
       canAccessTab: (tabId: string) => {

@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 16,
-  patch: 4,
-  tag: 'v3.16.4',
+  minor: 17,
+  patch: 0,
+  tag: 'v3.17.0',
   ultimaActualizacion: '2026-11-10',
-  tipoUltimoCambio: 'ESTRUCTURA',
-  descripcion: 'Aislamiento estricto y blindaje multi-inquilino entre Vergel Carrillo y Campo Verde por JWT Claims y Headers inmutables v3.16.4',
+  tipoUltimoCambio: 'DISEÑO_LOGICA',
+  descripcion: 'App Móvil Híbrida: Eliminación de permiso temporal de ruta para choferes, y soporte total para continuar agregando fincas adicionales en rutas seleccionadas v3.17.0',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

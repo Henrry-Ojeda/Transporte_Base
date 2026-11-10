@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Swal from 'sweetalert2';
+import { useAuthStore } from '@/stores/authStore';
 import { chatApi, type ChatResponseDto } from '@/api/chat.api';
 
 interface Message {
@@ -49,6 +51,10 @@ Tengo conexión en tiempo real con la Base de Datos SQL (viajes, tickets, fincas
 ];
 
 export const ChatAssistantWidget: React.FC = () => {
+  const hasTenantModule = useAuthStore((s) => s.hasTenantModule);
+  const habilitado = hasTenantModule('MOD_ASISTENTE_IA');
+  const prevHabilitadoRef = useRef(habilitado);
+
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>(() => {
     try {
@@ -89,6 +95,28 @@ export const ChatAssistantWidget: React.FC = () => {
       setTimeout(() => inputRef.current?.focus(), 150);
     }
   }, [isOpen]);
+
+  // Alerta y cierre reactivo si el módulo fue deshabilitado en vivo desde SaaS
+  useEffect(() => {
+    if (prevHabilitadoRef.current && !habilitado) {
+      if (isOpen) {
+        setIsOpen(false);
+      }
+      Swal.fire({
+        icon: 'warning',
+        title: 'Módulo Deshabilitado',
+        html: `<b>El Asistente Virtual IA</b> ha sido deshabilitado para su empresa desde la plataforma SaaS.<br/><br/><span style="color:#e11d48;font-weight:800;font-size:15px;">Por favor de recargar la pagina</span>`,
+        confirmButtonColor: '#0284c7',
+        confirmButtonText: 'Entendido',
+      });
+    }
+    prevHabilitadoRef.current = habilitado;
+  }, [habilitado, isOpen]);
+
+  // Si el módulo no está activo para el tenant, no renderizar el widget
+  if (!habilitado) {
+    return null;
+  }
 
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputVal).trim();

@@ -1180,6 +1180,9 @@ export const AppMovilPage: React.FC = () => {
   // Usuario autenticado en la plataforma web global
   const authUser = useAuthStore((s) => s.user);
   const authToken = useAuthStore((s) => s.token);
+  const hasTenantModule = useAuthStore((s) => s.hasTenantModule);
+  const syncModulosTenant = useAuthStore((s) => s.syncModulosTenant);
+  const tieneModuloBufala = hasTenantModule('MOD_LECHE_BUFALA');
   const authEmpresa = authUser?.empresaNombre;
 
   // Auto-sintetizar dispositivo si el usuario ya inició sesión en la plataforma
@@ -1287,8 +1290,8 @@ export const AppMovilPage: React.FC = () => {
     return encontrado?.nombreCompleto || dispositivo?.nombreCompleto || 'Conductor';
   }, [esAdminReal, choferSimuladoId, choferesLista, dispositivo]);
 
-  // Permiso de creación de ruta para el Chofer (o Admin ilimitado)
-  const tienePermisoCrearRuta = esAdminReal || Boolean(dispositivo?.permisoCrearViaje || (authUser as any)?.permisoCrearViaje);
+  // Modo Híbrido: Los choferes pueden iniciar libremente sus turnos y rutas sin permiso temporal previo
+  const tienePermisoCrearRuta = true;
 
   const cargarChoferesPermisos = async () => {
     setCargandoPermisosChoferes(true);
@@ -1548,6 +1551,41 @@ export const AppMovilPage: React.FC = () => {
   const [busquedaFinca, setBusquedaFinca] = useState('');
   const [fotoReciboVerModal, setFotoReciboVerModal] = useState<string | null>(null);
   const inputFotoReciboRef = useRef<HTMLInputElement | null>(null);
+
+  // Sincronización en tiempo real de módulos SaaS en App Móvil
+  useEffect(() => {
+    syncModulosTenant();
+    const interval = setInterval(() => {
+      syncModulosTenant();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [syncModulosTenant]);
+
+  // Si Búfala se deshabilita mientras se está usando en el formulario de carga o admin litros
+  const prevBufalaRef = useRef<boolean>(tieneModuloBufala);
+  useEffect(() => {
+    if (prevBufalaRef.current && !tieneModuloBufala) {
+      if (formCarga.tipoLeche === 'BUFALA') {
+        setFormCarga((prev) => ({ ...prev, tipoLeche: 'VACA' }));
+        Swal.fire({
+          icon: 'warning',
+          title: 'Módulo Búfala Deshabilitado',
+          text: 'El Módulo de Leche de Búfala ha sido deshabilitado para su empresa desde SaaS. Por favor de recargar la pagina',
+          confirmButtonColor: '#0284c7',
+        });
+      }
+      if (formAdminLitros.tipoLeche === 'BUFALA') {
+        setFormAdminLitros((prev) => ({ ...prev, tipoLeche: 'VACA' }));
+        Swal.fire({
+          icon: 'warning',
+          title: 'Módulo Búfala Deshabilitado',
+          text: 'El Módulo de Leche de Búfala ha sido deshabilitado para su empresa desde SaaS. Por favor de recargar la pagina',
+          confirmButtonColor: '#0284c7',
+        });
+      }
+    }
+    prevBufalaRef.current = tieneModuloBufala;
+  }, [tieneModuloBufala, formCarga.tipoLeche, formAdminLitros.tipoLeche]);
 
   // =========================================================================
   // ESTADOS MODAL ENTREGA DIRECTA A COMPAÑÍAS / RECEPTORÍA (1:1 V2_3_11_26)
@@ -3632,6 +3670,49 @@ export const AppMovilPage: React.FC = () => {
       fincasRuta = fincas.filter((f) => f.rutaId && rutasActivasIds.includes(f.rutaId));
     }
 
+    // Modo Híbrido: Incorporar automáticamente cualquier finca extra recolectada o registrada en este viaje
+    const idsParadasExtra = todasLasParadas.map((p) => Number(p.fincaId || p.FincaId || 0)).filter((id) => id > 0);
+    idsParadasExtra.forEach((idExtra) => {
+      if (!fincasRuta.some((f) => f.id === idExtra)) {
+        const fMatch = fincas.find((f) => f.id === idExtra);
+        if (fMatch) {
+          fincasRuta.push(fMatch);
+        } else {
+          const pMatch = todasLasParadas.find((p) => Number(p.fincaId || p.FincaId || 0) === idExtra);
+          if (pMatch) {
+            fincasRuta.push({
+              id: idExtra,
+              nombre: pMatch.fincaNombre || pMatch.FincaNombre || `Finca #${idExtra}`,
+              propietario: pMatch.propietario || pMatch.Propietario || '',
+              propietarioNombre: pMatch.propietario || pMatch.Propietario || '',
+              codigo: '',
+              tipoLeche: pMatch.tipoLeche || 'VACA',
+            } as any);
+          }
+        }
+      }
+    });
+
+    // Incorporar también cargas locales offline que pertenezcan a este viaje
+    cargas.forEach((c) => {
+      const cFincaId = Number(c.fincaId);
+      if (cFincaId > 0 && !fincasRuta.some((f) => f.id === cFincaId)) {
+        const fMatch = fincas.find((f) => f.id === cFincaId);
+        if (fMatch) {
+          fincasRuta.push(fMatch);
+        } else {
+          fincasRuta.push({
+            id: cFincaId,
+            nombre: c.fincaNombre || `Finca #${cFincaId}`,
+            propietario: '',
+            propietarioNombre: '',
+            codigo: '',
+            tipoLeche: c.tipoLeche || 'VACA',
+          } as any);
+        }
+      }
+    });
+
     if (fincasRuta.length === 0) {
       const idsParadas = todasLasParadas.map((p) => Number(p.fincaId || p.FincaId || 0)).filter((id) => id > 0);
       fincasRuta = fincas.filter((f) => idsParadas.includes(f.id));
@@ -3811,8 +3892,17 @@ export const AppMovilPage: React.FC = () => {
   }, [notificaciones]);
 
   const fincasFiltradas = useMemo(() => {
-    // Si el viaje tiene fincas planificadas por el Admin, el chofer sólo puede ver y cargar esas fincas
-    let base = fincasDeMiRuta.length > 0 ? fincasDeMiRuta : fincas;
+    // Modo Híbrido: Si hay fincas asignadas en la ruta, se presentan ordenadas al inicio con prioridad,
+    // pero el chofer mantiene acceso completo a todo el catálogo de fincas para poder agregar paradas extra.
+    const idsRuta = new Set(fincasDeMiRuta.map((f) => f.id));
+    let base = [...fincas].sort((a, b) => {
+      const aEnRuta = idsRuta.has(a.id);
+      const bEnRuta = idsRuta.has(b.id);
+      if (aEnRuta && !bEnRuta) return -1;
+      if (!aEnRuta && bEnRuta) return 1;
+      return a.nombre.localeCompare(b.nombre);
+    });
+
     if (busquedaFinca.trim()) {
       const term = busquedaFinca.toLowerCase();
       base = base.filter(
@@ -3822,7 +3912,7 @@ export const AppMovilPage: React.FC = () => {
       );
     }
 
-    return [...base].sort((a, b) => a.nombre.localeCompare(b.nombre));
+    return base;
   }, [fincas, fincasDeMiRuta, busquedaFinca]);
 
   // Filtro de circuito en pestaña Recolección
@@ -6457,48 +6547,47 @@ export const AppMovilPage: React.FC = () => {
                           </div>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontWeight: 800, fontSize: '13px', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span>Recolección en Campo Completada</span>
+                              <span>Fincas de la Ruta Completadas</span>
                               <span style={{ fontSize: '10.5px', background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: '8px', fontWeight: 800, border: '1px solid #86efac' }}>
-                                {todasLasParadas.length} Fincas Hechas
+                                {todasLasParadas.length} Fincas Recolectadas
                               </span>
                             </div>
                             <div style={{ fontSize: '11px', color: '#15803d', marginTop: '2px', lineHeight: '1.3' }}>
-                              Has recogido todas las fincas asignadas. Procede a <strong>Receptoría</strong> o <strong>Planta</strong> para entregar la carga.
+                              Has recogido las fincas programadas. Procede a <strong>Receptoría</strong> o agrega fincas adicionales si requieres continuar recolectando.
                             </div>
                           </div>
                         </div>
 
-                        {esAdminReal && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (viajeActivo?.fecha) {
-                                setFormCarga((prev) => ({ ...prev, fecha: viajeActivo.fecha.split('T')[0] }));
-                              }
-                              setFincaFijadaParaModal(null);
-                              setModalRegistro(true);
-                            }}
-                            style={{
-                              width: '100%',
-                              marginTop: '8px',
-                              background: '#f8fafc',
-                              color: '#475569',
-                              border: '1.5px dashed #cbd5e1',
-                              borderRadius: '10px',
-                              padding: '8px 12px',
-                              fontSize: '11.5px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '6px',
-                            }}
-                          >
-                            <i className="fa-solid fa-user-shield text-indigo-600"></i>
-                            <span>Admin/Supervisor: Agregar Finca Extra</span>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (viajeActivo?.fecha) {
+                              setFormCarga((prev) => ({ ...prev, fecha: viajeActivo.fecha.split('T')[0] }));
+                            }
+                            setFincaFijadaParaModal(null);
+                            setModalRegistro(true);
+                          }}
+                          style={{
+                            width: '100%',
+                            marginTop: '10px',
+                            background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '14px',
+                            padding: '12px 16px',
+                            fontSize: '13.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            boxShadow: '0 4px 14px rgba(37, 99, 235, 0.25)',
+                          }}
+                        >
+                          <i className="fa-solid fa-circle-plus"></i>
+                          <span>+ Agregar Finca / Parada Extra a este Viaje</span>
+                        </button>
                       </div>
                     ) : (
                       <button
@@ -6549,8 +6638,8 @@ export const AppMovilPage: React.FC = () => {
                       width: '48px',
                       height: '48px',
                       borderRadius: '14px',
-                      background: tienePermisoCrearRuta ? '#eff6ff' : '#f1f5f9',
-                      color: tienePermisoCrearRuta ? '#2563eb' : '#64748b',
+                      background: '#eff6ff',
+                      color: '#2563eb',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -6558,63 +6647,87 @@ export const AppMovilPage: React.FC = () => {
                       margin: '0 auto 10px auto',
                     }}
                   >
-                    <i className={`fa-solid ${tienePermisoCrearRuta ? 'fa-truck-ramp-box' : 'fa-shield-halved'}`}></i>
+                    <i className="fa-solid fa-truck-ramp-box"></i>
                   </div>
                   <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#1e293b' }}>
-                    {tienePermisoCrearRuta ? 'Sin Ticket de Ruta Activo' : 'Esperando Asignación de Ruta'}
+                    Sin Ticket de Ruta Activo
                   </div>
                   <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 14px 0', lineHeight: '1.4' }}>
-                    {tienePermisoCrearRuta
-                      ? 'Tienes autorización de Administración para iniciar un viaje. Carga tu primera finca.'
-                      : 'Las rutas son asignadas por el Supervisor. Si requieres iniciar un viaje manualmente, solicita la autorización previa a Administración.'}
+                    Inicia un nuevo turno o recorrido (en circuito asignado o en modo libre) para comenzar a recolectar leche.
                   </p>
-                  {tienePermisoCrearRuta ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '320px', margin: '0 auto' }}>
                     <button
                       type="button"
                       onClick={() => {
-                        setFormCarga((prev) => ({ ...prev, fecha: hoyStr }));
-                        setModalRegistro(true);
+                        setRutaNuevoViajeId(null);
+                        setObsNuevoViaje('');
+                        setModalNuevoViajeChofer(true);
                       }}
                       style={{
-                        background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                        background: 'linear-gradient(135deg, #059669, #10b981)',
                         color: '#ffffff',
                         border: 'none',
                         borderRadius: '12px',
-                        padding: '10px 18px',
-                        fontSize: '13px',
+                        padding: '11px 18px',
+                        fontSize: '13.5px',
                         fontWeight: 800,
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
+                        justifyContent: 'center',
                         gap: '8px',
-                        boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
+                        boxShadow: '0 4px 12px rgba(16,185,129,0.25)',
+                      }}
+                    >
+                      <i className="fa-solid fa-truck-fast"></i>
+                      <span>+ Iniciar Nuevo Turno / Viaje</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormCarga((prev) => ({ ...prev, fecha: hoyStr }));
+                        setFincaFijadaParaModal(null);
+                        setModalRegistro(true);
+                      }}
+                      style={{
+                        background: '#f8fafc',
+                        color: '#0284c7',
+                        border: '1.5px solid #bae6fd',
+                        borderRadius: '12px',
+                        padding: '9px 16px',
+                        fontSize: '12.5px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
                       }}
                     >
                       <i className="fa-solid fa-play text-xs"></i>
-                      <span>Iniciar Recorrido / Cargar Finca</span>
+                      <span>Carga Rápida en Finca</span>
                     </button>
-                  ) : (
                     <button
                       type="button"
                       onClick={() => cargarViajeActivo()}
                       style={{
-                        background: '#f8fafc',
-                        color: '#334155',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '12px',
-                        padding: '9px 16px',
-                        fontSize: '12.5px',
+                        background: 'transparent',
+                        color: '#64748b',
+                        border: 'none',
+                        padding: '6px 12px',
+                        fontSize: '11.5px',
                         fontWeight: 700,
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '6px',
+                        justifyContent: 'center',
+                        gap: '5px',
                       }}
                     >
                       <i className={`fa-solid fa-rotate ${cargandoViaje ? 'fa-spin' : ''}`}></i>
-                      <span>Verificar Nuevas Asignaciones</span>
+                      <span>Consultar asignaciones del Admin</span>
                     </button>
-                  )}
+                  </div>
                 </div>
               ) : null}
 
@@ -7386,19 +7499,50 @@ export const AppMovilPage: React.FC = () => {
                       <i className="fa-solid fa-cow" style={{ color: '#059669' }}></i>
                       <span>Fincas a Recolectar ({fincasDeMiRuta.length})</span>
                     </div>
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 900,
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        background: pct === 100 ? '#dcfce7' : '#eff6ff',
-                        color: pct === 100 ? '#15803d' : '#1d4ed8',
-                        border: pct === 100 ? '1px solid #86efac' : '1px solid #bfdbfe',
-                      }}
-                    >
-                      {recCount}/{fincasDeMiRuta.length} ({pct}%)
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {!ticketEnReceptoria && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (viajeActivo?.fecha) {
+                              setFormCarga((prev) => ({ ...prev, fecha: viajeActivo.fecha.split('T')[0] }));
+                            }
+                            setFincaFijadaParaModal(null);
+                            setModalRegistro(true);
+                          }}
+                          style={{
+                            background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                            border: '1.5px solid #86efac',
+                            color: '#065f46',
+                            borderRadius: '8px',
+                            padding: '3px 8px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                          title="Agregar finca extra o fuera de ruta a este viaje"
+                        >
+                          <i className="fa-solid fa-plus text-xs"></i>
+                          <span>+ Finca Extra</span>
+                        </button>
+                      )}
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 900,
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          background: pct === 100 ? '#dcfce7' : '#eff6ff',
+                          color: pct === 100 ? '#15803d' : '#1d4ed8',
+                          border: pct === 100 ? '1px solid #86efac' : '1px solid #bfdbfe',
+                        }}
+                      >
+                        {recCount}/{fincasDeMiRuta.length} ({pct}%)
+                      </span>
+                    </div>
                   </div>
 
                   {/* Barra de progreso de recolección */}
@@ -13119,12 +13263,12 @@ export const AppMovilPage: React.FC = () => {
                       outline: 'none',
                     }}
                   >
-                    <option value={0}>-- Selecciona la Finca ({fincasFiltradas.length}) --</option>
+                    <option value={0}>-- Selecciona la Finca ({fincasFiltradas.length} disponibles) --</option>
                     {fincasFiltradas.map((f) => {
-                      const enRuta = f.rutaId && rutasActivasIds.includes(f.rutaId);
+                      const enRuta = fincasDeMiRuta.some((r) => r.id === f.id) || (f.rutaId && rutasActivasIds.includes(f.rutaId));
                       return (
                         <option key={f.id} value={f.id}>
-                          {enRuta ? '⭐ [En Ruta] ' : ''}{f.nombre} {f.codigo ? `(${f.codigo})` : ''}
+                          {enRuta ? '⭐ [De la Ruta] ' : '+ [Finca Extra] '}{f.nombre} {f.codigo ? `(${f.codigo})` : ''}
                         </option>
                       );
                     })}
@@ -13274,7 +13418,7 @@ export const AppMovilPage: React.FC = () => {
                 <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#1e293b', marginBottom: '6px' }}>
                   Tipo de Leche
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: tieneModuloBufala ? '1fr 1fr' : '1fr', gap: '8px' }}>
                   <button
                     type="button"
                     onClick={() => setFormCarga({ ...formCarga, tipoLeche: 'VACA' })}
@@ -13291,22 +13435,24 @@ export const AppMovilPage: React.FC = () => {
                   >
                     🥛 Vaca (Estándar)
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormCarga({ ...formCarga, tipoLeche: 'BUFALA' })}
-                    style={{
-                      height: '42px',
-                      borderRadius: '10px',
-                      border: formCarga.tipoLeche === 'BUFALA' ? '2px solid #ea580c' : '1px solid #cbd5e1',
-                      background: formCarga.tipoLeche === 'BUFALA' ? '#fff7ed' : '#ffffff',
-                      color: formCarga.tipoLeche === 'BUFALA' ? '#c2410c' : '#64748b',
-                      fontSize: '13px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🐃 Búfala
-                  </button>
+                  {tieneModuloBufala && (
+                    <button
+                      type="button"
+                      onClick={() => setFormCarga({ ...formCarga, tipoLeche: 'BUFALA' })}
+                      style={{
+                        height: '42px',
+                        borderRadius: '10px',
+                        border: formCarga.tipoLeche === 'BUFALA' ? '2px solid #ea580c' : '1px solid #cbd5e1',
+                        background: formCarga.tipoLeche === 'BUFALA' ? '#fff7ed' : '#ffffff',
+                        color: formCarga.tipoLeche === 'BUFALA' ? '#c2410c' : '#64748b',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      🐃 Búfala
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -16222,7 +16368,7 @@ export const AppMovilPage: React.FC = () => {
                     style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px', background: '#ffffff', fontWeight: 700 }}
                   >
                     <option value="VACA">🥛 Vaca</option>
-                    <option value="BUFALA">🐃 Búfala</option>
+                    {tieneModuloBufala && <option value="BUFALA">🐃 Búfala</option>}
                   </select>
                 </div>
               </div>
@@ -16635,9 +16781,9 @@ export const AppMovilPage: React.FC = () => {
                               }}
                             >
                               <option value="VACA">🥛 Vaca</option>
-                              <option value="BUFALA">🐃 Búfala</option>
+                              {tieneModuloBufala && <option value="BUFALA">🐃 Búfala</option>}
                               <option value="ACIDA">🍋 Ácida</option>
-                              <option value="BUFALA_ACIDA">🍋🐃 Búfala Ácida</option>
+                              {tieneModuloBufala && <option value="BUFALA_ACIDA">🍋🐃 Búfala Ácida</option>}
                             </select>
                           </div>
 
@@ -17338,8 +17484,8 @@ export const AppMovilPage: React.FC = () => {
                         </option>
                       ))}
                     </select>
-                    <span style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                      Al seleccionar un circuito, se cargarán sus fincas predeterminadas en este turno.
+                    <span style={{ fontSize: '11px', color: '#059669', marginTop: '4px', display: 'block', fontWeight: 600 }}>
+                      💡 <b>Modo Híbrido:</b> Al seleccionar un circuito se precargan sus fincas, pero siempre podrás agregar fincas adicionales durante el recorrido.
                     </span>
                   </div>
 
@@ -18339,7 +18485,7 @@ export const AppMovilPage: React.FC = () => {
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
                     Tipo de Leche
                   </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: tieneModuloBufala ? '1fr 1fr' : '1fr', gap: '8px' }}>
                     <button
                       type="button"
                       onClick={() => setFormAdminLitros((prev) => ({ ...prev, tipoLeche: 'VACA' }))}
@@ -18356,22 +18502,24 @@ export const AppMovilPage: React.FC = () => {
                     >
                       🥛 Leche de Vaca
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormAdminLitros((prev) => ({ ...prev, tipoLeche: 'BUFALA' }))}
-                      style={{
-                        padding: '9px',
-                        borderRadius: '10px',
-                        border: formAdminLitros.tipoLeche === 'BUFALA' ? '2px solid #ea580c' : '1.5px solid #cbd5e1',
-                        background: formAdminLitros.tipoLeche === 'BUFALA' ? '#fff7ed' : '#ffffff',
-                        color: formAdminLitros.tipoLeche === 'BUFALA' ? '#c2410c' : '#64748b',
-                        fontWeight: 800,
-                        fontSize: '12.5px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      🐃 Leche de Búfala
-                    </button>
+                    {tieneModuloBufala && (
+                      <button
+                        type="button"
+                        onClick={() => setFormAdminLitros((prev) => ({ ...prev, tipoLeche: 'BUFALA' }))}
+                        style={{
+                          padding: '9px',
+                          borderRadius: '10px',
+                          border: formAdminLitros.tipoLeche === 'BUFALA' ? '2px solid #ea580c' : '1.5px solid #cbd5e1',
+                          background: formAdminLitros.tipoLeche === 'BUFALA' ? '#fff7ed' : '#ffffff',
+                          color: formAdminLitros.tipoLeche === 'BUFALA' ? '#c2410c' : '#64748b',
+                          fontWeight: 800,
+                          fontSize: '12.5px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        🐃 Leche de Búfala
+                      </button>
+                    )}
                   </div>
                 </div>
 

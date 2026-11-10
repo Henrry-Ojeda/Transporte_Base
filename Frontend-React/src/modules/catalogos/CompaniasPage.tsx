@@ -23,6 +23,7 @@ export const CompaniasPage: React.FC = () => {
     contacto: '',
     precioLitroUSD: 0.45,
     activo: true,
+    esPrincipal: false,
   };
   const [form, setForm] = useState<GuardarCompaniaDto>(initialForm);
 
@@ -86,6 +87,7 @@ export const CompaniasPage: React.FC = () => {
       contacto: item.contacto || '',
       precioLitroUSD: item.precioLitroUSD || 0.45,
       activo: item.activo,
+      esPrincipal: (item as any).esPrincipal ?? false,
     });
     setModalAbierto(true);
   };
@@ -131,7 +133,25 @@ export const CompaniasPage: React.FC = () => {
             <i className="fa-solid fa-building-wheat"></i>
           </div>
           <div>
-            <div style={{ fontWeight: 800, color: '#0f172a' }}>{row.nombre}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 800, color: '#0f172a' }}>{row.nombre}</span>
+              {row.esPrincipal && (
+                <span
+                  className="badge"
+                  style={{
+                    background: '#dcfce7',
+                    color: '#166534',
+                    border: '1px solid #86efac',
+                    fontWeight: 800,
+                    fontSize: '10px',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                  }}
+                >
+                  🏢 PLANTA PRINCIPAL
+                </span>
+              )}
+            </div>
             <div style={{ fontSize: '11px', color: '#64748b' }}>
               {row.rif ? `RIF: ${row.rif}` : (row.direccion || 'Planta de acopio')}
             </div>
@@ -450,6 +470,26 @@ export const CompaniasPage: React.FC = () => {
                   className="form-input"
                   style={{ width: '100%', height: '38px', borderRadius: '8px' }}
                 />
+              </div>
+
+              {/* Checkbox Planta Matriz / Receptoría Principal */}
+              <div style={{ marginBottom: '16px', background: '#ecfdf5', border: '1.5px solid #a7f3d0', borderRadius: '10px', padding: '12px 14px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', margin: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.esPrincipal || false}
+                    onChange={(e) => setForm({ ...form, esPrincipal: e.target.checked })}
+                    style={{ width: '18px', height: '18px', accentColor: '#059669', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <span style={{ fontSize: '13px', fontWeight: 800, color: '#065f46', display: 'block' }}>
+                      🏢 Es Planta Matriz / Receptoría Principal de Silos
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#047857', display: 'block' }}>
+                      Identifica esta compañía como el destino receptor principal para descargas y balances de silos del sistema.
+                    </span>
+                  </div>
+                </label>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>

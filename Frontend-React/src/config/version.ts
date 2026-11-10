@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 17,
-  patch: 9,
-  tag: 'v3.17.9',
+  minor: 18,
+  patch: 0,
+  tag: 'v3.18.0',
   ultimaActualizacion: '2026-11-10',
-  tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Detección inteligente y dinámica de Receptoría Principal (Campo Verde/Vergel/Planta), disponibilidad y auditoría de fincas y recibos en Receptoría y Despachos, botones explícitos de envío v3.17.9',
+  tipoUltimoCambio: 'ESTRUCTURA',
+  descripcion: 'Atributo estructural EsPrincipal en TB_COMPANIAS para gestión determinista de Planta Matriz / Receptoría Principal de Silos en BD, DTOs, filtros y vistas v3.18.0',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

@@ -132,6 +132,7 @@ public class Compania
     public string DiaCierreSemana { get; set; } = "Lunes";
     public bool Activo { get; set; } = true;
     public bool IsDeleted { get; set; } = false;
+    public bool EsPrincipal { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 

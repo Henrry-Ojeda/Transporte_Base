@@ -106,6 +106,7 @@ export interface CompaniaDto {
   encargado?: string;
   precioLitroUSD: number;
   activo: boolean;
+  esPrincipal?: boolean;
 }
 
 export interface GuardarCompaniaDto {
@@ -116,6 +117,7 @@ export interface GuardarCompaniaDto {
   contacto?: string;
   precioLitroUSD: number;
   activo: boolean;
+  esPrincipal?: boolean;
 }
 
 export interface BancoDto {

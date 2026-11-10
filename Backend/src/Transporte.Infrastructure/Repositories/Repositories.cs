@@ -665,7 +665,14 @@ namespace Transporte.Infrastructure.Repositories
                         if (existeComp == 0)
                         {
                             targetCompaniaId = await connection.ExecuteScalarAsync<int>(
-                                "SELECT TOP 1 Id FROM TB_COMPANIAS WHERE UPPER(Nombre) LIKE '%RECEPTOR%' OR Activo = 1 ORDER BY Id ASC", transaction: transaction);
+                                @"SELECT TOP 1 Id FROM TB_COMPANIAS 
+                                  WHERE Activo = 1 
+                                  ORDER BY CASE 
+                                    WHEN EsPrincipal = 1 THEN 0 
+                                    WHEN UPPER(Nombre) LIKE '%RECEPTOR%' THEN 1 
+                                    WHEN UPPER(Nombre) LIKE '%CAMPO%VERDE%' THEN 2 
+                                    WHEN UPPER(Nombre) LIKE '%VERGEL%' THEN 3 
+                                    ELSE 4 END, Id ASC", transaction: transaction);
                         }
 
                         int litrosDespacho = totalLitrosFinca;
@@ -1603,21 +1610,64 @@ namespace Transporte.Infrastructure.Repositories
         }
 
         // --- COMPANIAS ---
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _ensuredCompaniasEsPrincipal = new();
+
+        private async Task EnsureCompaniasEsPrincipalColumnExistsAsync(IDbConnection connection)
+        {
+            var dbKey = connection.Database ?? "default";
+            if (_ensuredCompaniasEsPrincipal.ContainsKey(dbKey)) return;
+
+            try
+            {
+                var sqlCheck = @"
+                    IF NOT EXISTS (
+                        SELECT 1 FROM sys.columns 
+                        WHERE object_id = OBJECT_ID('TB_COMPANIAS') AND name = 'EsPrincipal'
+                    )
+                    BEGIN
+                        ALTER TABLE TB_COMPANIAS ADD EsPrincipal BIT NOT NULL DEFAULT 0;
+                    END;
+
+                    -- Si ninguna compañía está marcada como Principal, auto-marcar la Receptoría / Planta Matriz del tenant
+                    IF NOT EXISTS (SELECT 1 FROM TB_COMPANIAS WHERE EsPrincipal = 1 AND IsDeleted = 0)
+                    BEGIN
+                        UPDATE TB_COMPANIAS
+                        SET EsPrincipal = 1
+                        WHERE Id = (
+                            SELECT TOP 1 Id FROM TB_COMPANIAS
+                            WHERE IsDeleted = 0
+                            ORDER BY CASE 
+                                WHEN UPPER(Nombre) LIKE '%RECEPTOR%' THEN 1
+                                WHEN UPPER(Nombre) LIKE '%CAMPO%VERDE%' THEN 2
+                                WHEN UPPER(Nombre) LIKE '%VERGEL%' THEN 3
+                                WHEN UPPER(Nombre) LIKE '%PLANTA%' THEN 4
+                                WHEN UPPER(Nombre) LIKE '%MATRIZ%' THEN 5
+                                ELSE 6 END, Id ASC
+                        );
+                    END;";
+                await connection.ExecuteAsync(sqlCheck);
+                _ensuredCompaniasEsPrincipal[dbKey] = true;
+            }
+            catch { /* Tolerante */ }
+        }
+
         public async Task<IEnumerable<Compania>> ObtenerCompaniasAsync(bool soloActivos = false)
         {
             using var connection = new SqlConnection(_connectionString);
+            await EnsureCompaniasEsPrincipalColumnExistsAsync(connection);
             var sql = @"
                 SELECT c.*, ISNULL(ts.Nombre, 'RUTA') AS TipoServicioNombre 
                 FROM TB_COMPANIAS c
                 LEFT JOIN TB_TIPO_SERVICIO ts ON c.TipoServicioId = ts.Id
                 WHERE c.IsDeleted = 0 " + (soloActivos ? " AND c.Activo = 1 " : "") + @"
-                ORDER BY c.Nombre ASC";
+                ORDER BY c.EsPrincipal DESC, c.Nombre ASC";
             return await connection.QueryAsync<Compania>(sql);
         }
 
         public async Task<Compania?> ObtenerCompaniaPorIdAsync(int id)
         {
             using var connection = new SqlConnection(_connectionString);
+            await EnsureCompaniasEsPrincipalColumnExistsAsync(connection);
             var sql = @"
                 SELECT c.*, ISNULL(ts.Nombre, 'RUTA') AS TipoServicioNombre 
                 FROM TB_COMPANIAS c
@@ -1629,14 +1679,19 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<int> CrearCompaniaAsync(CrearCompaniaDto dto)
         {
             using var connection = new SqlConnection(_connectionString);
+            await EnsureCompaniasEsPrincipalColumnExistsAsync(connection);
             dto.TipoServicioId = (dto.TipoServicioId.HasValue && dto.TipoServicioId.Value > 0) ? dto.TipoServicioId.Value : 1;
             dto.DiaAperturaSemana = string.IsNullOrWhiteSpace(dto.DiaAperturaSemana) ? "Martes" : dto.DiaAperturaSemana.Trim();
             dto.DiaCierreSemana = string.IsNullOrWhiteSpace(dto.DiaCierreSemana) ? "Lunes" : dto.DiaCierreSemana.Trim();
+            if (dto.EsPrincipal)
+            {
+                await connection.ExecuteAsync("UPDATE TB_COMPANIAS SET EsPrincipal = 0");
+            }
             var sql = @"
                 INSERT INTO TB_COMPANIAS 
-                (Nombre, Encargado, Telefono, Direccion, TipoServicioId, PrecioCompraLitroUSD, PrecioBufalaLitroUSD, PrecioAcidaLitroUSD, DiaAperturaSemana, DiaCierreSemana, Activo, IsDeleted, CreatedAt)
+                (Nombre, Encargado, Telefono, Direccion, TipoServicioId, PrecioCompraLitroUSD, PrecioBufalaLitroUSD, PrecioAcidaLitroUSD, DiaAperturaSemana, DiaCierreSemana, Activo, EsPrincipal, IsDeleted, CreatedAt)
                 VALUES 
-                (@Nombre, @Encargado, @Telefono, @Direccion, @TipoServicioId, @PrecioCompraLitroUSD, @PrecioBufalaLitroUSD, @PrecioAcidaLitroUSD, @DiaAperturaSemana, @DiaCierreSemana, @Activo, 0, GETDATE());
+                (@Nombre, @Encargado, @Telefono, @Direccion, @TipoServicioId, @PrecioCompraLitroUSD, @PrecioBufalaLitroUSD, @PrecioAcidaLitroUSD, @DiaAperturaSemana, @DiaCierreSemana, @Activo, @EsPrincipal, 0, GETDATE());
                 SELECT CAST(SCOPE_IDENTITY() as int);";
             return await connection.ExecuteScalarAsync<int>(sql, dto);
         }
@@ -1645,6 +1700,12 @@ namespace Transporte.Infrastructure.Repositories
         {
             using var connection = new SqlConnection(_connectionString);
             await EnsureTableHistorialPreciosExistsAsync(connection);
+            await EnsureCompaniasEsPrincipalColumnExistsAsync(connection);
+
+            if (dto.EsPrincipal.HasValue && dto.EsPrincipal.Value)
+            {
+                await connection.ExecuteAsync("UPDATE TB_COMPANIAS SET EsPrincipal = 0 WHERE Id <> @id", new { id });
+            }
 
             var compActual = await connection.QueryFirstOrDefaultAsync<Compania>(
                 "SELECT Id, Nombre, PrecioCompraLitroUSD, PrecioBufalaLitroUSD, PrecioAcidaLitroUSD FROM TB_COMPANIAS WHERE Id = @id AND IsDeleted = 0", new { id });
@@ -1671,7 +1732,8 @@ namespace Transporte.Infrastructure.Repositories
                     PrecioAcidaLitroUSD = COALESCE(@PrecioAcidaLitroUSD, PrecioAcidaLitroUSD),
                     DiaAperturaSemana = COALESCE(@DiaAperturaSemana, DiaAperturaSemana),
                     DiaCierreSemana = COALESCE(@DiaCierreSemana, DiaCierreSemana),
-                    Activo = COALESCE(@Activo, Activo)
+                    Activo = COALESCE(@Activo, Activo),
+                    EsPrincipal = COALESCE(@EsPrincipal, EsPrincipal)
                 WHERE Id = @id AND IsDeleted = 0";
             var rows = await connection.ExecuteAsync(sql, new {
                 id,
@@ -1685,7 +1747,8 @@ namespace Transporte.Infrastructure.Repositories
                 dto.PrecioAcidaLitroUSD,
                 dto.DiaAperturaSemana,
                 dto.DiaCierreSemana,
-                dto.Activo
+                dto.Activo,
+                dto.EsPrincipal
             });
 
             if (rows > 0)
@@ -10016,13 +10079,14 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 // Registrar entrada a Receptoría en TB_ENTREGAS_COMPANIA (evitar duplicados si ya existe)
                 var compReceptoriaId = await connection.ExecuteScalarAsync<int?>(
                     @"SELECT TOP 1 Id FROM TB_COMPANIAS 
-                      WHERE (UPPER(Nombre) LIKE '%RECEPTOR%' OR UPPER(Nombre) LIKE '%CAMPO%VERDE%' OR UPPER(Nombre) LIKE '%VERGEL%' OR UPPER(Nombre) LIKE '%PLANTA%') 
-                        AND Activo = 1 
+                      WHERE Activo = 1 
                       ORDER BY CASE 
+                        WHEN EsPrincipal = 1 THEN 0
                         WHEN UPPER(Nombre) LIKE '%RECEPTOR%' THEN 1 
                         WHEN UPPER(Nombre) LIKE '%CAMPO%VERDE%' THEN 2 
                         WHEN UPPER(Nombre) LIKE '%VERGEL%' THEN 3 
-                        ELSE 4 END, Id ASC")
+                        WHEN UPPER(Nombre) LIKE '%PLANTA%' THEN 4 
+                        ELSE 5 END, Id ASC")
                     ?? await connection.ExecuteScalarAsync<int?>("SELECT TOP 1 Id FROM TB_COMPANIAS WHERE Activo = 1 ORDER BY Id ASC")
                     ?? 5028;
 

@@ -676,6 +676,7 @@ namespace Transporte.Core.DTOs
         public string DiaAperturaSemana { get; set; } = "Martes";
         public string DiaCierreSemana { get; set; } = "Lunes";
         public bool Activo { get; set; } = true;
+        public bool EsPrincipal { get; set; } = false;
     }
 
     public class EditarCompaniaDto
@@ -692,6 +693,7 @@ namespace Transporte.Core.DTOs
         public string? DiaCierreSemana { get; set; }
         public bool? Activo { get; set; }
         public string? Observacion { get; set; }
+        public bool? EsPrincipal { get; set; }
     }
 
     public class ActualizarPrecioCompaniaDto

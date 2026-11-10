@@ -62,3 +62,4 @@ export const formatFechaHoraParada = (p: any, incluirAnio = false): string => {
     ? `${dia}/${mes}/${anio} ${horaStr}:${minutos} ${ampm}`
     : `${dia}/${mes} ${horaStr}:${minutos} ${ampm}`;
 };
+

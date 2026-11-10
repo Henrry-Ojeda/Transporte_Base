@@ -18,7 +18,14 @@ export const esReceptoriaPrincipal = (nombreOCompania: any): boolean => {
       nombreOCompania.nombreCompaniaDestino ||
       ''
     ).toUpperCase().trim();
-    if (nombreOCompania.esReceptoria === true || Number(nombreOCompania.id || nombreOCompania.companiaId) === 5028) {
+    if (
+      nombreOCompania.esPrincipal === true ||
+      nombreOCompania.EsPrincipal === true ||
+      nombreOCompania.esPrincipal === 1 ||
+      nombreOCompania.EsPrincipal === 1 ||
+      nombreOCompania.esReceptoria === true ||
+      Number(nombreOCompania.id || nombreOCompania.companiaId) === 5028
+    ) {
       return true;
     }
   }

@@ -29,9 +29,22 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<Usuario?> ObtenerPorUsernameAsync(string username)
         {
             using var connection = new SqlConnection(_connectionString);
-            return await connection.QueryFirstOrDefaultAsync<Usuario>(
-                "SELECT * FROM TB_USUARIOS WHERE Username = @username AND Activo = 1", 
-                new { username });
+            var u = (username ?? "").Trim();
+            return await connection.QueryFirstOrDefaultAsync<Usuario>(@"
+                SELECT TOP 1 * FROM TB_USUARIOS 
+                WHERE (
+                    LOWER(Username) = LOWER(@u)
+                    OR LOWER(Username) LIKE LOWER(@u) + '.%'
+                    OR LOWER(NombreCompleto) = LOWER(@u)
+                    OR REPLACE(LOWER(NombreCompleto), ' ', '') = LOWER(@u)
+                ) AND Activo = 1
+                ORDER BY 
+                    CASE 
+                        WHEN LOWER(Username) = LOWER(@u) THEN 1 
+                        WHEN LOWER(NombreCompleto) = LOWER(@u) THEN 2 
+                        ELSE 3 
+                    END", 
+                new { u });
         }
 
         public async Task<Usuario?> ObtenerPorIdAsync(int id)

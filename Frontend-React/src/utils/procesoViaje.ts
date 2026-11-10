@@ -46,3 +46,4 @@ export const viajeEstaEnviadoAReceptoria = (viaje: Partial<ControlRutaDto> | any
 
   return false;
 };
+

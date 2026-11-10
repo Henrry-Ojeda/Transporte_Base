@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 17,
-  patch: 1,
-  tag: 'v3.17.1',
+  patch: 2,
+  tag: 'v3.17.2',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Respeto estricto del flujo operativo en Receptoría (bloqueo de verificación si el chofer no ha finalizado ni enviado la carga) y actualización silenciosa interna de viajes en vivo en terminal móvil v3.17.1',
+  descripcion: 'Login Móvil con selector visual de pestañas (Usuario/Clave y Código de Verificación) y autenticación inteligente por nombre o usuario de chofer v3.17.2',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

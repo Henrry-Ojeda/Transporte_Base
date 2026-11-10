@@ -4766,7 +4766,7 @@ export const AppMovilPage: React.FC = () => {
             </button>
           </div>
 
-          {/* Tarjeta 2: Formulario de Vinculación (6 Dígitos por defecto) */}
+          {/* Tarjeta 2: Formulario de Acceso Móvil (Tabs: Usuario/Clave vs Código 6 Dígitos) */}
           <div
             style={{
               background: '#f8fafc',
@@ -4777,11 +4777,72 @@ export const AppMovilPage: React.FC = () => {
               textAlign: 'center',
             }}
           >
+            {/* SELECTOR DE PESTAÑAS (TABS SUPERIORES) */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '6px',
+                background: '#e2e8f0',
+                padding: '4px',
+                borderRadius: '14px',
+                marginBottom: '18px',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setModoLogin('credenciales')}
+                style={{
+                  padding: '9px 6px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: modoLogin === 'credenciales' ? '#ffffff' : 'transparent',
+                  color: modoLogin === 'credenciales' ? '#0284c7' : '#64748b',
+                  fontWeight: 800,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  boxShadow: modoLogin === 'credenciales' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <i className="fa-solid fa-user-lock"></i>
+                <span>Usuario y Clave</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setModoLogin('codigo')}
+                style={{
+                  padding: '9px 6px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: modoLogin === 'codigo' ? '#ffffff' : 'transparent',
+                  color: modoLogin === 'codigo' ? '#059669' : '#64748b',
+                  fontWeight: 800,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  boxShadow: modoLogin === 'codigo' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <i className="fa-solid fa-hashtag"></i>
+                <span>Código 6 Dígitos</span>
+              </button>
+            </div>
+
             {modoLogin === 'codigo' ? (
-              /* MODO POR DEFECTO: CÓDIGO DE 6 DÍGITOS */
+              /* MODO CÓDIGO DE VERIFICACIÓN / 6 DÍGITOS */
               <form onSubmit={handleVincular}>
-                <div style={{ fontSize: '11px', color: '#0284c7', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.8px', marginBottom: '4px' }}>
-                  Paso 2: Conectar Teléfono
+                <div style={{ fontSize: '11px', color: '#059669', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.8px', marginBottom: '4px' }}>
+                  Acceso Rápido Chofer
                 </div>
                 <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>
                   Ingresa tu Código de 6 Dígitos
@@ -4804,15 +4865,15 @@ export const AppMovilPage: React.FC = () => {
                       width: '100%',
                       height: '60px',
                       background: '#ffffff',
-                      border: '2px solid #0284c7',
+                      border: '2px solid #059669',
                       borderRadius: '16px',
-                      color: '#0284c7',
+                      color: '#059669',
                       fontSize: '30px',
                       fontWeight: 900,
                       letterSpacing: '8px',
                       textAlign: 'center',
                       outline: 'none',
-                      boxShadow: '0 4px 15px rgba(2, 132, 199, 0.15)',
+                      boxShadow: '0 4px 15px rgba(5, 150, 105, 0.15)',
                     }}
                     required
                   />
@@ -4854,19 +4915,37 @@ export const AppMovilPage: React.FC = () => {
                     </>
                   )}
                 </button>
+
+                <div style={{ marginTop: '14px', textAlign: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => setModoLogin('credenciales')}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#0284c7',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    <i className="fa-solid fa-user-lock mr-1"></i> ¿Prefieres ingresar con contraseña? Pulsa aquí
+                  </button>
+                </div>
               </form>
             ) : (
-              /* MODO SECUNDARIO: LOGIN CON USUARIO Y CONTRASEÑA */
+              /* MODO CREDENCIALES: LOGIN CON USUARIO Y CONTRASEÑA */
               <form onSubmit={handleLoginUsuario} style={{ textAlign: 'left' }}>
                 <div style={{ textAlign: 'center', marginBottom: '14px' }}>
                   <div style={{ fontSize: '11px', color: '#0284c7', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.8px', marginBottom: '4px' }}>
-                    Acceso Administrativo
+                    Acceso con Credenciales
                   </div>
                   <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0' }}>
                     Iniciar con Usuario y Clave
                   </h3>
                   <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
-                    Exclusivo para Supervisores, Taller y Administradores.
+                    Para Choferes, Supervisores, Taller y Administradores.
                   </p>
                 </div>
 
@@ -4882,13 +4961,13 @@ export const AppMovilPage: React.FC = () => {
                       marginBottom: '6px',
                     }}
                   >
-                    Usuario
+                    Usuario o Nombre
                   </label>
                   <input
                     type="text"
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
-                    placeholder="ej: chofer1"
+                    placeholder="ej: Alfredy o alfredy.4"
                     autoCapitalize="none"
                     autoCorrect="off"
                     style={{
@@ -4995,40 +5074,26 @@ export const AppMovilPage: React.FC = () => {
                     </>
                   )}
                 </button>
+
+                <div style={{ marginTop: '14px', textAlign: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => setModoLogin('codigo')}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#059669',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    <i className="fa-solid fa-hashtag mr-1"></i> ¿Tienes un código de 6 dígitos? Ingresar con código
+                  </button>
+                </div>
               </form>
             )}
-          </div>
-
-          {/* Enlace para alternar entre Código de 6 Dígitos y Usuario/Clave */}
-          <div style={{ marginTop: '10px' }}>
-            <button
-              type="button"
-              onClick={() => setModoLogin(modoLogin === 'credenciales' ? 'codigo' : 'credenciales')}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: '#0284c7',
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                textDecoration: 'underline',
-              }}
-            >
-              {modoLogin === 'credenciales' ? (
-                <>
-                  <i className="fa-solid fa-arrow-left"></i>
-                  <span>Volver a ingreso con Código de 6 Dígitos</span>
-                </>
-              ) : (
-                <>
-                  <i className="fa-solid fa-user-gear"></i>
-                  <span>¿Eres administrador o supervisor? Ingresar con Usuario y Clave</span>
-                </>
-              )}
-            </button>
           </div>
 
           {/* Botón inferior si desea cambiar de empresa */}

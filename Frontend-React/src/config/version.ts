@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 17,
-  patch: 7,
-  tag: 'v3.17.7',
+  patch: 8,
+  tag: 'v3.17.8',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Asignación directa de fincas a rutas logísticas sin sobreescritura y nuevo Modal de Auditoría y Validación de Litros y Recibos por Finca en Receptoría v3.17.7',
+  descripcion: 'Secuencia cronológica ascendente estricta con registro de fecha/hora en paradas y timelapse, resolución de asignación de fincas a propietarios y sincronización bidireccional de tickets en planificación y control de rutas v3.17.8',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

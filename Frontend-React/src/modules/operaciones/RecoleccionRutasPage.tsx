@@ -16,6 +16,7 @@ import * as XLSX from 'xlsx';
 import { useAuthStore } from '@/stores/authStore';
 import type { ControlRutaDto, FincaDto, CamionDto, CompaniaDto, DespachoCompaniaDto, PlanificacionRutaChoferDto } from '@/types';
 import { PlanificacionRutasChoferesPage } from './PlanificacionRutasChoferesPage';
+import { getTimestampParada, formatFechaHoraParada } from '@/utils/timelapseUtils';
 
 interface RutaDetalleFinca {
   id: number;
@@ -2418,8 +2419,8 @@ export const RecoleccionRutasPage: React.FC = () => {
 
     const visitadas = [...paradasRecolectadas]
       .sort((a, b) => {
-        const timeA = new Date(a.createdAt || (a as any).CreatedAt || a.fecha).getTime();
-        const timeB = new Date(b.createdAt || (b as any).CreatedAt || b.fecha).getTime();
+        const timeA = getTimestampParada(a);
+        const timeB = getTimestampParada(b);
         if (timeA !== timeB) return timeA - timeB;
         return (a.id || 0) - (b.id || 0);
       });
@@ -3395,6 +3396,11 @@ export const RecoleccionRutasPage: React.FC = () => {
           <PlanificacionRutasChoferesPage
             fechaInicial={fechaFiltro}
             onFechaChange={(f) => setFechaFiltro(f)}
+            onVerTicket={(ticketId, fecha) => {
+              setFechaFiltro(fecha);
+              setBusquedaTexto(String(ticketId));
+              setModoVista('viajes');
+            }}
             esIntegrado={true}
           />
         </div>
@@ -3691,10 +3697,10 @@ export const RecoleccionRutasPage: React.FC = () => {
                   if (recA && !recB) return -1;
                   if (!recA && recB) return 1;
                   if (recA && recB) {
-                    const timeA = new Date(a.createdAt || a.CreatedAt || a.fecha || 0).getTime();
-                    const timeB = new Date(b.createdAt || b.CreatedAt || b.fecha || 0).getTime();
-                    if (timeA !== timeB) return timeB - timeA;
-                    return (Number(b.id) || 0) - (Number(a.id) || 0);
+                    const timeA = getTimestampParada(a);
+                    const timeB = getTimestampParada(b);
+                    if (timeA !== timeB) return timeA - timeB; // Cronológico ascendente: Parada 1 queda de 1ra, Parada 2 de 2da
+                    return (Number(a.id) || 0) - (Number(b.id) || 0);
                   }
                   const nomA = a.fincaNombre || a.FincaNombre || a.finca || '';
                   const nomB = b.fincaNombre || b.FincaNombre || b.finca || '';
@@ -4395,6 +4401,11 @@ export const RecoleccionRutasPage: React.FC = () => {
                                     <span style={{ fontSize: '11px', color: '#64748b' }}>
                                       {fProp} • {esBufala ? '🐃 Búfala' : '🥛 Vaca'}
                                       {esAcida ? ' • ⚠️ Ácida' : ''}
+                                      {formatFechaHoraParada(f) && (
+                                        <span style={{ marginLeft: '6px', color: '#0284c7', fontWeight: 600 }}>
+                                          • <i className="fa-solid fa-clock" style={{ fontSize: '10px' }}></i> {formatFechaHoraParada(f)}
+                                        </span>
+                                      )}
                                     </span>
                                   </div>
 
@@ -4947,14 +4958,11 @@ export const RecoleccionRutasPage: React.FC = () => {
 
                       {/* 1. PARADAS YA RECOLECTADAS (EN VERDE, RESPETANDO ORDEN CRONOLÓGICO / LLENADO DE LITROS) */}
                       {paradasFiltradas.map((p, idx) => {
-                    const timeStamp = p.createdAt || (p as any).CreatedAt;
-                    const horaStr = timeStamp
-                      ? new Date(timeStamp).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                      : p.horaRecoleccion || 'Registrado';
+                    const horaStr = formatFechaHoraParada(p, true) || p.horaRecoleccion || 'Registrado';
                     const esBufala = (p.tipoLeche || '').toUpperCase().includes('BUFAL');
                     const esMovil = esOrigenMovil(p);
                     const titilando = estaTitilando(p);
-                    const tiempoRef = paradasDetectadasEnSesion[p.id] || (timeStamp ? new Date(timeStamp).getTime() : 0);
+                    const tiempoRef = paradasDetectadasEnSesion[p.id] || getTimestampParada(p);
                     const segRestantes = Math.max(0, Math.ceil((25000 - (nowTick - tiempoRef)) / 1000));
 
                     return (

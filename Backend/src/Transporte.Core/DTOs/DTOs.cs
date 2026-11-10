@@ -176,6 +176,7 @@ namespace Transporte.Core.DTOs
         public int? LitrosOriginales { get; set; }
         public string? FotoComprobante { get; set; }
         public DateTime? CreatedAt { get; set; }
+        public DateTime? ModifiedAt { get; set; }
     }
 
     public class DiferirLitrosDto
@@ -338,6 +339,10 @@ namespace Transporte.Core.DTOs
     public class AsignarFincasPropietarioDto
     {
         public int PropietarioId { get; set; }
+        public string? PropietarioNombre { get; set; }
+        public string? CedulaRIF { get; set; }
+        public int? BancoId { get; set; }
+        public string? NumeroCuenta { get; set; }
         public List<int> FincaIds { get; set; } = new();
     }
 

@@ -28,6 +28,7 @@ import type {
 } from '@/types';
 import { dbLocal } from '@/lib/dbLocal';
 import { syncEngine } from '@/lib/syncEngine';
+import { getTimestampParada, formatFechaHoraParada } from '@/utils/timelapseUtils';
 import { CompaniaSelect } from '@/components/selectors/CompaniaSelect';
 import { ChoferSelect } from '@/components/selectors/ChoferSelect';
 import { viajeEstaEnviadoAReceptoria } from '@/utils/procesoViaje';
@@ -829,6 +830,25 @@ export const AppMovilPage: React.FC = () => {
           }
         });
       }
+
+      // Ordenar cronológicamente ascendente: parada 1 registrada queda de 1ra, parada 2 de 2da
+      todasParadas.sort((a: any, b: any) => {
+        const ltsA = Number(a.litros || a.Litros || 0);
+        const ltsB = Number(b.litros || b.Litros || 0);
+        const recA = ltsA > 0;
+        const recB = ltsB > 0;
+        if (recA && !recB) return -1;
+        if (!recA && recB) return 1;
+        if (recA && recB) {
+          const timeA = getTimestampParada(a);
+          const timeB = getTimestampParada(b);
+          if (timeA !== timeB) return timeA - timeB;
+          return (Number(a.id) || 0) - (Number(b.id) || 0);
+        }
+        const nomA = a.fincaNombre || a.finca || '';
+        const nomB = b.fincaNombre || b.finca || '';
+        return nomA.localeCompare(nomB);
+      });
 
       setParadasTimelapseMovil(todasParadas);
     } catch (err) {
@@ -18078,8 +18098,8 @@ export const AppMovilPage: React.FC = () => {
                       const esRecolectada = ltsParada > 0 && !p.esPlanificada;
                       const fNom = p.fincaNombre || p.nombreFinca || fincas.find((f) => f.id === (p.fincaId || p.FincaId))?.nombre || `Finca #${p.fincaId || p.FincaId}`;
                       const horaP = esRecolectada 
-                        ? (p.hora || (p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : `Parada #${idx + 1}`))
-                        : 'En ruta • ⏳ Pendiente';
+                        ? (formatFechaHoraParada(p, true) || p.hora || `Parada #${idx + 1}`)
+                        : (formatFechaHoraParada(p, true) ? `Planificada (${formatFechaHoraParada(p, true)}) • ⏳ Pendiente` : 'En ruta • ⏳ Pendiente');
                       const esBufala = (p.tipoLeche || '').toUpperCase() === 'BUFALA';
                       const esAcida = Boolean(p.esAcida);
                       const foto = p.fotoComprobante || p.fotoRecibo;

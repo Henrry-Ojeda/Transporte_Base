@@ -462,8 +462,19 @@ export const catalogosApi = {
     const res = await apiClient.delete(`/propietarios/${id}`);
     return res.data;
   },
-  asignarFincasPropietario: async (propietarioId: number, fincaIds: number[]): Promise<{ success: boolean; message: string }> => {
-    const res = await apiClient.post('/propietarios/asignar-fincas', { propietarioId, fincaIds });
+  asignarFincasPropietario: async (
+    propietarioId: number,
+    fincaIds: number[],
+    datosExtra?: { propietarioNombre?: string; cedulaRIF?: string; bancoId?: number; numeroCuenta?: string }
+  ): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.post('/propietarios/asignar-fincas', {
+      propietarioId,
+      fincaIds,
+      propietarioNombre: datosExtra?.propietarioNombre,
+      cedulaRIF: datosExtra?.cedulaRIF,
+      bancoId: datosExtra?.bancoId,
+      numeroCuenta: datosExtra?.numeroCuenta,
+    });
     return res.data;
   },
 

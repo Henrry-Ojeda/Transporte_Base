@@ -1237,7 +1237,8 @@ namespace Transporte.Infrastructure.Repositories
                     ISNULL(p.NumeroCuenta, ISNULL(f.NumeroCuenta, '')) AS NumeroCuenta, 
                     f.TipoServicioId, ISNULL(ts.Nombre, 'RUTA') AS TipoServicioNombre,
                     f.CompaniaId, comp.Nombre AS CompaniaNombre,
-                    f.RutaId, rl.Nombre AS RutaNombre,
+                    COALESCE(f.RutaId, (SELECT TOP 1 rlf.RutaLogisticaId FROM TB_RUTAS_LOGISTICA_FINCAS rlf WHERE rlf.FincaId = f.Id ORDER BY rlf.EsPrincipal DESC, rlf.Id DESC)) AS RutaId,
+                    COALESCE(rl.Nombre, (SELECT TOP 1 rl2.Nombre FROM TB_RUTAS_LOGISTICA_FINCAS rlf2 INNER JOIN TB_RUTAS_LOGISTICA rl2 ON rlf2.RutaLogisticaId = rl2.Id WHERE rlf2.FincaId = f.Id ORDER BY rlf2.EsPrincipal DESC, rlf2.Id DESC)) AS RutaNombre,
                     f.PrecioLitroUSD, f.PrecioLitroAcidaUSD, 
                     ISNULL(f.TieneDosTiposLeche, 0) AS TieneDosTiposLeche,
                     ISNULL(f.PrecioBufalaLitroUSD, 0) AS PrecioBufalaLitroUSD,
@@ -2009,6 +2010,39 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<IEnumerable<PropietarioDto>> ObtenerPropietariosAsync()
         {
             using var connection = new SqlConnection(_connectionString);
+
+            // Auto-sincronizar propietarios que existan como texto en TB_FINCAS hacia TB_PROPIETARIOS
+            try
+            {
+                await connection.ExecuteAsync(@"
+                    INSERT INTO TB_PROPIETARIOS (Nombre, CedulaRIF, BancoId, NumeroCuenta, Estado, Activo, CreatedAt)
+                    SELECT 
+                        LTRIM(RTRIM(f.Propietario)), 
+                        MAX(f.CedulaRIF), 
+                        MAX(f.BancoId), 
+                        MAX(f.NumeroCuenta), 
+                        'ACTIVO', 1, GETDATE()
+                    FROM TB_FINCAS f
+                    WHERE f.Propietario IS NOT NULL 
+                      AND LTRIM(RTRIM(f.Propietario)) <> '' 
+                      AND UPPER(LTRIM(RTRIM(f.Propietario))) NOT IN ('N/A', 'SIN ASIGNAR', 'NINGUNO', 'PENDIENTE')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM TB_PROPIETARIOS p 
+                          WHERE UPPER(LTRIM(RTRIM(p.Nombre))) = UPPER(LTRIM(RTRIM(f.Propietario)))
+                      )
+                    GROUP BY LTRIM(RTRIM(f.Propietario));
+
+                    UPDATE f
+                    SET f.PropietarioId = p.Id
+                    FROM TB_FINCAS f
+                    INNER JOIN TB_PROPIETARIOS p ON UPPER(LTRIM(RTRIM(p.Nombre))) = UPPER(LTRIM(RTRIM(f.Propietario)))
+                    WHERE (f.PropietarioId IS NULL OR f.PropietarioId <= 0)
+                      AND f.Propietario IS NOT NULL 
+                      AND LTRIM(RTRIM(f.Propietario)) <> '' 
+                      AND UPPER(LTRIM(RTRIM(f.Propietario))) NOT IN ('N/A', 'SIN ASIGNAR', 'NINGUNO', 'PENDIENTE');");
+            }
+            catch { /* Tolerante */ }
+
             var sql = @"
                 SELECT 
                     p.Id, p.Nombre, p.CedulaRIF, p.Telefono, p.Email, 
@@ -2391,8 +2425,14 @@ namespace Transporte.Infrastructure.Repositories
                 else
                 {
                     // Fallback resiliente: Si el Id no existe directamente en TB_PROPIETARIOS (ej. id sintético del frontend)
-                    // Buscar si alguna de las fincas tiene el nombre del propietario asignado
-                    if (dto.FincaIds != null && dto.FincaIds.Any())
+                    if (!string.IsNullOrWhiteSpace(dto.PropietarioNombre))
+                    {
+                        nombreProp = dto.PropietarioNombre.Trim();
+                        rifProp = dto.CedulaRIF ?? "";
+                        bancoIdProp = dto.BancoId;
+                        numCuentaProp = dto.NumeroCuenta ?? "";
+                    }
+                    else if (dto.FincaIds != null && dto.FincaIds.Any())
                     {
                         var infoFinca = await connection.QueryFirstOrDefaultAsync<dynamic>(
                             "SELECT TOP 1 Propietario, CedulaRIF, BancoId, NumeroCuenta FROM TB_FINCAS WHERE Id IN @FincaIds AND Propietario IS NOT NULL AND LTRIM(RTRIM(Propietario)) <> ''",
@@ -2404,28 +2444,31 @@ namespace Transporte.Infrastructure.Repositories
                             rifProp = (string)infoFinca.CedulaRIF ?? "";
                             bancoIdProp = (int?)infoFinca.BancoId;
                             numCuentaProp = (string)infoFinca.NumeroCuenta ?? "";
+                        }
+                    }
 
-                            // Verificar si ya existe un propietario con este nombre
-                            var propExistente = await connection.QueryFirstOrDefaultAsync<dynamic>(
-                                "SELECT Id, Nombre, BancoId, NumeroCuenta, CedulaRIF FROM TB_PROPIETARIOS WHERE UPPER(LTRIM(RTRIM(Nombre))) = UPPER(@nombreProp)",
-                                new { nombreProp }, transaction);
+                    if (!string.IsNullOrWhiteSpace(nombreProp))
+                    {
+                        // Verificar si ya existe un propietario con este nombre
+                        var propExistente = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                            "SELECT Id, Nombre, BancoId, NumeroCuenta, CedulaRIF FROM TB_PROPIETARIOS WHERE UPPER(LTRIM(RTRIM(Nombre))) = UPPER(@nombreProp)",
+                            new { nombreProp }, transaction);
 
-                            if (propExistente != null)
-                            {
-                                finalPropId = (int)propExistente.Id;
-                                nombreProp = (string)propExistente.Nombre;
-                                bancoIdProp = (int?)propExistente.BancoId ?? bancoIdProp;
-                                numCuentaProp = (string)propExistente.NumeroCuenta ?? numCuentaProp;
-                                rifProp = (string)propExistente.CedulaRIF ?? rifProp;
-                            }
-                            else
-                            {
-                                finalPropId = await connection.ExecuteScalarAsync<int>(@"
-                                    INSERT INTO TB_PROPIETARIOS (Nombre, CedulaRIF, BancoId, NumeroCuenta, Estado, Activo, CreatedAt)
-                                    VALUES (@nombreProp, @rifProp, @bancoIdProp, @numCuentaProp, 'ACTIVO', 1, GETDATE());
-                                    SELECT CAST(SCOPE_IDENTITY() as int);",
-                                    new { nombreProp, rifProp, bancoIdProp, numCuentaProp }, transaction);
-                            }
+                        if (propExistente != null)
+                        {
+                            finalPropId = (int)propExistente.Id;
+                            nombreProp = (string)propExistente.Nombre;
+                            bancoIdProp = (int?)propExistente.BancoId ?? bancoIdProp;
+                            numCuentaProp = (string)propExistente.NumeroCuenta ?? numCuentaProp;
+                            rifProp = (string)propExistente.CedulaRIF ?? rifProp;
+                        }
+                        else
+                        {
+                            finalPropId = await connection.ExecuteScalarAsync<int>(@"
+                                INSERT INTO TB_PROPIETARIOS (Nombre, CedulaRIF, BancoId, NumeroCuenta, Estado, Activo, CreatedAt)
+                                VALUES (@nombreProp, @rifProp, @bancoIdProp, @numCuentaProp, 'ACTIVO', 1, GETDATE());
+                                SELECT CAST(SCOPE_IDENTITY() as int);",
+                                new { nombreProp, rifProp, bancoIdProp, numCuentaProp }, transaction);
                         }
                     }
 
@@ -8768,6 +8811,55 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             }
             catch { /* Tolerante */ }
 
+            // Sincronizar automáticamente tickets para planificaciones de esa fecha que aún no existan en TB_CONTROL_RUTAS
+            try
+            {
+                bool hf = fecha.HasValue || fechaInicio.HasValue || fechaFin.HasValue;
+                DateTime fIniSync = (fechaInicio ?? fecha ?? DateTime.Today.AddDays(-30)).Date;
+                DateTime fFinSync = (fechaFin ?? fecha ?? DateTime.Today.AddDays(30)).Date;
+
+                var planesSinTicket = await connection.QueryAsync<dynamic>(@"
+                    SELECT p.Id, p.Fecha, p.CamionId, p.ConductorId, p.RutaLogisticaId, p.FincasIds, p.Observacion
+                    FROM TB_PLANIFICACION_RUTAS_CHOFERES p
+                    LEFT JOIN TB_CONTROL_RUTAS cr ON p.ControlRutaId = cr.Id OR (CAST(p.Fecha AS DATE) = CAST(cr.Fecha AS DATE) AND p.ConductorId = cr.UsuarioId)
+                    WHERE p.Activo = 1 
+                      AND (CAST(p.Fecha AS DATE) >= @fIniSync AND CAST(p.Fecha AS DATE) <= @fFinSync)
+                      AND cr.Id IS NULL", new { fIniSync, fFinSync });
+
+                foreach (var p in planesSinTicket)
+                {
+                    long newTicketId = await connection.ExecuteScalarAsync<long>(@"
+                        INSERT INTO TB_CONTROL_RUTAS 
+                        (Fecha, UsuarioId, CicloId, TotalLitrosFinca, TotalLitrosReceptoria, DiferenciaLitros, PorcentajeMerma, Estado, ProcesoActualId, RutaLogisticaId, Observacion, CreatedAt)
+                        VALUES 
+                        (@Fecha, @ConductorId, 1, 0, 0, 0, 0, 'ABIERTO', 1, @RutaLogisticaId, @Observacion, GETDATE());
+                        SELECT CAST(SCOPE_IDENTITY() AS BIGINT);",
+                        new { p.Fecha, p.ConductorId, p.RutaLogisticaId, p.Observacion });
+
+                    await connection.ExecuteAsync("UPDATE TB_PLANIFICACION_RUTAS_CHOFERES SET ControlRutaId = @newTicketId WHERE Id = @Id", new { newTicketId, p.Id });
+
+                    string fIds = (string?)p.FincasIds ?? "";
+                    if (!string.IsNullOrWhiteSpace(fIds))
+                    {
+                        var fList = fIds.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(s => int.TryParse(s.Trim(), out var n) ? n : 0)
+                            .Where(n => n > 0).Distinct();
+                        foreach (var fId in fList)
+                        {
+                            await connection.ExecuteAsync(@"
+                                IF NOT EXISTS (SELECT 1 FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @newTicketId AND FincaId = @fId)
+                                BEGIN
+                                    INSERT INTO TB_RUTAS_RECOLECCION 
+                                    (ControlRutaId, UsuarioId, FincaId, Fecha, Litros, TipoLeche, EsAcida, EsDiferido, Observacion, CreatedAt, ModifiedAt)
+                                    VALUES 
+                                    (@newTicketId, @ConductorId, @fId, @Fecha, 0, 'VACA', 0, 0, '', GETDATE(), NULL);
+                                END", new { newTicketId, p.ConductorId, fId, p.Fecha });
+                        }
+                    }
+                }
+            }
+            catch { /* Tolerante */ }
+
             bool hayFiltroFecha = fecha.HasValue || fechaInicio.HasValue || fechaFin.HasValue;
             DateTime inicio = (fechaInicio ?? fecha ?? DateTime.Today.AddDays(-30)).Date;
             DateTime fin = (fechaFin ?? fecha ?? DateTime.Today.AddDays(30)).Date;
@@ -9693,8 +9785,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             {
                 var sqlInsertRuta = @"
                     INSERT INTO TB_RUTAS_RECOLECCION
-                    (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, LitrosOriginales, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy)
-                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, GETDATE(), @usuarioId);
+                    (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, LitrosOriginales, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy, ModifiedAt, ModifiedBy)
+                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, GETDATE(), @usuarioId, GETDATE(), @usuarioId);
                     SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
                 nuevaRutaId = await connection.ExecuteScalarAsync<long>(sqlInsertRuta, new
@@ -9830,6 +9922,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     r.RecoleccionOrigenId AS RecoleccionOrigenId,
                     r.ControlRutaId AS ControlRutaId,
                     r.CreatedAt AS CreatedAt,
+                    r.ModifiedAt AS ModifiedAt,
                     1 AS PuedeModificar
                 FROM TB_RUTAS_RECOLECCION r
                 LEFT JOIN TB_FINCAS f ON r.FincaId = f.Id
@@ -9839,7 +9932,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                    OR (r.ControlRutaId IS NULL 
                        AND r.UsuarioId = (SELECT TOP 1 UsuarioId FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId)
                        AND CAST(r.Fecha AS DATE) = (SELECT TOP 1 CAST(Fecha AS DATE) FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId))
-                ORDER BY r.Id ASC";
+                ORDER BY COALESCE(r.ModifiedAt, r.CreatedAt, r.Fecha) ASC, r.Id ASC";
 
             return await connection.QueryAsync<RutaItemDto>(sql, new { controlRutaId });
         }

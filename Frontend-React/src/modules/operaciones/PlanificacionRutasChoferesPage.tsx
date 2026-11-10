@@ -39,12 +39,14 @@ import {
 export interface PlanificacionRutasChoferesProps {
   fechaInicial?: string;
   onFechaChange?: (fecha: string) => void;
+  onVerTicket?: (ticketId: number | string, fecha: string) => void;
   esIntegrado?: boolean;
 }
 
 export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferesProps> = ({
   fechaInicial,
   onFechaChange,
+  onVerTicket,
   esIntegrado = false,
 }) => {
   const queryClient = useQueryClient();
@@ -1037,6 +1039,23 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                     Modificar Fincas / Ruta (En Caliente)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tId = plan.controlRutaId || plan.id;
+                      if (onVerTicket && tId) {
+                        onVerTicket(tId, fechaOperativa);
+                      } else {
+                        window.location.href = `/recoleccion-rutas?fecha=${fechaOperativa}&ticket=${tId}`;
+                      }
+                    }}
+                    className="w-full mt-2 py-2 px-3 rounded-xl bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-200"
+                    title="Ver este camión y ticket en la pestaña de Control Rutas & Camiones"
+                  >
+                    <Truck className="w-3.5 h-3.5" />
+                    Ver en Control Rutas & Camiones
                   </button>
                 </div>
               </div>

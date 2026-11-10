@@ -149,7 +149,17 @@ export const PropietariosPage: React.FC = () => {
           // continuar con fallback
         }
       }
-      return catalogosApi.asignarFincasPropietario(finalPropId, ids);
+      const nombreProp = propietarioSeleccionado?.nombreCompleto || propietarioSeleccionado?.nombre || '';
+      const rifProp = propietarioSeleccionado?.cedulaRif || (propietarioSeleccionado as any)?.cedulaRIF || '';
+      const bId = propietarioSeleccionado?.bancoId;
+      const numCta = propietarioSeleccionado?.numeroCuenta;
+
+      return catalogosApi.asignarFincasPropietario(finalPropId, ids, {
+        propietarioNombre: nombreProp,
+        cedulaRIF: rifProp,
+        bancoId: bId,
+        numeroCuenta: numCta,
+      });
     },
     onSuccess: (data) => {
       toast.success(data.message || 'Fincas asignadas exitosamente');

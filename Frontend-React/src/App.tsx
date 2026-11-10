@@ -84,6 +84,16 @@ setOnLogoutListener(() => {
   queryClient.clear();
 });
 
+// Redirección de seguridad si se accede a la UI desde un dominio de backend DuckDNS
+if (typeof window !== 'undefined') {
+  const currentHost = window.location.hostname.toLowerCase();
+  if (currentHost.includes('queseracampoverde.duckdns.org')) {
+    window.location.replace(`https://lacteos-campoverde.vercel.app${window.location.pathname}${window.location.search}`);
+  } else if (currentHost.includes('transportevc.duckdns.org')) {
+    window.location.replace(`https://transporte-vergel-carrillo.vercel.app${window.location.pathname}${window.location.search}`);
+  }
+}
+
 // Redirección inteligente de raíz: choferes y móviles siempre a /app directamente sin pasar por login
 const HomeRedirect: React.FC = () => {
   const user = useAuthStore((s) => s.user);

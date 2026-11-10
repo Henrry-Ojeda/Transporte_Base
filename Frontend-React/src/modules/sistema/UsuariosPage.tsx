@@ -370,45 +370,6 @@ export const UsuariosPage: React.FC = () => {
       ),
     },
     {
-      header: 'Permiso Crear Ruta',
-      cell: (row) => {
-        if ((row.rol || '').toUpperCase() !== 'CHOFER') {
-          return <span style={{ color: '#94a3b8', fontSize: '11px', fontStyle: 'italic' }}>Asigna Supervisor</span>;
-        }
-        const tienePermiso = !!row.permisoCrearViaje;
-        return (
-          <button
-            type="button"
-            onClick={() => togglePermisoMutation.mutate({ id: row.id, habilitar: !tienePermiso })}
-            disabled={togglePermisoMutation.isPending}
-            className="btn btn-sm"
-            style={{
-              background: tienePermiso ? '#ecfdf5' : '#f8fafc',
-              color: tienePermiso ? '#047857' : '#64748b',
-              border: `1.5px solid ${tienePermiso ? '#86efac' : '#cbd5e1'}`,
-              borderRadius: '8px',
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 800,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '5px',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-            title={
-              tienePermiso
-                ? 'Autorización activa para 1 viaje/ruta. Clic para revocar.'
-                : 'Sin permiso para iniciar rutas. Clic para conceder 1 viaje.'
-            }
-          >
-            <i className={`fa-solid ${tienePermiso ? 'fa-circle-check text-emerald-600' : 'fa-lock text-slate-400'}`}></i>
-            <span>{tienePermiso ? '🟢 Autorizado (1 Ruta)' : '🔒 Sin Permiso'}</span>
-          </button>
-        );
-      },
-    },
-    {
       header: 'Estado',
       accessorKey: 'activo',
       sortable: true,
@@ -1211,34 +1172,6 @@ export const UsuariosPage: React.FC = () => {
                     />
                     <span>Usuario Activo en el Sistema</span>
                   </label>
-
-                  {form.rol === 'CHOFER' && (
-                    <label
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        cursor: 'pointer',
-                        color: form.permisoCrearViaje ? '#047857' : '#1e293b',
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        height: '44px',
-                        padding: '0 14px',
-                        background: form.permisoCrearViaje ? '#ecfdf5' : '#ffffff',
-                        border: `1.5px solid ${form.permisoCrearViaje ? '#86efac' : '#cbd5e1'}`,
-                        borderRadius: '8px',
-                      }}
-                      title="Permite que el chofer inicie 1 ruta desde la app móvil. Se revocará automáticamente al entregar."
-                    >
-                      <input
-                        type="checkbox"
-                        checked={!!form.permisoCrearViaje}
-                        onChange={(e) => setForm({ ...form, permisoCrearViaje: e.target.checked })}
-                        style={{ width: '18px', height: '18px', accentColor: '#10b981' }}
-                      />
-                      <span>🛡️ Permitir Crear 1 Ruta (Temporal)</span>
-                    </label>
-                  )}
                 </div>
               </div>
 

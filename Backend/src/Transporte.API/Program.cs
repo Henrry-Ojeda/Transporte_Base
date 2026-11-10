@@ -188,7 +188,31 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// Habilitar archivos estÃ¡ticos para la UI (Frontend PWA en wwwroot)
+// Redirección estricta: Dominios backend DuckDNS no sirven la UI Web; redirigen a sus dominios oficiales en Vercel
+app.Use(async (context, next) =>
+{
+    var host = context.Request.Host.Host.ToLower();
+    var path = context.Request.Path.Value ?? "";
+
+    if ((host.Contains("duckdns.org") || host.Contains("queseracampoverde")) &&
+        !path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) &&
+        !path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase) &&
+        !path.StartsWith("/_", StringComparison.OrdinalIgnoreCase))
+    {
+        string targetHost = "lacteos-campoverde.vercel.app";
+        if (host.Contains("transportevc") || host.Contains("vergel"))
+        {
+            targetHost = "transporte-vergel-carrillo.vercel.app";
+        }
+        var targetUrl = $"https://{targetHost}{path}{context.Request.QueryString}";
+        context.Response.Redirect(targetUrl, permanent: false);
+        return;
+    }
+
+    await next();
+});
+
+// Habilitar archivos estáticos para la UI (Frontend PWA en wwwroot)
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {

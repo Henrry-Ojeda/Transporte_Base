@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { APP_VERSION } from '@/config/version';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -624,10 +625,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         )}
       </nav>
 
-      <div className="sidebar-footer" style={{ borderTop: '1px solid #f1f5f9', marginTop: 'auto', paddingTop: '10px' }}>
-        <div className="connection-status flex items-center justify-center">
+      <div className="sidebar-footer" style={{ borderTop: '1px solid #f1f5f9', marginTop: 'auto', paddingTop: '10px' }} title={`Sistema Conectado • ${APP_VERSION}`}>
+        <div className="connection-status flex items-center justify-center" style={{ gap: '6px' }}>
           <span className="status-dot online"></span>
-          {!isSidebarCollapsed && <span style={{ fontSize: '11px', color: '#64748b' }}>Sistema Conectado</span>}
+          {!isSidebarCollapsed && (
+            <span style={{ fontSize: '11px', color: '#64748b' }}>
+              Sistema Conectado • <strong style={{ color: '#0284c7', fontWeight: 700 }}>{APP_VERSION}</strong>
+            </span>
+          )}
         </div>
       </div>
     </aside>

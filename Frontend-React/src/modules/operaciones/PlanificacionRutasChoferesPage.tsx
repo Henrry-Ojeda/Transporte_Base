@@ -217,6 +217,12 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
       if (planificacionEditar && p.id === planificacionEditar.id) {
         return; // Excluir la planificación que se está editando
       }
+      if (formCamionId && p.camionId === formCamionId) {
+        return; // Excluir el mismo camión que se está configurando en el modal
+      }
+      if (formChoferId && p.conductorId === formChoferId) {
+        return; // Excluir el mismo chofer que se está configurando en el modal
+      }
       (p.listaFincasIds || []).forEach((fId) => {
         map.set(fId, {
           camionPlaca: p.camionPlaca || `Camión #${p.camionId}`,
@@ -226,7 +232,7 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
       });
     });
     return map;
-  }, [planificacionesEfectivas, planificacionEditar]);
+  }, [planificacionesEfectivas, planificacionEditar, formCamionId, formChoferId]);
 
   const getFincaId = (f: any): number => Number(f?.fincaId ?? f?.FincaId ?? f?.id ?? f?.Id ?? 0);
   const getRutaId = (f: any): number => Number(f?.rutaId ?? f?.RutaId ?? 0);
@@ -468,11 +474,31 @@ export const PlanificacionRutasChoferesPage: React.FC<PlanificacionRutasChoferes
     setFormFincasSeleccionadas([...fincasBloqueadas]);
   };
 
-  // Al cambiar camión, si tiene chofer asignado sugerirlo
+  // Al cambiar camión, si tiene chofer asignado sugerirlo y vincular plan existente si aplica
   const handleCamionChange = (val: number, cam?: CamionDto) => {
     setFormCamionId(val);
     if (cam?.usuarioId && !formChoferId) {
       setFormChoferId(cam.usuarioId);
+    }
+    // Si no estábamos editando explícitamente pero este camión ya tiene una planificación en la fecha,
+    // vincularla de manera inteligente para editarla sin duplicar ni auto-bloquearse
+    if (!planificacionEditar) {
+      const planExistente = planificacionesEfectivas.find((p) => p.camionId === val);
+      if (planExistente) {
+        setPlanificacionEditar(planExistente);
+        if (planExistente.conductorId) setFormChoferId(planExistente.conductorId);
+        if (planExistente.listaFincasIds && planExistente.listaFincasIds.length > 0 && formFincasSeleccionadas.length === 0) {
+          setFormFincasSeleccionadas(planExistente.listaFincasIds);
+        }
+        const rIds = planExistente.rutasIds
+          ? planExistente.rutasIds.split(',').map(Number).filter((n) => !isNaN(n) && n > 0)
+          : planExistente.rutaLogisticaId
+          ? [planExistente.rutaLogisticaId]
+          : [];
+        if (rIds.length > 0 && formRutasIds.length === 0) {
+          setFormRutasIds(rIds);
+        }
+      }
     }
   };
 

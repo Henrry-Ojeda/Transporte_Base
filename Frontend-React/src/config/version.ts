@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 16,
-  patch: 2,
-  tag: 'v3.16.2',
+  patch: 3,
+  tag: 'v3.16.3',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Auto-actualización reactiva e inmediata de vistas de Administrador en app móvil al recibir notificaciones de recolección de leche v3.16.2',
+  descripcion: 'Corrección de claves foráneas de tickets en planificación, deduplicación de choferes en catálogo y validación inteligente de camión actual v3.16.3',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

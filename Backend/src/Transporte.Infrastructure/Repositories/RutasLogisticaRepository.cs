@@ -610,11 +610,15 @@ namespace Transporte.Infrastructure.Repositories
                         WHERE Estado = 'ABIERTO' ORDER BY FechaInicio DESC");
                 }
 
+                var procesoAbiertoId = await connection.ExecuteScalarAsync<int?>(@"
+                    SELECT TOP 1 Id FROM TB_PROCESOS_TICKET 
+                    WHERE UPPER(Codigo) = 'ABIERTO' OR UPPER(Nombre) = 'ABIERTO'") ?? 1;
+
                 var sqlCrearTicket = @"
                     INSERT INTO TB_CONTROL_RUTAS
                     (Fecha, UsuarioId, CicloId, TotalLitrosFinca, TotalLitrosReceptoria, DiferenciaLitros, PorcentajeMerma, Estado, ProcesoActualId, RutaLogisticaId, Observacion, CreatedAt, CreatedBy)
                     VALUES
-                    (@Fecha, @ConductorId, @CicloId, 0, 0, 0, 0, 'ABIERTO', 1, @RutaLogisticaId, @Observacion, GETDATE(), @usuarioId);
+                    (@Fecha, @ConductorId, @CicloId, 0, 0, 0, 0, 'ABIERTO', @procesoAbiertoId, @RutaLogisticaId, @Observacion, GETDATE(), @usuarioId);
                     SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
                 ticketIdEfectivo = await connection.ExecuteScalarAsync<long>(sqlCrearTicket, new
@@ -622,6 +626,7 @@ namespace Transporte.Infrastructure.Repositories
                     Fecha = dto.Fecha.Date,
                     ConductorId = dto.ConductorId,
                     CicloId = cicloId ?? 1,
+                    procesoAbiertoId,
                     dto.RutaLogisticaId,
                     dto.Observacion,
                     usuarioId

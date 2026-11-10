@@ -55,11 +55,11 @@ export const catalogosApi = {
         (f.propietario && f.propietario !== 'N/A' ? f.propietario : '') ||
         (f.Propietario && f.Propietario !== 'N/A' ? f.Propietario : '') ||
         '';
-      // Si la finca/matera está INACTIVA, no se asocia a ninguna ruta logística
+      // La base de datos es la fuente de verdad definitiva para rutaId
       const rutaIdEfectiva = rawActivo
-        ? ov.rutaId !== undefined
-          ? ov.rutaId
-          : f.rutaId
+        ? (f.rutaId !== undefined && f.rutaId !== null && Number(f.rutaId) > 0
+            ? Number(f.rutaId)
+            : (ov.rutaId ? Number(ov.rutaId) : undefined))
         : undefined;
 
       return {
@@ -104,17 +104,22 @@ export const catalogosApi = {
       ...dto,
       propietario: (dto as any).propietario || (dto as any).propietarioNombre || '',
       activo: esActiva,
-      rutaId: esActiva ? dto.rutaId : null,
     };
+    if (dto.rutaId !== undefined) {
+      payload.rutaId = esActiva ? dto.rutaId : null;
+    }
     const res = await apiClient.put(`/catalogos/fincas/${id}`, payload);
 
-    saveFincaOverride(id, {
+    const overrideUpdate: any = {
       activo: esActiva,
       propietarioId: dto.propietarioId,
       propietario: payload.propietario,
       propietarioNombre: payload.propietario,
-      rutaId: esActiva ? dto.rutaId : undefined,
-    });
+    };
+    if (dto.rutaId !== undefined) {
+      overrideUpdate.rutaId = esActiva ? dto.rutaId : undefined;
+    }
+    saveFincaOverride(id, overrideUpdate);
 
     // Si la finca/matera pasa a INACTIVA y tenía una ruta asignada, desasociarla de la ruta logística en el servidor
     if (!esActiva && dto.rutaId) {

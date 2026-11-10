@@ -273,6 +273,16 @@ export const operacionesApi = {
     }
   },
 
+  asignarFincaDirecta: async (rutaId: number, fincaId: number): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await apiClient.post(`/rutas-logistica/${rutaId}/asignar-finca-directa/${fincaId}`);
+      return res.data;
+    } catch {
+      const res = await apiClient.post(`/rutaslogistica/${rutaId}/asignar-finca-directa/${fincaId}`);
+      return res.data;
+    }
+  },
+
   eliminarRutaLogistica: async (id: number): Promise<{ success: boolean; message: string }> => {
     try {
       const res = await apiClient.delete(`/rutas-logistica/${id}`);

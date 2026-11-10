@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 17,
-  patch: 6,
-  tag: 'v3.17.6',
+  patch: 7,
+  tag: 'v3.17.7',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Filtro unificado de paradas en ticket y timelapse, banner informativo en edición de parada, check visible al sistema en propietarios y asignación resiliente de fincas v3.17.6',
+  descripcion: 'Asignación directa de fincas a rutas logísticas sin sobreescritura y nuevo Modal de Auditoría y Validación de Litros y Recibos por Finca en Receptoría v3.17.7',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

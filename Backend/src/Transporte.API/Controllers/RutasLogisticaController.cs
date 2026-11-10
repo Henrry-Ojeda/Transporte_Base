@@ -115,6 +115,20 @@ namespace Transporte.API.Controllers
             }
         }
 
+        [HttpPost("{id:int}/asignar-finca-directa/{fincaId:int}")]
+        public async Task<IActionResult> AsignarFincaDirecta(int id, int fincaId)
+        {
+            try
+            {
+                var ok = await _rutasLogisticaRepository.AsignarFincaDirectaAsync(id, fincaId);
+                return Ok(new { message = "Finca asignada a la ruta exitosamente." });
+            }
+            catch (System.Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpGet("planificacion-choferes")]
         public async Task<IActionResult> ObtenerPlanificaciones([FromQuery] System.DateTime? fecha)
         {

@@ -19,6 +19,7 @@ namespace Transporte.Infrastructure.Repositories
         Task<bool> EliminarRutaAsync(int id);
         Task<IEnumerable<dynamic>> ObtenerFincasDeRutaAsync(int rutaId);
         Task<bool> AsignarFincasARutaAsync(int rutaId, List<int> fincaIds, List<int>? habitualesIds = null, List<int>? alternasIds = null);
+        Task<bool> AsignarFincaDirectaAsync(int rutaId, int fincaId);
         Task<IEnumerable<PlanificacionRutaChoferDto>> ObtenerPlanificacionesPorFechaAsync(DateTime fecha);
         Task<int> GuardarPlanificacionChoferAsync(GuardarPlanificacionRutaChoferDto dto, int usuarioId);
         Task<bool> EliminarPlanificacionChoferAsync(int id);
@@ -346,6 +347,49 @@ namespace Transporte.Infrastructure.Repositories
                         }
                     }
                 }
+
+                tx.Commit();
+                return true;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        public async Task<bool> AsignarFincaDirectaAsync(int rutaId, int fincaId)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+            using var tx = connection.BeginTransaction();
+            try
+            {
+                // 1. Actualizar la finca con la nueva ruta asignada
+                await connection.ExecuteAsync(
+                    "UPDATE TB_FINCAS SET RutaId = @rutaId WHERE Id = @fincaId",
+                    new { rutaId, fincaId }, tx);
+
+                // 2. Desmarcar como principal en otras rutas si existiera
+                await connection.ExecuteAsync(
+                    "UPDATE TB_RUTAS_LOGISTICA_FINCAS SET EsPrincipal = 0 WHERE FincaId = @fincaId AND RutaLogisticaId != @rutaId",
+                    new { rutaId, fincaId }, tx);
+
+                // 3. Insertar o actualizar la relación en la ruta seleccionada
+                var sqlUpsert = @"
+                    IF EXISTS (SELECT 1 FROM TB_RUTAS_LOGISTICA_FINCAS WHERE RutaLogisticaId = @rutaId AND FincaId = @fincaId)
+                    BEGIN
+                        UPDATE TB_RUTAS_LOGISTICA_FINCAS 
+                        SET EsPrincipal = 1 
+                        WHERE RutaLogisticaId = @rutaId AND FincaId = @fincaId;
+                    END
+                    ELSE
+                    BEGIN
+                        INSERT INTO TB_RUTAS_LOGISTICA_FINCAS (RutaLogisticaId, FincaId, EsPrincipal, Orden, CreatedAt)
+                        VALUES (@rutaId, @fincaId, 1, 0, GETDATE());
+                    END";
+
+                await connection.ExecuteAsync(sqlUpsert, new { rutaId, fincaId }, tx);
 
                 tx.Commit();
                 return true;

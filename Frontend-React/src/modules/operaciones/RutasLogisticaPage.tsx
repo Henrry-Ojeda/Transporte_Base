@@ -212,9 +212,24 @@ export const RutasLogisticaPage: React.FC = () => {
 
   const asignarFincaDirectaMutation = useMutation({
     mutationFn: async ({ rutaId, fincaId }: { rutaId: number; fincaId: number }) => {
-      const fincasExistentesDeRuta = fincas.filter((f) => f.rutaId === rutaId).map((f) => f.id);
-      const nuevasFincas = Array.from(new Set([...fincasExistentesDeRuta, fincaId]));
-      return operacionesApi.asignarFincasARuta(rutaId, nuevasFincas);
+      // 1. Asignar directamente a nivel de base de datos sin sobreescribir la lista del circuito
+      await operacionesApi.asignarFincaDirecta(rutaId, fincaId);
+
+      // 2. Sincronizar cache de overrides para actualización reactiva 100% instantánea
+      try {
+        const raw = localStorage.getItem('transporte_fincas_overrides_v1');
+        if (raw) {
+          const ov = JSON.parse(raw);
+          if (ov[fincaId]) {
+            ov[fincaId].rutaId = rutaId;
+          } else {
+            ov[fincaId] = { rutaId };
+          }
+          localStorage.setItem('transporte_fincas_overrides_v1', JSON.stringify(ov));
+        }
+      } catch {}
+
+      return { success: true };
     },
     onSuccess: () => {
       Swal.fire({

@@ -141,13 +141,30 @@ apiClient.interceptors.request.use(
     }
     if (typeof window !== 'undefined' && config.headers) {
       const host = window.location.hostname.toLowerCase();
-      // En dominios reales de producción o subdominios, el host actual es prioritario e inmutable
-      if (host && !host.includes('localhost') && host !== '127.0.0.1') {
-        config.headers['X-Tenant-Domain'] = host;
+      // AISLAMIENTO ESTRICTO DE TENANTS: Garantizar que jamás se mezclen Vergel y Campo Verde
+      if (host.includes('vergel') || host.includes('transportevc')) {
+        config.headers['X-Tenant-Domain'] = 'transporte-vergel-carrillo.vercel.app';
+        config.headers['X-Tenant-Code'] = 'VERGEL_CARRILLO';
+      } else if (host.includes('campoverde') || host.includes('queseracampoverde')) {
+        config.headers['X-Tenant-Domain'] = 'lacteos-campoverde.vercel.app';
+        config.headers['X-Tenant-Code'] = 'CAMPO_VERDE';
+      } else if (host.includes('base') || host.includes('tusoftware')) {
+        config.headers['X-Tenant-Domain'] = 'transporte-base.vercel.app';
+        config.headers['X-Tenant-Code'] = 'PRODUCTO_BASE';
       } else {
-        // Solo en entorno local de pruebas (localhost) permitir override controlado
-        const storedTenant = localStorage.getItem('movil_tenant_domain');
-        config.headers['X-Tenant-Domain'] = storedTenant || host || 'localhost';
+        // En entorno local de pruebas (localhost / IP) o app móvil con selector
+        const storedTenant = localStorage.getItem('movil_tenant_domain') || '';
+        if (storedTenant.includes('campoverde')) {
+          config.headers['X-Tenant-Domain'] = 'lacteos-campoverde.vercel.app';
+          config.headers['X-Tenant-Code'] = 'CAMPO_VERDE';
+        } else if (storedTenant.includes('base')) {
+          config.headers['X-Tenant-Domain'] = 'transporte-base.vercel.app';
+          config.headers['X-Tenant-Code'] = 'PRODUCTO_BASE';
+        } else {
+          // Por defecto estricto: Transporte Vergel & Carrillo
+          config.headers['X-Tenant-Domain'] = 'transporte-vergel-carrillo.vercel.app';
+          config.headers['X-Tenant-Code'] = 'VERGEL_CARRILLO';
+        }
       }
     }
     return config;

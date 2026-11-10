@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 16,
-  patch: 3,
-  tag: 'v3.16.3',
+  patch: 4,
+  tag: 'v3.16.4',
   ultimaActualizacion: '2026-11-10',
-  tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Corrección de claves foráneas de tickets en planificación, deduplicación de choferes en catálogo y validación inteligente de camión actual v3.16.3',
+  tipoUltimoCambio: 'ESTRUCTURA',
+  descripcion: 'Aislamiento estricto y blindaje multi-inquilino entre Vergel Carrillo y Campo Verde por JWT Claims y Headers inmutables v3.16.4',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

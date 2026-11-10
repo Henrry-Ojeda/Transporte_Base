@@ -110,21 +110,35 @@ namespace Transporte.API.Multitenancy
 
             if (context != null)
             {
-                if (context.Request.Headers.TryGetValue("X-Tenant-Domain", out var headerDomain) && !string.IsNullOrWhiteSpace(headerDomain))
+                // 1. PRIORIDAD MÁXIMA: Si el usuario está autenticado por JWT, su claim empresa_codigo es la verdad absoluta
+                var claimEmpresa = context.User?.FindFirst("empresa_codigo")?.Value;
+                if (!string.IsNullOrWhiteSpace(claimEmpresa))
                 {
-                    host = headerDomain.ToString();
+                    host = claimEmpresa.Trim();
                 }
                 else if (context.Request.Headers.TryGetValue("X-Tenant-Code", out var headerCode) && !string.IsNullOrWhiteSpace(headerCode))
                 {
-                    host = headerCode.ToString();
+                    host = headerCode.ToString().Trim();
+                }
+                else if (context.Request.Headers.TryGetValue("X-Tenant-Domain", out var headerDomain) && !string.IsNullOrWhiteSpace(headerDomain))
+                {
+                    host = headerDomain.ToString().Trim();
                 }
                 else if (context.Request.Headers.TryGetValue("X-Forwarded-Host", out var fwdHost) && !string.IsNullOrWhiteSpace(fwdHost))
                 {
-                    host = fwdHost.ToString();
+                    host = fwdHost.ToString().Trim();
                 }
                 else if (context.Request.Query.TryGetValue("tenant", out var qTenant) && !string.IsNullOrWhiteSpace(qTenant))
                 {
-                    host = qTenant.ToString();
+                    host = qTenant.ToString().Trim();
+                }
+                else if (context.Request.Headers.TryGetValue("Origin", out var origin) && !string.IsNullOrWhiteSpace(origin))
+                {
+                    host = origin.ToString().Trim();
+                }
+                else if (context.Request.Headers.TryGetValue("Referer", out var referer) && !string.IsNullOrWhiteSpace(referer))
+                {
+                    host = referer.ToString().Trim();
                 }
                 else
                 {
@@ -149,13 +163,18 @@ namespace Transporte.API.Multitenancy
                 var emp = db.QueryFirstOrDefault<dynamic>(
                     @"SELECT Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora
                       FROM TB_EMPRESAS
-                      WHERE DominioPrincipal = @h OR SubdominioAlterno = @h OR Codigo = @h OR (@h LIKE '%campoverde%' AND Codigo = 'CAMPO_VERDE')",
+                      WHERE DominioPrincipal = @h 
+                         OR SubdominioAlterno = @h 
+                         OR Codigo = @h 
+                         OR (@h LIKE '%vergel%' AND Codigo = 'VERGEL_CARRILLO')
+                         OR (@h LIKE '%campoverde%' AND Codigo = 'CAMPO_VERDE')
+                         OR (@h LIKE '%base%' AND Codigo = 'PRODUCTO_BASE')",
                     new { h = host });
 
                 if (emp == null && (host == "localhost" || host == "127.0.0.1" || host == "84.247.178.194"))
                 {
                     emp = db.QueryFirstOrDefault<dynamic>(
-                        "SELECT Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora FROM TB_EMPRESAS WHERE Codigo = 'CAMPO_VERDE'");
+                        "SELECT Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora FROM TB_EMPRESAS WHERE Codigo = 'VERGEL_CARRILLO'");
                 }
 
                 if (emp != null)
@@ -190,25 +209,26 @@ namespace Transporte.API.Multitenancy
             }
 
             // Fallback inteligente según el subdominio/host solicitado para evitar contaminación cruzada de tenants
-            bool isVergel = host.Contains("vergel", StringComparison.OrdinalIgnoreCase);
-            bool isBase = host.Contains("base", StringComparison.OrdinalIgnoreCase);
+            bool isVergel = host.Contains("vergel", StringComparison.OrdinalIgnoreCase) || host.Equals("VERGEL_CARRILLO", StringComparison.OrdinalIgnoreCase);
+            bool isCampo = host.Contains("campoverde", StringComparison.OrdinalIgnoreCase) || host.Equals("CAMPO_VERDE", StringComparison.OrdinalIgnoreCase);
+            bool isBase = host.Contains("base", StringComparison.OrdinalIgnoreCase) || host.Equals("PRODUCTO_BASE", StringComparison.OrdinalIgnoreCase);
 
-            string fallbackDb = isVergel 
-                ? "DB_PROD_TRANSPORTE_VERGEL_CARRILLO" 
-                : (isBase ? "DB_PRODUCTO_BASE" : "DB_PROD_CAMPO_VERDE");
+            string fallbackDb = isCampo 
+                ? "DB_PROD_CAMPO_VERDE" 
+                : (isBase ? "DB_PRODUCTO_BASE" : "DB_PROD_TRANSPORTE_VERGEL_CARRILLO");
 
-            string fallbackUser = (isVergel || isBase) ? "sa" : "user_campoverde";
-            string fallbackPass = (isVergel || isBase) ? "sql_HO_2026!" : "Campo_Verde_2026!";
+            string fallbackUser = isCampo ? "user_campoverde" : "sa";
+            string fallbackPass = isCampo ? "Campo_Verde_2026!" : "sql_HO_2026!";
 
             string sqlInstHost = IsRunningInDocker ? "sql_instancia" : "127.0.0.1";
             string fallbackConn = $"Server=tcp:{sqlInstHost},1433;Database={fallbackDb};User Id={fallbackUser};Password={fallbackPass};TrustServerCertificate=True;Encrypt=False;Connect Timeout=30;Pooling=true;";
 
             _currentTenant = new TenantInfo
             {
-                Codigo = isVergel ? "VERGEL_CARRILLO" : (isBase ? "PRODUCTO_BASE" : "CAMPO_VERDE"),
-                Nombre = isVergel 
-                    ? "Transporte Vergel & Carrillo" 
-                    : (isBase ? "Sistema Transporte V2 (Producto Base Demo)" : "Productos Lácteos Campo Verde, C.A."),
+                Codigo = isCampo ? "CAMPO_VERDE" : (isBase ? "PRODUCTO_BASE" : "VERGEL_CARRILLO"),
+                Nombre = isCampo 
+                    ? "Productos Lácteos Campo Verde, C.A." 
+                    : (isBase ? "Sistema Transporte V2 (Producto Base Demo)" : "Transporte Vergel & Carrillo"),
                 ConnectionString = AdjustConnectionStringForEnvironment(fallbackConn),
                 Estado = "ACTIVA",
                 FechaVencimiento = DateTime.UtcNow.AddYears(1),
@@ -223,15 +243,19 @@ namespace Transporte.API.Multitenancy
         {
             if (string.IsNullOrWhiteSpace(host)) { host = "localhost"; return; }
             if (host.Contains(',')) host = host.Split(',')[0].Trim();
+            if (host.Contains("://"))
+            {
+                try { host = new Uri(host).Host; } catch { }
+            }
             host = host.Split(':')[0].Trim().ToLower();
         }
 
         public string GetConnectionString() => _currentTenant?.ConnectionString 
             ?? AdjustConnectionStringForEnvironment(_configuration.GetConnectionString("DefaultConnection") 
-            ?? "Server=84.247.178.194,1433;Database=DB_PROD_CAMPO_VERDE;User Id=user_campoverde;Password=Campo_Verde_2026!;TrustServerCertificate=True;");
+            ?? "Server=84.247.178.194,1433;Database=DB_PROD_TRANSPORTE_VERGEL_CARRILLO;User Id=sa;Password=sql_HO_2026!;TrustServerCertificate=True;");
 
-        public string GetTenantCode() => _currentTenant?.Codigo ?? "CAMPO_VERDE";
-        public string GetTenantName() => _currentTenant?.Nombre ?? "Lácteos Campo Verde, C.A.";
+        public string GetTenantCode() => _currentTenant?.Codigo ?? "VERGEL_CARRILLO";
+        public string GetTenantName() => _currentTenant?.Nombre ?? "Transporte Vergel & Carrillo";
         public List<string> GetModulosActivos() => _currentTenant?.Modulos ?? new List<string>();
         public bool TieneModulo(string moduloCodigo) => _currentTenant?.Modulos.Contains(moduloCodigo) ?? true;
     }

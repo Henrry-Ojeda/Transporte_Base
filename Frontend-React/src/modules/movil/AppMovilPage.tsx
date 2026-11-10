@@ -2138,8 +2138,27 @@ export const AppMovilPage: React.FC = () => {
         // Cargar paradas del viaje seleccionado
         const paradas = await operacionesApi.getFincasViaje(targetV.id);
         if (Array.isArray(paradas)) {
-          setParadasViajeActivo(paradas);
-          try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradas)); } catch {}
+          // Unificación Defensiva: No permitir que paradas del servidor con 0 litros sobrescriban
+          // recolecciones locales pendientes o confirmadas recientemente en memoria
+          const paradasUnificadas = paradas.map((p: any) => {
+            const fId = Number(p.fincaId || p.FincaId);
+            const cargaLocal = cargas.find((c) => Number(c.fincaId) === fId);
+            if (cargaLocal && (!p.litros || p.litros === 0)) {
+              return {
+                ...p,
+                litros: cargaLocal.litros,
+                Litros: cargaLocal.litros,
+                tipoLeche: cargaLocal.tipoLeche || p.tipoLeche,
+                esAcida: typeof cargaLocal.esAcida === 'boolean' ? cargaLocal.esAcida : p.esAcida,
+                esDiferido: typeof cargaLocal.esDiferido === 'boolean' ? cargaLocal.esDiferido : p.esDiferido,
+                litrosDiferir: cargaLocal.litrosDiferir,
+              };
+            }
+            return p;
+          });
+
+          setParadasViajeActivo(paradasUnificadas);
+          try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradasUnificadas)); } catch {}
           setCargas((prev) => {
             const soloPendientes = prev.filter((c) => !c.synced);
             guardarCargasLocalSeguro(soloPendientes);
@@ -3937,12 +3956,36 @@ export const AppMovilPage: React.FC = () => {
     const horaStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : (formCarga.fecha || hoyStr);
-
     const litrosDiferirNum = formCarga.esDiferido ? Number(formCarga.litrosDiferir || formCarga.litros) : undefined;
+    const ticketIdEfectivo = viajeActivo?.id || viajeSeleccionadoId || (viajesChofer.length > 0 ? viajesChofer[0].id : 0);
+
+    // Intento de guardado directo y síncrono si el dispositivo está online
+    let sincronizadoOnline = false;
+    if (isOnline && ticketIdEfectivo > 0) {
+      try {
+        const obsConOrigen = `${formCarga.observacion ? formCarga.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim();
+        await operacionesApi.agregarFincaViaje(ticketIdEfectivo, {
+          fincaId: Number(formCarga.fincaId),
+          litros: litrosNum,
+          esAcida: formCarga.esAcida,
+          esDiferido: formCarga.esDiferido,
+          fecha: fechaAUsar,
+          tipoLeche: formCarga.tipoLeche,
+          observacion: obsConOrigen,
+          temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
+          fotoComprobante: formCarga.fotoRecibo || undefined,
+        });
+        sincronizadoOnline = true;
+      } catch (errApi: any) {
+        console.warn('Error al enviar carga directamente al servidor, se guardará en cola local:', errApi);
+        const errMsg = errApi?.response?.data?.message || errApi?.message || 'Error de conexión con la central';
+        toast.warning(`Guardado en el teléfono. Pendiente de sincronizar: ${errMsg}`);
+      }
+    }
 
     const nuevaCarga: CargaOffline = {
       localId: `local_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      serverTicketId: viajeActivo?.id,
+      serverTicketId: ticketIdEfectivo || undefined,
       fecha: fechaAUsar,
       hora: horaStr,
       fincaId: Number(formCarga.fincaId),
@@ -3955,7 +3998,7 @@ export const AppMovilPage: React.FC = () => {
       temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
       observacion: formCarga.observacion,
       fotoRecibo: formCarga.fotoRecibo || undefined,
-      synced: false,
+      synced: sincronizadoOnline,
     };
 
     // 7.- Si ya existe una carga local para esta finca, actualizarla en vez de duplicarla
@@ -3973,7 +4016,7 @@ export const AppMovilPage: React.FC = () => {
         temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
         observacion: formCarga.observacion,
         fotoRecibo: formCarga.fotoRecibo || nuevasCargas[idxExistente].fotoRecibo,
-        synced: false,
+        synced: sincronizadoOnline,
       };
     } else {
       nuevasCargas = [nuevaCarga, ...cargas];
@@ -3987,7 +4030,7 @@ export const AppMovilPage: React.FC = () => {
     dbLocal.guardarRecoleccion({
       idLocal: idLocalPrevio,
       empresaCodigo: codEmpresa,
-      ticketId: viajeActivo?.id || 0,
+      ticketId: ticketIdEfectivo || 0,
       fincaId: Number(formCarga.fincaId),
       fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
       productorNombre: fincaSel?.productor || '',
@@ -3999,7 +4042,7 @@ export const AppMovilPage: React.FC = () => {
       foto: formCarga.fotoRecibo || null,
       observaciones: formCarga.observacion,
       fechaRegistro: new Date().toISOString(),
-      estadoSync: 'PENDIENTE',
+      estadoSync: sincronizadoOnline ? 'SINCRONIZADO' : 'PENDIENTE',
     }).then((nuevoIdLocal) => {
       if (nuevoIdLocal) {
         setCargas((prev) => {
@@ -4063,11 +4106,14 @@ export const AppMovilPage: React.FC = () => {
     });
     setBusquedaFinca('');
 
-    // 2.- DENTRO DE LA APP NO se titila la finca (solo cuando se carga por web)
-    toast.success(`Carga de ${litrosNum.toLocaleString()} L guardada en el teléfono`);
-
-    if (isOnline) {
-      setTimeout(() => sincronizarCargas(), 400);
+    // Notificación clara al usuario
+    if (sincronizadoOnline) {
+      toast.success(`¡Carga de ${litrosNum.toLocaleString()} L guardada y sincronizada con el servidor!`);
+    } else {
+      toast.info(`Carga de ${litrosNum.toLocaleString()} L guardada en el teléfono (modo offline).`);
+      if (isOnline) {
+        setTimeout(() => sincronizarCargas(), 800);
+      }
     }
   };
 
@@ -13644,79 +13690,104 @@ export const AppMovilPage: React.FC = () => {
             {/* Cuerpo con Scroll */}
             <form onSubmit={handleGuardarPlanificacionMovil} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {/* Selector de Camión */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                    1. Cisterna / Camión *
-                  </label>
-                  <select
-                    value={modalPlanificar.camionId}
-                    onChange={(e) => setModalPlanificar((prev) => prev ? { ...prev, camionId: Number(e.target.value) } : null)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '10px',
-                      border: '1.5px solid #cbd5e1',
-                      fontSize: '13px',
-                      background: '#ffffff',
-                      fontWeight: 700,
-                    }}
-                  >
-                    <option value={0}>-- Selecciona Camión --</option>
-                    {camionesLista.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.placa} • {c.marca} {c.modelo} ({c.capacidadLitros.toLocaleString()} L)
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {/* Selectores de Camión y Chofer en Grid Compacto */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '8px' }}>
+                  {/* Selector de Camión */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '3px' }}>
+                      1. Cisterna / Camión *
+                    </label>
+                    <select
+                      value={modalPlanificar.camionId}
+                      onChange={(e) => setModalPlanificar((prev) => prev ? { ...prev, camionId: Number(e.target.value) } : null)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #cbd5e1',
+                        fontSize: '12px',
+                        background: '#ffffff',
+                        fontWeight: 700,
+                      }}
+                    >
+                      <option value={0}>-- Selecciona Camión --</option>
+                      {camionesLista.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.placa} • {c.marca} {c.modelo} ({c.capacidadLitros.toLocaleString()} L)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                {/* Selector de Chofer */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                    2. Chofer / Conductor *
-                  </label>
-                  <select
-                    value={modalPlanificar.conductorId}
-                    onChange={(e) => setModalPlanificar((prev) => prev ? { ...prev, conductorId: Number(e.target.value) } : null)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '10px',
-                      border: '1.5px solid #cbd5e1',
-                      fontSize: '13px',
-                      background: '#ffffff',
-                      fontWeight: 700,
-                    }}
-                  >
-                    <option value={0}>-- Selecciona Chofer --</option>
-                    {choferesLista
-                      .filter((ch) => ch.activo === true || (ch as any).activo === 1)
-                      .map((ch) => (
-                      <option key={ch.id} value={ch.id}>
-                        {ch.nombreCompleto} {ch.cedula ? `(C.I. ${ch.cedula})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  {/* Selector de Chofer */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '3px' }}>
+                      2. Chofer / Conductor *
+                    </label>
+                    <select
+                      value={modalPlanificar.conductorId}
+                      onChange={(e) => setModalPlanificar((prev) => prev ? { ...prev, conductorId: Number(e.target.value) } : null)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #cbd5e1',
+                        fontSize: '12px',
+                        background: '#ffffff',
+                        fontWeight: 700,
+                      }}
+                    >
+                      <option value={0}>-- Selecciona Chofer --</option>
+                      {choferesLista
+                        .filter((ch) => ch.activo === true || (ch as any).activo === 1)
+                        .map((ch) => (
+                        <option key={ch.id} value={ch.id}>
+                          {ch.nombreCompleto} {ch.cedula ? `(C.I. ${ch.cedula})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {/* Selector de Circuito Maestro (Opcional) */}
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#334155' }}>
                       3. Circuito Base (Opcional)
                     </label>
                     {modalPlanificar.rutaLogisticaId && (
                       <button
                         type="button"
-                        onClick={() => {
-                          const rSel = rutasLogisticas.find((r) => r.id === modalPlanificar.rutaLogisticaId);
-                          if (rSel && Array.isArray(rSel.fincas)) {
-                            const ids = rSel.fincas.map((f) => f.fincaId);
+                        onClick={async () => {
+                          const rId = modalPlanificar.rutaLogisticaId!;
+                          let idsFincasRuta = fincas
+                            .filter((f) => f.rutaId === rId || (f as any).rutasAsignadasIds?.includes?.(rId))
+                            .map((f) => f.id);
+
+                          const rutaObj = rutasLogisticas.find((r) => r.id === rId);
+                          if (rutaObj && Array.isArray((rutaObj as any).fincas)) {
+                            const deObj = (rutaObj as any).fincas.map((x: any) => x.fincaId || x.id).filter(Boolean);
+                            idsFincasRuta = Array.from(new Set([...idsFincasRuta, ...deObj]));
+                          }
+
+                          if (idsFincasRuta.length === 0) {
+                            try {
+                              const deApi = await operacionesApi.getFincasDeRutaLogistica(rId);
+                              if (Array.isArray(deApi) && deApi.length > 0) {
+                                idsFincasRuta = deApi.map((x: any) => x.fincaId || x.id).filter(Boolean);
+                              }
+                            } catch (err) {
+                              console.warn('Error consultando fincas de ruta:', err);
+                            }
+                          }
+
+                          if (idsFincasRuta.length > 0) {
                             setModalPlanificar((prev) =>
-                              prev ? { ...prev, fincasIds: Array.from(new Set([...prev.fincasIds, ...ids])) } : null
+                              prev ? { ...prev, fincasIds: Array.from(new Set([...prev.fincasIds, ...idsFincasRuta])) } : null
                             );
-                            toast.success(`Cargadas ${ids.length} fincas del circuito`);
+                            toast.success(`Cargadas ${idsFincasRuta.length} fincas del circuito`);
+                          } else {
+                            toast.info('No se encontraron fincas asignadas a esta ruta');
                           }
                         }}
                         style={{
@@ -13736,16 +13807,51 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                   <select
                     value={modalPlanificar.rutaLogisticaId || 0}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const rId = Number(e.target.value) || undefined;
-                      setModalPlanificar((prev) => (prev ? { ...prev, rutaLogisticaId: rId } : null));
+                      if (!rId) {
+                        setModalPlanificar((prev) => (prev ? { ...prev, rutaLogisticaId: undefined } : null));
+                        return;
+                      }
+
+                      // Preseleccionar automáticamente las fincas asociadas al circuito
+                      let idsFincasRuta = fincas
+                        .filter((f) => f.rutaId === rId || (f as any).rutasAsignadasIds?.includes?.(rId))
+                        .map((f) => f.id);
+
+                      const rutaObj = rutasLogisticas.find((r) => r.id === rId);
+                      if (rutaObj && Array.isArray((rutaObj as any).fincas)) {
+                        const deObj = (rutaObj as any).fincas.map((x: any) => x.fincaId || x.id).filter(Boolean);
+                        idsFincasRuta = Array.from(new Set([...idsFincasRuta, ...deObj]));
+                      }
+
+                      if (idsFincasRuta.length === 0) {
+                        try {
+                          const deApi = await operacionesApi.getFincasDeRutaLogistica(rId);
+                          if (Array.isArray(deApi) && deApi.length > 0) {
+                            idsFincasRuta = deApi.map((x: any) => x.fincaId || x.id).filter(Boolean);
+                          }
+                        } catch (err) {
+                          console.warn('Error consultando fincas de ruta:', err);
+                        }
+                      }
+
+                      setModalPlanificar((prev) => {
+                        if (!prev) return null;
+                        const merged = Array.from(new Set([...prev.fincasIds, ...idsFincasRuta]));
+                        return { ...prev, rutaLogisticaId: rId, fincasIds: merged };
+                      });
+
+                      if (idsFincasRuta.length > 0) {
+                        toast.success(`Se seleccionaron automáticamente ${idsFincasRuta.length} fincas de la ruta`);
+                      }
                     }}
                     style={{
                       width: '100%',
-                      padding: '10px 12px',
+                      padding: '8px 10px',
                       borderRadius: '10px',
                       border: '1.5px solid #cbd5e1',
-                      fontSize: '13px',
+                      fontSize: '12px',
                       background: '#ffffff',
                     }}
                   >
@@ -13849,10 +13955,11 @@ export const AppMovilPage: React.FC = () => {
                     ></i>
                   </div>
 
-                  {/* Lista de Fincas con Checkboxes */}
+                  {/* Lista de Fincas con Checkboxes con Mayor Altura y Espacio Visible */}
                   <div
                     style={{
-                      maxHeight: '190px',
+                      minHeight: '260px',
+                      maxHeight: '44vh',
                       overflowY: 'auto',
                       border: '1px solid #e2e8f0',
                       borderRadius: '12px',
@@ -13896,22 +14003,26 @@ export const AppMovilPage: React.FC = () => {
                           (f.propietarioNombre && f.propietarioNombre.toLowerCase().includes(busquedaFincaPlanificar.toLowerCase()))
                       );
 
-                      // REGLA: Poner de primero las seleccionadas y recolectadas (igual que en WEB)
+                      // ORDEN ESTABLE: 1) Con leche recolectada, 2) De la ruta seleccionada, 3) Alfabético
+                      // IMPORTANTE: NO reordenar dinámicamente según checkbox para evitar que el scroll salte al tocar una finca en móviles
                       const fincasOrdenadas = [...fincasFiltradas].sort((a, b) => {
                         const llenaA = paradasLlenasMap.has(a.id);
                         const llenaB = paradasLlenasMap.has(b.id);
-                        const selA = modalPlanificar.fincasIds.includes(a.id) || llenaA;
-                        const selB = modalPlanificar.fincasIds.includes(b.id) || llenaB;
 
                         // 1. Con leche recolectada arriba de todo
                         if (llenaA && !llenaB) return -1;
                         if (!llenaA && llenaB) return 1;
 
-                        // 2. Seleccionadas de primero
-                        if (selA && !selB) return -1;
-                        if (!selA && selB) return 1;
+                        // 2. Fincas que pertenecen a la ruta seleccionada arriba
+                        if (modalPlanificar.rutaLogisticaId) {
+                          const rId = modalPlanificar.rutaLogisticaId;
+                          const inRutaA = a.rutaId === rId || (a as any).rutasAsignadasIds?.includes?.(rId);
+                          const inRutaB = b.rutaId === rId || (b as any).rutasAsignadasIds?.includes?.(rId);
+                          if (inRutaA && !inRutaB) return -1;
+                          if (!inRutaA && inRutaB) return 1;
+                        }
 
-                        // 3. Alfabético por nombre
+                        // 3. Alfabético por nombre estable
                         return a.nombre.localeCompare(b.nombre);
                       });
 

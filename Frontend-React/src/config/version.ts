@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 16,
-  patch: 0,
-  tag: 'v3.16.0',
-  ultimaActualizacion: '2026-11-09',
+  patch: 1,
+  tag: 'v3.16.1',
+  ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Planificación diaria independiente por fecha, soporte rol Supervisor, deduplicación choferes y tabla de verificación 1 a 1 y masiva en receptoría v3.16.0',
+  descripcion: 'Auto-selección de fincas al elegir ruta en móvil, scroll estable sin saltos, modal con mayor área visible y sincronización síncrona infalible de cargas v3.16.1',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

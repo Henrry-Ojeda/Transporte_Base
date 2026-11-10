@@ -288,10 +288,17 @@ export const RecoleccionRutasPage: React.FC = () => {
   const [fotoReciboModal, setFotoReciboModal] = useState<string | null>(null);
   const fileInputComprobanteRef = useRef<HTMLInputElement | null>(null);
 
+  // Filtro unificado de paradas por ticket (Finca o Propietario)
+  const [filtroParadasTicket, setFiltroParadasTicket] = useState<Record<number, string>>({});
+  // Filtro unificado en modal Timelapse (Finca o Propietario)
+  const [busquedaTimelapse, setBusquedaTimelapse] = useState('');
+
   // Formulario Editar Recolección
   const [formEditar, setFormEditar] = useState({
     id: 0,
     fincaId: 0,
+    fincaNombre: '',
+    propietarioNombre: '',
     litros: 0,
     tipoLeche: 'VACA',
     esAcida: false,
@@ -1696,6 +1703,8 @@ export const RecoleccionRutasPage: React.FC = () => {
     setFormEditar({
       id: row.id,
       fincaId: row.fincaId,
+      fincaNombre: row.fincaNombre || `Finca #${row.fincaId}`,
+      propietarioNombre: (row as any).propietarioNombre || (row as any).propietario || 'Productor',
       litros: row.litros,
       tipoLeche: row.tipoLeche || 'VACA',
       esAcida: Boolean(row.esAcida),
@@ -4276,22 +4285,87 @@ export const RecoleccionRutasPage: React.FC = () => {
                     </div>
 
                     {/* ACORDEÓN / DESPLEGABLE DE PARADAS EXPANDIDAS */}
-                    {esRuta && estaExpandido && (
+                    {esRuta && estaExpandido && (() => {
+                      const filtroTicket = (filtroParadasTicket[item.id] || '').toLowerCase().trim();
+                      const paradasFiltradas = fincasTicket.filter((f: any) => {
+                        if (!filtroTicket) return true;
+                        const fNombre = String(f.fincaNombre || f.FincaNombre || f.finca || '').toLowerCase();
+                        const fProp = String(f.propietarioNombre || f.propietario || f.Propietario || '').toLowerCase();
+                        return fNombre.includes(filtroTicket) || fProp.includes(filtroTicket);
+                      });
+
+                      return (
                       <div style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0', padding: '12px 18px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '10px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <i className="fa-solid fa-list-check" style={{ color: '#2563eb' }}></i>
-                            Paradas / Fincas Registradas ({fincasTicket.length})
+                            Paradas / Fincas Registradas ({filtroTicket ? `${paradasFiltradas.length} de ${fincasTicket.length}` : fincasTicket.length})
                           </span>
+
+                          {/* FILTRO UNIFICADO POR FINCA O PRODUCTOR */}
+                          <div style={{ position: 'relative', width: '220px', maxWidth: '100%' }}>
+                            <i
+                              className="fa-solid fa-magnifying-glass"
+                              style={{
+                                position: 'absolute',
+                                left: '9px',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                fontSize: '11px',
+                                color: '#94a3b8',
+                              }}
+                            ></i>
+                            <input
+                              type="text"
+                              placeholder="Buscar finca o productor..."
+                              value={filtroParadasTicket[item.id] || ''}
+                              onChange={(e) => setFiltroParadasTicket((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                              style={{
+                                width: '100%',
+                                height: '28px',
+                                paddingLeft: '26px',
+                                paddingRight: '22px',
+                                fontSize: '11px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                background: '#ffffff',
+                                color: '#1e293b',
+                                outline: 'none',
+                              }}
+                            />
+                            {filtroParadasTicket[item.id] && (
+                              <button
+                                type="button"
+                                onClick={() => setFiltroParadasTicket((prev) => ({ ...prev, [item.id]: '' }))}
+                                style={{
+                                  position: 'absolute',
+                                  right: '6px',
+                                  top: '50%',
+                                  transform: 'translateY(-50%)',
+                                  background: 'none',
+                                  border: 'none',
+                                  fontSize: '11px',
+                                  color: '#94a3b8',
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                }}
+                                title="Limpiar filtro"
+                              >
+                                <i className="fa-solid fa-circle-xmark"></i>
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         <div style={{ maxHeight: '230px', overflowY: 'auto', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px' }}>
-                          {fincasTicket.length === 0 ? (
+                          {paradasFiltradas.length === 0 ? (
                             <div style={{ fontSize: '12px', color: '#94a3b8', textAlign: 'center', padding: '14px' }}>
-                              No hay paradas registradas aún en este ticket.
+                              {filtroTicket
+                                ? `No se encontraron paradas que coincidan con "${filtroTicket}".`
+                                : 'No hay paradas registradas aún en este ticket.'}
                             </div>
                           ) : (
-                            fincasTicket.map((f: any, idx: number) => {
+                            paradasFiltradas.map((f: any, idx: number) => {
                               const fId = f.id || f.Id || f.rutaId;
                               const fLitros = Number(f.litros ?? f.Litros ?? 0);
                               const fNombre = f.fincaNombre || f.FincaNombre || f.finca || `Finca #${f.fincaId || f.FincaId}`;
@@ -4308,7 +4382,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                                     justifyContent: 'space-between',
                                     alignItems: 'center',
                                     padding: '7px 8px',
-                                    borderBottom: idx < fincasTicket.length - 1 ? '1px solid #f1f5f9' : 'none',
+                                    borderBottom: idx < paradasFiltradas.length - 1 ? '1px solid #f1f5f9' : 'none',
                                     fontSize: '12px',
                                     borderRadius: '4px',
                                     background: idx % 2 === 0 ? '#fcfcfd' : '#ffffff',
@@ -4389,6 +4463,8 @@ export const RecoleccionRutasPage: React.FC = () => {
                                             setFormEditar({
                                               id: fId,
                                               fincaId: f.fincaId || f.FincaId,
+                                              fincaNombre: fNombre,
+                                              propietarioNombre: fProp,
                                               litros: fLitros,
                                               tipoLeche: fTipo,
                                               esAcida: esAcida,
@@ -4491,7 +4567,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                           )}
                         </div>
                       </div>
-                    )}
+                    ); })()}
                   </div>
                 );
               })}
@@ -4784,19 +4860,93 @@ export const RecoleccionRutasPage: React.FC = () => {
               </div>
             </div>
 
-            {/* CUERPO CON LÍNEA DE TIEMPO */}
-            <div style={{ padding: '24px', overflowY: 'auto', flex: 1, maxHeight: '60vh' }}>
-              {timelapseData.paradas.length === 0 && timelapseData.pendientes.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
-                  <i className="fa-solid fa-clock" style={{ fontSize: '36px', opacity: 0.5, marginBottom: '10px', display: 'block' }}></i>
-                  El camión aún no ha registrado paradas y no tiene rutas asignadas.
-                </div>
-              ) : (
-                <div style={{ position: 'relative', paddingLeft: '32px' }}>
-                  <div style={{ position: 'absolute', left: '11px', top: '12px', bottom: '12px', width: '3px', background: '#e2e8f0', borderRadius: '2px' }}></div>
+            {/* BUSCADOR UNIFICADO EN TIMELAPSE (FINCA O PRODUCTOR) */}
+            <div style={{ background: '#f8fafc', padding: '10px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <i
+                  className="fa-solid fa-magnifying-glass"
+                  style={{
+                    position: 'absolute',
+                    left: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    fontSize: '12px',
+                    color: '#94a3b8',
+                  }}
+                ></i>
+                <input
+                  type="text"
+                  placeholder="Buscar finca o productor en este recorrido..."
+                  value={busquedaTimelapse}
+                  onChange={(e) => setBusquedaTimelapse(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '34px',
+                    paddingLeft: '32px',
+                    paddingRight: '28px',
+                    fontSize: '12px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    outline: 'none',
+                  }}
+                />
+                {busquedaTimelapse && (
+                  <button
+                    type="button"
+                    onClick={() => setBusquedaTimelapse('')}
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '12px',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                    title="Limpiar búsqueda"
+                  >
+                    <i className="fa-solid fa-circle-xmark"></i>
+                  </button>
+                )}
+              </div>
+            </div>
 
-                  {/* 1. PARADAS YA RECOLECTADAS (EN VERDE, RESPETANDO ORDEN CRONOLÓGICO / LLENADO DE LITROS) */}
-                  {timelapseData.paradas.map((p, idx) => {
+            {/* CUERPO CON LÍNEA DE TIEMPO */}
+            {(() => {
+              const term = busquedaTimelapse.trim().toLowerCase();
+              const paradasFiltradas = timelapseData.paradas.filter((p: any) => {
+                if (!term) return true;
+                const fNombre = String(p.fincaNombre || p.nombreFinca || p.finca || '').toLowerCase();
+                const fProp = String(p.propietarioNombre || p.propietario || p.Propietario || p.productor || '').toLowerCase();
+                return fNombre.includes(term) || fProp.includes(term);
+              });
+              const pendientesFiltradas = timelapseData.pendientes.filter((f: any) => {
+                if (!term) return true;
+                const fNombre = String(f.nombre || f.fincaNombre || '').toLowerCase();
+                const fProp = String(f.propietario || f.propietarioNombre || '').toLowerCase();
+                return fNombre.includes(term) || fProp.includes(term);
+              });
+
+              return (
+                <div style={{ padding: '24px', overflowY: 'auto', flex: 1, maxHeight: '60vh' }}>
+                  {paradasFiltradas.length === 0 && pendientesFiltradas.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                      <i className="fa-solid fa-clock" style={{ fontSize: '36px', opacity: 0.5, marginBottom: '10px', display: 'block' }}></i>
+                      {term
+                        ? `No se encontraron paradas que coincidan con "${term}".`
+                        : 'El camión aún no ha registrado paradas y no tiene rutas asignadas.'}
+                    </div>
+                  ) : (
+                    <div style={{ position: 'relative', paddingLeft: '32px' }}>
+                      <div style={{ position: 'absolute', left: '11px', top: '12px', bottom: '12px', width: '3px', background: '#e2e8f0', borderRadius: '2px' }}></div>
+
+                      {/* 1. PARADAS YA RECOLECTADAS (EN VERDE, RESPETANDO ORDEN CRONOLÓGICO / LLENADO DE LITROS) */}
+                      {paradasFiltradas.map((p, idx) => {
                     const timeStamp = p.createdAt || (p as any).CreatedAt;
                     const horaStr = timeStamp
                       ? new Date(timeStamp).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -4976,7 +5126,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                   })}
 
                   {/* 2. PARADAS PENDIENTES DE LA RUTA (EN COLOR GRIS, CON BOTÓN "+ AGREGAR LITROS", SOLO SI EL TICKET SIGUE ABIERTO) */}
-                  {!timelapseData.esFinalizado && timelapseData.pendientes.map((f, i) => {
+                  {!timelapseData.esFinalizado && pendientesFiltradas.map((f, i) => {
                     const numParada = timelapseData.paradas.length + i + 1;
                     return (
                       <div key={f.id} style={{ position: 'relative', marginBottom: '18px' }}>
@@ -5108,6 +5258,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                 </div>
               )}
             </div>
+            ); })()}
 
             <div style={{ padding: '14px 24px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setModalTimelapse(false)} className="btn btn-outline" style={{ fontWeight: 700 }}>
@@ -8078,6 +8229,76 @@ export const RecoleccionRutasPage: React.FC = () => {
               className="flex flex-col flex-1 overflow-hidden"
             >
               <div className="p-5 md:p-6 overflow-y-auto space-y-4 flex-1">
+                {/* INFORMACIÓN DE LA FINCA Y PROPIETARIO (SOLO INFORMATIVO - IMAGEN 3) */}
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+                    border: '1.5px solid #bae6fd',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                    <div
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '10px',
+                        background: '#0284c7',
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '18px',
+                        flexShrink: 0,
+                        boxShadow: '0 2px 6px rgba(2,132,199,0.3)',
+                      }}
+                    >
+                      <i className="fa-solid fa-wheat-awn"></i>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Finca:
+                        </span>
+                        <strong style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {formEditar.fincaNombre || (fincas.find((f: any) => f.id === formEditar.fincaId)?.nombre) || `Finca #${formEditar.fincaId}`}
+                        </strong>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                        <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b' }}>
+                          <i className="fa-solid fa-user" style={{ marginRight: '4px', fontSize: '9.5px' }}></i>Propietario:
+                        </span>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {formEditar.propietarioNombre || (fincas.find((f: any) => f.id === formEditar.fincaId)?.propietario) || 'No especificado'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      background: '#e0f2fe',
+                      color: '#0369a1',
+                      border: '1px solid #7dd3fc',
+                      padding: '3px 8px',
+                      borderRadius: '12px',
+                      whiteSpace: 'nowrap',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.4px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <i className="fa-solid fa-circle-info" style={{ marginRight: '4px' }}></i>Solo Informativo
+                  </span>
+                </div>
+
                 {/* 1. LITROS RECOLECTADOS & TIPO DE LECHE */}
                 <div className={`grid ${hasBufala ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'} gap-3.5`}>
                   <div className="space-y-1.5">

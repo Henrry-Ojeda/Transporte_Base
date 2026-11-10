@@ -128,8 +128,29 @@ export const PropietariosPage: React.FC = () => {
   });
 
   const asignarFincasMutation = useMutation({
-    mutationFn: ({ propId, ids }: { propId: number; ids: number[] }) =>
-      catalogosApi.asignarFincasPropietario(propId, ids),
+    mutationFn: async ({ propId, ids }: { propId: number; ids: number[] }) => {
+      let finalPropId = propId;
+      if (propId >= 100000 && propietarioSeleccionado) {
+        try {
+          const resCrear = await catalogosApi.crearPropietario({
+            nombreCompleto: propietarioSeleccionado.nombreCompleto || propietarioSeleccionado.nombre || '',
+            cedulaRif: propietarioSeleccionado.cedulaRif || (propietarioSeleccionado as any).cedulaRIF || '',
+            telefono: propietarioSeleccionado.telefono || undefined,
+            email: propietarioSeleccionado.email || undefined,
+            bancoId: propietarioSeleccionado.bancoId || undefined,
+            numeroCuenta: propietarioSeleccionado.numeroCuenta || undefined,
+            fincaIds: ids,
+            activo: propietarioSeleccionado.activo !== false,
+          });
+          if (resCrear && (resCrear as any).id) {
+            finalPropId = Number((resCrear as any).id);
+          }
+        } catch {
+          // continuar con fallback
+        }
+      }
+      return catalogosApi.asignarFincasPropietario(finalPropId, ids);
+    },
     onSuccess: (data) => {
       toast.success(data.message || 'Fincas asignadas exitosamente');
       queryClient.invalidateQueries({ queryKey: ['propietarios'] });
@@ -1597,6 +1618,56 @@ export const PropietariosPage: React.FC = () => {
                       )}
                     </div>
                   </div>
+                </div>
+
+                {/* CHECKBOX PROPIETARIO ACTIVO (VISIBLE EN TODO EL SISTEMA) 1:1 CON FINCAS */}
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    background: form.activo !== false ? '#f0fdf4' : '#fff1f2',
+                    border: `1.5px solid ${form.activo !== false ? '#86efac' : '#fecdd3'}`,
+                    borderRadius: '8px',
+                    marginTop: '14px',
+                  }}
+                >
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      cursor: 'pointer',
+                      color: form.activo !== false ? '#065f46' : '#9f1239',
+                      fontSize: '13.5px',
+                      fontWeight: 700,
+                      margin: 0,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.activo !== false}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          activo: e.target.checked,
+                        })
+                      }
+                      style={{
+                        width: '18px',
+                        height: '18px',
+                        accentColor: form.activo !== false ? '#059669' : '#e11d48',
+                        cursor: 'pointer',
+                      }}
+                    />
+                    <span>
+                      <i
+                        className={`fa-solid ${form.activo !== false ? 'fa-circle-check' : 'fa-ban'}`}
+                        style={{ marginRight: '6px' }}
+                      ></i>
+                      {form.activo !== false
+                        ? 'Propietario Activo para Operaciones (Visible en todo el sistema)'
+                        : 'Propietario Inactivo (Oculto en operaciones y asignaciones)'}
+                    </span>
+                  </label>
                 </div>
               </div>
 

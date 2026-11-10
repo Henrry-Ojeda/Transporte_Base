@@ -300,7 +300,7 @@ namespace Transporte.Core.DTOs
         public string? NumeroCuenta { get; set; }
         public string? Observacion { get; set; }
         public string Estado { get; set; } = "ACTIVO";
-        public bool Activo => Estado == "ACTIVO" || Estado == "1";
+        public bool Activo { get; set; } = true;
         public int TotalFincas { get; set; }
         public List<string> FincasNombres { get; set; } = new();
         public List<PropietarioCuentaBancariaDto> Cuentas { get; set; } = new();
@@ -315,6 +315,7 @@ namespace Transporte.Core.DTOs
         public int? BancoId { get; set; }
         public string? NumeroCuenta { get; set; }
         public string? Observacion { get; set; }
+        public bool? Activo { get; set; } = true;
         public List<int>? FincaIds { get; set; }
         public List<PropietarioCuentaBancariaDto>? Cuentas { get; set; }
     }
@@ -329,6 +330,7 @@ namespace Transporte.Core.DTOs
         public string? NumeroCuenta { get; set; }
         public string? Observacion { get; set; }
         public string? Estado { get; set; }
+        public bool? Activo { get; set; }
         public List<int>? FincaIds { get; set; }
         public List<PropietarioCuentaBancariaDto>? Cuentas { get; set; }
     }

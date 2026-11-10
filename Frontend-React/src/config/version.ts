@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 17,
-  patch: 5,
-  tag: 'v3.17.5',
+  patch: 6,
+  tag: 'v3.17.6',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Sincronización reactiva 1:1 entre Planificación de Flota y Control de Rutas & Camiones, sincronización de fechas y resolución de asignaciones v3.17.5',
+  descripcion: 'Filtro unificado de paradas en ticket y timelapse, banner informativo en edición de parada, check visible al sistema en propietarios y asignación resiliente de fincas v3.17.6',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

@@ -2001,6 +2001,7 @@ namespace Transporte.Infrastructure.Repositories
             public string? NumeroCuenta { get; set; }
             public string? Observacion { get; set; }
             public string? Estado { get; set; }
+            public bool? Activo { get; set; }
             public int TotalFincas { get; set; }
             public string? FincasNombres { get; set; }
         }
@@ -2013,12 +2014,14 @@ namespace Transporte.Infrastructure.Repositories
                     p.Id, p.Nombre, p.CedulaRIF, p.Telefono, p.Email, 
                     p.BancoId, b.Nombre AS BancoNombre, p.NumeroCuenta, 
                     p.Observacion, p.Estado,
+                    ISNULL(p.Activo, CASE WHEN p.Estado = 'INACTIVO' THEN 0 ELSE 1 END) AS Activo,
                     COUNT(f.Id) AS TotalFincas,
                     STRING_AGG(f.Nombre, ', ') AS FincasNombres
                 FROM TB_PROPIETARIOS p
                 LEFT JOIN TB_BANCOS b ON p.BancoId = b.Id
                 LEFT JOIN TB_FINCAS f ON f.PropietarioId = p.Id
-                GROUP BY p.Id, p.Nombre, p.CedulaRIF, p.Telefono, p.Email, p.BancoId, b.Nombre, p.NumeroCuenta, p.Observacion, p.Estado
+                WHERE ISNULL(p.IsDeleted, 0) = 0
+                GROUP BY p.Id, p.Nombre, p.CedulaRIF, p.Telefono, p.Email, p.BancoId, b.Nombre, p.NumeroCuenta, p.Observacion, p.Estado, p.Activo
                 ORDER BY p.Nombre";
 
             var rows = await connection.QueryAsync<PropietarioDbRow>(sql);
@@ -2053,6 +2056,8 @@ namespace Transporte.Infrastructure.Repositories
                     numCta = principal.NumeroCuenta;
                 }
 
+                bool esActivo = r.Activo ?? (r.Estado != "INACTIVO");
+
                 list.Add(new PropietarioDto
                 {
                     Id = r.Id,
@@ -2066,7 +2071,8 @@ namespace Transporte.Infrastructure.Repositories
                     BancoNombre = bNom,
                     NumeroCuenta = numCta,
                     Observacion = r.Observacion,
-                    Estado = r.Estado ?? "ACTIVO",
+                    Estado = r.Estado ?? (esActivo ? "ACTIVO" : "INACTIVO"),
+                    Activo = esActivo,
                     TotalFincas = r.TotalFincas,
                     FincasNombres = fn,
                     Cuentas = cuentasProp
@@ -2101,16 +2107,19 @@ namespace Transporte.Infrastructure.Repositories
                     cuentaPrincipal = ctaP.NumeroCuenta;
                 }
 
+                string estadoFinal = (dto.Activo == false) ? "INACTIVO" : "ACTIVO";
+                bool activoFinal = dto.Activo != false;
+
                 var sql = @"
                     INSERT INTO TB_PROPIETARIOS (
-                        Nombre, CedulaRIF, Telefono, Email, BancoId, NumeroCuenta, Observacion, Estado, CreatedAt, CreatedBy
+                        Nombre, CedulaRIF, Telefono, Email, BancoId, NumeroCuenta, Observacion, Estado, Activo, CreatedAt, CreatedBy
                     ) VALUES (
-                        @Nombre, @CedulaRIF, @Telefono, @Email, @bancoPrincipal, @cuentaPrincipal, @Observacion, 'ACTIVO', GETDATE(), @usuarioId
+                        @Nombre, @CedulaRIF, @Telefono, @Email, @bancoPrincipal, @cuentaPrincipal, @Observacion, @estadoFinal, @activoFinal, GETDATE(), @usuarioId
                     );
                     SELECT CAST(SCOPE_IDENTITY() as int);";
 
                 int id = await connection.ExecuteScalarAsync<int>(sql, new {
-                    dto.Nombre, dto.CedulaRIF, dto.Telefono, dto.Email, bancoPrincipal, cuentaPrincipal, dto.Observacion, usuarioId
+                    dto.Nombre, dto.CedulaRIF, dto.Telefono, dto.Email, bancoPrincipal, cuentaPrincipal, dto.Observacion, estadoFinal, activoFinal, usuarioId
                 }, transaction);
 
                 // Insertar cuentas bancarias asociadas
@@ -2199,6 +2208,9 @@ namespace Transporte.Infrastructure.Repositories
                     cuentaPrincipal = ctaP.NumeroCuenta;
                 }
 
+                string estadoFinal = (dto.Activo == false || dto.Estado == "INACTIVO") ? "INACTIVO" : "ACTIVO";
+                bool activoFinal = !(dto.Activo == false || dto.Estado == "INACTIVO");
+
                 var sql = @"
                     UPDATE TB_PROPIETARIOS 
                     SET Nombre = @Nombre,
@@ -2208,14 +2220,55 @@ namespace Transporte.Infrastructure.Repositories
                         BancoId = @bancoPrincipal,
                         NumeroCuenta = @cuentaPrincipal,
                         Observacion = @Observacion,
-                        Estado = ISNULL(@Estado, Estado),
+                        Estado = @estadoFinal,
+                        Activo = @activoFinal,
                         ModifiedAt = GETDATE(),
                         ModifiedBy = @usuarioId
                     WHERE Id = @id";
 
                 int r = await connection.ExecuteAsync(sql, new {
-                    id, dto.Nombre, dto.CedulaRIF, dto.Telefono, dto.Email, bancoPrincipal, cuentaPrincipal, dto.Observacion, dto.Estado, usuarioId
+                    id, dto.Nombre, dto.CedulaRIF, dto.Telefono, dto.Email, bancoPrincipal, cuentaPrincipal, dto.Observacion, estadoFinal, activoFinal, usuarioId
                 }, transaction);
+
+                // Si no existía por id (ej: ID temporal del frontend), buscar por nombre o insertar
+                if (r == 0)
+                {
+                    var existingId = await connection.QueryFirstOrDefaultAsync<int?>(
+                        "SELECT Id FROM TB_PROPIETARIOS WHERE UPPER(LTRIM(RTRIM(Nombre))) = UPPER(LTRIM(RTRIM(@Nombre)))",
+                        new { dto.Nombre }, transaction);
+
+                    if (existingId.HasValue && existingId.Value > 0)
+                    {
+                        id = existingId.Value;
+                        await connection.ExecuteAsync(@"
+                            UPDATE TB_PROPIETARIOS 
+                            SET CedulaRIF = ISNULL(@CedulaRIF, CedulaRIF),
+                                Telefono = ISNULL(@Telefono, Telefono),
+                                Email = ISNULL(@Email, Email),
+                                BancoId = @bancoPrincipal,
+                                NumeroCuenta = @cuentaPrincipal,
+                                Observacion = @Observacion,
+                                Estado = @estadoFinal,
+                                Activo = @activoFinal,
+                                ModifiedAt = GETDATE(),
+                                ModifiedBy = @usuarioId
+                            WHERE Id = @id",
+                            new { id, dto.CedulaRIF, dto.Telefono, dto.Email, bancoPrincipal, cuentaPrincipal, dto.Observacion, estadoFinal, activoFinal, usuarioId }, transaction);
+                        r = 1;
+                    }
+                    else
+                    {
+                        id = await connection.ExecuteScalarAsync<int>(@"
+                            INSERT INTO TB_PROPIETARIOS (
+                                Nombre, CedulaRIF, Telefono, Email, BancoId, NumeroCuenta, Observacion, Estado, Activo, CreatedAt, CreatedBy
+                            ) VALUES (
+                                @Nombre, @CedulaRIF, @Telefono, @Email, @bancoPrincipal, @cuentaPrincipal, @Observacion, @estadoFinal, @activoFinal, GETDATE(), @usuarioId
+                            );
+                            SELECT CAST(SCOPE_IDENTITY() as int);",
+                            new { dto.Nombre, dto.CedulaRIF, dto.Telefono, dto.Email, bancoPrincipal, cuentaPrincipal, dto.Observacion, estadoFinal, activoFinal, usuarioId }, transaction);
+                        r = 1;
+                    }
+                }
 
                 if (dto.Cuentas != null)
                 {
@@ -2319,25 +2372,80 @@ namespace Transporte.Infrastructure.Repositories
 
             try
             {
-                var prop = await connection.QueryFirstOrDefaultAsync<dynamic>("SELECT Nombre, BancoId, NumeroCuenta, CedulaRIF FROM TB_PROPIETARIOS WHERE Id = @PropietarioId", new { dto.PropietarioId }, transaction);
-                if (prop == null) return false;
+                var prop = await connection.QueryFirstOrDefaultAsync<dynamic>("SELECT Id, Nombre, BancoId, NumeroCuenta, CedulaRIF FROM TB_PROPIETARIOS WHERE Id = @PropietarioId", new { dto.PropietarioId }, transaction);
+                
+                int finalPropId = dto.PropietarioId;
+                string nombreProp = "";
+                int? bancoIdProp = null;
+                string numCuentaProp = "";
+                string rifProp = "";
 
-                string nombreProp = (string)prop.Nombre;
-                int? bancoIdProp = (int?)prop.BancoId;
-                string numCuentaProp = (string)prop.NumeroCuenta;
-                string rifProp = (string)prop.CedulaRIF;
+                if (prop != null)
+                {
+                    finalPropId = (int)prop.Id;
+                    nombreProp = (string)prop.Nombre;
+                    bancoIdProp = (int?)prop.BancoId;
+                    numCuentaProp = (string)prop.NumeroCuenta;
+                    rifProp = (string)prop.CedulaRIF;
+                }
+                else
+                {
+                    // Fallback resiliente: Si el Id no existe directamente en TB_PROPIETARIOS (ej. id sintético del frontend)
+                    // Buscar si alguna de las fincas tiene el nombre del propietario asignado
+                    if (dto.FincaIds != null && dto.FincaIds.Any())
+                    {
+                        var infoFinca = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                            "SELECT TOP 1 Propietario, CedulaRIF, BancoId, NumeroCuenta FROM TB_FINCAS WHERE Id IN @FincaIds AND Propietario IS NOT NULL AND LTRIM(RTRIM(Propietario)) <> ''",
+                            new { FincaIds = dto.FincaIds }, transaction);
+
+                        if (infoFinca != null && !string.IsNullOrWhiteSpace((string)infoFinca.Propietario))
+                        {
+                            nombreProp = ((string)infoFinca.Propietario).Trim();
+                            rifProp = (string)infoFinca.CedulaRIF ?? "";
+                            bancoIdProp = (int?)infoFinca.BancoId;
+                            numCuentaProp = (string)infoFinca.NumeroCuenta ?? "";
+
+                            // Verificar si ya existe un propietario con este nombre
+                            var propExistente = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                                "SELECT Id, Nombre, BancoId, NumeroCuenta, CedulaRIF FROM TB_PROPIETARIOS WHERE UPPER(LTRIM(RTRIM(Nombre))) = UPPER(@nombreProp)",
+                                new { nombreProp }, transaction);
+
+                            if (propExistente != null)
+                            {
+                                finalPropId = (int)propExistente.Id;
+                                nombreProp = (string)propExistente.Nombre;
+                                bancoIdProp = (int?)propExistente.BancoId ?? bancoIdProp;
+                                numCuentaProp = (string)propExistente.NumeroCuenta ?? numCuentaProp;
+                                rifProp = (string)propExistente.CedulaRIF ?? rifProp;
+                            }
+                            else
+                            {
+                                finalPropId = await connection.ExecuteScalarAsync<int>(@"
+                                    INSERT INTO TB_PROPIETARIOS (Nombre, CedulaRIF, BancoId, NumeroCuenta, Estado, Activo, CreatedAt)
+                                    VALUES (@nombreProp, @rifProp, @bancoIdProp, @numCuentaProp, 'ACTIVO', 1, GETDATE());
+                                    SELECT CAST(SCOPE_IDENTITY() as int);",
+                                    new { nombreProp, rifProp, bancoIdProp, numCuentaProp }, transaction);
+                            }
+                        }
+                    }
+
+                    if (finalPropId <= 0 || string.IsNullOrWhiteSpace(nombreProp))
+                    {
+                        return false;
+                    }
+                }
 
                 if (dto.FincaIds != null && dto.FincaIds.Any())
                 {
                     await connection.ExecuteAsync(@"
                         UPDATE TB_FINCAS 
-                        SET PropietarioId = @PropietarioId, 
+                        SET PropietarioId = @finalPropId, 
                             Propietario = @nombreProp,
                             CedulaRIF = ISNULL(@rifProp, CedulaRIF),
                             BancoId = @bancoIdProp,
                             NumeroCuenta = @numCuentaProp
                         WHERE Id IN @FincaIds", 
-                        new { dto.PropietarioId, nombreProp, rifProp, bancoIdProp, numCuentaProp, FincaIds = dto.FincaIds }, transaction);
+                        new { finalPropId, nombreProp, rifProp, bancoIdProp, numCuentaProp, FincaIds = dto.FincaIds }, transaction);
                 }
 
                 transaction.Commit();

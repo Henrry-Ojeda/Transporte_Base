@@ -92,6 +92,7 @@ export interface CrearPropietarioDto {
   pagoMovilCedula?: string;
   pagoMovilBancoId?: number;
   activo: boolean;
+  fincaIds?: number[];
   cuentas?: PropietarioCuentaBancariaDto[];
 }
 

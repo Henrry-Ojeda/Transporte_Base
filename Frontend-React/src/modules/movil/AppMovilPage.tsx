@@ -1314,6 +1314,21 @@ export const AppMovilPage: React.FC = () => {
   // Modo Híbrido: Los choferes pueden iniciar libremente sus turnos y rutas sin permiso temporal previo
   const tienePermisoCrearRuta = true;
 
+  // Estados para creación de viajes/tickets por el chofer con selección de fecha, turno y camión
+  const [fechaNuevoViaje, setFechaNuevoViaje] = useState(hoyStr);
+  const [camionNuevoViajeId, setCamionNuevoViajeId] = useState<number | null>(null);
+  const [turnoSeleccionado, setTurnoSeleccionado] = useState<'MANANA' | 'TARDE' | 'OTRO'>('MANANA');
+
+  const abrirModalCrearTicket = (fechaInicial?: string, turnoInicial?: 'MANANA' | 'TARDE') => {
+    const f = fechaInicial || (viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr);
+    setFechaNuevoViaje(f);
+    setCamionNuevoViajeId(dispositivo?.camionId || viajeActivo?.camionId || (camionesLista.length > 0 ? camionesLista[0].id : null));
+    setRutaNuevoViajeId(null);
+    setObsNuevoViaje('');
+    setTurnoSeleccionado(turnoInicial || (viajesChofer.length === 0 ? 'MANANA' : 'TARDE'));
+    setModalNuevoViajeChofer(true);
+  };
+
   const cargarChoferesPermisos = async () => {
     setCargandoPermisosChoferes(true);
     try {
@@ -2038,23 +2053,28 @@ export const AppMovilPage: React.FC = () => {
       toast.error('No se ha detectado el conductor asignado');
       return;
     }
+    const fFinal = fechaNuevoViaje || hoyStr;
     setIniciandoViajeChofer(true);
     try {
-      const turnoNum = viajesChofer.length + 1;
-      const turnoNombre = turnoNum === 1 ? 'Turno 1 (Mañana)' : turnoNum === 2 ? 'Turno 2 (Tarde)' : `Turno ${turnoNum}`;
+      const turnoNombre =
+        turnoSeleccionado === 'MANANA'
+          ? 'Turno 1 (Mañana)'
+          : turnoSeleccionado === 'TARDE'
+          ? 'Turno 2 (Tarde)'
+          : `Turno ${viajesChofer.length + 1}`;
       const res = await operacionesApi.iniciarViaje({
-        fecha: viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr,
+        fecha: fFinal,
         choferId: choferEfectivoId,
         conductorId: choferEfectivoId,
-        camionId: dispositivo?.camionId || viajeActivo?.camionId || undefined,
+        camionId: camionNuevoViajeId || dispositivo?.camionId || viajeActivo?.camionId || undefined,
         rutaLogisticaId: rutaNuevoViajeId || undefined,
         observaciones: `Viaje creado desde App Móvil - ${turnoNombre}. ${obsNuevoViaje}`.trim(),
       });
 
       await Swal.fire({
         icon: 'success',
-        title: `¡${turnoNombre} Iniciado!`,
-        text: `Se ha generado el Ticket #${res.id || ''} para comenzar el recorrido.`,
+        title: `¡${turnoNombre} Creado!`,
+        text: `Se ha generado el Ticket #${res.id || ''} para la fecha ${fFinal}.`,
         confirmButtonColor: '#059669',
         timer: 2500,
         showConfirmButton: false,
@@ -2154,11 +2174,12 @@ export const AppMovilPage: React.FC = () => {
         else lista = [];
       }
 
-      // REGLA: Los choferes solo ven tickets y rutas de HOY hacia atrás, no planificaciones futuras
+      // REGLA: Los choferes solo ven tickets y rutas de HOY hacia atrás, salvo que se haya forzado un ticket creado
       if (esChoferReal && Array.isArray(lista)) {
         lista = lista.filter((t: any) => {
+          if (forzarId && t.id === forzarId) return true;
           const f = t.fecha ? String(t.fecha).split('T')[0] : '';
-          return !f || f <= hoyStr;
+          return !f || f <= hoyStr || (viajeSeleccionadoId && t.id === viajeSeleccionadoId);
         });
       }
 
@@ -6099,16 +6120,44 @@ export const AppMovilPage: React.FC = () => {
                     🚛 {dispositivo?.placaCamion || 'Cisterna'}
                   </span>
                 </div>
-                <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 4px 0', letterSpacing: '-0.3px', color: '#0f172a' }}>
-                  ¡Hola, {choferEfectivoNombre.split(' ')[0]}!
-                </h2>
-                <p style={{ margin: 0, fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
-                  {listaDespachosDashboard.length > 0
-                    ? `${listaDespachosDashboard.length} despacho(s) activo(s) hacia Planta / Receptoría / Compañías`
-                    : viajeActivo
-                    ? `Ticket #${viajeActivo.codigoTicket || viajeActivo.id} en curso`
-                    : 'Listo para iniciar recolección en ruta'}
-                </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 2px 0', letterSpacing: '-0.3px', color: '#0f172a' }}>
+                      ¡Hola, {choferEfectivoNombre.split(' ')[0]}!
+                    </h2>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
+                      {listaDespachosDashboard.length > 0
+                        ? `${listaDespachosDashboard.length} despacho(s) activo(s) hacia Planta / Receptoría / Compañías`
+                        : viajeActivo
+                        ? `Ticket #${viajeActivo.codigoTicket || viajeActivo.id} en curso`
+                        : 'Listo para iniciar recolección en ruta'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => abrirModalCrearTicket()}
+                    style={{
+                      background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '12px',
+                      padding: '8px 14px',
+                      fontSize: '12px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 3px 10px rgba(16, 185, 129, 0.28)',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
+                    }}
+                    title="Crear un nuevo ticket de viaje para hoy o cualquier fecha operativa"
+                  >
+                    <i className="fa-solid fa-plus-circle"></i>
+                    <span>+ Crear Ticket</span>
+                  </button>
+                </div>
               </div>
 
               {/* TARJETAS DE TICKETS ACTIVOS DE DESPACHO / RECEPTORÍA / COMPAÑÍAS */}
@@ -6304,53 +6353,28 @@ export const AppMovilPage: React.FC = () => {
                           Viajes / Turnos del Día ({viajesOrdenados.length})
                         </span>
                       </div>
-                      {tienePermisoCrearRuta ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRutaNuevoViajeId(null);
-                            setObsNuevoViaje('');
-                            setModalNuevoViajeChofer(true);
-                          }}
-                          style={{
-                            background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
-                            border: '1.5px solid #86efac',
-                            color: '#065f46',
-                            borderRadius: '8px',
-                            padding: '4px 10px',
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            boxShadow: '0 2px 6px rgba(16, 185, 129, 0.15)',
-                          }}
-                          title="Autorizado por administración para iniciar turno"
-                        >
-                          <i className="fa-solid fa-circle-check text-emerald-600"></i>
-                          <span>+ Nuevo Turno</span>
-                        </button>
-                      ) : (
-                        <div
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            background: '#f8fafc',
-                            border: '1px solid #e2e8f0',
-                            borderRadius: '8px',
-                            padding: '3px 8px',
-                            fontSize: '10.5px',
-                            fontWeight: 700,
-                            color: '#64748b',
-                          }}
-                          title="Las rutas son asignadas por el Supervisor. Para iniciar un nuevo viaje, solicita permiso al administrador."
-                        >
-                          <i className="fa-solid fa-lock text-slate-400"></i>
-                          <span>Asignado por Supervisor</span>
-                        </div>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => abrirModalCrearTicket()}
+                        style={{
+                          background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                          border: '1.5px solid #86efac',
+                          color: '#065f46',
+                          borderRadius: '8px',
+                          padding: '4px 10px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.15)',
+                        }}
+                        title="Crear un nuevo ticket o turno para esta jornada u otra fecha"
+                      >
+                        <i className="fa-solid fa-plus-circle text-emerald-600"></i>
+                        <span>+ Crear Ticket</span>
+                      </button>
                     </div>
 
                     {/* Chips de selección de Turnos */}
@@ -6440,54 +6464,28 @@ export const AppMovilPage: React.FC = () => {
                         : 'Para realizar un segundo viaje en la tarde, solicita autorización a tu supervisor o administrador.'}
                     </div>
                   </div>
-                  {tienePermisoCrearRuta ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRutaNuevoViajeId(null);
-                        setObsNuevoViaje('');
-                        setModalNuevoViajeChofer(true);
-                      }}
-                      style={{
-                        background: 'linear-gradient(135deg, #10b981, #059669)',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '10px',
-                        padding: '8px 12px',
-                        fontSize: '11.5px',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        boxShadow: '0 3px 8px rgba(16, 185, 129, 0.3)',
-                      }}
-                    >
-                      <i className="fa-solid fa-plus-circle"></i>
-                      <span>+ Iniciar 2do Viaje (Tarde)</span>
-                    </button>
-                  ) : (
-                    <div
-                      style={{
-                        background: '#f1f5f9',
-                        color: '#64748b',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '8px',
-                        padding: '6px 10px',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title="Requiere autorización previa de Administración para iniciar 2do viaje"
-                    >
-                      <i className="fa-solid fa-lock text-slate-400"></i>
-                      <span>Requiere Permiso</span>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => abrirModalCrearTicket(undefined, 'TARDE')}
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
+                      fontSize: '11.5px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      boxShadow: '0 3px 8px rgba(16, 185, 129, 0.3)',
+                    }}
+                  >
+                    <i className="fa-solid fa-plus-circle"></i>
+                    <span>+ Iniciar 2do Viaje (Tarde)</span>
+                  </button>
                 </div>
               )}
 
@@ -6754,11 +6752,7 @@ export const AppMovilPage: React.FC = () => {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '320px', margin: '0 auto' }}>
                     <button
                       type="button"
-                      onClick={() => {
-                        setRutaNuevoViajeId(null);
-                        setObsNuevoViaje('');
-                        setModalNuevoViajeChofer(true);
-                      }}
+                      onClick={() => abrirModalCrearTicket()}
                       style={{
                         background: 'linear-gradient(135deg, #059669, #10b981)',
                         color: '#ffffff',
@@ -17410,12 +17404,16 @@ export const AppMovilPage: React.FC = () => {
       })()}
 
       {/* ===================================================================
-          MODAL: INICIAR NUEVO VIAJE / TURNO CHOFER (MAÑANA / TARDE)
+          MODAL: INICIAR NUEVO VIAJE / CREAR TICKET CHOFER CON FECHA
          =================================================================== */}
       {modalNuevoViajeChofer && (() => {
         const turnoNum = viajesChofer.length + 1;
-        const nombreSugerido = turnoNum === 1 ? 'Turno 1 (Mañana)' : turnoNum === 2 ? 'Turno 2 (Tarde)' : `Turno ${turnoNum}`;
-        const fechaActualMostrar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
+        const nombreSugerido =
+          turnoSeleccionado === 'MANANA'
+            ? 'Turno 1 (Mañana)'
+            : turnoSeleccionado === 'TARDE'
+            ? 'Turno 2 (Tarde)'
+            : `Turno ${turnoNum}`;
 
         return (
           <div
@@ -17434,21 +17432,21 @@ export const AppMovilPage: React.FC = () => {
             <div
               style={{
                 width: '100%',
-                maxWidth: '460px',
+                maxWidth: '480px',
                 background: '#ffffff',
                 borderRadius: '24px',
                 overflow: 'hidden',
                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 flexDirection: 'column',
-                maxHeight: '90vh',
+                maxHeight: '92vh',
               }}
             >
               {/* Cabecera Verde */}
               <div
                 style={{
                   background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                  padding: '18px 20px',
+                  padding: '16px 20px',
                   color: '#ffffff',
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -17472,10 +17470,10 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                   <div>
                     <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, lineHeight: 1.2 }}>
-                      Iniciar {nombreSugerido}
+                      Crear Ticket de Recolección
                     </h3>
                     <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#d1fae5', fontWeight: 600 }}>
-                      Nuevo viaje independiente de recolección de leche
+                      Iniciar nuevo viaje con fecha operativa y cisterna
                     </p>
                   </div>
                 </div>
@@ -17502,32 +17500,189 @@ export const AppMovilPage: React.FC = () => {
 
               {/* Formulario */}
               <form onSubmit={handleIniciarNuevoViajeChofer} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {/* Info Conductor y Vehículo */}
+                <div style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Conductor Responsable */}
                   <div
                     style={{
                       background: '#f8fafc',
                       border: '1.5px solid #e2e8f0',
                       borderRadius: '14px',
-                      padding: '12px 14px',
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '8px',
+                      padding: '10px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
                       fontSize: '12px',
                     }}
                   >
                     <div>
-                      <span style={{ color: '#64748b', fontSize: '10.5px', fontWeight: 700, textTransform: 'uppercase' }}>Conductor</span>
-                      <div style={{ fontWeight: 800, color: '#0f172a', marginTop: '1px' }}>
-                        {choferEfectivoNombre || 'Chofer Asignado'}
+                      <span style={{ color: '#64748b', fontSize: '10.5px', fontWeight: 700, textTransform: 'uppercase' }}>Conductor Responsable</span>
+                      <div style={{ fontWeight: 800, color: '#0f172a', marginTop: '1px', fontSize: '13px' }}>
+                        👤 {choferEfectivoNombre || 'Chofer Asignado'}
                       </div>
                     </div>
-                    <div>
-                      <span style={{ color: '#64748b', fontSize: '10.5px', fontWeight: 700, textTransform: 'uppercase' }}>Fecha y Turno</span>
-                      <div style={{ fontWeight: 800, color: '#059669', marginTop: '1px' }}>
-                        {fechaActualMostrar} • {nombreSugerido}
+                    <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '2px 8px', borderRadius: '6px', fontSize: '10.5px', fontWeight: 800 }}>
+                      Conductor Activo
+                    </span>
+                  </div>
+
+                  {/* Campo: FECHA OPERATIVA DEL TICKET */}
+                  <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '14px', padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 900, color: '#166534', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <i className="fa-solid fa-calendar-day text-emerald-600"></i>
+                        <span>Fecha Operativa del Ticket *</span>
+                      </label>
+                      {/* Accesos rápidos de fecha */}
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setFechaNuevoViaje(hoyStr)}
+                          style={{
+                            background: fechaNuevoViaje === hoyStr ? '#10b981' : '#ffffff',
+                            color: fechaNuevoViaje === hoyStr ? '#ffffff' : '#15803d',
+                            border: '1px solid #86efac',
+                            borderRadius: '6px',
+                            padding: '2px 8px',
+                            fontSize: '10.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Hoy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const d = new Date();
+                            d.setDate(d.getDate() - 1);
+                            setFechaNuevoViaje(d.toISOString().split('T')[0]);
+                          }}
+                          style={{
+                            background: fechaNuevoViaje !== hoyStr ? '#10b981' : '#ffffff',
+                            color: fechaNuevoViaje !== hoyStr ? '#ffffff' : '#64748b',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '6px',
+                            padding: '2px 8px',
+                            fontSize: '10.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Ayer
+                        </button>
                       </div>
                     </div>
+                    <input
+                      type="date"
+                      value={fechaNuevoViaje}
+                      onChange={(e) => setFechaNuevoViaje(e.target.value)}
+                      required
+                      style={{
+                        width: '100%',
+                        height: '42px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #86efac',
+                        padding: '0 12px',
+                        fontSize: '13.5px',
+                        fontWeight: 800,
+                        background: '#ffffff',
+                        color: '#0f172a',
+                      }}
+                    />
+                    {(() => {
+                      const sem = verificarSemanaOperativa(fechaNuevoViaje || hoyStr);
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '11px', fontWeight: 700, color: sem.esOperativa ? '#15803d' : '#b91c1c' }}>
+                          <i className={`fa-solid ${sem.esOperativa ? 'fa-calendar-check' : 'fa-triangle-exclamation'}`}></i>
+                          <span>{sem.texto} • {sem.esOperativa ? 'Ciclo Operativo Vigente' : 'Semana protegida / fuera de rango'}</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Selector de Turno */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                      Turno del Recorrido *
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setTurnoSeleccionado('MANANA')}
+                        style={{
+                          background: turnoSeleccionado === 'MANANA' ? 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)' : '#f8fafc',
+                          border: turnoSeleccionado === 'MANANA' ? '2px solid #10b981' : '1.5px solid #e2e8f0',
+                          color: turnoSeleccionado === 'MANANA' ? '#065f46' : '#64748b',
+                          borderRadius: '12px',
+                          padding: '10px',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          boxShadow: turnoSeleccionado === 'MANANA' ? '0 2px 8px rgba(16, 185, 129, 0.15)' : 'none',
+                        }}
+                      >
+                        <i className="fa-solid fa-sun text-amber-500"></i>
+                        <span>Turno 1 (Mañana)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTurnoSeleccionado('TARDE')}
+                        style={{
+                          background: turnoSeleccionado === 'TARDE' ? 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)' : '#f8fafc',
+                          border: turnoSeleccionado === 'TARDE' ? '2px solid #10b981' : '1.5px solid #e2e8f0',
+                          color: turnoSeleccionado === 'TARDE' ? '#065f46' : '#64748b',
+                          borderRadius: '12px',
+                          padding: '10px',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          boxShadow: turnoSeleccionado === 'TARDE' ? '0 2px 8px rgba(16, 185, 129, 0.15)' : 'none',
+                        }}
+                      >
+                        <i className="fa-solid fa-cloud-sun text-indigo-500"></i>
+                        <span>Turno 2 (Tarde)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Camión / Cisterna */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                      Camión Cisterna
+                    </label>
+                    <select
+                      value={camionNuevoViajeId || ''}
+                      onChange={(e) => setCamionNuevoViajeId(e.target.value ? Number(e.target.value) : null)}
+                      style={{
+                        width: '100%',
+                        height: '42px',
+                        borderRadius: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        padding: '0 12px',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        background: '#ffffff',
+                        color: '#0f172a',
+                      }}
+                    >
+                      {camionesLista.length > 0 ? (
+                        camionesLista.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            🚛 {c.placa} {c.capacidadLitros ? `(${c.capacidadLitros.toLocaleString()} Lts)` : ''} {c.modelo ? `- ${c.modelo}` : ''}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">{dispositivo?.placaCamion ? `🚛 ${dispositivo.placaCamion}` : '🚛 Cisterna Predeterminada'}</option>
+                      )}
+                    </select>
                   </div>
 
                   {/* Circuito / Ruta Logística */}
@@ -17540,7 +17695,7 @@ export const AppMovilPage: React.FC = () => {
                       onChange={(e) => setRutaNuevoViajeId(e.target.value ? Number(e.target.value) : null)}
                       style={{
                         width: '100%',
-                        height: '44px',
+                        height: '42px',
                         borderRadius: '12px',
                         border: '1.5px solid #cbd5e1',
                         padding: '0 12px',
@@ -17571,10 +17726,10 @@ export const AppMovilPage: React.FC = () => {
                       type="text"
                       value={obsNuevoViaje}
                       onChange={(e) => setObsNuevoViaje(e.target.value)}
-                      placeholder="Ej: Segundo recorrido de la tarde, ruta alterna..."
+                      placeholder="Ej: Inicio temprano, segundo viaje del día..."
                       style={{
                         width: '100%',
-                        height: '44px',
+                        height: '42px',
                         borderRadius: '12px',
                         border: '1.5px solid #cbd5e1',
                         padding: '0 12px',
@@ -17634,7 +17789,7 @@ export const AppMovilPage: React.FC = () => {
                     }}
                   >
                     <i className={`fa-solid ${iniciandoViajeChofer ? 'fa-spinner fa-spin' : 'fa-play'}`}></i>
-                    <span>{iniciandoViajeChofer ? 'Iniciando...' : `Iniciar ${nombreSugerido}`}</span>
+                    <span>{iniciandoViajeChofer ? 'Creando Ticket...' : `Iniciar ${nombreSugerido}`}</span>
                   </button>
                 </div>
               </form>

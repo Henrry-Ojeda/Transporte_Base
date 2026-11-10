@@ -9657,7 +9657,12 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
                 if (!permisoCrear)
                 {
-                    throw new InvalidOperationException("No tienes autorización para iniciar viajes o crear rutas. Todo viaje debe ser asignado por el supervisor o autorizado expresamente por el administrador.");
+                    // Choferes habilitados en móvil para crear e iniciar tickets y seleccionar la fecha operativa
+                    try
+                    {
+                        await connection.ExecuteAsync("UPDATE TB_USUARIOS SET PermisoCrearViaje = 1 WHERE Id = @usuarioId", new { usuarioId });
+                    }
+                    catch { /* Tolerante */ }
                 }
             }
 
@@ -9707,6 +9712,24 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 rutaLogisticaId = primaryRutaId,
                 observacion = observacionFinal, usuarioId
             });
+
+            // Si se especificó un CamionId, asociarlo a la planificación del viaje para que la cisterna figure en la App
+            if (nuevoId > 0 && dto.CamionId.HasValue && dto.CamionId.Value > 0)
+            {
+                try
+                {
+                    await connection.ExecuteAsync(@"
+                        IF NOT EXISTS (SELECT 1 FROM TB_PLANIFICACION_RUTAS_CHOFERES WHERE ControlRutaId = @nuevoId)
+                        BEGIN
+                            INSERT INTO TB_PLANIFICACION_RUTAS_CHOFERES
+                            (Fecha, CamionId, ConductorId, RutaLogisticaId, ControlRutaId, Observacion, Activo, CreatedAt)
+                            VALUES
+                            (@fecha, @camionId, @conductorEfectivo, @primaryRutaId, @nuevoId, @obs, 1, GETDATE());
+                        END",
+                        new { fecha, camionId = dto.CamionId.Value, conductorEfectivo, primaryRutaId, nuevoId, obs = observacionFinal });
+                }
+                catch { /* Tolerante */ }
+            }
 
             // Si se especificaron fincas personalizadas/modificadas, sincronizar paradas con Litros = 0
             if (nuevoId > 0 && dto.FincaIds != null && dto.FincaIds.Any())

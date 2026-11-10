@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 1,
-  tag: 'v3.18.1',
+  patch: 2,
+  tag: 'v3.18.2',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Corrección de eliminación en cascada de tickets y planificaciones para resolver restricción FK_LogModificacionesControl_Ticket v3.18.1',
+  descripcion: 'Habilitación en Móvil de creación de tickets y selección de fecha operativa por choferes v3.18.2',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

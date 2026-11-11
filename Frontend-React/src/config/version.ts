@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 12,
-  tag: 'v3.18.12',
+  patch: 13,
+  tag: 'v3.18.13',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Control Rutas: Rediseño limpio y modular de tarjetas de tickets sin redundancia de datos, panel de carga unificado y barra espaciosa para botones de Receptoría, Compañía y Traspaso v3.18.12',
+  descripcion: 'Control Rutas: Rediseño limpio de tarjetas con botones amplios + optimización reactiva de selector de compañías con fallback resiliente v3.18.13',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

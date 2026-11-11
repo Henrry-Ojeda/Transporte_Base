@@ -481,7 +481,12 @@ export const catalogosApi = {
   // COMPAÑÍAS / QUESERAS
   getCompanias: async (soloActivos = false): Promise<CompaniaDto[]> => {
     const res = await apiClient.get<CompaniaDto[]>('/catalogos/companias', { params: { soloActivos } });
-    return Array.isArray(res.data) ? res.data : [];
+    const data = Array.isArray(res.data) ? res.data : [];
+    if (soloActivos && data.length === 0) {
+      const fallbackRes = await apiClient.get<CompaniaDto[]>('/catalogos/companias', { params: { soloActivos: false } });
+      return Array.isArray(fallbackRes.data) ? fallbackRes.data : [];
+    }
+    return data;
   },
   crearCompania: async (dto: GuardarCompaniaDto): Promise<{ id: number; message: string }> => {
     const res = await apiClient.post('/catalogos/companias', dto);

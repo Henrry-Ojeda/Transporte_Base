@@ -29,7 +29,7 @@ export const CompaniaSelect: React.FC<CompaniaSelectProps> = ({
   className,
 }) => {
   const { data: companias = [], isLoading } = useQuery<CompaniaDto[]>({
-    queryKey: ['companias-catalogos'],
+    queryKey: ['companias'],
     queryFn: () => catalogosApi.getCompanias(true),
     staleTime: 1000 * 60 * 5,
   });

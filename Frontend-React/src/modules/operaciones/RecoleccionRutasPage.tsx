@@ -3581,32 +3581,11 @@ export const RecoleccionRutasPage: React.FC = () => {
               box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
               transition: all 0.2s ease;
               overflow: hidden;
+              margin-bottom: 12px;
             }
             .ticket-table-card:hover {
               box-shadow: 0 4px 14px rgba(0, 0, 0, 0.07);
               border-color: #cbd5e1;
-            }
-            .ticket-table-row {
-              display: grid;
-              grid-template-columns: minmax(230px, 1.15fr) minmax(230px, 1.15fr) minmax(280px, 1.35fr) minmax(220px, 1fr);
-              gap: 16px;
-              padding: 14px 18px;
-              align-items: center;
-            }
-            @media (max-width: 1200px) {
-              .ticket-table-header {
-                display: none !important;
-              }
-              .ticket-table-row {
-                grid-template-columns: 1fr 1fr;
-                gap: 16px;
-              }
-            }
-            @media (max-width: 640px) {
-              .ticket-table-row {
-                grid-template-columns: 1fr;
-                gap: 14px;
-              }
             }
           `}</style>
 
@@ -3636,31 +3615,7 @@ export const RecoleccionRutasPage: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {/* ENCABEZADO TIPO TABLA PARA PANTALLAS GRANDES */}
-              <div
-                className="ticket-table-header"
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'minmax(230px, 1.15fr) minmax(230px, 1.15fr) minmax(280px, 1.35fr) minmax(220px, 1fr)',
-                  gap: '16px',
-                  padding: '8px 18px',
-                  fontSize: '11px',
-                  fontWeight: 800,
-                  color: '#64748b',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                }}
-              >
-                <div><i className="fa-solid fa-ticket" style={{ marginRight: '6px', color: '#0284c7' }}></i> Ticket & Conductor</div>
-                <div><i className="fa-solid fa-gas-pump" style={{ marginRight: '6px', color: '#0284c7' }}></i> Modo & Ocupación Cisterna</div>
-                <div><i className="fa-solid fa-droplet" style={{ marginRight: '6px', color: '#0284c7' }}></i> Litros & Recorrido / Paradas</div>
-                <div style={{ textAlign: 'center' }}><i className="fa-solid fa-sliders" style={{ marginRight: '6px', color: '#0284c7' }}></i> Acciones Operativas</div>
-              </div>
-
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {ticketsCombinados.map((item: any) => {
                 const esRuta = item._tipoTicket === 'RUTA';
                 const esFinalizado =
@@ -3752,371 +3707,321 @@ export const RecoleccionRutasPage: React.FC = () => {
                       borderLeft: `5px solid ${esTicketTitilando ? '#10b981' : item._origenColor}`,
                     }}
                   >
-                    {/* FILA PRINCIPAL: FORMATO COLUMNAS TIPO TABLA */}
-                    <div className="ticket-table-row">
-                      {/* COLUMNA 1: TICKET & CONDUCTOR (SIN FECHA Y SIN BADGE ABIERTO) */}
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b' }}>
-                              <i className="fa-solid fa-ticket" style={{ color: item._origenColor, marginRight: '4px' }}></i>
-                              Ticket #{item.codigoTicket || item.id}
-                            </span>
-                            <span
-                              className="badge"
-                              style={{
-                                background: item._origenBg,
-                                color: item._origenColor,
-                                border: `1px solid ${item._origenBorder}`,
-                                fontWeight: 800,
-                                fontSize: '10.5px',
-                                padding: '2px 8px',
-                                borderRadius: '6px',
-                              }}
-                            >
-                              <i className={`fa-solid ${item._origenIcon}`} style={{ marginRight: '4px' }}></i>
-                              {item._origenBadge}
-                            </span>
-                            {esTicketTitilando && (
-                              <span
-                                className="badge"
-                                style={{
-                                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                                  color: '#ffffff',
-                                  fontWeight: 800,
-                                  fontSize: '10px',
-                                  padding: '2px 7px',
-                                  borderRadius: '6px',
-                                  boxShadow: '0 2px 6px rgba(16, 185, 129, 0.4)',
-                                  animation: 'pulse 0.9s infinite ease-in-out',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                }}
-                              >
-                                <i className="fa-solid fa-bolt"></i> ¡NUEVA FINCA!
-                              </span>
-                            )}
-                            {planCorrespondiente && (
-                              <span
-                                className="badge"
-                                style={{
-                                  background: '#eff6ff',
-                                  color: '#1d4ed8',
-                                  border: '1px solid #bfdbfe',
-                                  fontWeight: 800,
-                                  fontSize: '10px',
-                                  padding: '2px 7px',
-                                  borderRadius: '6px',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                }}
-                                title="Ruta creada y enlazada automáticamente desde la Planificación de Flota (15 Días)"
-                              >
-                                <i className="fa-solid fa-clipboard-check text-blue-600"></i> RUTA PLANIFICADA (15D)
-                              </span>
-                            )}
-                          </div>
-                          {puedeEditarTicket && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEliminarTicket(item);
-                              }}
-                              className="btn btn-xs"
-                              style={{
-                                background: '#fef2f2',
-                                color: '#dc2626',
-                                border: '1px solid #fecaca',
-                                borderRadius: '6px',
-                                padding: '2px 7px',
-                                fontSize: '11px',
-                                cursor: 'pointer',
-                              }}
-                              title="Eliminar este ticket"
-                            >
-                              <i className="fa-solid fa-trash-can"></i>
-                            </button>
-                          )}
-                        </div>
+                    {/* 1. CABECERA LIMPIA Y UNIFICADA (TICKET, CONDUCTOR, CAMIÓN, ESTADO) */}
+                    <div
+                      style={{
+                        padding: '11px 18px',
+                        background: '#f8fafc',
+                        borderBottom: '1px solid #e2e8f0',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '10px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <i className="fa-solid fa-ticket" style={{ color: item._origenColor }}></i>
+                          Ticket #{item.codigoTicket || item.id}
+                        </span>
 
-                        <div>
-                          <span style={{ fontSize: '14.5px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <i className="fa-solid fa-user-tie" style={{ color: item._origenColor }}></i>
-                            {item._conductor}
+                        <span style={{ color: '#cbd5e1', fontWeight: 700 }}>•</span>
+
+                        <span style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <i className="fa-solid fa-user-tie" style={{ color: item._origenColor }}></i>
+                          {item._conductor}
+                        </span>
+
+                        <span style={{ color: '#cbd5e1', fontWeight: 700 }}>•</span>
+
+                        <span style={{ fontSize: '12.5px', color: '#475569', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <i className="fa-solid fa-truck" style={{ color: '#64748b' }}></i>
+                          <span>{placaTexto}</span>
+                        </span>
+
+                        {esTicketTitilando && (
+                          <span
+                            className="badge"
+                            style={{
+                              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                              color: '#ffffff',
+                              fontWeight: 800,
+                              fontSize: '10px',
+                              padding: '2px 7px',
+                              borderRadius: '6px',
+                              boxShadow: '0 2px 6px rgba(16, 185, 129, 0.4)',
+                              animation: 'pulse 0.9s infinite ease-in-out',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <i className="fa-solid fa-bolt"></i> ¡NUEVA FINCA!
                           </span>
-                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                            <i className="fa-solid fa-truck" style={{ color: '#64748b' }}></i>
-                            <span>{placaTexto}</span>
-                            <span style={{ color: '#94a3b8' }}>•</span>
-                            <span style={{ fontWeight: 700, color: '#334155' }}>Capacidad: {capacidadCisterna.toLocaleString()} L</span>
-                          </div>
-                          {!esRuta && item.nombreCompania && (
-                            <div style={{ fontSize: '12px', color: '#7e22ce', marginTop: '2px', fontWeight: 700 }}>
-                              <i className="fa-solid fa-building-wheat" style={{ marginRight: '4px' }}></i>
-                              Destino: {item.nombreCompania}
-                            </div>
-                          )}
-                          {esRuta && !esFinalizado && !estaEnReceptoriaOCompania && esAdminOSup && (
-                            <div style={{ marginTop: '7px' }}>
+                        )}
+
+                        {planCorrespondiente && (
+                          <span
+                            className="badge"
+                            style={{
+                              background: '#eff6ff',
+                              color: '#1d4ed8',
+                              border: '1px solid #bfdbfe',
+                              fontWeight: 800,
+                              fontSize: '10px',
+                              padding: '2px 7px',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                            title="Ruta enlazada desde Planificación de Flota"
+                          >
+                            <i className="fa-solid fa-clipboard-check text-blue-600"></i> PLANIFICADA
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span
+                          className="badge"
+                          style={{
+                            background: item._origenBg,
+                            color: item._origenColor,
+                            border: `1px solid ${item._origenBorder}`,
+                            fontWeight: 800,
+                            fontSize: '11px',
+                            padding: '3px 9px',
+                            borderRadius: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <i className={`fa-solid ${item._origenIcon}`}></i>
+                          {item._origenBadge}
+                        </span>
+
+                        {puedeEditarTicket && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEliminarTicket(item);
+                            }}
+                            className="btn btn-xs"
+                            style={{
+                              background: '#fef2f2',
+                              color: '#dc2626',
+                              border: '1px solid #fecaca',
+                              borderRadius: '6px',
+                              padding: '3px 8px',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                            }}
+                            title="Eliminar este ticket"
+                          >
+                            <i className="fa-solid fa-trash-can"></i>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 2. CUERPO MODULAR (2 PANELES EQUILIBRADOS: CARGA Y PARADAS) */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                        gap: '14px',
+                        padding: '14px 18px',
+                        alignItems: 'stretch',
+                      }}
+                    >
+
+                      {/* PANEL 1: CARGA Y CISTERNA (UNIFICADO) */}
+                      <div
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '10px',
+                          padding: '12px 14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                        }}
+                      >
+                        {/* Selector de Ruta si aplica */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                            <i className="fa-solid fa-route" style={{ color: '#0284c7', marginRight: '5px' }}></i>
+                            Ruta Logística
+                          </span>
+
+                          {esRuta ? (
+                            estaEnReceptoriaOCompania ? (
+                              <span
+                                className="badge"
+                                style={{
+                                  background: '#ffffff',
+                                  color: '#64748b',
+                                  border: '1px solid #cbd5e1',
+                                  fontWeight: 700,
+                                  fontSize: '11px',
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                }}
+                              >
+                                <i className="fa-solid fa-lock mr-1 text-slate-400"></i>
+                                {tieneRutaLogistica ? (item.rutaLogisticaNombre || item.rutaNombre) : 'Modo Libre'}
+                              </span>
+                            ) : tieneRutaLogistica ? (
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  abrirModalModificarFincasTicket(item);
-                                }}
-                                className="btn btn-xs"
+                                onClick={() => abrirModalAsignarRutas(item)}
+                                className="badge"
                                 style={{
                                   background: '#faf5ff',
                                   color: '#7e22ce',
                                   border: '1px solid #d8b4fe',
-                                  fontWeight: 800,
+                                  fontWeight: 700,
                                   fontSize: '11px',
-                                  padding: '3px 9px',
+                                  padding: '3px 8px',
                                   borderRadius: '6px',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '5px',
                                   cursor: 'pointer',
-                                }}
-                                title="Modificar asignación de fincas de esta ruta en caliente (con regla de blindaje)"
-                              >
-                                <i className="fa-solid fa-pen-to-square"></i> Modificar Fincas de la Ruta
-                              </button>
-                            </div>
-                          )}
-                          {esRuta && !esFinalizado && estaEnReceptoriaOCompania && (
-                            <div style={{ marginTop: '7px' }}>
-                              <span
-                                className="badge"
-                                style={{
-                                  background: '#fffbeb',
-                                  color: '#92400e',
-                                  border: '1px solid #fde68a',
-                                  fontWeight: 800,
-                                  fontSize: '10px',
-                                  padding: '2px 8px',
-                                  borderRadius: '6px',
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: '4px',
                                 }}
-                                title="Ticket en Receptoría: fincas bloqueadas en modo sólo lectura hasta que Receptoría devuelva el ticket"
+                                title="Clic para cambiar rutas"
                               >
-                                <i className="fa-solid fa-lock"></i> Fincas Bloqueadas (En Receptoría)
-                              </span>
-                            </div>
+                                {item.rutaLogisticaNombre || item.rutaNombre}
+                                <i className="fa-solid fa-pen-to-square" style={{ fontSize: '10px', color: '#a855f7' }}></i>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => abrirModalAsignarRutas(item)}
+                                className="badge"
+                                style={{
+                                  background: '#ffffff',
+                                  color: '#2563eb',
+                                  border: '1px dashed #93c5fd',
+                                  fontWeight: 700,
+                                  fontSize: '11px',
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <i className="fa-solid fa-plus mr-1"></i> Asignar Ruta
+                              </button>
+                            )
+                          ) : (
+                            <span style={{ fontSize: '11px', color: '#7e22ce', fontWeight: 700 }}>
+                              {item.nombreCompania || 'Planta Externa'}
+                            </span>
                           )}
                         </div>
-                      </div>
 
-                      {/* COLUMNA 2: MODO LIBRE / RUTA & OCUPACIÓN CISTERNA */}
-                      <div>
-                        {esRuta ? (
-                          <>
-                            <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                              {estaEnReceptoriaOCompania ? (
-                                <span
-                                  className="badge"
-                                  title="Ticket en proceso de verificación en Receptoría (Modo Sólo Lectura)"
-                                  style={{
-                                    background: '#f8fafc',
-                                    color: '#64748b',
-                                    border: '1.5px solid #cbd5e1',
-                                    fontWeight: 700,
-                                    fontSize: '11px',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    padding: '4px 10px',
-                                    borderRadius: '7px',
-                                  }}
-                                >
-                                  <i className="fa-solid fa-lock" style={{ color: '#94a3b8' }}></i>
-                                  {tieneRutaLogistica
-                                    ? `Ruta: ${item.rutaLogisticaNombre || item.rutaNombre || `#${item.rutaLogisticaId}`}`
-                                    : 'Modo Libre (Paradas Flexibles)'}
-                                </span>
-                              ) : tieneRutaLogistica ? (
-                                <button
-                                  type="button"
-                                  onClick={() => abrirModalAsignarRutas(item)}
-                                  className="badge"
-                                  title="Haga clic para modificar o agregar más rutas logísticas a este ticket"
-                                  style={{
-                                    background: '#faf5ff',
-                                    color: '#7e22ce',
-                                    border: '1.5px solid #d8b4fe',
-                                    fontWeight: 700,
-                                    fontSize: '11px',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    padding: '4px 10px',
-                                    borderRadius: '7px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                >
-                                  <i className="fa-solid fa-route" style={{ color: '#9333ea' }}></i>
-                                  Ruta: {item.rutaLogisticaNombre || item.rutaNombre || `#${item.rutaLogisticaId}`}
-                                  <i className="fa-solid fa-pen-to-square" style={{ fontSize: '10px', color: '#a855f7', marginLeft: '4px' }}></i>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => abrirModalAsignarRutas(item)}
-                                  className="badge"
-                                  title="Haga clic para asignar una o más rutas logísticas a este ticket"
-                                  style={{
-                                    background: '#f8fafc',
-                                    color: '#475569',
-                                    border: '1.5px dashed #94a3b8',
-                                    fontWeight: 700,
-                                    fontSize: '11px',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    padding: '4px 10px',
-                                    borderRadius: '7px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                  }}
-                                >
-                                  <i className="fa-solid fa-compass" style={{ color: '#64748b' }}></i>
-                                  Modo Libre (Paradas Flexibles)
-                                  <span style={{ fontSize: '10px', color: '#2563eb', fontWeight: 800, marginLeft: '4px', textDecoration: 'underline' }}>
-                                    <i className="fa-solid fa-plus"></i> Asignar Rutas
-                                  </span>
-                                </button>
-                              )}
-                            </div>
-
-                            {/* MEDIDOR Y PROGRESS BAR DE CAPACIDAD DE CISTERNA */}
-                            <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>
-                                  Ocupación Cisterna:
-                                </span>
-                                <strong style={{ fontSize: '12px', fontWeight: 800, color: porcentajeCisterna >= 95 ? '#dc2626' : '#0284c7' }}>
-                                  {ltsRecolectados.toLocaleString()} / {capacidadCisterna.toLocaleString()} L ({porcentajeCisterna}%)
-                                </strong>
-                              </div>
-                              <div style={{ width: '100%', height: '7px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                                <div
-                                  style={{
-                                    width: `${porcentajeCisterna}%`,
-                                    height: '100%',
-                                    background: porcentajeCisterna >= 100 ? '#ef4444' : porcentajeCisterna >= 80 ? '#f59e0b' : '#0284c7',
-                                    borderRadius: '4px',
-                                    transition: 'width 0.4s ease',
-                                  }}
-                                ></div>
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <div
-                            style={{
-                              background: item.esSalida ? '#fef2f2' : '#faf5ff',
-                              padding: '10px',
-                              borderRadius: '8px',
-                              border: `1px solid ${item.esSalida ? '#fecaca' : '#e9d5ff'}`,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                color: item.esSalida ? '#b91c1c' : '#7e22ce',
-                                fontWeight: 700,
-                                display: 'block',
-                              }}
-                            >
-                              {item.esSalida ? 'Salida / Flete a Compañía' : 'Recepción en Planta'}
+                        {/* Métrica Unificada de Carga en Cisterna */}
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                              {esRuta ? 'Leche en Camión:' : 'Litros Despachados:'}
                             </span>
-                            <strong style={{ fontSize: '13px', color: item.esSalida ? '#991b1b' : '#581c87' }}>
-                              {item.nombreCompania || (item.esSalida ? 'Compañía Externa' : 'Receptoría Planta')}
-                            </strong>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                              <strong style={{ fontFamily: 'monospace', fontSize: '18px', color: porcentajeCisterna >= 100 ? '#dc2626' : '#0284c7', fontWeight: 900 }}>
+                                {ltsRecolectados.toLocaleString('es-VE')} L
+                              </strong>
+                              <span style={{ fontSize: '11.5px', color: '#64748b', fontWeight: 600 }}>
+                                / {capacidadCisterna.toLocaleString()} L
+                              </span>
+                            </div>
                           </div>
-                        )}
-                      </div>
 
-                      {/* COLUMNA 3: LITROS & TIMELAPSE CON BOTÓN "+ FINCAS" */}
-                      <div>
-                        {/* Métricas de Litros: si aún no hay entrega a receptoría/empresa, solo muestra Litros en Camión sin el cuadro amarillo */}
-                        <div style={{ display: 'grid', gridTemplateColumns: ltsEntregados > 0 ? '1fr 1fr' : '1fr', gap: '8px', marginBottom: '8px' }}>
-                          <div style={{ background: '#eff6ff', padding: '6px 8px', borderRadius: '7px', border: '1px solid #bfdbfe' }}>
-                            <span style={{ fontSize: '10.5px', color: '#1e40af', fontWeight: 700, display: 'block' }}>
-                              {esRuta ? 'Litros en Camión:' : 'Litros Despachados:'}
+                          {/* Barra de Llenado con Porcentaje */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                            <div style={{ flex: 1, height: '7px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                              <div
+                                style={{
+                                  width: `${porcentajeCisterna}%`,
+                                  height: '100%',
+                                  background: porcentajeCisterna >= 100 ? '#ef4444' : (porcentajeCisterna >= 80 ? '#f59e0b' : '#0284c7'),
+                                  borderRadius: '4px',
+                                  transition: 'width 0.3s ease',
+                                }}
+                              ></div>
+                            </div>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: porcentajeCisterna >= 100 ? '#dc2626' : '#64748b' }}>
+                              {porcentajeCisterna}%
                             </span>
-                            <strong style={{ fontSize: '15px', color: '#1d4ed8', fontWeight: 800 }}>
-                              {ltsRecolectados.toLocaleString('es-VE')} L
-                            </strong>
-                            {esRuta && (
-                              <small style={{ fontSize: '10.5px', color: '#64748b', display: 'block' }}>
-                                {cantParadas} paradas registradas
-                              </small>
+                          </div>
+                        </div>
+
+                        {/* Entregas y Merma (si ya se descargó) */}
+                        {ltsEntregados > 0 && (
+                          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '5px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                            <span style={{ color: '#15803d', fontWeight: 700 }}>
+                              <i className="fa-solid fa-circle-check mr-1"></i> Recibidos: <strong>{ltsEntregados.toLocaleString('es-VE')} L</strong>
+                            </span>
+                            {mermaLitros > 0 && (
+                              <span style={{ color: '#b91c1c', fontWeight: 800 }}>
+                                Merma: -{mermaLitros.toLocaleString('es-VE')} L
+                              </span>
                             )}
                           </div>
+                        )}
+                      </div>
 
-                          {ltsEntregados > 0 && (
-                            <div
-                              style={{
-                                background: '#f0fdf4',
-                                padding: '6px 8px',
-                                borderRadius: '7px',
-                                border: '1px solid #bbf7d0',
-                              }}
-                            >
-                              <span style={{ fontSize: '10.5px', color: '#15803d', fontWeight: 700, display: 'block' }}>
-                                {esRuta ? 'Litros Recibidos:' : 'Litros en Planta:'}
-                              </span>
-                              <strong style={{ fontSize: '15px', color: '#16a34a', fontWeight: 800 }}>
-                                {ltsEntregados.toLocaleString('es-VE')} L
-                              </strong>
-                              <small style={{ fontSize: '10.5px', color: '#15803d', display: 'block' }}>
-                                {item.nombreCompania ? `En ${item.nombreCompania}` : 'En Receptoría'}
-                              </small>
-                            </div>
-                          )}
+                      {/* PANEL 2: RECORRIDO Y GESTIÓN DE PARADAS */}
+                      <div
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '10px',
+                          padding: '12px 14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                            <i className="fa-solid fa-list-check" style={{ color: '#0284c7', marginRight: '5px' }}></i>
+                            Paradas en Recorrido
+                          </span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                            {cantParadas} {cantParadas === 1 ? 'parada registrada' : 'paradas registradas'}
+                          </span>
                         </div>
 
-                        {/* Merma si hubo entrega */}
-                        {ltsEntregados > 0 && mermaLitros > 0 && (
-                          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '3px 8px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#991b1b', textTransform: 'uppercase' }}>⚠️ Merma:</span>
-                            <strong style={{ fontSize: '12px', fontWeight: 800, color: '#dc2626' }}>-{mermaLitros.toLocaleString()} Lts</strong>
-                          </div>
-                        )}
-
-                        {/* TIMELAPSE INTEGRADO CON BOTÓN "+ FINCAS" Y TOGGLE PARADAS */}
+                        {/* Botonera de Paradas */}
                         {esRuta && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
                             <button
                               type="button"
                               onClick={() => abrirTimelapse(item)}
                               className="btn btn-sm"
                               style={{
-                                flex: 1,
-                                background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                                background: '#eff6ff',
                                 color: '#1d4ed8',
                                 border: '1px solid #bfdbfe',
-                                fontWeight: 800,
-                                fontSize: '11px',
-                                padding: '6px 8px',
+                                fontWeight: 700,
+                                fontSize: '11.5px',
+                                padding: '6px 10px',
                                 borderRadius: '6px',
-                                display: 'flex',
-                                justifyContent: 'center',
+                                display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '6px',
+                                gap: '5px',
                                 cursor: 'pointer',
                               }}
                               title="Ver Timelapse & Recorrido de Paradas"
                             >
                               <i className="fa-solid fa-timeline" style={{ color: '#2563eb' }}></i>
-                              <span>Timelapse ({cantParadas})</span>
+                              Timelapse ({cantParadas})
                             </button>
 
                             {puedeEditarTicket && (
@@ -4134,7 +4039,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                                   color: '#ffffff',
                                   border: 'none',
                                   fontWeight: 800,
-                                  fontSize: '11px',
+                                  fontSize: '11.5px',
                                   padding: '6px 10px',
                                   borderRadius: '6px',
                                   display: 'inline-flex',
@@ -4143,9 +4048,36 @@ export const RecoleccionRutasPage: React.FC = () => {
                                   cursor: 'pointer',
                                   whiteSpace: 'nowrap',
                                 }}
-                                title={tieneRutaLogistica ? 'Añadir finca faltante a esta ruta' : 'Añadir parada a este ticket'}
+                                title="Añadir parada a este ticket"
                               >
                                 <i className="fa-solid fa-plus"></i> Fincas
+                              </button>
+                            )}
+
+                            {esRuta && !esFinalizado && !estaEnReceptoriaOCompania && esAdminOSup && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  abrirModalModificarFincasTicket(item);
+                                }}
+                                className="btn btn-sm"
+                                style={{
+                                  background: '#faf5ff',
+                                  color: '#7e22ce',
+                                  border: '1px solid #d8b4fe',
+                                  fontWeight: 700,
+                                  fontSize: '11.5px',
+                                  padding: '6px 9px',
+                                  borderRadius: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  cursor: 'pointer',
+                                }}
+                                title="Modificar asignación de fincas de esta ruta"
+                              >
+                                <i className="fa-solid fa-pen-to-square"></i> Plan Fincas
                               </button>
                             )}
 
@@ -4155,163 +4087,181 @@ export const RecoleccionRutasPage: React.FC = () => {
                                 onClick={() => toggleAcordeonFincas(item.id)}
                                 className="btn btn-sm"
                                 style={{
-                                  background: estaExpandido ? '#e2e8f0' : '#f8fafc',
+                                  background: estaExpandido ? '#e2e8f0' : '#ffffff',
                                   color: '#334155',
                                   border: '1px solid #cbd5e1',
-                                  padding: '6px 8px',
+                                  padding: '6px 10px',
                                   borderRadius: '6px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
                                   cursor: 'pointer',
+                                  marginLeft: 'auto',
                                 }}
                                 title={estaExpandido ? 'Ocultar listado de paradas' : 'Ver listado detallado de paradas'}
                               >
                                 <i className={`fa-solid fa-chevron-${estaExpandido ? 'up' : 'down'}`} style={{ fontSize: '10px' }}></i>
+                                {estaExpandido ? 'Ocultar Paradas' : 'Ver Paradas'}
                               </button>
                             )}
                           </div>
                         )}
                       </div>
+                    </div>
 
-                      {/* COLUMNA 4: BOTONES COMO ACCIONES */}
-                      <div>
-                        <div style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px', textAlign: 'center' }}>
-                          Acciones
-                        </div>
-                        {esRuta && !esFinalizado ? (
-                          estaEnReceptoriaOCompania ? (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <span
-                                className="badge"
-                                style={{
-                                  background: '#faf5ff',
-                                  color: '#7e22ce',
-                                  border: '1.5px solid #d8b4fe',
-                                  fontWeight: 800,
-                                  fontSize: '11px',
-                                  padding: '6px 14px',
-                                  borderRadius: '7px',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                  boxShadow: '0 1px 3px rgba(147, 51, 234, 0.12)',
-                                  letterSpacing: '0.03em',
-                                }}
-                              >
-                                <i className="fa-solid fa-building-circle-check"></i> RECEPTORÍA
-                              </span>
-                            </div>
-                          ) : (
-                            <div style={{ display: 'grid', gridTemplateColumns: 'auto auto auto', gap: '5px' }}>
-                              <button
-                                type="button"
-                                onClick={() => handleAbrirReceptoria(item)}
-                                className="btn btn-sm"
-                                style={{
-                                  background: '#eff6ff',
-                                  color: '#1d4ed8',
-                                  border: '1px solid #bfdbfe',
-                                  fontWeight: 700,
-                                  fontSize: '11px',
-                                  padding: '6px 8px',
-                                  borderRadius: '6px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '4px',
-                                  boxShadow: '0 1px 3px rgba(29,78,216,0.1)',
-                                }}
-                                title="Enviar carga de la cisterna a Receptoría / Planta Principal"
-                              >
-                                <i className="fa-solid fa-truck-ramp-box"></i> Receptoría
-                              </button>
+                    {/* 3. BARRA INFERIOR DE ACCIONES OPERATIVAS (DESTINO & DESPACHO) */}
+                    <div
+                      style={{
+                        padding: '10px 18px',
+                        background: '#fafbfc',
+                        borderTop: '1px solid #f1f5f9',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '10px',
+                      }}
+                    >
+                      <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <i className="fa-solid fa-paper-plane" style={{ color: '#0284c7' }}></i>
+                        Destino & Despacho:
+                      </div>
 
-                              <button
-                                type="button"
-                                onClick={() => handleAbrirCompania(item)}
-                                className="btn btn-sm"
-                                style={{
-                                  background: '#faf5ff',
-                                  color: '#7e22ce',
-                                  border: '1px solid #e9d5ff',
-                                  fontWeight: 700,
-                                  fontSize: '11px',
-                                  padding: '6px 8px',
-                                  borderRadius: '6px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '4px',
-                                  boxShadow: '0 1px 3px rgba(126,34,206,0.1)',
-                                }}
-                                title="Despachar a Compañías / Queseras externas"
-                              >
-                                <i className="fa-solid fa-building"></i> Compañía
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleAbrirTraspaso(item)}
-                                className="btn btn-sm"
-                                style={{
-                                  background: '#f0fdfa',
-                                  color: '#0f766e',
-                                  border: '1px solid #99f6e4',
-                                  fontWeight: 700,
-                                  fontSize: '11px',
-                                  padding: '6px 8px',
-                                  borderRadius: '6px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '4px',
-                                }}
-                                title="Traspasar leche a otro chofer"
-                              >
-                                <i className="fa-solid fa-right-left"></i> Traspaso
-                              </button>
-                            </div>
-                          )
+                      {esRuta && !esFinalizado ? (
+                        estaEnReceptoriaOCompania ? (
+                          <span
+                            className="badge"
+                            style={{
+                              background: '#faf5ff',
+                              color: '#7e22ce',
+                              border: '1.5px solid #d8b4fe',
+                              fontWeight: 800,
+                              fontSize: '11.5px',
+                              padding: '6px 14px',
+                              borderRadius: '7px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              boxShadow: '0 1px 3px rgba(147, 51, 234, 0.12)',
+                            }}
+                          >
+                            <i className="fa-solid fa-building-circle-check"></i> EN RECEPTORÍA (EN VERIFICACIÓN)
+                          </span>
                         ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {!esRuta && !item.esConfirmado && item.estado !== 'FINALIZADO' ? (
-                              <span
-                                className="badge"
-                                style={{
-                                  background: '#fef3c7',
-                                  color: '#b45309',
-                                  border: '1px solid #fde68a',
-                                  fontWeight: 800,
-                                  fontSize: '11px',
-                                  padding: '5px 12px',
-                                  borderRadius: '6px',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '5px',
-                                }}
-                              >
-                                <i className="fa-solid fa-clock-rotate-left"></i> RECEPCIONADO
-                              </span>
-                            ) : (
-                              <span
-                                className="badge"
-                                style={{
-                                  background: '#ecfdf5',
-                                  color: '#047857',
-                                  border: '1px solid #a7f3d0',
-                                  fontWeight: 800,
-                                  fontSize: '11px',
-                                  padding: '5px 12px',
-                                  borderRadius: '6px',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '5px',
-                                }}
-                              >
-                                <i className="fa-solid fa-circle-check"></i> FINALIZADO
-                              </span>
-                            )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirReceptoria(item)}
+                              className="btn btn-sm"
+                              style={{
+                                background: '#eff6ff',
+                                color: '#1d4ed8',
+                                border: '1.5px solid #bfdbfe',
+                                fontWeight: 700,
+                                fontSize: '12px',
+                                padding: '7px 14px',
+                                borderRadius: '7px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                boxShadow: '0 1px 3px rgba(29,78,216,0.1)',
+                                cursor: 'pointer',
+                              }}
+                              title="Enviar carga de la cisterna a Receptoría / Planta Principal"
+                            >
+                              <i className="fa-solid fa-truck-ramp-box"></i> Enviar a Receptoría
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirCompania(item)}
+                              className="btn btn-sm"
+                              style={{
+                                background: '#faf5ff',
+                                color: '#7e22ce',
+                                border: '1.5px solid #e9d5ff',
+                                fontWeight: 700,
+                                fontSize: '12px',
+                                padding: '7px 14px',
+                                borderRadius: '7px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                boxShadow: '0 1px 3px rgba(126,34,206,0.1)',
+                                cursor: 'pointer',
+                              }}
+                              title="Despachar a Compañías / Queseras externas"
+                            >
+                              <i className="fa-solid fa-building"></i> Despachar a Compañía
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirTraspaso(item)}
+                              className="btn btn-sm"
+                              style={{
+                                background: '#f0fdfa',
+                                color: '#0f766e',
+                                border: '1.5px solid #99f6e4',
+                                fontWeight: 700,
+                                fontSize: '12px',
+                                padding: '7px 14px',
+                                borderRadius: '7px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                boxShadow: '0 1px 3px rgba(15,118,110,0.1)',
+                                cursor: 'pointer',
+                              }}
+                              title="Traspasar leche a otro chofer"
+                            >
+                              <i className="fa-solid fa-right-left"></i> Traspaso de Leche
+                            </button>
                           </div>
-                        )}
-                      </div>
+                        )
+                      ) : (
+                        <div>
+                          {!esRuta && !item.esConfirmado && item.estado !== 'FINALIZADO' ? (
+                            <span
+                              className="badge"
+                              style={{
+                                background: '#fef3c7',
+                                color: '#b45309',
+                                border: '1px solid #fde68a',
+                                fontWeight: 800,
+                                fontSize: '11px',
+                                padding: '5px 12px',
+                                borderRadius: '6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                              }}
+                            >
+                              <i className="fa-solid fa-clock-rotate-left"></i> RECEPCIONADO
+                            </span>
+                          ) : (
+                            <span
+                              className="badge"
+                              style={{
+                                background: '#ecfdf5',
+                                color: '#047857',
+                                border: '1px solid #a7f3d0',
+                                fontWeight: 800,
+                                fontSize: '11px',
+                                padding: '5px 12px',
+                                borderRadius: '6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                              }}
+                            >
+                              <i className="fa-solid fa-circle-check"></i> FINALIZADO
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* ACORDEÓN / DESPLEGABLE DE PARADAS EXPANDIDAS */}

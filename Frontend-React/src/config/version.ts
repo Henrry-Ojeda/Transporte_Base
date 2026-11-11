@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Sistema Centralizado de Versionado Semántico
  * 
  * Reglas de Versionado del Proyecto:
@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 11,
-  tag: 'v3.18.11',
+  patch: 12,
+  tag: 'v3.18.12',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Receptoría: Filtros de fecha, vista y buscador reactivo sincronizados, resolución de 0 Lts y Chofer Asignado, tarjetas enriquecidas con capacidad cisterna, barra visual de llenado, ruta, paradas y botón de devolución al chofer v3.18.11',
+  descripcion: 'Control Rutas: Rediseño limpio y modular de tarjetas de tickets sin redundancia de datos, panel de carga unificado y barra espaciosa para botones de Receptoría, Compañía y Traspaso v3.18.12',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

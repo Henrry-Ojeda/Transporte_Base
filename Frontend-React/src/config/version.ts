@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 3,
-  tag: 'v3.18.3',
+  patch: 4,
+  tag: 'v3.18.4',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Precarga automática de fincas de circuito en creación de tickets, solución de guardado para choferes y cascade de logs v3.18.3',
+  descripcion: 'Inicio móvil unificado en "Inicio de Nuevo Turno", turnos y cargas 100% offline con sincronización automática, Service Worker y sesión resilientes sin internet v3.18.4',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

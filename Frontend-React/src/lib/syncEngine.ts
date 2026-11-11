@@ -13,6 +13,7 @@ import { operacionesApi } from '@/api/operaciones.api';
 import { combustibleApi } from '@/api/combustible.api';
 import { mantenimientoApi } from '@/api/mantenimiento.api';
 import { notificacionesApi } from '@/api/notificaciones.api';
+import { ticketsLocales } from './ticketsLocales';
 
 export interface SyncStatusEvent {
   sincronizando: boolean;
@@ -98,8 +99,12 @@ class SyncEngine {
     let combustibleSubido = 0;
     let averiasSubidas = 0;
     let receptoriaSubida = 0;
+    let ticketsSubidos = 0;
 
     try {
+      // 0. Crear en la central los tickets/turnos iniciados sin conexión (antes que sus cargas)
+      ticketsSubidos = await this.sincronizarTicketsLocales();
+
       // 1. Sincronizar Recolecciones de Leche en Fincas
       recoleccionesSubidas = await this.sincronizarRecolecciones(empresaCodigo);
 
@@ -112,7 +117,7 @@ class SyncEngine {
       // 4. Sincronizar Descargas de Receptoría
       receptoriaSubida = await this.sincronizarReceptoria(empresaCodigo);
 
-      const totalSubidos = recoleccionesSubidas + combustibleSubido + averiasSubidas + receptoriaSubida;
+      const totalSubidos = recoleccionesSubidas + combustibleSubido + averiasSubidas + receptoriaSubida + ticketsSubidos;
 
       if (totalSubidos > 0) {
         this.ultimaSincronizacion = new Date().toISOString();
@@ -158,9 +163,36 @@ class SyncEngine {
         combustibleSubido,
         averiasSubidas,
         receptoriaSubida,
-        totalSubidos: recoleccionesSubidas + combustibleSubido + averiasSubidas + receptoriaSubida,
+        totalSubidos: recoleccionesSubidas + combustibleSubido + averiasSubidas + receptoriaSubida + ticketsSubidos,
       };
     }
+  }
+
+  /**
+   * Crea en la central los tickets (turnos) que el chofer inició sin conexión.
+   * Registra la equivalencia ID local (negativo) -> ID real para sus cargas.
+   */
+  async sincronizarTicketsLocales(): Promise<number> {
+    const pendientes = ticketsLocales.listarPendientes();
+    if (pendientes.length === 0) return 0;
+
+    let exitosos = 0;
+    for (const t of pendientes) {
+      try {
+        const res = await operacionesApi.iniciarViaje(t.payload);
+        if (res && res.id) {
+          ticketsLocales.marcarSincronizado(t.localId, res.id);
+          exitosos++;
+        }
+      } catch (err: any) {
+        const status = err?.response?.status;
+        // Sin red / servidor caído: reintentar luego. Cualquier otro error se deja pendiente también
+        // (no se descarta información del chofer).
+        console.warn(`[SyncEngine] No se pudo crear el ticket local ${t.localId} (status ${status ?? 'sin respuesta'}):`, err?.message);
+        break; // respetar el orden de creación
+      }
+    }
+    return exitosos;
   }
 
   /**
@@ -177,6 +209,13 @@ class SyncEngine {
 
       try {
         let ticketId = carga.ticketId;
+
+        // Ticket creado sin conexión: traducir al ID real; si aún no se creó en la central, esperar
+        if (ticketId && ticketId < 0) {
+          const real = ticketsLocales.resolverId(ticketId);
+          if (real <= 0) continue;
+          ticketId = real;
+        }
 
         // Si el ticket no es válido o es 0, buscar o crear viaje activo
         if (!ticketId || ticketId <= 0) {

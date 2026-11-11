@@ -116,8 +116,16 @@ apiClient.interceptors.request.use(
     const isPublic = url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/vincular-dispositivo') || url.includes('/public');
     const isLoginPage = typeof window !== 'undefined' && window.location.pathname === '/login';
 
+    // OFFLINE-FIRST: en la terminal móvil (/movil, /app) o sin conexión, JAMÁS se cierra la sesión por
+    // token vencido o ausente en el cliente. El chofer debe poder seguir registrando aunque no haya señal;
+    // el servidor es quien decide (401) cuando realmente hay conexión.
+    const sinRed = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const esTerminalMovil = typeof window !== 'undefined' &&
+      (window.location.pathname.startsWith('/movil') || window.location.pathname.startsWith('/app'));
+    const protegerSesionOffline = sinRed || esTerminalMovil;
+
     // Si el token ya expiró en el cliente, cerrar sesión proactivamente y redirigir a /login
-    if (token && isTokenExpired(token) && !isPublic) {
+    if (token && isTokenExpired(token) && !isPublic && !protegerSesionOffline) {
       forceRedirectToLogin('Tu sesión ha expirado por límite de tiempo. Inicia sesión nuevamente.');
       const controller = new AbortController();
       config.signal = controller.signal;
@@ -126,7 +134,7 @@ apiClient.interceptors.request.use(
     }
 
     // Si no hay token de sesión y no es endpoint público, redirigir a /login
-    if (!token && !isPublic) {
+    if (!token && !isPublic && !protegerSesionOffline) {
       if (!isLoginPage) {
         forceRedirectToLogin('No se detectó una sesión activa. Por favor inicia sesión.');
       }
@@ -213,10 +221,14 @@ apiClient.interceptors.response.use(
 
     const isSessionClosed =
       status === 401 ||
-      (status === 403 && !url.includes('/auth/login')) ||
+      (status === 403 && !url.includes('/auth/login') && !url.includes('/fincas')) ||
       isSessionExpiredString(dataStr);
 
-    if (isSessionClosed && !url.includes('/auth/login')) {
+    // Sin conexión real jamás se cierra la sesión (puede ser un 503 sintético del Service Worker)
+    const sinRedAhora = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const esRespuestaOffline = Boolean((serverData as any)?.offline) || status === 503;
+
+    if (isSessionClosed && !url.includes('/auth/login') && !sinRedAhora && !esRespuestaOffline) {
       forceRedirectToLogin('Tu sesión ha finalizado. Por favor inicia sesión nuevamente.');
       return new Promise(() => {});
     }

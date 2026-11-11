@@ -1,0 +1,77 @@
+/**
+ * Tickets (turnos / viajes) creados SIN conexión desde la app móvil del chofer.
+ *
+ * Cuando no hay internet, el chofer puede igualmente "Iniciar Nuevo Turno": se crea un ticket local
+ * con ID negativo (temporal) que se guarda en el teléfono. Al recuperar señal, el SyncEngine crea el
+ * ticket real en la central y registra la equivalencia ID local -> ID servidor, para que las cargas de
+ * fincas registradas contra el ticket local se envíen al ticket correcto.
+ */
+
+const KEY_PENDIENTES = 'movil_tickets_locales_pendientes';
+const KEY_MAPA = 'movil_tickets_locales_map';
+
+export interface TicketLocalPendiente {
+  /** ID temporal negativo del ticket local */
+  localId: number;
+  creadoEn: string;
+  /** Payload exacto que se enviará a /control-rutas/iniciar-viaje */
+  payload: {
+    fecha?: string;
+    choferId?: number;
+    conductorId?: number;
+    camionId?: number;
+    rutaLogisticaId?: number;
+    observaciones?: string;
+  };
+  /** Representación (ControlRutaDto) para mostrar el ticket en la app mientras no se sincroniza */
+  ticket: any;
+}
+
+const leer = <T>(key: string, def: T): T => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : def;
+  } catch {
+    return def;
+  }
+};
+
+const escribir = (key: string, value: unknown) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* cuota llena: tolerante */
+  }
+};
+
+export const ticketsLocales = {
+  esLocal: (id?: number | null): boolean => typeof id === 'number' && id < 0,
+
+  listarPendientes: (): TicketLocalPendiente[] => leer<TicketLocalPendiente[]>(KEY_PENDIENTES, []),
+
+  mapa: (): Record<string, number> => leer<Record<string, number>>(KEY_MAPA, {}),
+
+  /** Devuelve el ID real del servidor si el ticket local ya fue sincronizado; si no, el mismo ID. */
+  resolverId: (id?: number | null): number => {
+    if (!id) return 0;
+    if (id > 0) return id;
+    const real = ticketsLocales.mapa()[String(id)];
+    return real || id;
+  },
+
+  agregar: (t: TicketLocalPendiente) => {
+    const lista = ticketsLocales.listarPendientes();
+    lista.push(t);
+    escribir(KEY_PENDIENTES, lista);
+  },
+
+  marcarSincronizado: (localId: number, serverId: number) => {
+    const lista = ticketsLocales.listarPendientes().filter((t) => t.localId !== localId);
+    escribir(KEY_PENDIENTES, lista);
+    const mapa = ticketsLocales.mapa();
+    mapa[String(localId)] = serverId;
+    escribir(KEY_MAPA, mapa);
+  },
+
+  nuevoIdLocal: (): number => -Math.floor(Date.now() / 1000) - Math.floor(Math.random() * 1000),
+};

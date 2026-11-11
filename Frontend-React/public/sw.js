@@ -1,5 +1,5 @@
 // Service Worker para Rutas Móvil (Offline-First / PWA Ultra-Resiliente)
-const CACHE_NAME = 'rutas-movil-v3.18.3';
+const CACHE_NAME = 'rutas-movil-v3.18.4';
 const STATIC_ASSETS = [
   "/",
   "/app",
@@ -9,8 +9,8 @@ const STATIC_ASSETS = [
   "/manifest.json",
   "/favicon.svg",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css",
+  "/assets/index-B3RY4eMW.js",
   "/assets/index-BtEujMkz.css",
-  "/assets/index-BWLifaM6.js",
   "/assets/rolldown-runtime-XKyaHtl9.js",
   "/assets/vendor-excel-D_lWTlWp.js",
   "/assets/vendor-query-DagBFWEK.js",
@@ -135,45 +135,53 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Documentos y Navegación SPA (/app, /movil, /, etc.): Cache-First cuando no hay red (cero espera)
+  // 3. Documentos y Navegación SPA (/app, /movil, /, etc.): OFFLINE-FIRST.
+  //    - Con red: se intenta la red pero con un tiempo límite corto (señal débil != sin señal); si tarda o falla se sirve la SPA guardada.
+  //    - Sin red: se sirve directamente la SPA guardada (cero espera).
+  //    - Cada respuesta válida se guarda con CLONES INDEPENDIENTES (un Response solo se puede consumir una vez).
   if (req.mode === 'navigate' || req.destination === 'document' || req.headers.get('accept')?.includes('text/html')) {
     event.respondWith(
       (async () => {
-        // Si el navegador reporta estar offline, responder desde caché DIRECTAMENTE sin esperar timeout de red
+        const cache = await caches.open(CACHE_NAME);
+
+        const buscarEnCache = async () =>
+          (await cache.match(req)) ||
+          (await cache.match('/movil')) ||
+          (await cache.match('/app')) ||
+          (await cache.match('/index.html')) ||
+          (await cache.match('/'));
+
         if (!navigator.onLine) {
-          const cache = await caches.open(CACHE_NAME);
-          const cached =
-            (await cache.match(req)) ||
-            (await cache.match('/app')) ||
-            (await cache.match('/index.html')) ||
-            (await cache.match('/'));
+          const cached = await buscarEnCache();
           if (cached) return cached;
         }
 
         try {
-          const networkRes = await fetch(req);
+          const NAV_TIMEOUT_MS = 4000;
+          const networkRes = await Promise.race([
+            fetch(req),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('nav-timeout')), NAV_TIMEOUT_MS)),
+          ]);
+
           if (networkRes && networkRes.status === 200) {
-            const resClone = networkRes.clone();
-            const cache = await caches.open(CACHE_NAME);
-            await cache.put(req, resClone);
-            await cache.put('/index.html', resClone);
-            await cache.put('/app', resClone);
+            // Un clone independiente por cada clave (evita "Response body is already used")
+            const claves = [req, '/index.html', '/app', '/movil', '/'];
+            for (const key of claves) {
+              try {
+                await cache.put(key, networkRes.clone());
+              } catch (e) {
+                /* tolerante */
+              }
+            }
           }
           return networkRes;
-        } catch {
-          // Si falló la red, servir la SPA desde caché inmediatamente (previene pantalla en blanco)
-          const cache = await caches.open(CACHE_NAME);
-          const cachedPage =
-            (await cache.match(req)) ||
-            (await cache.match('/app')) ||
-            (await cache.match('/index.html')) ||
-            (await cache.match('/'));
-
+        } catch (e) {
+          const cachedPage = await buscarEnCache();
           if (cachedPage) return cachedPage;
 
           // Si de verdad no hay ninguna página guardada aún, mostrar terminal offline estilizada
           return new Response(
-            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rutas Móvil</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#0f172a;color:#fff;text-align:center;padding:40px;font-family:sans-serif;"><h2>Rutas Móvil</h2><p>Iniciando terminal en modo sin conexión...</p><button onclick="window.location.reload()" style="background:#10b981;color:#fff;border:none;padding:12px 24px;border-radius:10px;font-weight:bold;cursor:pointer;">Abrir Terminal</button></body></html>',
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rutas Móvil</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#0f172a;color:#fff;text-align:center;padding:40px;font-family:sans-serif;"><h2>Rutas Móvil</h2><p>Sin conexión y sin datos guardados todavía. Conéctate a internet una vez para descargar la aplicación.</p><button onclick="window.location.reload()" style="background:#10b981;color:#fff;border:none;padding:12px 24px;border-radius:10px;font-weight:bold;cursor:pointer;">Reintentar</button></body></html>',
             { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
           );
         }

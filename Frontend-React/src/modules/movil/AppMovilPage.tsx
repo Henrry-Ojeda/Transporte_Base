@@ -28,6 +28,7 @@ import type {
 } from '@/types';
 import { dbLocal } from '@/lib/dbLocal';
 import { syncEngine } from '@/lib/syncEngine';
+import { ticketsLocales } from '@/lib/ticketsLocales';
 import { getTimestampParada, formatFechaHoraParada } from '@/utils/timelapseUtils';
 import { CompaniaSelect } from '@/components/selectors/CompaniaSelect';
 import { ChoferSelect } from '@/components/selectors/ChoferSelect';
@@ -1245,8 +1246,13 @@ export const AppMovilPage: React.FC = () => {
     }
   }, [authUser, authToken, dispositivo, currentTenant]);
 
-  // Fecha de hoy por defecto
-  const hoyStr = new Date().toISOString().split('T')[0];
+  // Fecha de hoy por defecto (fecha LOCAL del teléfono; toISOString usa UTC y después de las 8pm daría "mañana")
+  const hoyStr = (() => {
+    const d = new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  })();
 
   // Detección Estricta de Rol y Modo Adaptativo (CHOFER | ADMIN | TALLER | RECEPTORIA)
   // El rol del dispositivo vinculado manda de forma prioritaria; si no existe dispositivo, se usa el de authUser.
@@ -1433,8 +1439,34 @@ export const AppMovilPage: React.FC = () => {
   const [subTabLogistica, setSubTabLogistica] = useState<'asignaciones' | 'circuitos'>('asignaciones');
   const [planificaciones, setPlanificaciones] = useState<PlanificacionRutaChoferDto[]>([]);
   const [cargandoPlanificaciones, setCargandoPlanificaciones] = useState(false);
-  const [rutasLogisticas, setRutasLogisticas] = useState<RutaLogisticaDto[]>([]);
-  const [camionesLista, setCamionesLista] = useState<CamionDto[]>([]);
+  const [rutasLogisticas, setRutasLogisticas] = useState<RutaLogisticaDto[]>(() => {
+    try {
+      const saved = localStorage.getItem('movil_rutas_cache');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [camionesLista, setCamionesLista] = useState<CamionDto[]>(() => {
+    try {
+      const saved = localStorage.getItem('movil_camiones_cache');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Catálogos para "Inicio de Nuevo Turno": se guardan en el teléfono para poder usarlos sin internet
+  useEffect(() => {
+    if (rutasLogisticas.length > 0) {
+      try { localStorage.setItem('movil_rutas_cache', JSON.stringify(rutasLogisticas)); } catch {}
+    }
+  }, [rutasLogisticas]);
+  useEffect(() => {
+    if (camionesLista.length > 0) {
+      try { localStorage.setItem('movil_camiones_cache', JSON.stringify(camionesLista)); } catch {}
+    }
+  }, [camionesLista]);
   const [fincasPromedio, setFincasPromedio] = useState<FincaPromedioDto[]>([]);
 
   // Modales de Logística Móvil
@@ -1980,6 +2012,11 @@ export const AppMovilPage: React.FC = () => {
         if (Array.isArray(rutas) && rutas.length > 0) setRutasLogisticas(rutas);
       }).catch(() => {});
 
+      // Cisternas disponibles para "Inicio de Nuevo Turno" (se guardan en el teléfono para uso offline)
+      catalogosApi.getCamiones(false).then((cams: any) => {
+        if (Array.isArray(cams) && cams.length > 0) setCamionesLista(cams);
+      }).catch(() => {});
+
       if (esAdminReal) {
         cargarDatosAdminEnVivo();
       }
@@ -2034,6 +2071,11 @@ export const AppMovilPage: React.FC = () => {
 
     setCargandoViaje(true);
     try {
+      if (v.id < 0) {
+        // Ticket iniciado sin conexión: aún no existe en la central, no hay nada que consultar
+        setParadasViajeActivo([]);
+        return;
+      }
       const paradas = await operacionesApi.getFincasViaje(v.id);
       if (Array.isArray(paradas)) {
         setParadasViajeActivo(paradas);
@@ -2055,21 +2097,81 @@ export const AppMovilPage: React.FC = () => {
     }
     const fFinal = fechaNuevoViaje || hoyStr;
     setIniciandoViajeChofer(true);
-    try {
-      const turnoNombre =
-        turnoSeleccionado === 'MANANA'
-          ? 'Turno 1 (Mañana)'
-          : turnoSeleccionado === 'TARDE'
-          ? 'Turno 2 (Tarde)'
-          : `Turno ${viajesChofer.length + 1}`;
-      const res = await operacionesApi.iniciarViaje({
+    const turnoNombre =
+      turnoSeleccionado === 'MANANA'
+        ? 'Turno 1 (Mañana)'
+        : turnoSeleccionado === 'TARDE'
+        ? 'Turno 2 (Tarde)'
+        : `Turno ${viajesChofer.length + 1}`;
+    const camionEfectivoId = camionNuevoViajeId || dispositivo?.camionId || viajeActivo?.camionId || undefined;
+    const payloadViaje = {
+      fecha: fFinal,
+      choferId: choferEfectivoId,
+      conductorId: choferEfectivoId,
+      camionId: camionEfectivoId,
+      rutaLogisticaId: rutaNuevoViajeId || undefined,
+      observaciones: `Viaje creado desde App Móvil - ${turnoNombre}. ${obsNuevoViaje}`.trim(),
+    };
+
+    // Crea el ticket SOLO en el teléfono (sin internet). Se subirá solo a la central al recuperar señal.
+    const crearTicketLocal = async () => {
+      const camionSel = camionesLista.find((c) => c.id === camionEfectivoId);
+      const rutaSel = rutasLogisticas.find((r) => r.id === rutaNuevoViajeId);
+      const localId = ticketsLocales.nuevoIdLocal();
+      const ticketLocal: any = {
+        id: localId,
+        codigoTicket: 'LOCAL',
         fecha: fFinal,
+        usuarioId: choferEfectivoId,
         choferId: choferEfectivoId,
-        conductorId: choferEfectivoId,
-        camionId: camionNuevoViajeId || dispositivo?.camionId || viajeActivo?.camionId || undefined,
+        nombreConductor: choferEfectivoNombre,
+        camionId: camionEfectivoId,
+        camionPlaca: camionSel?.placa || dispositivo?.placaCamion,
+        capacidadCamionLitros: camionSel?.capacidadLitros || dispositivo?.capacidadTanqueLitros || 6000,
+        procesoActualId: 1,
+        estado: 'ABIERTO',
         rutaLogisticaId: rutaNuevoViajeId || undefined,
-        observaciones: `Viaje creado desde App Móvil - ${turnoNombre}. ${obsNuevoViaje}`.trim(),
+        rutaNombre: rutaSel?.nombre,
+        totalLitrosFinca: 0,
+        totalFincas: 0,
+        observacion: payloadViaje.observaciones,
+        createdAt: new Date().toISOString(),
+        _pendienteSync: true,
+      };
+      ticketsLocales.agregar({
+        localId,
+        creadoEn: ticketLocal.createdAt,
+        payload: payloadViaje,
+        ticket: ticketLocal,
       });
+
+      const nuevaLista = [...viajesChofer.filter((v) => v.id !== localId), ticketLocal as ControlRutaDto];
+      setViajesChofer(nuevaLista);
+      setViajeSeleccionadoId(localId);
+      setViajeActivo(ticketLocal as ControlRutaDto);
+      setParadasViajeActivo([]);
+      try {
+        localStorage.setItem('movil_viajes_chofer', JSON.stringify(nuevaLista));
+        localStorage.setItem(`movil_viajes_chofer_${choferEfectivoId}`, JSON.stringify(nuevaLista));
+        localStorage.setItem('movil_viaje_seleccionado_id', String(localId));
+        localStorage.setItem('movil_viaje_activo', JSON.stringify(ticketLocal));
+        localStorage.setItem(`movil_viaje_activo_${choferEfectivoId}`, JSON.stringify(ticketLocal));
+        localStorage.setItem('movil_paradas_activo', JSON.stringify([]));
+      } catch {}
+
+      setModalNuevoViajeChofer(false);
+      setRutaNuevoViajeId(null);
+      setObsNuevoViaje('');
+      toast.info(`${turnoNombre} iniciado en el teléfono (sin conexión). Se enviará a la central al tener señal.`);
+    };
+
+    try {
+      if (!navigator.onLine || !isOnline) {
+        await crearTicketLocal();
+        return;
+      }
+
+      const res = await operacionesApi.iniciarViaje(payloadViaje);
 
       await Swal.fire({
         icon: 'success',
@@ -2085,7 +2187,14 @@ export const AppMovilPage: React.FC = () => {
       setObsNuevoViaje('');
       await cargarViajeActivo(choferEfectivoId, res.id);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al iniciar nuevo viaje');
+      const status = err?.response?.status;
+      const sinRespuestaDelServidor = !err?.response || status === 0 || status === 502 || status === 503 || status === 504;
+      if (sinRespuestaDelServidor) {
+        // Señal débil o servidor inalcanzable: no se pierde el turno, se guarda en el teléfono
+        await crearTicketLocal();
+      } else {
+        toast.error(err.response?.data?.message || 'Error al iniciar nuevo viaje');
+      }
     } finally {
       setIniciandoViajeChofer(false);
     }
@@ -2183,6 +2292,21 @@ export const AppMovilPage: React.FC = () => {
         });
       }
 
+      // Tickets iniciados SIN conexión que aún no se han subido a la central: se siguen mostrando
+      const ticketsLocalesPend = ticketsLocales
+        .listarPendientes()
+        .filter((t) => Number(t.ticket?.usuarioId) === Number(idBusqueda))
+        .map((t) => t.ticket as ControlRutaDto);
+      if (ticketsLocalesPend.length > 0) {
+        lista = [...lista, ...ticketsLocalesPend];
+      }
+
+      // Si el ticket seleccionado era local y ya fue creado en la central, pasar a su ID real
+      if (!forzarId && viajeSeleccionadoId && viajeSeleccionadoId < 0) {
+        const idReal = ticketsLocales.resolverId(viajeSeleccionadoId);
+        if (idReal > 0) forzarId = idReal;
+      }
+
       setViajesChofer(lista);
       try {
         localStorage.setItem('movil_viajes_chofer', JSON.stringify(lista));
@@ -2239,8 +2363,8 @@ export const AppMovilPage: React.FC = () => {
           });
         }
 
-        // Cargar paradas del viaje seleccionado
-        const paradas = await operacionesApi.getFincasViaje(targetV.id);
+        // Cargar paradas del viaje seleccionado (un ticket local aún no existe en la central)
+        const paradas = targetV.id < 0 ? null : await operacionesApi.getFincasViaje(targetV.id);
         if (Array.isArray(paradas)) {
           // Unificación Defensiva: No permitir que paradas del servidor con 0 litros sobrescriban
           // recolecciones locales pendientes o confirmadas recientemente en memoria
@@ -2270,8 +2394,10 @@ export const AppMovilPage: React.FC = () => {
           });
         }
 
-        await cargarDespachoActivo(idBusqueda, targetV.id);
-        await cargarRecoleccionesYSolicitudes(targetV.fecha ? targetV.fecha.split('T')[0] : hoyStr);
+        if (targetV.id > 0) {
+          await cargarDespachoActivo(idBusqueda, targetV.id);
+          await cargarRecoleccionesYSolicitudes(targetV.fecha ? targetV.fecha.split('T')[0] : hoyStr);
+        }
       } else {
         setViajeSeleccionadoId(null);
         setViajeActivo(null);
@@ -4123,7 +4249,9 @@ export const AppMovilPage: React.FC = () => {
 
     const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : (formCarga.fecha || hoyStr);
     const litrosDiferirNum = formCarga.esDiferido ? Number(formCarga.litrosDiferir || formCarga.litros) : undefined;
-    const ticketIdEfectivo = viajeActivo?.id || viajeSeleccionadoId || (viajesChofer.length > 0 ? viajesChofer[0].id : 0);
+    const ticketIdEfectivo = ticketsLocales.resolverId(
+      viajeActivo?.id || viajeSeleccionadoId || (viajesChofer.length > 0 ? viajesChofer[0].id : 0)
+    );
 
     // Intento de guardado directo y síncrono si el dispositivo está online
     let sincronizadoOnline = false;
@@ -6133,30 +6261,6 @@ export const AppMovilPage: React.FC = () => {
                         : 'Listo para iniciar recolección en ruta'}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => abrirModalCrearTicket()}
-                    style={{
-                      background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '12px',
-                      padding: '8px 14px',
-                      fontSize: '12px',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      boxShadow: '0 3px 10px rgba(16, 185, 129, 0.28)',
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                    }}
-                    title="Crear un nuevo ticket de viaje para hoy o cualquier fecha operativa"
-                  >
-                    <i className="fa-solid fa-plus-circle"></i>
-                    <span>+ Crear Ticket</span>
-                  </button>
                 </div>
               </div>
 
@@ -6373,7 +6477,7 @@ export const AppMovilPage: React.FC = () => {
                         title="Crear un nuevo ticket o turno para esta jornada u otra fecha"
                       >
                         <i className="fa-solid fa-plus-circle text-emerald-600"></i>
-                        <span>+ Crear Ticket</span>
+                        <span>Inicio de Nuevo Turno</span>
                       </button>
                     </div>
 
@@ -6455,13 +6559,11 @@ export const AppMovilPage: React.FC = () => {
                   }}
                 >
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '12.5px', fontWeight: 900, color: tienePermisoCrearRuta ? '#166534' : '#334155' }}>
-                      {tienePermisoCrearRuta ? '🌅 Turno Mañana Despachado' : '🌅 Turno Mañana Completado'}
+                    <div style={{ fontSize: '12.5px', fontWeight: 900, color: '#166534' }}>
+                      🌅 Turno Mañana Despachado
                     </div>
-                    <div style={{ fontSize: '11px', color: tienePermisoCrearRuta ? '#15803d' : '#64748b', marginTop: '1px' }}>
-                      {tienePermisoCrearRuta
-                        ? '¿Vas a recolectar en la tarde? Inicia el segundo viaje.'
-                        : 'Para realizar un segundo viaje en la tarde, solicita autorización a tu supervisor o administrador.'}
+                    <div style={{ fontSize: '11px', color: '#15803d', marginTop: '1px' }}>
+                      ¿Vas a recolectar en la tarde? Inicia el segundo turno.
                     </div>
                   </div>
                   <button
@@ -6770,32 +6872,7 @@ export const AppMovilPage: React.FC = () => {
                       }}
                     >
                       <i className="fa-solid fa-truck-fast"></i>
-                      <span>+ Iniciar Nuevo Turno / Viaje</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormCarga((prev) => ({ ...prev, fecha: hoyStr }));
-                        setFincaFijadaParaModal(null);
-                        setModalRegistro(true);
-                      }}
-                      style={{
-                        background: '#f8fafc',
-                        color: '#0284c7',
-                        border: '1.5px solid #bae6fd',
-                        borderRadius: '12px',
-                        padding: '9px 16px',
-                        fontSize: '12.5px',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <i className="fa-solid fa-play text-xs"></i>
-                      <span>Carga Rápida en Finca</span>
+                      <span>Inicio de Nuevo Turno</span>
                     </button>
                     <button
                       type="button"
@@ -17470,10 +17547,10 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                   <div>
                     <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, lineHeight: 1.2 }}>
-                      Crear Ticket de Recolección
+                      Inicio de Nuevo Turno
                     </h3>
                     <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#d1fae5', fontWeight: 600 }}>
-                      Iniciar nuevo viaje con fecha operativa y cisterna
+                      {isOnline ? 'Fecha, turno, cisterna y circuito' : 'Sin conexión: se guarda en el teléfono y se envía solo al tener señal'}
                     </p>
                   </div>
                 </div>

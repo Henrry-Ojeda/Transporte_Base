@@ -101,6 +101,41 @@ const REPORTES_CHOFER = [
 import { APP_VERSION } from '@/config/version';
 export { APP_VERSION };
 
+// ---------------------------------------------------------------------------
+// Caché offline por ticket: cada ticket guarda SUS paradas en el teléfono, para poder abrir
+// cualquiera de los tickets del chofer sin internet (no solo el último que se vio).
+// ---------------------------------------------------------------------------
+const guardarParadasTicketLocal = (ticketId: number, paradas: any[]) => {
+  if (!ticketId || !Array.isArray(paradas)) return;
+  try {
+    localStorage.setItem(`movil_paradas_ticket_${ticketId}`, JSON.stringify(paradas));
+    localStorage.setItem(`movil_paradas_ticket_ts_${ticketId}`, String(Date.now()));
+  } catch {
+    /* cuota llena: tolerante */
+  }
+};
+
+const paradasTicketFrescas = (ticketId: number, maxMs = 60000): boolean => {
+  try {
+    const ts = Number(localStorage.getItem(`movil_paradas_ticket_ts_${ticketId}`) || 0);
+    return ts > 0 && Date.now() - ts < maxMs && !!localStorage.getItem(`movil_paradas_ticket_${ticketId}`);
+  } catch {
+    return false;
+  }
+};
+
+const leerParadasTicketLocal = (ticketId: number): any[] | null => {
+  if (!ticketId) return null;
+  try {
+    const raw = localStorage.getItem(`movil_paradas_ticket_${ticketId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
 export const AppMovilPage: React.FC = () => {
   // Navegación de Pestañas Móviles
   const [tabActiva, setTabActiva] = useState<TabMovil>('principal');
@@ -2073,12 +2108,28 @@ export const AppMovilPage: React.FC = () => {
     try {
       if (v.id < 0) {
         // Ticket iniciado sin conexión: aún no existe en la central, no hay nada que consultar
-        setParadasViajeActivo([]);
+        setParadasViajeActivo(leerParadasTicketLocal(v.id) || []);
         return;
       }
-      const paradas = await operacionesApi.getFincasViaje(v.id);
+
+      // Sin conexión: abrir el ticket con lo que quedó guardado en el teléfono
+      if (!navigator.onLine || !isOnline) {
+        const guardadas = leerParadasTicketLocal(v.id);
+        setParadasViajeActivo(guardadas || []);
+        try { localStorage.setItem('movil_paradas_activo', JSON.stringify(guardadas || [])); } catch {}
+        return;
+      }
+
+      let paradas: any[] | null = null;
+      try {
+        paradas = await operacionesApi.getFincasViaje(v.id);
+      } catch {
+        // Señal débil: usar lo guardado de ESTE ticket
+        paradas = leerParadasTicketLocal(v.id);
+      }
       if (Array.isArray(paradas)) {
         setParadasViajeActivo(paradas);
+        guardarParadasTicketLocal(v.id, paradas);
         try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradas)); } catch {}
       }
       await cargarDespachoActivo(choferEfectivoId, v.id);
@@ -2250,26 +2301,65 @@ export const AppMovilPage: React.FC = () => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
 
-    // Si no hay red disponible, recuperar de LocalStorage inmediatamente
+    // Si no hay red disponible, recuperar de LocalStorage inmediatamente (TODOS los tickets del chofer)
     if (!navigator.onLine || !isOnline) {
       try {
         const savedList = localStorage.getItem(`movil_viajes_chofer_${idBusqueda}`) || localStorage.getItem('movil_viajes_chofer');
+        let listaOffline: ControlRutaDto[] = [];
         if (savedList) {
           const listParsed = JSON.parse(savedList);
-          if (Array.isArray(listParsed)) setViajesChofer(listParsed);
+          if (Array.isArray(listParsed)) listaOffline = listParsed;
         }
-        const savedV = localStorage.getItem(`movil_viaje_activo_${idBusqueda}`) || localStorage.getItem('movil_viaje_activo');
-        if (savedV) {
-          const vParsed = JSON.parse(savedV);
-          if (vParsed && vParsed.id) setViajeActivo(vParsed);
+        // Turnos iniciados sin conexión que aún no llegan a la central
+        ticketsLocales
+          .listarPendientes()
+          .filter((t) => Number(t.ticket?.usuarioId) === Number(idBusqueda))
+          .forEach((t) => {
+            if (!listaOffline.some((x) => x.id === t.localId)) listaOffline.push(t.ticket as ControlRutaDto);
+          });
+        if (listaOffline.length > 0) setViajesChofer(listaOffline);
+
+        // Ticket a mostrar: el seleccionado por el chofer, si no el último activo guardado, si no el primero
+        const selGuardado = Number(localStorage.getItem('movil_viaje_seleccionado_id') || 0) || viajeSeleccionadoId || 0;
+        let vOffline: ControlRutaDto | null =
+          listaOffline.find((x) => x.id === (forzarId || selGuardado)) || null;
+        if (!vOffline) {
+          const savedV = localStorage.getItem(`movil_viaje_activo_${idBusqueda}`) || localStorage.getItem('movil_viaje_activo');
+          if (savedV) {
+            const vParsed = JSON.parse(savedV);
+            if (vParsed && vParsed.id) vOffline = listaOffline.find((x) => x.id === vParsed.id) || vParsed;
+          }
         }
-        const savedP = localStorage.getItem('movil_paradas_activo');
-        if (savedP) {
-          const pParsed = JSON.parse(savedP);
-          if (Array.isArray(pParsed)) setParadasViajeActivo(pParsed);
+        if (!vOffline && listaOffline.length > 0) vOffline = listaOffline[0];
+
+        if (vOffline && vOffline.id) {
+          setViajeSeleccionadoId(vOffline.id);
+          setViajeActivo(vOffline);
+          const paradasTicket = leerParadasTicketLocal(vOffline.id);
+          if (paradasTicket) {
+            setParadasViajeActivo(paradasTicket);
+          } else {
+            const savedP = localStorage.getItem('movil_paradas_activo');
+            if (savedP && vOffline.id === (JSON.parse(localStorage.getItem('movil_viaje_activo') || '{}') as any).id) {
+              const pParsed = JSON.parse(savedP);
+              if (Array.isArray(pParsed)) setParadasViajeActivo(pParsed);
+            } else {
+              setParadasViajeActivo([]);
+            }
+          }
         }
       } catch {}
       return;
+    }
+
+    // Con conexión: primero enviar a la central lo que quedó pendiente (turnos y cargas hechas sin internet)
+    try {
+      const conteoPend = await dbLocal.getConteoTotalPendientes();
+      if (conteoPend.total > 0 || ticketsLocales.listarPendientes().length > 0) {
+        await syncEngine.sincronizarTodo(undefined, true);
+      }
+    } catch {
+      /* tolerante: la sincronización se reintenta sola */
     }
 
     setCargandoViaje(true);
@@ -2373,7 +2463,11 @@ export const AppMovilPage: React.FC = () => {
           // recolecciones locales pendientes o confirmadas recientemente en memoria
           const paradasUnificadas = paradas.map((p: any) => {
             const fId = Number(p.fincaId || p.FincaId);
-            const cargaLocal = cargas.find((c) => Number(c.fincaId) === fId);
+            const cargaLocal = cargas.find(
+              (c) =>
+                Number(c.fincaId) === fId &&
+                (!c.serverTicketId || ticketsLocales.resolverId(c.serverTicketId) === targetV!.id)
+            );
             if (cargaLocal && (!p.litros || p.litros === 0)) {
               return {
                 ...p,
@@ -2389,12 +2483,24 @@ export const AppMovilPage: React.FC = () => {
           });
 
           setParadasViajeActivo(paradasUnificadas);
+          guardarParadasTicketLocal(targetV.id, paradasUnificadas);
           try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradasUnificadas)); } catch {}
           setCargas((prev) => {
             const soloPendientes = prev.filter((c) => !c.synced);
             guardarCargasLocalSeguro(soloPendientes);
             return soloPendientes;
           });
+        }
+
+        // Guardar en el teléfono las paradas de TODOS los demás tickets del chofer (para verlos sin internet)
+        const otrosTickets = lista.filter((x) => x.id > 0 && x.id !== targetV!.id && !paradasTicketFrescas(x.id));
+        if (otrosTickets.length > 0) {
+          Promise.allSettled(
+            otrosTickets.map(async (t) => {
+              const ps = await operacionesApi.getFincasViaje(t.id);
+              if (Array.isArray(ps)) guardarParadasTicketLocal(t.id, ps);
+            })
+          ).catch(() => {});
         }
 
         if (targetV.id > 0) {
@@ -3835,6 +3941,16 @@ export const AppMovilPage: React.FC = () => {
     return viajeActivo.rutaLogisticaId ? [Number(viajeActivo.rutaLogisticaId)] : [];
   }, [viajeActivo]);
 
+  // Guardar SIEMPRE en el teléfono la lista completa de tickets del chofer (para verlos todos sin internet)
+  useEffect(() => {
+    if (Array.isArray(viajesChofer) && viajesChofer.length > 0 && choferEfectivoId) {
+      try {
+        localStorage.setItem('movil_viajes_chofer', JSON.stringify(viajesChofer));
+        localStorage.setItem(`movil_viajes_chofer_${choferEfectivoId}`, JSON.stringify(viajesChofer));
+      } catch {}
+    }
+  }, [viajesChofer, choferEfectivoId]);
+
   // Fincas de la Ruta Asignada al Viaje Activo (con estado: recolectada / pendiente)
   const fincasDeMiRuta = useMemo(() => {
     if (!viajeActivo) return [];
@@ -4384,6 +4500,7 @@ export const AppMovilPage: React.FC = () => {
         });
       }
       try { localStorage.setItem('movil_paradas_activo', JSON.stringify(list)); } catch {}
+      guardarParadasTicketLocal(viajeActivo?.id || ticketIdEfectivo, list);
       return list;
     });
 

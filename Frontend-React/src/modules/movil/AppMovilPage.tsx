@@ -5922,6 +5922,146 @@ export const AppMovilPage: React.FC = () => {
   }
 
   // =========================================================================
+  // CONTROL DE ACCESO SAAS: SI LA EMPRESA NO TIENE EL MÓDULO DE APP MÓVIL
+  // =========================================================================
+  const modulosDispositivo = dispositivo?.modulosHabilitados || [];
+  const tieneModuloMovil = modulosDispositivo.length === 0
+    ? hasTenantModule('MOD_APP_MOVIL')
+    : modulosDispositivo.some((m: string) => m.toUpperCase() === 'MOD_APP_MOVIL');
+
+  if (!tieneModuloMovil) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#090d16',
+          color: '#f8fafc',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px 20px',
+          textAlign: 'center',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+        }}
+      >
+        <div
+          style={{
+            width: '80px',
+            height: '80px',
+            borderRadius: '24px',
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1.5px solid rgba(239, 68, 68, 0.35)',
+            color: '#ef4444',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '34px',
+            marginBottom: '18px',
+            boxShadow: '0 8px 24px rgba(239, 68, 68, 0.2)',
+          }}
+        >
+          <i className="fa-solid fa-mobile-screen-button"></i>
+        </div>
+
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            color: '#fca5a5',
+            fontSize: '11px',
+            fontWeight: 900,
+            padding: '4px 12px',
+            borderRadius: '999px',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            marginBottom: '14px',
+          }}
+        >
+          <i className="fa-solid fa-lock text-xs"></i> MÓDULO NO CONTRATADO
+        </div>
+
+        <h1 style={{ fontSize: '20px', fontWeight: 900, marginBottom: '8px', color: '#ffffff' }}>
+          Terminal Móvil No Habilitada
+        </h1>
+
+        <p style={{ fontSize: '13px', color: '#94a3b8', maxWidth: '340px', lineHeight: '1.5', margin: '0 auto 20px auto' }}>
+          La empresa <strong>{dispositivo?.empresaNombre || currentTenant.nombre}</strong> no cuenta con el módulo de <strong>App Móvil Choferes & Recolección en Ruta</strong> activo en su plan SaaS.
+        </p>
+
+        <div
+          style={{
+            background: '#0f172a',
+            border: '1px solid #1e293b',
+            borderRadius: '16px',
+            padding: '14px 16px',
+            maxWidth: '350px',
+            fontSize: '12px',
+            color: '#cbd5e1',
+            marginBottom: '24px',
+            textAlign: 'left',
+            lineHeight: '1.45',
+          }}
+        >
+          <div style={{ fontWeight: 800, color: '#38bdf8', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <i className="fa-solid fa-circle-info"></i>
+            <span>¿Cómo habilitar esta aplicación?</span>
+          </div>
+          El chofer debe comunicarse con la administración de la empresa. Para reactivar el servicio, el administrador debe activar el módulo <code style={{ color: '#38bdf8', background: 'rgba(56, 189, 248, 0.1)', padding: '1px 5px', borderRadius: '4px' }}>MOD_APP_MOVIL</code> desde el panel de SaaS Manager.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px' }}>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{
+              background: '#1e293b',
+              color: '#f8fafc',
+              border: '1.5px solid #334155',
+              fontWeight: 800,
+              fontSize: '13px',
+              padding: '12px 20px',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            <i className="fa-solid fa-arrows-rotate"></i>
+            <span>Verificar Activación de Nuevo</span>
+          </button>
+
+          <a
+            href="/login"
+            style={{
+              background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+              color: '#ffffff',
+              textDecoration: 'none',
+              fontWeight: 800,
+              fontSize: '13px',
+              padding: '12px 20px',
+              borderRadius: '12px',
+              boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            <i className="fa-solid fa-laptop"></i>
+            <span>Ir a la Plataforma Web Central</span>
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
   // VISTA 2: TERMINAL MÓVIL VINCULADO CON 5 PESTAÑAS (ROL CHOFER)
   // =========================================================================
   return (

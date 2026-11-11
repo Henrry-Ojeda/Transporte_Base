@@ -1,16 +1,18 @@
-﻿{
+{
   "name": "Rutas de Leche",
-  "short_name": "RutasLeche",
-  "description": "Sistema de GestiÃ³n y LiquidaciÃ³n de Leche",
-  "start_url": "/",
+  "short_name": "Rutas de Leche",
+  "description": "Sistema de Gestión y Liquidación de Leche",
+  "start_url": "/movil",
   "display": "standalone",
-  "background_color": "#090d16",
-  "theme_color": "#090d16",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2302/2302834.png",
-      "sizes": "512x512",
-      "type": "image/png"
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }

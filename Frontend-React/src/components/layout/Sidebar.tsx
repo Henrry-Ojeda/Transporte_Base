@@ -39,6 +39,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       return item.subItems.some(sub => isItemVisible(sub));
     }
     if (item.tabId === 'bufala' && !hasTenantModule('MOD_LECHE_BUFALA')) return false;
+    if (item.tabId === 'combustible' && !hasTenantModule('MOD_COMBUSTIBLE')) return false;
+    if (item.tabId === 'historial-camiones' && !hasTenantModule('MOD_MANTENIMIENTO')) return false;
+    if (item.tabId === 'repuestos' && !hasTenantModule('MOD_REPUESTOS')) return false;
+    if (item.tabId === 'control-tanques' && !hasTenantModule('MOD_CONTROL_TANQUES')) return false;
+    if (item.tabId === 'planificacion-rutas-choferes' && !hasTenantModule('MOD_LOGISTICA_RUTAS')) return false;
+    if (item.tabId === 'rutas-planificacion' && !hasTenantModule('MOD_LOGISTICA_RUTAS')) return false;
+    if (item.tabId === 'liquidacion' && !hasTenantModule('MOD_LIQUIDACIONES')) return false;
+    if (item.tabId === 'pagos-usuarios' && !hasTenantModule('MOD_PAGOS_PERSONAL')) return false;
+    if (item.tabId === 'historial-bcv' && !hasTenantModule('MOD_HISTORIAL_BCV')) return false;
     return canAccessTab(item.tabId);
   };
 

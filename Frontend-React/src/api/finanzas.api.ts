@@ -75,8 +75,40 @@ export const finanzasApi = {
   getPreliquidacion: async (cicloId?: number): Promise<PreliquidacionFincaDto[]> => {
     const params: Record<string, any> = {};
     if (cicloId) params.cicloId = cicloId;
-    const res = await apiClient.get<PreliquidacionFincaDto[]>('/catalogos/preliquidacion', { params });
-    return Array.isArray(res.data) ? res.data : [];
+    const res = await apiClient.get<any[]>('/catalogos/preliquidacion', { params });
+    const rawList = Array.isArray(res.data) ? res.data : [];
+    return rawList.map((p) => {
+      const propietario = p.propietarioNombre || p.propietario || p.Propietario || '';
+      const tasa = Number(p.tasaBCV || p.tasaBcv || p.TasaBcv || 1);
+      const totalLitros = Number(p.totalLitros || p.TotalLitros || 0);
+      const precioLitro = Number(p.precioLitroUSD || p.PrecioLitroUSD || 0);
+      const brutoUSD = Number(p.totalBrutoUSD ?? p.totalUSD ?? p.TotalUSD ?? (totalLitros * precioLitro));
+      const adelantoUSD = Number(p.totalAdelantosUSD ?? p.TotalAdelantosUSD ?? 0);
+      const netoUSD = Number(p.totalNetoUSD ?? Math.max(0, brutoUSD - adelantoUSD));
+      const netoBs = Number(p.totalNetoBs ?? p.paidTotalNetoBs ?? p.PaidTotalNetoBs ?? (netoUSD * tasa));
+      return {
+        ...p,
+        fincaId: Number(p.fincaId || p.FincaId),
+        fincaCodigo: p.fincaCodigo || p.FincaCodigo || undefined,
+        fincaNombre: p.fincaNombre || p.FincaNombre || 'Finca',
+        propietarioId: Number(p.propietarioId || p.PropietarioId || 0),
+        propietarioNombre: propietario,
+        bancoNombre: p.bancoNombre || p.BancoNombre || p.propietarioBancoNombre || '',
+        numeroCuenta: p.numeroCuenta || p.NumeroCuenta || p.propietarioNumeroCuenta || '',
+        pagoMovil: p.pagoMovil || p.PagoMovil || '',
+        cedulaRif: p.cedulaRIF || p.cedulaRif || p.CedulaRIF || '',
+        totalLitros,
+        precioLitroUSD: precioLitro,
+        totalBrutoUSD: brutoUSD,
+        totalAdelantosUSD: adelantoUSD,
+        totalNetoUSD: netoUSD,
+        totalNetoBs: netoBs,
+        tasaBCV: tasa,
+        pagado: Boolean(p.pagado ?? p.esPagado ?? p.EsPagado),
+        fechaPago: p.fechaPago || p.FechaPago,
+        referenciaPago: p.referenciaPago || p.ReferenciaPago,
+      };
+    });
   },
   pagarPreliquidacion: async (dto: { fincaId: number; cicloId: number; referenciaPago: string; montoUSD: number; montoBs: number; tasaBCV: number }): Promise<{ success: boolean; message: string }> => {
     const res = await apiClient.post('/catalogos/pre-liquidacion/pagar', dto);

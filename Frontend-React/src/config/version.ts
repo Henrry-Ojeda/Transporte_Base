@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 13,
-  tag: 'v3.18.13',
+  patch: 14,
+  tag: 'v3.18.14',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Control Rutas: Rediseño limpio de tarjetas con botones amplios + optimización reactiva de selector de compañías con fallback resiliente v3.18.13',
+  descripcion: 'Liquidaciones & Rutas: Rediseño 1:1 de Unificación de Pagos base v2_11_26 + Rediseño de Modales Enviar Receptoría, Registro de Pago, WhatsApp y Comprobante Oficial v3.18.14',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

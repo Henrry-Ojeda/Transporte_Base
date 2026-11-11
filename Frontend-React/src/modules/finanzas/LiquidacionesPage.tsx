@@ -3,11 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import { finanzasApi } from '@/api/finanzas.api';
+import { useAuthStore } from '@/stores/authStore';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import type { PreliquidacionFincaDto, CicloSemanalDto } from '@/types';
 
 export const LiquidacionesPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const empresaNombre = user?.empresaNombre || (typeof window !== 'undefined' && window.location.hostname.includes('campoverde') ? 'Lácteos Campo Verde' : 'Transporte Vergel & Carrillo');
 
   const [cicloSeleccionadoId, setCicloSeleccionadoId] = useState<number | undefined>(undefined);
   const [modalPagar, setModalPagar] = useState(false);
@@ -200,15 +203,46 @@ export const LiquidacionesPage: React.FC = () => {
     }
   };
 
-  // Menú de opciones de WhatsApp
+  // Menú de opciones de WhatsApp (Image 3 Redesign)
   const abrirMenuWhatsApp = (row: PreliquidacionFincaDto) => {
+    const productor = row.propietarioNombre || (row as any).propietario || (row as any).Propietario || 'Productor';
+    const brutoUSD = row.totalBrutoUSD || ((row.totalLitros || 0) * (row.precioLitroUSD || 0));
+    const adelantoUSD = row.totalAdelantosUSD || 0;
+    const netoUSD = row.totalNetoUSD || Math.max(0, brutoUSD - adelantoUSD);
+    const tasa = row.tasaBCV || cicloActivo?.tasaBCVCierre || 1;
+    const netoBs = row.totalNetoBs || (netoUSD * tasa);
+
     Swal.fire({
-      title: `<i class="fa-brands fa-whatsapp" style="color: #25d366;"></i> WhatsApp - ${row.fincaNombre}`,
+      title: `<div style="display: flex; align-items: center; justify-content: center; gap: 9px; color: #16a34a;"><i class="fa-brands fa-whatsapp" style="font-size: 26px;"></i> <span style="font-weight: 800; font-size: 17.5px; color: #0f172a;">WhatsApp • ${row.fincaNombre}</span></div>`,
       html: `
-        <div style="text-align: left; font-size: 13px; color: #475569; margin-bottom: 12px;">
-          <p style="margin-bottom: 6px;"><strong>Productor:</strong> ${row.propietarioNombre}</p>
-          <p style="margin-bottom: 6px;"><strong>Neto a Pagar:</strong> $${(row.totalNetoUSD || 0).toFixed(2)} (Bs. ${(row.totalNetoBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })})</p>
-          <p style="color: #64748b; font-size: 11.5px;">Seleccione cómo desea enviar la relación de compra de leche:</p>
+        <div style="text-align: left; font-size: 13px; color: #334155; padding: 4px 6px;">
+          <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 13px; color: #64748b; font-weight: 600;">
+                <i class="fa-regular fa-user" style="color: #2563eb; margin-right: 5px;"></i> Productor:
+              </span>
+              <strong style="color: #0f172a; font-size: 13.5px;">${productor}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12.5px;">
+              <span style="color: #64748b; font-weight: 600;">
+                <i class="fa-solid fa-cow" style="color: #059669; margin-right: 5px;"></i> Litros Recolectados:
+              </span>
+              <strong style="color: #0284c7; font-weight: 800; font-family: monospace;">${(row.totalLitros || 0).toLocaleString()} Lts</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; padding-top: 10px; border-top: 1.5px solid #e2e8f0;">
+              <div>
+                <span style="font-size: 10.5px; color: #065f46; text-transform: uppercase; font-weight: 700; display: block;">Neto en USD</span>
+                <strong style="font-size: 17px; color: #059669; font-weight: 900; font-family: monospace;">$${netoUSD.toFixed(2)}</strong>
+              </div>
+              <div style="text-align: right;">
+                <span style="font-size: 10.5px; color: #92400e; text-transform: uppercase; font-weight: 700; display: block;">Neto en Bs.</span>
+                <strong style="font-size: 15.5px; color: #b45309; font-weight: 900; font-family: monospace;">Bs. ${netoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}</strong>
+              </div>
+            </div>
+          </div>
+          <p style="color: #64748b; font-size: 12px; margin: 0; text-align: center; font-weight: 500;">
+            Seleccione el formato para compartir el comprobante con el productor:
+          </p>
         </div>
       `,
       showCancelButton: true,
@@ -216,8 +250,9 @@ export const LiquidacionesPage: React.FC = () => {
       confirmButtonText: '<i class="fa-brands fa-whatsapp"></i> Abrir en WhatsApp',
       denyButtonText: '<i class="fa-regular fa-copy"></i> Copiar Texto con Emojis',
       cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#25d366',
+      confirmButtonColor: '#22c55e',
       denyButtonColor: '#0284c7',
+      cancelButtonColor: '#64748b',
     }).then((result) => {
       if (result.isConfirmed) {
         enviarWhatsAppDirecto(row);
@@ -356,13 +391,46 @@ export const LiquidacionesPage: React.FC = () => {
   }, [preliquidacion, fincasSeleccionadas]);
 
   const resumenSeleccion = useMemo(() => {
-    const totalLitros = fincasSeleccionadasObjetos.reduce((acc, f) => acc + (f.totalLitros || 0), 0);
-    const totalUSD = fincasSeleccionadasObjetos.reduce((acc, f) => acc + (f.totalBrutoUSD || 0), 0);
-    const totalAdelantosUSD = fincasSeleccionadasObjetos.reduce((acc, f) => acc + (f.totalAdelantosUSD || 0), 0);
-    const totalNetoUSD = fincasSeleccionadasObjetos.reduce((acc, f) => acc + (f.totalNetoUSD || 0), 0);
-    const totalNetoBs = fincasSeleccionadasObjetos.reduce((acc, f) => acc + (f.totalNetoBs || 0), 0);
-    return { totalLitros, totalUSD, totalAdelantosUSD, totalNetoUSD, totalNetoBs };
-  }, [fincasSeleccionadasObjetos]);
+    let totalLitros = 0;
+    let totalUSD = 0;
+    let totalBrutoBs = 0;
+    let totalAdelantosUSD = 0;
+    let totalAdelantosBs = 0;
+
+    fincasSeleccionadasObjetos.forEach((f) => {
+      const bUSD = f.totalBrutoUSD || ((f.totalLitros || 0) * (f.precioLitroUSD || 0)) || 0;
+      const adUSD = f.totalAdelantosUSD || 0;
+      const tasa = f.tasaBCV || cicloActivo?.tasaBCVCierre || 1;
+      const bBs = bUSD * tasa;
+      const adBs = adUSD * tasa;
+
+      totalLitros += f.totalLitros || 0;
+      totalUSD += bUSD;
+      totalBrutoBs += bBs;
+      totalAdelantosUSD += adUSD;
+      totalAdelantosBs += adBs;
+    });
+
+    const saldoNetoRealBs = totalBrutoBs - totalAdelantosBs;
+    const esDeudorTotal = (totalAdelantosUSD > totalUSD + 0.01) || (saldoNetoRealBs < -0.01);
+    const deudaRestanteUSD = esDeudorTotal ? Math.round((totalAdelantosUSD - totalUSD) * 100) / 100 : 0;
+    const deudaRestanteBs = esDeudorTotal ? Math.round((totalAdelantosBs - totalBrutoBs) * 100) / 100 : 0;
+    const totalNetoBs = Math.max(0, saldoNetoRealBs);
+    const totalNetoUSD = Math.max(0, totalUSD - totalAdelantosUSD);
+
+    return {
+      totalLitros,
+      totalUSD,
+      totalBrutoBs,
+      totalAdelantosUSD,
+      totalAdelantosBs,
+      totalNetoUSD,
+      totalNetoBs,
+      esDeudorTotal,
+      deudaRestanteUSD,
+      deudaRestanteBs,
+    };
+  }, [fincasSeleccionadasObjetos, cicloActivo]);
 
   const ejecutarPagoUnificado = async () => {
     if (fincasSeleccionadasObjetos.length === 0) return;
@@ -1085,18 +1153,24 @@ export const LiquidacionesPage: React.FC = () => {
           }}
         />
 
-        {/* PANEL FLOTANTE DE UNIFICACIÓN / PAGOS EN LOTE 1:1 CON V2_3_11_26 */}
+        {/* PANEL FLOTANTE DE UNIFICACIÓN / PAGOS EN LOTE 1:1 CON V2_3_11_26 (Image 5) */}
         {fincasSeleccionadas.length > 0 && (
           <div
             id="panelBarraUnificarPagos"
             style={{
-              marginTop: '16px',
+              position: 'fixed',
+              bottom: '16px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '95%',
+              maxWidth: '1280px',
               background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
               color: '#ffffff',
-              borderRadius: '12px',
-              padding: '16px 20px',
-              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
+              borderRadius: '14px',
+              padding: '14px 22px',
+              boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.5), 0 0 0 1.5px #3b82f6',
               border: '1.5px solid #3b82f6',
+              zIndex: 999,
             }}
           >
             <div
@@ -1108,8 +1182,8 @@ export const LiquidacionesPage: React.FC = () => {
                 gap: '14px',
               }}
             >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <div style={{ flex: 1, minWidth: '320px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                   <span
                     className="badge"
                     style={{
@@ -1117,41 +1191,194 @@ export const LiquidacionesPage: React.FC = () => {
                       color: '#ffffff',
                       fontWeight: 800,
                       fontSize: '11.5px',
-                      padding: '3px 8px',
+                      padding: '3px 9px',
                       borderRadius: '6px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
                     }}
                   >
                     <i className="fa-solid fa-link"></i> UNIFICACIÓN DE PAGOS
                   </span>
-                  <span style={{ fontWeight: 800, fontSize: '13.5px', color: '#93c5fd' }}>
-                    {fincasSeleccionadas.length} Finca{fincasSeleccionadas.length > 1 ? 's' : ''} Seleccionada{fincasSeleccionadas.length > 1 ? 's' : ''}
+                  <span id="labelContadorFincasUnificar" style={{ fontWeight: 800, fontSize: '13.5px', color: '#93c5fd' }}>
+                    {fincasSeleccionadasObjetos.length} Finca{fincasSeleccionadasObjetos.length > 1 ? 's' : ''} Seleccionada{fincasSeleccionadasObjetos.length > 1 ? 's' : ''}
                   </span>
                 </div>
-                <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#cbd5e1' }}>
+
+                {/* Lista de píldoras por finca seleccionada (1:1 V2_3_11_26) */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                  {fincasSeleccionadasObjetos.map((f) => {
+                    const nom = f.fincaNombre;
+                    const bUSD = f.totalBrutoUSD || ((f.totalLitros || 0) * (f.precioLitroUSD || 0)) || 0;
+                    const adUSD = f.totalAdelantosUSD || 0;
+                    const tasa = f.tasaBCV || cicloActivo?.tasaBCVCierre || 1;
+                    const adBs = adUSD * tasa;
+                    const bBs = bUSD * tasa;
+                    const netoFincaBs = Math.max(0, bBs - adBs);
+                    const netoFincaUSD = Math.max(0, bUSD - adUSD);
+                    const esDeudorFinca = adUSD > bUSD + 0.01;
+                    const remUSD = Math.max(0, adUSD - bUSD);
+                    const remBs = Math.max(0, adBs - bBs);
+
+                    if (esDeudorFinca) {
+                      return (
+                        <span
+                          key={f.fincaId}
+                          style={{
+                            display: 'inline-block',
+                            background: 'rgba(239, 68, 68, 0.18)',
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            border: '1.5px solid #ef4444',
+                            fontSize: '12px',
+                          }}
+                        >
+                          <strong style={{ color: '#ffffff' }}>{nom}:</strong>{' '}
+                          <span style={{ color: '#fca5a5', fontWeight: 800 }}>Bs. 0,00 ($0.00 USD)</span>
+                          <span style={{ color: '#ef4444', fontWeight: 800, display: 'block', fontSize: '10.5px' }}>
+                            <i className="fa-solid fa-circle-minus"></i> Adelanto: -${adUSD.toFixed(2)} USD (-Bs. {adBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
+                          </span>
+                          <small style={{ color: '#f87171', fontWeight: 800, display: 'block', fontSize: '10px' }}>
+                            (Saldo deudor: -${remUSD.toFixed(2)} USD / -Bs. {remBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
+                          </small>
+                        </span>
+                      );
+                    } else if (adUSD > 0) {
+                      return (
+                        <span
+                          key={f.fincaId}
+                          style={{
+                            display: 'inline-block',
+                            background: 'rgba(15, 23, 42, 0.85)',
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            border: '1.5px solid #3b82f6',
+                            fontSize: '12px',
+                          }}
+                        >
+                          <strong style={{ color: '#ffffff' }}>{nom}:</strong>{' '}
+                          <span style={{ color: '#34d399', fontWeight: 800 }}>
+                            + Bs. {netoFincaBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                          </span>{' '}
+                          <small style={{ color: '#6ee7b7', fontWeight: 700, fontSize: '11px' }}>
+                            (${netoFincaUSD.toFixed(2)} USD)
+                          </small>
+                          <span style={{ color: '#f87171', fontWeight: 800, display: 'block', fontSize: '10.5px' }}>
+                            <i className="fa-solid fa-circle-minus"></i> Adelanto: -${adUSD.toFixed(2)} USD (-Bs. {adBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
+                          </span>
+                        </span>
+                      );
+                    } else {
+                      return (
+                        <span
+                          key={f.fincaId}
+                          style={{
+                            display: 'inline-block',
+                            background: 'rgba(15, 23, 42, 0.85)',
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            border: '1.5px solid #10b981',
+                            fontSize: '12px',
+                          }}
+                        >
+                          <strong style={{ color: '#ffffff' }}>{nom}:</strong>{' '}
+                          <span style={{ color: '#34d399', fontWeight: 800 }}>
+                            + Bs. {netoFincaBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                          </span>{' '}
+                          <small style={{ color: '#6ee7b7', fontWeight: 700, fontSize: '11px' }}>
+                            (${netoFincaUSD.toFixed(2)} USD)
+                          </small>
+                        </span>
+                      );
+                    }
+                  })}
+                </div>
+
+                {/* Línea de Resumen Total Bruto, Adelantos y Deudas (1:1 V2_3_11_26) */}
+                <div
+                  id="detalleFincasUnificarResumen"
+                  style={{
+                    fontSize: '12px',
+                    color: '#cbd5e1',
+                    display: 'flex',
+                    gap: '12px',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    borderTop: '1px solid rgba(255,255,255,0.1)',
+                    paddingTop: '6px',
+                  }}
+                >
                   <span>
                     Litros: <strong style={{ color: '#38bdf8' }}>{resumenSeleccion.totalLitros.toLocaleString()} Lts</strong>
                   </span>
                   <span>
-                    Bruto: <strong style={{ color: '#38bdf8' }}>${resumenSeleccion.totalUSD.toFixed(2)}</strong>
-                  </span>
-                  <span>
-                    Adelantos:{' '}
-                    <strong style={{ color: resumenSeleccion.totalAdelantosUSD > 0 ? '#ef4444' : '#94a3b8' }}>
-                      -${resumenSeleccion.totalAdelantosUSD.toFixed(2)}
+                    Total Bruto:{' '}
+                    <strong style={{ color: '#38bdf8' }}>
+                      ${resumenSeleccion.totalUSD.toFixed(2)} (Bs. {resumenSeleccion.totalBrutoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
                     </strong>
                   </span>
+                  {resumenSeleccion.totalAdelantosUSD > 0 ? (
+                    <span
+                      style={{
+                        color: '#ef4444',
+                        fontWeight: 800,
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        padding: '2px 8px',
+                        borderRadius: '5px',
+                        border: '1px solid #ef4444',
+                      }}
+                    >
+                      <i className="fa-solid fa-circle-minus"></i> Adelantos: -${resumenSeleccion.totalAdelantosUSD.toFixed(2)} (-Bs. {resumenSeleccion.totalAdelantosBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
+                    </span>
+                  ) : (
+                    <span>
+                      Adelantos: <strong style={{ color: '#94a3b8' }}>$0.00</strong>
+                    </span>
+                  )}
+                  {resumenSeleccion.esDeudorTotal && (
+                    <span
+                      style={{
+                        color: '#fca5a5',
+                        fontWeight: 800,
+                        background: 'rgba(239,68,68,0.2)',
+                        padding: '2px 8px',
+                        borderRadius: '5px',
+                        border: '1px solid #ef4444',
+                      }}
+                    >
+                      <i className="fa-solid fa-triangle-exclamation"></i> Sigue Debiendo: -${resumenSeleccion.deudaRestanteUSD.toFixed(2)} USD (-Bs. {resumenSeleccion.deudaRestanteBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
+                    </span>
+                  )}
                 </div>
               </div>
+
+              {/* Lado derecho: Monto Total y Botones de Acción */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block' }}>TOTAL NETO A PAGAR:</span>
-                  <strong style={{ fontSize: '18px', color: '#34d399' }}>
-                    Bs. {resumenSeleccion.totalNetoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
-                  </strong>
-                  <small style={{ color: '#6ee7b7', display: 'block', fontSize: '11px' }}>
-                    (${resumenSeleccion.totalNetoUSD.toFixed(2)} USD)
+                  <small style={{ color: '#94a3b8', fontSize: '11px', fontWeight: 600, display: 'block' }}>
+                    NETO TOTAL UNIFICADO:
                   </small>
+                  {resumenSeleccion.esDeudorTotal ? (
+                    <div>
+                      <span id="montoNetoTotalUnificadoDisplay" style={{ fontSize: '20px', fontWeight: 900, color: '#f87171' }}>
+                        Bs. 0,00
+                      </span>
+                      <small style={{ fontSize: '11px', fontWeight: 800, color: '#fca5a5', display: 'block' }}>
+                        (Deuda: -${resumenSeleccion.deudaRestanteUSD.toFixed(2)} USD)
+                      </small>
+                    </div>
+                  ) : (
+                    <div>
+                      <span id="montoNetoTotalUnificadoDisplay" style={{ fontSize: '20px', fontWeight: 900, color: '#34d399' }}>
+                        Bs. {resumenSeleccion.totalNetoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                      </span>
+                      <small style={{ color: '#6ee7b7', display: 'block', fontSize: '11px', fontWeight: 700 }}>
+                        (${resumenSeleccion.totalNetoUSD.toFixed(2)} USD)
+                      </small>
+                    </div>
+                  )}
                 </div>
+
                 <button
                   type="button"
                   onClick={cancelarSeleccion}
@@ -1169,27 +1396,34 @@ export const LiquidacionesPage: React.FC = () => {
                 >
                   <i className="fa-solid fa-xmark"></i> Desmarcar
                 </button>
+
                 <button
                   type="button"
+                  id="btnEjecutarPagoUnificado"
                   onClick={ejecutarPagoUnificado}
                   disabled={procesandoLote}
                   className="btn btn-primary"
                   style={{
-                    background: '#10b981',
+                    background: resumenSeleccion.esDeudorTotal ? '#ef4444' : '#10b981',
                     border: 'none',
                     fontSize: '13px',
                     fontWeight: 800,
                     padding: '9px 18px',
                     borderRadius: '8px',
-                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                    boxShadow: resumenSeleccion.esDeudorTotal ? '0 4px 12px rgba(239, 68, 68, 0.3)' : '0 4px 12px rgba(16, 185, 129, 0.3)',
                     cursor: procesandoLote ? 'wait' : 'pointer',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '6px',
+                    color: '#ffffff',
                   }}
                 >
                   <i className={procesandoLote ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-credit-card'}></i>{' '}
-                  {procesandoLote ? 'Procesando...' : `Realizar Pago Unificado (${fincasSeleccionadas.length} Fincas)`}
+                  {procesandoLote
+                    ? 'Procesando...'
+                    : resumenSeleccion.esDeudorTotal
+                    ? `Compensar y Registrar Adelanto (${fincasSeleccionadasObjetos.length} Fincas)`
+                    : `Realizar Pago Unificado (${fincasSeleccionadasObjetos.length} Fincas)`}
                 </button>
               </div>
             </div>
@@ -1197,427 +1431,587 @@ export const LiquidacionesPage: React.FC = () => {
         )}
       </div>
 
-      {/* MODAL COMPROBANTE OFICIAL DE PAGO Y WHATSAPP */}
-      {modalRecibo && fincaRecibo && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(15, 23, 42, 0.75)',
-            backdropFilter: 'blur(6px)',
-            padding: '16px',
-            overflowY: 'auto',
-          }}
-        >
+      {/* MODAL COMPROBANTE OFICIAL DE PAGO Y WHATSAPP (Image 4 Redesign) */}
+      {modalRecibo && fincaRecibo && (() => {
+        const productor = fincaRecibo.propietarioNombre || (fincaRecibo as any).propietario || (fincaRecibo as any).Propietario || 'Productor';
+        const brutoUSD = fincaRecibo.totalBrutoUSD || ((fincaRecibo.totalLitros || 0) * (fincaRecibo.precioLitroUSD || 0));
+        const adelantoUSD = fincaRecibo.totalAdelantosUSD || 0;
+        const netoUSD = fincaRecibo.totalNetoUSD || Math.max(0, brutoUSD - adelantoUSD);
+        const tasa = fincaRecibo.tasaBCV || cicloActivo?.tasaBCVCierre || 1;
+        const netoBs = fincaRecibo.totalNetoBs || (netoUSD * tasa);
+
+        return (
           <div
-            className="content-card"
             style={{
-              width: '100%',
-              maxWidth: '680px',
-              padding: '0',
-              overflow: 'hidden',
-              borderRadius: '16px',
-              maxHeight: '90vh',
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1000,
               display: 'flex',
-              flexDirection: 'column',
-              background: '#ffffff',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(6px)',
+              padding: '16px',
+              overflowY: 'auto',
             }}
           >
-            {/* Header Modal */}
             <div
+              className="content-card"
               style={{
-                padding: '16px 20px',
-                background: '#0f172a',
-                color: '#ffffff',
+                width: '100%',
+                maxWidth: '680px',
+                padding: '0',
+                overflow: 'hidden',
+                borderRadius: '16px',
+                maxHeight: '90vh',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                flexDirection: 'column',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <i className="fa-solid fa-file-invoice-dollar" style={{ color: '#38bdf8', fontSize: '18px' }}></i>
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, color: '#ffffff' }}>
-                  Comprobante Oficial de Liquidación
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setModalRecibo(false)}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '20px' }}
-              >
-                &times;
-              </button>
-            </div>
-
-            {/* Selector de sub-vista dentro del modal */}
-            <div style={{ display: 'flex', gap: '8px', padding: '12px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-              <button
-                type="button"
-                onClick={() => setTabRecibo('voucher')}
+              {/* Header Modal */}
+              <div
                 style={{
-                  padding: '7px 14px',
-                  fontSize: '12px',
-                  fontWeight: 800,
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: tabRecibo === 'voucher' ? '#0f172a' : '#ffffff',
-                  color: tabRecibo === 'voucher' ? '#ffffff' : '#64748b',
-                  boxShadow: tabRecibo === 'voucher' ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+                  padding: '16px 22px',
+                  background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: '1px solid rgba(255,255,255,0.1)',
                 }}
               >
-                <i className="fa-solid fa-receipt" style={{ marginRight: '5px' }}></i> 1. Comprobante / Recibo
-              </button>
-              <button
-                type="button"
-                onClick={() => setTabRecibo('whatsapp')}
-                style={{
-                  padding: '7px 14px',
-                  fontSize: '12px',
-                  fontWeight: 800,
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: tabRecibo === 'whatsapp' ? '#25d366' : '#ffffff',
-                  color: tabRecibo === 'whatsapp' ? '#ffffff' : '#64748b',
-                  boxShadow: tabRecibo === 'whatsapp' ? '0 2px 6px rgba(37,211,102,0.25)' : 'none',
-                }}
-              >
-                <i className="fa-brands fa-whatsapp" style={{ marginRight: '5px' }}></i> 2. Formato WhatsApp
-              </button>
-            </div>
-
-            {/* Contenido del Modal con Scroll */}
-            <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
-              {tabRecibo === 'voucher' ? (
-                <div
-                  id="areaImpresionReciboPago"
-                  style={{
-                    border: '1.5px solid #e2e8f0',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    background: '#ffffff',
-                    fontFamily: 'system-ui, sans-serif',
-                  }}
-                >
-                  {/* Membrete Oficial */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '14px', marginBottom: '18px' }}>
-                    <div>
-                      <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0f172a', textTransform: 'uppercase' }}>
-                        Transporte Vergel & Carrillo
-                      </h2>
-                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginTop: '2px' }}>
-                        RIF: J-50000000-0 • Recolección &amp; Transporte de Leche
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span style={{ background: '#0f172a', color: '#ffffff', fontWeight: 900, fontSize: '12px', padding: '4px 10px', borderRadius: '6px' }}>
-                        RECIBO #{String(fincaRecibo.fincaId).padStart(5, '0')}
-                      </span>
-                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{semanaTextoFormateada}</div>
-                    </div>
-                  </div>
-
-                  {/* Datos Productor & Finca */}
-                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 16px', marginBottom: '16px' }}>
-                    <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>{fincaRecibo.fincaNombre}</div>
-                    <div style={{ fontSize: '12.5px', color: '#475569', marginTop: '2px' }}>
-                      <strong>Productor:</strong> {fincaRecibo.propietarioNombre}
-                    </div>
-                    {fincaRecibo.numeroCuenta && (
-                      <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '3px', fontFamily: 'monospace' }}>
-                        <strong>Cuenta:</strong> {fincaRecibo.bancoNombre ? `${fincaRecibo.bancoNombre} - ` : ''}{fincaRecibo.numeroCuenta}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Detalle Financiero */}
-                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', marginBottom: '16px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
-                      <tbody>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 12px', color: '#64748b' }}>Total Litros Recolectados:</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 800, fontFamily: 'monospace' }}>
-                            {(fincaRecibo.totalLitros || 0).toLocaleString()} Lts
-                          </td>
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 12px', color: '#64748b' }}>Precio por Litro:</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
-                            ${(fincaRecibo.precioLitroUSD || 0).toFixed(4)} USD
-                          </td>
-                        </tr>
-                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 12px', color: '#64748b' }}>Total Bruto:</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>
-                            ${(fincaRecibo.totalBrutoUSD || 0).toFixed(2)} USD
-                          </td>
-                        </tr>
-                        {fincaRecibo.totalAdelantosUSD ? (
-                          <tr style={{ borderBottom: '1px solid #f1f5f9', background: '#fff5f5' }}>
-                            <td style={{ padding: '8px 12px', color: '#dc2626', fontWeight: 700 }}>(-) Deducción Adelantos / Préstamos:</td>
-                            <td style={{ padding: '8px 12px', textAlign: 'right', color: '#dc2626', fontWeight: 800, fontFamily: 'monospace' }}>
-                              -${fincaRecibo.totalAdelantosUSD.toFixed(2)} USD
-                            </td>
-                          </tr>
-                        ) : null}
-                        <tr style={{ background: '#f8fafc', fontWeight: 900 }}>
-                          <td style={{ padding: '10px 12px', color: '#0f172a', fontSize: '13.5px' }}>NETO A PAGAR:</td>
-                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#059669', fontSize: '15px', fontFamily: 'monospace' }}>
-                            ${(fincaRecibo.totalNetoUSD || 0).toFixed(2)} USD
-                          </td>
-                        </tr>
-                        <tr style={{ background: '#f8fafc', fontWeight: 900 }}>
-                          <td style={{ padding: '6px 12px 10px 12px', color: '#64748b', fontSize: '11px' }}>
-                            Tasa BCV: {fincaRecibo.tasaBCV || 0}
-                          </td>
-                          <td style={{ padding: '6px 12px 10px 12px', textAlign: 'right', color: '#b45309', fontSize: '14px', fontFamily: 'monospace' }}>
-                            Bs. {(fincaRecibo.totalNetoBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {fincaRecibo.referenciaPago && (
-                    <div style={{ fontSize: '11.5px', color: '#047857', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '6px 10px', borderRadius: '6px', marginBottom: '14px', fontWeight: 700 }}>
-                      <i className="fa-solid fa-receipt" style={{ marginRight: '4px' }}></i>
-                      Ref. de Pago Bancario: {fincaRecibo.referenciaPago}
-                    </div>
-                  )}
-
-                  <div style={{ textAlign: 'center', fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
-                    Documento informativo de liquidación generado por el Sistema de Rutas y Transporte.
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
-                    Texto formateado para WhatsApp (con emojis y datos de pago):
-                  </label>
-                  <textarea
-                    readOnly
-                    value={generarTextoWhatsApp(fincaRecibo)}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
                     style={{
-                      width: '100%',
-                      height: '280px',
-                      fontFamily: 'monospace',
-                      fontSize: '12px',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      border: '1.5px solid #cbd5e1',
-                      background: '#f8fafc',
-                      color: '#0f172a',
-                      lineHeight: '1.5',
+                      width: '38px',
+                      height: '38px',
+                      borderRadius: '10px',
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      color: '#38bdf8',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '18px',
                     }}
-                  />
+                  >
+                    <i className="fa-solid fa-file-invoice-dollar"></i>
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#ffffff' }}>
+                      Comprobante Oficial de Liquidación
+                    </h3>
+                    <p style={{ margin: '1px 0 0 0', fontSize: '11.5px', color: '#94a3b8' }}>
+                      Relación oficial semanal de pago y recepción de leche
+                    </p>
+                  </div>
                 </div>
-              )}
-            </div>
-
-            {/* Footer Modal con Botones */}
-            <div
-              style={{
-                padding: '14px 20px',
-                background: '#f8fafc',
-                borderTop: '1px solid #e2e8f0',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '10px',
-              }}
-            >
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => enviarWhatsAppDirecto(fincaRecibo)}
-                  className="btn"
-                  style={{
-                    background: '#25d366',
-                    color: '#ffffff',
-                    fontWeight: 800,
-                    fontSize: '12.5px',
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    border: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 8px rgba(37,211,102,0.3)',
-                  }}
-                >
-                  <i className="fa-brands fa-whatsapp"></i> Enviar a WhatsApp
-                </button>
-                <button
-                  type="button"
-                  onClick={() => copiarTextoWhatsApp(fincaRecibo)}
-                  className="btn btn-outline"
-                  style={{
-                    fontWeight: 700,
-                    fontSize: '12.5px',
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <i className="fa-regular fa-copy"></i> Copiar Texto
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="btn btn-outline"
-                  style={{
-                    fontWeight: 700,
-                    fontSize: '12.5px',
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <i className="fa-solid fa-print"></i> Imprimir
-                </button>
                 <button
                   type="button"
                   onClick={() => setModalRecibo(false)}
-                  className="btn btn-outline"
                   style={{
-                    fontWeight: 700,
-                    fontSize: '12.5px',
-                    padding: '8px 16px',
+                    background: 'rgba(255,255,255,0.1)',
+                    border: 'none',
+                    color: '#cbd5e1',
+                    cursor: 'pointer',
+                    width: '30px',
+                    height: '30px',
                     borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
                   }}
                 >
-                  Cerrar
+                  &times;
                 </button>
+              </div>
+
+              {/* Selector de sub-vista dentro del modal */}
+              <div style={{ display: 'flex', gap: '8px', padding: '12px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <button
+                  type="button"
+                  onClick={() => setTabRecibo('voucher')}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    borderRadius: '8px',
+                    border: tabRecibo === 'voucher' ? '1.5px solid #0f172a' : '1px solid #cbd5e1',
+                    cursor: 'pointer',
+                    background: tabRecibo === 'voucher' ? '#0f172a' : '#ffffff',
+                    color: tabRecibo === 'voucher' ? '#ffffff' : '#64748b',
+                    boxShadow: tabRecibo === 'voucher' ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <i className="fa-solid fa-receipt"></i> 1. Comprobante / Recibo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTabRecibo('whatsapp')}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    borderRadius: '8px',
+                    border: tabRecibo === 'whatsapp' ? '1.5px solid #16a34a' : '1px solid #cbd5e1',
+                    cursor: 'pointer',
+                    background: tabRecibo === 'whatsapp' ? '#16a34a' : '#ffffff',
+                    color: tabRecibo === 'whatsapp' ? '#ffffff' : '#64748b',
+                    boxShadow: tabRecibo === 'whatsapp' ? '0 2px 6px rgba(22,163,74,0.25)' : 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <i className="fa-brands fa-whatsapp"></i> 2. Formato WhatsApp
+                </button>
+              </div>
+
+              {/* Contenido del Modal con Scroll */}
+              <div style={{ padding: '20px', overflowY: 'auto', flex: 1, background: '#f8fafc' }}>
+                {tabRecibo === 'voucher' ? (
+                  <div
+                    id="areaImpresionReciboPago"
+                    style={{
+                      border: '1.5px solid #cbd5e1',
+                      borderRadius: '12px',
+                      padding: '24px',
+                      background: '#ffffff',
+                      fontFamily: 'system-ui, -apple-system, sans-serif',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                    }}
+                  >
+                    {/* Membrete Oficial Dinámico */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2.5px solid #0f172a', paddingBottom: '14px', marginBottom: '18px' }}>
+                      <div>
+                        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '-0.01em' }}>
+                          {empresaNombre}
+                        </h2>
+                        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginTop: '2px' }}>
+                          RIF: J-50000000-0 • Recolección &amp; Transporte de Leche
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ background: '#0f172a', color: '#ffffff', fontWeight: 900, fontSize: '12px', padding: '4px 10px', borderRadius: '6px', display: 'inline-block' }}>
+                          RECIBO #{String(fincaRecibo.fincaId).padStart(5, '0')}
+                        </span>
+                        <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700, marginTop: '4px' }}>{semanaTextoFormateada}</div>
+                      </div>
+                    </div>
+
+                    {/* Datos Productor & Finca */}
+                    <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '12px 16px', marginBottom: '16px' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
+                        <i className="fa-solid fa-wheat-awn" style={{ color: '#059669', marginRight: '6px' }}></i>
+                        {fincaRecibo.fincaNombre}
+                      </div>
+                      <div style={{ fontSize: '12.5px', color: '#334155', marginTop: '3px', fontWeight: 600 }}>
+                        <i className="fa-regular fa-user" style={{ color: '#2563eb', marginRight: '5px' }}></i>
+                        <strong>Productor:</strong> <span style={{ color: '#0f172a' }}>{productor}</span>
+                      </div>
+                      {(fincaRecibo.bancoNombre || fincaRecibo.numeroCuenta) && (
+                        <div style={{ fontSize: '11.5px', color: '#475569', marginTop: '4px', fontFamily: 'monospace' }}>
+                          <i className="fa-solid fa-building-columns" style={{ color: '#64748b', marginRight: '5px' }}></i>
+                          <strong>Cuenta:</strong> {fincaRecibo.bancoNombre ? `${fincaRecibo.bancoNombre} - ` : ''}{fincaRecibo.numeroCuenta || 'Sin cuenta'}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Detalle Financiero */}
+                    <div style={{ border: '1.5px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', marginBottom: '16px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                        <tbody>
+                          <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '9px 14px', color: '#64748b', fontWeight: 600 }}>Total Litros Recolectados:</td>
+                            <td style={{ padding: '9px 14px', textAlign: 'right', fontWeight: 800, fontFamily: 'monospace', color: '#0284c7' }}>
+                              {(fincaRecibo.totalLitros || 0).toLocaleString()} Lts
+                            </td>
+                          </tr>
+                          <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '9px 14px', color: '#64748b', fontWeight: 600 }}>Precio por Litro:</td>
+                            <td style={{ padding: '9px 14px', textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: '#334155' }}>
+                              ${(fincaRecibo.precioLitroUSD || 0).toFixed(4)} USD
+                            </td>
+                          </tr>
+                          <tr style={{ borderBottom: '1px solid #f1f5f9', background: '#fafafa' }}>
+                            <td style={{ padding: '9px 14px', color: '#475569', fontWeight: 700 }}>Total Bruto:</td>
+                            <td style={{ padding: '9px 14px', textAlign: 'right', fontWeight: 800, fontFamily: 'monospace', color: '#0f172a' }}>
+                              ${brutoUSD.toFixed(2)} USD
+                            </td>
+                          </tr>
+                          {adelantoUSD > 0 && (
+                            <tr style={{ borderBottom: '1px solid #f1f5f9', background: '#fff5f5' }}>
+                              <td style={{ padding: '9px 14px', color: '#dc2626', fontWeight: 700 }}>(-) Deducción Adelantos / Préstamos:</td>
+                              <td style={{ padding: '9px 14px', textAlign: 'right', color: '#dc2626', fontWeight: 800, fontFamily: 'monospace' }}>
+                                -${adelantoUSD.toFixed(2)} USD
+                              </td>
+                            </tr>
+                          )}
+                          <tr style={{ background: '#ecfdf5', fontWeight: 900, borderTop: '2px solid #a7f3d0' }}>
+                            <td style={{ padding: '11px 14px', color: '#065f46', fontSize: '13.5px' }}>NETO A PAGAR:</td>
+                            <td style={{ padding: '11px 14px', textAlign: 'right', color: '#059669', fontSize: '16px', fontFamily: 'monospace' }}>
+                              ${netoUSD.toFixed(2)} USD
+                            </td>
+                          </tr>
+                          <tr style={{ background: '#fffbeb', fontWeight: 800 }}>
+                            <td style={{ padding: '8px 14px 10px 14px', color: '#92400e', fontSize: '11.5px' }}>
+                              Tasa BCV: {tasa.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs/$
+                            </td>
+                            <td style={{ padding: '8px 14px 10px 14px', textAlign: 'right', color: '#b45309', fontSize: '14.5px', fontFamily: 'monospace' }}>
+                              Bs. {netoBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {fincaRecibo.referenciaPago && (
+                      <div style={{ fontSize: '12px', color: '#047857', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '8px 12px', borderRadius: '8px', marginBottom: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <i className="fa-solid fa-receipt"></i>
+                        <span>Ref. de Pago Bancario: <strong>{fincaRecibo.referenciaPago}</strong></span>
+                      </div>
+                    )}
+
+                    <div style={{ textAlign: 'center', fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', marginTop: '8px' }}>
+                      Documento informativo de liquidación generado por el Sistema de Rutas y Transporte.
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
+                      Texto formateado para WhatsApp (con emojis y datos de pago):
+                    </label>
+                    <textarea
+                      readOnly
+                      value={generarTextoWhatsApp(fincaRecibo)}
+                      style={{
+                        width: '100%',
+                        height: '280px',
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: '1.5px solid #cbd5e1',
+                        background: '#ffffff',
+                        color: '#0f172a',
+                        lineHeight: '1.5',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Modal con Botones */}
+              <div
+                style={{
+                  padding: '14px 20px',
+                  background: '#ffffff',
+                  borderTop: '1px solid #e2e8f0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => enviarWhatsAppDirecto(fincaRecibo)}
+                    className="btn"
+                    style={{
+                      background: '#16a34a',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 8px rgba(22,163,74,0.3)',
+                    }}
+                  >
+                    <i className="fa-brands fa-whatsapp"></i> Enviar a WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => copiarTextoWhatsApp(fincaRecibo)}
+                    className="btn btn-outline"
+                    style={{
+                      fontWeight: 700,
+                      fontSize: '12.5px',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <i className="fa-regular fa-copy"></i> Copiar Texto
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="btn btn-outline"
+                    style={{
+                      fontWeight: 700,
+                      fontSize: '12.5px',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <i className="fa-solid fa-print"></i> Imprimir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalRecibo(false)}
+                    className="btn btn-outline"
+                    style={{
+                      fontWeight: 700,
+                      fontSize: '12.5px',
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                    }}
+                  >
+                    Cerrar
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {/* MODAL PAGAR */}
-      {modalPagar && fincaPago && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(15, 23, 42, 0.6)',
-            backdropFilter: 'blur(4px)',
-            padding: '16px',
-          }}
-        >
+      {/* MODAL REGISTRAR PAGO INDIVIDUAL (Image 2 Redesign) */}
+      {modalPagar && fincaPago && (() => {
+        const productor = fincaPago.propietarioNombre || (fincaPago as any).propietario || (fincaPago as any).Propietario || 'Productor';
+        const brutoUSD = fincaPago.totalBrutoUSD || ((fincaPago.totalLitros || 0) * (fincaPago.precioLitroUSD || 0));
+        const adelantoUSD = fincaPago.totalAdelantosUSD || 0;
+        const netoUSD = fincaPago.totalNetoUSD || Math.max(0, brutoUSD - adelantoUSD);
+        const tasa = fincaPago.tasaBCV || cicloActivo?.tasaBCVCierre || 1;
+        const netoBs = fincaPago.totalNetoBs || (netoUSD * tasa);
+
+        return (
           <div
-            className="content-card"
             style={{
-              width: '100%',
-              maxWidth: '460px',
-              padding: '24px',
-              borderRadius: '16px',
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1100,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(4px)',
+              padding: '16px',
             }}
           >
             <div
+              className="content-card"
               style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                paddingBottom: '14px',
-                marginBottom: '16px',
-                borderBottom: '1px solid var(--border-color)',
+                width: '100%',
+                maxWidth: '490px',
+                background: '#ffffff',
+                borderRadius: '16px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                overflow: 'hidden',
+                padding: 0,
               }}
             >
-              <h3 style={{ fontSize: '16px', fontWeight: 800, margin: 0, color: '#0f172a' }}>
-                <i className="fa-solid fa-money-bill-wave" style={{ color: '#059669', marginRight: '8px' }}></i>
-                Registrar Pago de Liquidación
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalPagar(false)}
-                style={{ background: 'none', border: 'none', fontSize: '18px', color: '#94a3b8', cursor: 'pointer' }}
+              {/* Header con gradiente esmeralda */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, #065f46, #059669, #10b981)',
+                  color: '#ffffff',
+                  padding: '18px 22px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
               >
-                <i className="fa-solid fa-xmark"></i>
-              </button>
-            </div>
-
-            <div style={{ marginBottom: '16px', padding: '14px', background: '#f8fafc', borderRadius: '10px', fontSize: '13px' }}>
-              <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '15px' }}>{fincaPago.fincaNombre}</div>
-              <div style={{ color: '#64748b', marginTop: '2px' }}>Propietario: {fincaPago.propietarioNombre}</div>
-              <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', paddingTop: '8px' }}>
-                <span style={{ fontWeight: 700, color: '#059669', fontSize: '16px', fontFamily: 'monospace' }}>
-                  Total: ${(fincaPago.totalNetoUSD || 0).toFixed(2)} USD
-                </span>
-                <span style={{ fontWeight: 800, color: '#b45309', fontSize: '14px', fontFamily: 'monospace' }}>
-                  Bs. {(fincaPago.totalNetoBs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                pagarMutation.mutate({
-                  fincaId: fincaPago.fincaId,
-                  cicloId: cicloSeleccionadoId || cicloActivo?.id || 0,
-                  referenciaPago,
-                  montoUSD: fincaPago.totalNetoUSD,
-                  montoBs: fincaPago.totalNetoBs,
-                  tasaBCV: fincaPago.tasaBCV,
-                });
-              }}
-            >
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
-                  Referencia Bancaria / Comprobante de Pago *
-                </label>
-                <input
-                  type="text"
-                  value={referenciaPago}
-                  onChange={(e) => setReferenciaPago(e.target.value)}
-                  className="form-input"
-                  placeholder="Ej: REF-84920491"
-                  style={{ width: '100%', height: '38px', fontWeight: 700 }}
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
+                    style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '12px',
+                      background: 'rgba(255, 255, 255, 0.2)',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '18px',
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+                    }}
+                  >
+                    <i className="fa-solid fa-money-bill-wave"></i>
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: '17px', fontWeight: 800, margin: 0, color: '#ffffff' }}>
+                      Registrar Pago de Liquidación
+                    </h3>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#d1fae5', fontWeight: 500 }}>
+                      Confirmar desembolso y asociar referencia bancaria
+                    </p>
+                  </div>
+                </div>
                 <button
                   type="button"
                   onClick={() => setModalPagar(false)}
-                  className="btn btn-outline"
-                  style={{ height: '38px' }}
+                  style={{
+                    color: '#ffffff',
+                    background: 'rgba(255,255,255,0.15)',
+                    border: 'none',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    fontSize: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                  }}
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={pagarMutation.isPending}
-                  className="btn btn-primary"
-                  style={{ height: '38px', background: 'linear-gradient(135deg, #059669, #047857)', fontWeight: 800 }}
-                >
-                  {pagarMutation.isPending ? 'Guardando...' : 'Confirmar Pago'}
+                  &times;
                 </button>
               </div>
-            </form>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  pagarMutation.mutate({
+                    fincaId: fincaPago.fincaId,
+                    cicloId: cicloSeleccionadoId || cicloActivo?.id || 0,
+                    referenciaPago,
+                    montoUSD: netoUSD,
+                    montoBs: netoBs,
+                    tasaBCV: tasa,
+                  });
+                }}
+              >
+                <div style={{ padding: '20px', background: '#f8fafc' }}>
+                  {/* Tarjeta de Productor y Finca */}
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '12px',
+                      padding: '14px 16px',
+                      marginBottom: '16px',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '15px' }}>
+                        <i className="fa-solid fa-wheat-awn" style={{ color: '#059669', marginRight: '6px' }}></i>
+                        {fincaPago.fincaNombre}
+                      </div>
+                      {fincaPago.fincaCodigo && (
+                        <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>
+                          #{fincaPago.fincaCodigo}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ color: '#475569', fontSize: '13px', fontWeight: 600 }}>
+                      <i className="fa-regular fa-user" style={{ color: '#2563eb', marginRight: '5px' }}></i>
+                      Propietario: <strong style={{ color: '#0f172a' }}>{productor}</strong>
+                    </div>
+                    {(fincaPago.bancoNombre || fincaPago.numeroCuenta) && (
+                      <div style={{ marginTop: '8px', fontSize: '11.5px', color: '#475569', background: '#f1f5f9', padding: '4px 8px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <i className="fa-solid fa-building-columns" style={{ color: '#059669' }}></i>
+                        <span><strong>{fincaPago.bancoNombre || 'Banco'}:</strong> {fincaPago.numeroCuenta || 'Sin cuenta'}</span>
+                      </div>
+                    )}
+
+                    {/* Dos tarjetas de montos: USD y Bs */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '12px' }}>
+                      <div style={{ background: '#ecfdf5', border: '1.5px solid #a7f3d0', borderRadius: '8px', padding: '8px 10px', textAlign: 'center' }}>
+                        <span style={{ fontSize: '10.5px', color: '#065f46', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
+                          Total a Pagar (USD)
+                        </span>
+                        <strong style={{ fontSize: '16px', color: '#059669', fontWeight: 900, marginTop: '2px', display: 'block', fontFamily: 'monospace' }}>
+                          ${netoUSD.toFixed(2)} USD
+                        </strong>
+                      </div>
+                      <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '8px', padding: '8px 10px', textAlign: 'center' }}>
+                        <span style={{ fontSize: '10.5px', color: '#92400e', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
+                          Equivalente (Bs.)
+                        </span>
+                        <strong style={{ fontSize: '16px', color: '#b45309', fontWeight: 900, marginTop: '2px', display: 'block', fontFamily: 'monospace' }}>
+                          Bs. {netoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Input de Referencia Bancaria */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                      <i className="fa-solid fa-receipt" style={{ color: '#059669', marginRight: '5px' }}></i>
+                      Referencia Bancaria / Comprobante de Pago *
+                    </label>
+                    <input
+                      type="text"
+                      value={referenciaPago}
+                      onChange={(e) => setReferenciaPago(e.target.value)}
+                      className="form-input"
+                      placeholder="Ej: REF-84920491 (Pago Móvil / Transferencia)"
+                      style={{ width: '100%', height: '42px', fontWeight: 700, fontSize: '13px' }}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 20px', background: '#ffffff', borderTop: '1px solid #e2e8f0' }}>
+                  <button
+                    type="button"
+                    onClick={() => setModalPagar(false)}
+                    className="btn btn-outline"
+                    style={{ height: '40px', padding: '0 18px', fontWeight: 700 }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={pagarMutation.isPending}
+                    className="btn btn-primary"
+                    style={{
+                      height: '40px',
+                      padding: '0 20px',
+                      background: 'linear-gradient(135deg, #059669, #047857)',
+                      fontWeight: 800,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)',
+                    }}
+                  >
+                    <i className={pagarMutation.isPending ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check-double'}></i>{' '}
+                    {pagarMutation.isPending ? 'Guardando...' : 'Confirmar Pago'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </section>
   );
 };

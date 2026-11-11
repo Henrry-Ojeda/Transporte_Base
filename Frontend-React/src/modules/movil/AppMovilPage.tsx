@@ -6647,431 +6647,99 @@ export const AppMovilPage: React.FC = () => {
                 );
               })()}
 
-              {/* Tarjeta de Bienvenida y Turno */}
-              <div
-                style={{
-                  background: 'linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%)',
-                  borderRadius: '20px',
-                  padding: '16px 18px',
-                  color: '#0f172a',
-                  boxShadow: '0 4px 16px rgba(2, 132, 199, 0.08)',
-                  border: '1.5px solid #bae6fd',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '11px', color: '#0284c7', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                    <span>Turno de Operación • {new Date().toLocaleDateString('es-VE', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
-                    {(() => {
-                      const sem = verificarSemanaOperativa(viajeActivo?.fecha || hoyStr);
-                      return (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '3px',
-                            padding: '1px 6px',
-                            borderRadius: '5px',
-                            fontSize: '9.5px',
-                            fontWeight: 800,
-                            background: sem.esOperativa ? '#dcfce7' : '#fee2e2',
-                            color: sem.esOperativa ? '#15803d' : '#b91c1c',
-                            border: `1px solid ${sem.esOperativa ? '#86efac' : '#fca5a5'}`,
-                          }}
-                        >
-                          <i className={`fa-solid ${sem.esOperativa ? 'fa-circle-check' : 'fa-triangle-exclamation'}`}></i>
-                          {sem.texto}
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  <span
-                    style={{
-                      background: '#e0f2fe',
-                      color: '#0369a1',
-                      border: '1px solid #7dd3fc',
-                      padding: '2px 8px',
-                      borderRadius: '8px',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                    }}
-                  >
-                    🚛 {dispositivo?.placaCamion || 'Cisterna'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 900, margin: '0 0 2px 0', letterSpacing: '-0.3px', color: '#0f172a' }}>
-                      ¡Hola, {choferEfectivoNombre.split(' ')[0]}!
-                    </h2>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#64748b', fontWeight: 500 }}>
-                      {listaDespachosDashboard.length > 0
-                        ? `${listaDespachosDashboard.length} despacho(s) activo(s) hacia Planta / Receptoría / Compañías`
-                        : viajeActivo
-                        ? `Ticket #${viajeActivo.codigoTicket || viajeActivo.id} en curso`
-                        : 'Listo para iniciar recolección en ruta'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* TARJETAS DE TICKETS ACTIVOS DE DESPACHO / RECEPTORÍA / COMPAÑÍAS */}
+              {/* BANNER COMPACTO: DESPACHOS ACTIVOS HACIA PLANTA / COMPAÑÍAS (Si aplica) */}
               {listaDespachosDashboard.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
-                    <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#6b21a8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <i className="fa-solid fa-truck-fast text-purple-600"></i> Despachos en Curso ({listaDespachosDashboard.length})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => cargarDespachoActivo()}
-                      disabled={cargandoDespacho}
-                      style={{
-                        background: '#ffffff',
-                        border: '1px solid #d8b4fe',
-                        borderRadius: '8px',
-                        padding: '4px 8px',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        color: '#7e22ce',
-                        cursor: 'pointer',
-                      }}
-                      title="Actualizar despachos"
-                    >
-                      <i className={`fa-solid fa-rotate ${cargandoDespacho ? 'fa-spin' : ''}`}></i>
-                    </button>
-                  </div>
-
-                  {listaDespachosDashboard.map((despItem) => {
-                    const esRecep = esDestinoReceptoria(despItem);
-                    return (
-                      <div
-                        key={despItem.id}
-                        style={{
-                          background: 'linear-gradient(135deg, #faf5ff 0%, #ffffff 100%)',
-                          borderRadius: '20px',
-                          padding: '16px 18px',
-                          border: esRecep ? '1.5px solid #86efac' : '1.5px solid #c084fc',
-                          boxShadow: '0 6px 20px rgba(168, 85, 247, 0.12)',
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '15px', fontWeight: 900, color: esRecep ? '#15803d' : '#6b21a8' }}>
-                              <i className={`fa-solid ${esRecep ? 'fa-building-wheat text-emerald-600' : 'fa-building-circle-check text-purple-600'} mr-1`}></i>
-                              Despacho #{despItem.id}
-                            </span>
-                            <span
-                              style={{
-                                background: esRecep ? '#dcfce7' : '#f3e8ff',
-                                color: esRecep ? '#15803d' : '#7e22ce',
-                                fontSize: '10.5px',
-                                fontWeight: 800,
-                                padding: '2px 8px',
-                                borderRadius: '6px',
-                                border: esRecep ? '1px solid #bbf7d0' : '1px solid #d8b4fe',
-                              }}
-                            >
-                              ● {despItem.estado || 'EN VÍA'}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div style={{ fontSize: '13px', color: '#1e293b', marginBottom: '10px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                            <i className="fa-solid fa-location-dot text-indigo-600"></i>
-                            <strong>Destino: {despItem.nombreCompania || despItem.companiaNombre || (esRecep ? 'RECEPTORÍA' : 'Compañía')}</strong>
-                          </div>
-                          <div style={{ fontSize: '11.5px', color: '#64748b' }}>
-                            Conductor: <strong>{despItem.nombreConductor || choferEfectivoNombre}</strong> • Fecha: {despItem.fecha ? despItem.fecha.split('T')[0] : ''}
-                          </div>
-                        </div>
-
-                        {/* Estadísticas de Despacho */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '12px' }}>
-                          <div style={{ background: '#f5f3ff', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #ddd6fe' }}>
-                            <span style={{ fontSize: '10px', color: '#6b21a8', fontWeight: 800, textTransform: 'uppercase' }}>Litros Despachados</span>
-                            <div style={{ fontSize: '16px', fontWeight: 900, color: '#7e22ce', marginTop: '2px' }}>
-                              {Number(despItem.litrosDespachados || 0).toLocaleString()} L
-                            </div>
-                          </div>
-                          <div style={{ background: '#f8fafc', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
-                            <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Tipo Leche</span>
-                            <div style={{ fontSize: '14px', fontWeight: 800, color: '#334155', marginTop: '3px' }}>
-                              {despItem.tipoLeche || 'VACA'}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Acciones de Entrega: Receptoría NO confirma chofer; Compañía SÍ confirma */}
-                        {esRecep ? (
-                          <div
-                            style={{
-                              background: '#ecfdf5',
-                              border: '1.5px solid #a7f3d0',
-                              borderRadius: '12px',
-                              padding: '10px 14px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '10px',
-                            }}
-                          >
-                            <i className="fa-solid fa-hourglass-half text-emerald-600 text-lg"></i>
-                            <div>
-                              <div style={{ fontWeight: 800, fontSize: '12.5px', color: '#065f46' }}>
-                                ⏳ Pendiente por Recepcionar en Planta
-                              </div>
-                              <div style={{ fontSize: '11px', color: '#047857' }}>
-                                La comprobación y descarga la procesa directamente el personal de Receptoría.
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setModalConfirmarDespachoChofer(despItem);
-                              setFormConfirmacionDespacho({
-                                litrosRecibidos: despItem.litrosDespachados || '',
-                                observacion: '',
-                                fotoReciboUrl: despItem.fotoReciboUrl || '',
-                              });
-                            }}
-                            style={{
-                              width: '100%',
-                              background: 'linear-gradient(135deg, #10b981, #059669)',
-                              color: '#ffffff',
-                              border: 'none',
-                              borderRadius: '12px',
-                              padding: '11px',
-                              fontSize: '13px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '8px',
-                              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
-                            }}
-                          >
-                            <i className="fa-solid fa-clipboard-check"></i>
-                            <span>Confirmar Entrega en Planta & Subir Recibo</span>
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  <button
-                    type="button"
-                    onClick={() => setTabActiva('entregas')}
-                    style={{
-                      width: '100%',
-                      background: '#ffffff',
-                      color: '#7e22ce',
-                      border: '1px solid #d8b4fe',
-                      borderRadius: '12px',
-                      padding: '9px',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                    }}
-                  >
-                    <i className="fa-solid fa-list-check"></i>
-                    <span>Ir a Bandeja de Entregas</span>
-                  </button>
-                </div>
-              )}
-
-              {/* SELECTOR DE TURNOS DEL DÍA (MAÑANA / TARDE) */}
-              {viajesChofer.length > 0 && (() => {
-                const viajesOrdenados = [...viajesChofer].sort((a, b) => a.id - b.id);
-                return (
-                  <div
-                    style={{
-                      background: '#ffffff',
-                      borderRadius: '20px',
-                      padding: '14px 16px',
-                      marginBottom: '14px',
-                      border: '1.5px solid #cbd5e1',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <i className="fa-solid fa-calendar-day text-emerald-600 text-sm"></i>
-                        <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>
-                          Viajes / Turnos del Día ({viajesOrdenados.length})
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => abrirModalCrearTicket()}
-                        style={{
-                          background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
-                          border: '1.5px solid #86efac',
-                          color: '#065f46',
-                          borderRadius: '8px',
-                          padding: '4px 10px',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.15)',
-                        }}
-                        title="Crear un nuevo ticket o turno para esta jornada u otra fecha"
-                      >
-                        <i className="fa-solid fa-plus-circle text-emerald-600"></i>
-                        <span>Inicio de Nuevo Turno</span>
-                      </button>
-                    </div>
-
-                    {/* Chips de selección de Turnos */}
-                    <div style={{ display: 'grid', gridTemplateColumns: viajesOrdenados.length > 1 ? '1fr 1fr' : '1fr', gap: '8px' }}>
-                      {viajesOrdenados.map((v, idx) => {
-                        const esSel = viajeActivo?.id === v.id;
-                        const info = getTurnoInfo(v, idx);
-                        const paradasTicketCache = esSel ? todasLasParadas : (leerParadasTicketLocal(v.id, cargas) || []);
-                        const ltsCache = paradasTicketCache.reduce((acc: number, p: any) => acc + Number(p.litros ?? p.Litros ?? 0), 0);
-                        const ltsNum = esSel ? totalLitrosCargados : Math.max(Number(v.totalLitrosFinca || 0), ltsCache);
-                        const lts = ltsNum.toLocaleString();
-                        const paradasCount = Math.max(
-                          Number((v as any).totalFincas || 0),
-                          paradasTicketCache.filter((p: any) => Number(p.litros ?? p.Litros ?? 0) > 0).length || paradasTicketCache.length
-                        );
-                        return (
-                          <button
-                            key={v.id}
-                            type="button"
-                            onClick={() => seleccionarViaje(v)}
-                            style={{
-                              textAlign: 'left',
-                              background: esSel ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)' : '#f8fafc',
-                              border: esSel ? '2px solid #10b981' : '1.5px solid #e2e8f0',
-                              borderRadius: '14px',
-                              padding: '10px 12px',
-                              cursor: 'pointer',
-                              position: 'relative',
-                              boxShadow: esSel ? '0 4px 12px rgba(16, 185, 129, 0.2)' : 'none',
-                              transition: 'all 0.2s ease',
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                              <span style={{ fontSize: '12px', fontWeight: 900, color: esSel ? '#166534' : '#1e293b' }}>
-                                {info.tituloTurno}
-                              </span>
-                              {esSel && (
-                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></span>
-                              )}
-                            </div>
-                            <div style={{ fontSize: '11px', fontWeight: 800, color: esSel ? '#15803d' : '#475569' }}>
-                              Ticket #{v.codigoTicket || v.id} • {lts} L
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
-                              <span
-                                style={{
-                                  fontSize: '9.5px',
-                                  fontWeight: 800,
-                                  background: info.estadoBg,
-                                  color: info.estadoColor,
-                                  padding: '1px 6px',
-                                  borderRadius: '5px',
-                                }}
-                              >
-                                {info.estadoLabel}
-                              </span>
-                              <span style={{ fontSize: '10px', color: '#64748b' }}>
-                                {paradasCount} paradas
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Botón o banner para 2do viaje si el actual ya está despachado/recepcionado */}
-              {viajeActivo && (viajeBloqueadoPorReceptoria || (viajeActivo.procesoActualId || 1) >= 2) && viajesChofer.length === 1 && (
                 <div
                   style={{
-                    background: tienePermisoCrearRuta
-                      ? 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)'
-                      : '#f8fafc',
-                    border: tienePermisoCrearRuta ? '1.5px solid #86efac' : '1.5px dashed #cbd5e1',
+                    background: 'linear-gradient(135deg, #f5f3ff 0%, #faf5ff 100%)',
+                    border: '1.5px solid #d8b4fe',
                     borderRadius: '16px',
                     padding: '12px 14px',
-                    marginBottom: '14px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: '10px',
-                    boxShadow: tienePermisoCrearRuta ? '0 2px 8px rgba(16, 185, 129, 0.1)' : 'none',
+                    boxShadow: '0 2px 8px rgba(147, 51, 234, 0.08)',
                   }}
                 >
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '12.5px', fontWeight: 900, color: '#166534' }}>
-                      🌅 Turno Mañana Despachado
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0 }}>
+                    <div
+                      style={{
+                        width: '34px',
+                        height: '34px',
+                        borderRadius: '9px',
+                        background: '#ede9fe',
+                        color: '#7e22ce',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '15px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <i className="fa-solid fa-truck-fast"></i>
                     </div>
-                    <div style={{ fontSize: '11px', color: '#15803d', marginTop: '1px' }}>
-                      ¿Vas a recolectar en la tarde? Inicia el segundo turno.
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '12.5px', fontWeight: 900, color: '#6b21a8' }}>
+                        {listaDespachosDashboard.length} Despacho(s) en Curso
+                      </div>
+                      <div style={{ fontSize: '10.5px', color: '#7e22ce' }}>
+                        Pendiente de descarga en Receptoría / Planta
+                      </div>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => abrirModalCrearTicket(undefined, 'TARDE')}
+                    onClick={() => setTabActiva('entregas')}
                     style={{
-                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      background: 'linear-gradient(135deg, #9333ea, #7e22ce)',
                       color: '#ffffff',
                       border: 'none',
-                      borderRadius: '10px',
-                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      padding: '7px 12px',
                       fontSize: '11.5px',
-                      fontWeight: 900,
+                      fontWeight: 800,
                       cursor: 'pointer',
                       whiteSpace: 'nowrap',
-                      display: 'flex',
+                      display: 'inline-flex',
                       alignItems: 'center',
                       gap: '5px',
-                      boxShadow: '0 3px 8px rgba(16, 185, 129, 0.3)',
                     }}
                   >
-                    <i className="fa-solid fa-plus-circle"></i>
-                    <span>+ Iniciar 2do Viaje (Tarde)</span>
+                    <span>Ver Entregas</span>
+                    <i className="fa-solid fa-arrow-right text-[10px]"></i>
                   </button>
                 </div>
               )}
 
-              {/* TARJETA DE TICKET / VIAJE ACTIVO ASIGNADO */}
+              {/* PANEL DE CONTROL UNIFICADO: TURNO, TICKET, CISTERNA & BOTÓN SINCRONIZAR */}
               {viajeActivo ? (
                 <div
                   style={{
                     background: '#ffffff',
                     borderRadius: '20px',
-                    padding: '16px 18px',
+                    padding: '14px 16px',
                     border: '1.5px solid #86efac',
-                    boxShadow: '0 4px 16px rgba(16, 185, 129, 0.08)',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.08)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '16px', fontWeight: 900, color: '#166534' }}>
-                        <i className="fa-solid fa-ticket mr-1 text-emerald-600"></i>{' '}
-                        {viajeActivo.id < 0 ? 'Ticket nuevo (sin número aún)' : `Ticket #${viajeActivo.codigoTicket || viajeActivo.id}`}
+                  {/* Encabezado del Ticket y Estado */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                      <span style={{ fontSize: '15.5px', fontWeight: 900, color: '#166534', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <i className="fa-solid fa-ticket text-emerald-600"></i>
+                        <span>{viajeActivo.id < 0 ? 'Ticket Nuevo' : `Ticket #${viajeActivo.codigoTicket || viajeActivo.id}`}</span>
                       </span>
                       <span
                         style={{
                           background: '#dcfce7',
                           color: '#15803d',
-                          fontSize: '10.5px',
+                          fontSize: '10px',
                           fontWeight: 800,
-                          padding: '2px 8px',
+                          padding: '2px 7px',
                           borderRadius: '6px',
                           border: '1px solid #bbf7d0',
                         }}
@@ -7079,250 +6747,217 @@ export const AppMovilPage: React.FC = () => {
                         ● {viajeActivo.estado || 'EN RUTA'}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => cargarViajeActivo()}
-                      disabled={cargandoViaje}
-                      style={{
-                        background: '#f8fafc',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '8px',
-                        padding: '4px 8px',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        color: '#334155',
-                        cursor: 'pointer',
-                      }}
-                      title="Actualizar datos del ticket"
-                    >
-                      <i className={`fa-solid fa-rotate ${cargandoViaje ? 'fa-spin' : ''}`}></i>
-                    </button>
-                  </div>
 
-                  <div style={{ fontSize: '12px', color: '#475569', marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <i className="fa-solid fa-route text-indigo-600"></i>
-                      <strong style={{ color: '#0f172a' }}>
-                        {viajeActivo.rutaLogisticaNombre ? `Ruta: ${viajeActivo.rutaLogisticaNombre}` : 'Modo Libre (Paradas Flexibles)'}
-                      </strong>
-                    </div>
-                    {/* Fecha operativa y fecha/hora de creación del ticket */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                      <i className="fa-solid fa-calendar-day text-emerald-600"></i>
-                      <span>
-                        Fecha: <strong style={{ color: '#0f172a' }}>{viajeActivo.fecha ? String(viajeActivo.fecha).split('T')[0].split('-').reverse().join('/') : '—'}</strong>
-                        {(viajeActivo as any).createdAt
-                          ? ` • Creado ${new Date((viajeActivo as any).createdAt).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-                          : ''}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Aviso de ticket creado sin conexión que aún no llega a la central */}
-                  {viajeActivo.id < 0 && (() => {
-                    const pend = ticketsLocales.listarPendientes().find((t) => t.localId === viajeActivo.id);
-                    return (
-                      <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '12px', padding: '10px 12px', marginBottom: '12px' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 900, color: '#92400e' }}>
-                          ⏳ Pendiente de enviar a la central
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px', lineHeight: 1.4 }}>
-                          Este turno y sus cargas están guardados en tu teléfono. El número de ticket se asigna cuando la central lo recibe; luego aparecerá en la web.
-                        </div>
-                        {pend?.ultimoError && (
-                          <div style={{ fontSize: '11px', color: '#b91c1c', fontWeight: 700, marginTop: '4px' }}>
-                            Último intento ({pend.intentos}): {pend.ultimoError}
-                          </div>
-                        )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      {tienePermisoCrearRuta && (
                         <button
                           type="button"
-                          onClick={() => sincronizarCargas()}
-                          disabled={sincronizando || !isOnline}
+                          onClick={() => abrirModalCrearTicket()}
                           style={{
-                            marginTop: '8px',
-                            background: isOnline ? '#d97706' : '#cbd5e1',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '8px',
-                            padding: '6px 12px',
-                            fontSize: '11.5px',
-                            fontWeight: 800,
-                            cursor: isOnline ? 'pointer' : 'not-allowed',
-                          }}
-                        >
-                          <i className={`fa-solid fa-cloud-arrow-up ${sincronizando ? 'fa-beat' : ''}`}></i>{' '}
-                          {isOnline ? 'Sincronizar ahora' : 'Sin conexión: se enviará solo'}
-                        </button>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Estadísticas del Viaje Activo */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '14px' }}>
-                    <div style={{ background: '#f0fdf4', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #bbf7d0' }}>
-                      <span style={{ fontSize: '10px', color: '#166534', fontWeight: 800, textTransform: 'uppercase' }}>Cargado</span>
-                      <div style={{ fontSize: '15px', fontWeight: 900, color: '#15803d', marginTop: '2px' }}>
-                        {totalLitrosCargados.toLocaleString()} L
-                      </div>
-                    </div>
-                    <div style={{ background: '#f8fafc', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
-                      <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Paradas</span>
-                      <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>
-                        {todasLasParadas.length}
-                      </div>
-                    </div>
-                    <div style={{ background: '#eff6ff', padding: '10px 8px', borderRadius: '12px', textAlign: 'center', border: '1px solid #bfdbfe' }}>
-                      <span style={{ fontSize: '10px', color: '#1e40af', fontWeight: 800, textTransform: 'uppercase' }}>Pendientes</span>
-                      <div style={{ fontSize: '15px', fontWeight: 900, color: '#1d4ed8', marginTop: '2px' }}>
-                        {pendientesCount}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Acciones Rápidas del Viaje */}
-                  <div>
-                    {viajeBloqueadoPorReceptoria ? (
-                      <div
-                        style={{
-                          background: '#fffbeb',
-                          border: '1.5px solid #fde68a',
-                          borderRadius: '14px',
-                          padding: '12px 14px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '10px',
-                            background: '#fef3c7',
-                            color: '#b45309',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '16px',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <i className="fa-solid fa-lock"></i>
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 800, fontSize: '13px', color: '#92400e' }}>
-                            Ticket en Receptoría (Solo Lectura)
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#a16207', marginTop: '2px', lineHeight: '1.3' }}>
-                            Las fincas están protegidas. Solo Receptoría puede devolver el ticket para permitir registrar o editar cargas.
-                          </div>
-                        </div>
-                      </div>
-                    ) : todasFincasRecolectadas ? (
-                      <div>
-                        <div
-                          style={{
-                            background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
+                            background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
                             border: '1.5px solid #86efac',
-                            borderRadius: '16px',
-                            padding: '12px 14px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)',
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: '38px',
-                              height: '38px',
-                              borderRadius: '10px',
-                              background: '#dcfce7',
-                              color: '#15803d',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '18px',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <i className="fa-solid fa-circle-check"></i>
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 800, fontSize: '13px', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span>Fincas de la Ruta Completadas</span>
-                              <span style={{ fontSize: '10.5px', background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: '8px', fontWeight: 800, border: '1px solid #86efac' }}>
-                                {todasLasParadas.length} Fincas Recolectadas
-                              </span>
-                            </div>
-                            <div style={{ fontSize: '11px', color: '#15803d', marginTop: '2px', lineHeight: '1.3' }}>
-                              Has recogido las fincas programadas. Procede a <strong>Receptoría</strong> o agrega fincas adicionales si requieres continuar recolectando.
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (viajeActivo?.fecha) {
-                              setFormCarga((prev) => ({ ...prev, fecha: viajeActivo.fecha.split('T')[0] }));
-                            }
-                            setFincaFijadaParaModal(null);
-                            setModalRegistro(true);
-                          }}
-                          style={{
-                            width: '100%',
-                            marginTop: '10px',
-                            background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '14px',
-                            padding: '12px 16px',
-                            fontSize: '13.5px',
+                            color: '#065f46',
+                            borderRadius: '8px',
+                            padding: '4px 9px',
+                            fontSize: '11px',
                             fontWeight: 800,
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px',
-                            boxShadow: '0 4px 14px rgba(37, 99, 235, 0.25)',
+                            gap: '4px',
                           }}
+                          title="Crear un nuevo turno o ticket"
                         >
-                          <i className="fa-solid fa-circle-plus"></i>
-                          <span>+ Agregar Finca / Parada Extra a este Viaje</span>
+                          <i className="fa-solid fa-plus text-emerald-600"></i>
+                          <span>+ Turno</span>
                         </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Selector Horizontal de Turnos si tiene más de 1 en el día */}
+                  {viajesChofer.length > 1 && (() => {
+                    const viajesOrdenados = [...viajesChofer].sort((a, b) => a.id - b.id);
+                    return (
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(viajesOrdenados.length, 3)}, 1fr)`, gap: '6px' }}>
+                        {viajesOrdenados.map((v, idx) => {
+                          const esSel = viajeActivo.id === v.id;
+                          const info = getTurnoInfo(v, idx);
+                          return (
+                            <button
+                              key={v.id}
+                              type="button"
+                              onClick={() => seleccionarViaje(v)}
+                              style={{
+                                padding: '5px 8px',
+                                borderRadius: '8px',
+                                border: esSel ? '1.5px solid #10b981' : '1px solid #e2e8f0',
+                                background: esSel ? '#ecfdf5' : '#f8fafc',
+                                color: esSel ? '#065f46' : '#64748b',
+                                fontSize: '11px',
+                                fontWeight: esSel ? 900 : 700,
+                                cursor: 'pointer',
+                                textAlign: 'center',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {info.tituloTurno} (#{v.codigoTicket || v.id})
+                            </button>
+                          );
+                        })}
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (viajeActivo?.fecha) {
-                            setFormCarga((prev) => ({ ...prev, fecha: viajeActivo.fecha.split('T')[0] }));
-                          }
-                          setFincaFijadaParaModal(null);
-                          setModalRegistro(true);
-                        }}
+                    );
+                  })()}
+
+                  {/* Nivel de Tanque y Litros en Cisterna */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <i className="fa-solid fa-gas-pump text-sky-600"></i>
+                        <span>Cisterna: <strong style={{ color: '#0f172a' }}>{totalLitrosCargados.toLocaleString()} / {capacidad.toLocaleString()} L</strong></span>
+                      </span>
+                      <span
                         style={{
-                          width: '100%',
-                          background: 'linear-gradient(135deg, #10b981, #059669)',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: '14px',
-                          padding: '12px 16px',
-                          fontSize: '14px',
+                          fontSize: '11px',
                           fontWeight: 900,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px',
-                          boxShadow: '0 4px 14px rgba(16, 185, 129, 0.28)',
+                          padding: '1px 7px',
+                          borderRadius: '6px',
+                          background: porcentajeLlenado > 95 ? '#fee2e2' : porcentajeLlenado >= 80 ? '#fef3c7' : '#ecfdf5',
+                          color: porcentajeLlenado > 95 ? '#b91c1c' : porcentajeLlenado >= 80 ? '#b45309' : '#047857',
                         }}
                       >
-                        <i className="fa-solid fa-plus text-sm"></i>
-                        <span>+ Registrar Parada Libre en Finca</span>
-                      </button>
-                    )}
+                        {porcentajeLlenado}% Lleno
+                      </span>
+                    </div>
+
+                    {/* Barra de progreso de llenado */}
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '10px',
+                        background: '#f1f5f9',
+                        borderRadius: '999px',
+                        overflow: 'hidden',
+                        border: '1px solid #e2e8f0',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${Math.min(porcentajeLlenado, 100)}%`,
+                          height: '100%',
+                          background:
+                            porcentajeLlenado > 95
+                              ? 'linear-gradient(90deg, #f59e0b, #ef4444)'
+                              : porcentajeLlenado >= 80
+                              ? 'linear-gradient(90deg, #3b82f6, #f59e0b)'
+                              : 'linear-gradient(90deg, #0284c7, #10b981)',
+                          borderRadius: '999px',
+                          transition: 'width 0.4s ease',
+                        }}
+                      />
+                    </div>
+
+                    {/* Datos complementarios en una sola línea */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', marginTop: '5px' }}>
+                      <span>Disponible: <strong style={{ color: '#0284c7' }}>{litrosDisponibles.toLocaleString()} L</strong></span>
+                      <span>Ruta: <strong style={{ color: '#0f172a' }}>{viajeActivo.rutaLogisticaNombre || 'Modo Libre'}</strong></span>
+                      <span>Paradas: <strong style={{ color: '#059669' }}>{todasLasParadas.length}</strong></span>
+                    </div>
+                  </div>
+
+                  {/* BARRA DE SINCRONIZACIÓN Y BOTÓN SINCRONIZAR PROMINENTE */}
+                  <div
+                    style={{
+                      background: pendientesTotalCount > 0 ? '#fffbeb' : '#f0fdf4',
+                      borderRadius: '12px',
+                      padding: '8px 12px',
+                      border: pendientesTotalCount > 0 ? '1.5px solid #fde68a' : '1px solid #bbf7d0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      <i
+                        className={`fa-solid ${
+                          sincronizando
+                            ? 'fa-rotate fa-spin text-amber-600'
+                            : pendientesTotalCount > 0
+                            ? 'fa-cloud-arrow-up text-amber-600'
+                            : 'fa-circle-check text-emerald-600'
+                        }`}
+                        style={{ fontSize: '15px', flexShrink: 0 }}
+                      ></i>
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: '11.5px',
+                            fontWeight: 900,
+                            color: pendientesTotalCount > 0 ? '#92400e' : '#166534',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {sincronizando
+                            ? 'Sincronizando con Web...'
+                            : pendientesTotalCount > 0
+                            ? `⚠️ ${pendientesTotalCount} carga(s) offline en teléfono`
+                            : '✓ Sincronizado con Web'}
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#64748b' }}>
+                          {ultimaSincronizacion
+                            ? `Última: ${new Date(ultimaSincronizacion).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                            : isOnline
+                            ? 'Conexión activa'
+                            : 'Modo Offline'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => sincronizarCargas(true)}
+                      disabled={sincronizando}
+                      style={{
+                        background: pendientesTotalCount > 0
+                          ? 'linear-gradient(135deg, #d97706, #b45309)'
+                          : 'linear-gradient(135deg, #059669, #10b981)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '6px 12px',
+                        fontSize: '11.5px',
+                        fontWeight: 900,
+                        cursor: sincronizando ? 'wait' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.12)',
+                        flexShrink: 0,
+                      }}
+                      title="Sincronizar información de la ruta con la central Web"
+                    >
+                      <i className={`fa-solid fa-rotate ${sincronizando ? 'fa-spin' : ''}`}></i>
+                      <span>{sincronizando ? 'Sync...' : 'Sincronizar'}</span>
+                      {pendientesTotalCount > 0 && (
+                        <span
+                          style={{
+                            background: '#ef4444',
+                            color: '#ffffff',
+                            fontSize: '9.5px',
+                            fontWeight: 900,
+                            borderRadius: '999px',
+                            padding: '0 5px',
+                          }}
+                        >
+                          {pendientesTotalCount}
+                        </span>
+                      )}
+                    </button>
                   </div>
                 </div>
               ) : !despachoActivo ? (
@@ -7356,7 +6991,7 @@ export const AppMovilPage: React.FC = () => {
                     Sin Ticket de Ruta Activo
                   </div>
                   <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 14px 0', lineHeight: '1.4' }}>
-                    Inicia un nuevo turno o recorrido (en circuito asignado o en modo libre) para comenzar a recolectar leche.
+                    Inicia un nuevo turno o recorrido para comenzar a recolectar leche.
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '320px', margin: '0 auto' }}>
                     <button
@@ -7404,145 +7039,6 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                 </div>
               ) : null}
-
-              {/* Widget Capacidad Cisterna (Dashboard Nivel de Tanque) */}
-              <div
-                style={{
-                  background: '#ffffff',
-                  borderRadius: '20px',
-                  padding: '16px 18px',
-                  boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
-                  border: '1px solid #e2e8f0',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '7px' }}>
-                    <i className="fa-solid fa-gas-pump" style={{ color: '#2563eb' }}></i>
-                    <span>Nivel de Cisterna</span>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 900,
-                      padding: '2px 8px',
-                      borderRadius: '6px',
-                      background: porcentajeLlenado > 95 ? '#fee2e2' : porcentajeLlenado >= 80 ? '#fef3c7' : '#ecfdf5',
-                      color: porcentajeLlenado > 95 ? '#b91c1c' : porcentajeLlenado >= 80 ? '#b45309' : '#047857',
-                    }}
-                  >
-                    {porcentajeLlenado}% Lleno
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    width: '100%',
-                    height: '14px',
-                    background: '#f1f5f9',
-                    borderRadius: '999px',
-                    overflow: 'hidden',
-                    marginBottom: '10px',
-                    border: '1px solid #e2e8f0',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${Math.min(porcentajeLlenado, 100)}%`,
-                      height: '100%',
-                      background:
-                        porcentajeLlenado > 95
-                          ? 'linear-gradient(90deg, #f59e0b, #ef4444)'
-                          : porcentajeLlenado >= 80
-                          ? 'linear-gradient(90deg, #3b82f6, #f59e0b)'
-                          : 'linear-gradient(90deg, #0284c7, #10b981)',
-                      borderRadius: '999px',
-                      transition: 'width 0.4s ease',
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', color: '#64748b' }}>
-                  <span>A Bordo: <strong style={{ color: '#0f172a' }}>{totalLitrosCargados.toLocaleString()} L</strong></span>
-                  <span>Disponible: <strong style={{ color: '#0284c7' }}>{litrosDisponibles.toLocaleString()} L</strong></span>
-                  <span>Total: <strong>{capacidad.toLocaleString()} L</strong></span>
-                </div>
-              </div>
-
-              {/* TARJETA DE ESTADO Y BOTÓN SINCRONIZAR CON WEB */}
-              <div
-                style={{
-                  background: pendientesTotalCount > 0 ? '#fffbeb' : '#ffffff',
-                  borderRadius: '16px',
-                  padding: '12px 16px',
-                  border: pendientesTotalCount > 0 ? '1.5px solid #fde68a' : '1px solid #e2e8f0',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '10px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                  <div
-                    style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '10px',
-                      background: pendientesTotalCount > 0 ? '#fef3c7' : '#ecfdf5',
-                      color: pendientesTotalCount > 0 ? '#d97706' : '#059669',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '15px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <i className={`fa-solid ${sincronizando ? 'fa-rotate fa-spin' : (pendientesTotalCount > 0 ? 'fa-cloud-arrow-up' : 'fa-circle-check')}`}></i>
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: '12.5px', fontWeight: 900, color: pendientesTotalCount > 0 ? '#92400e' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {sincronizando
-                        ? 'Sincronizando con la Web...'
-                        : pendientesTotalCount > 0
-                        ? `${pendientesTotalCount} carga(s) en teléfono sin subir`
-                        : 'Información Sincronizada con Web'}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '1px' }}>
-                      {ultimaSincronizacion
-                        ? `Última sinc: ${new Date(ultimaSincronizacion).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
-                        : isOnline
-                        ? 'Listo para sincronizar'
-                        : 'Modo Offline (guardado local)'}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => sincronizarCargas(true)}
-                  disabled={sincronizando}
-                  style={{
-                    background: pendientesTotalCount > 0
-                      ? 'linear-gradient(135deg, #059669, #10b981)'
-                      : 'linear-gradient(135deg, #0284c7, #0ea5e9)',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '10px',
-                    padding: '8px 14px',
-                    fontSize: '12px',
-                    fontWeight: 900,
-                    cursor: sincronizando ? 'wait' : 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    boxShadow: '0 3px 10px rgba(0,0,0,0.12)',
-                    flexShrink: 0,
-                  }}
-                >
-                  <i className={`fa-solid fa-rotate ${sincronizando ? 'fa-spin' : ''}`}></i>
-                  <span>{sincronizando ? 'Sincronizando...' : 'Sincronizar'}</span>
-                </button>
-              </div>
 
               {/* SECCIÓN DIRECTA: FINCAS DE LA RUTA Y RECOLECCIÓN RÁPIDA */}
               {viajeActivo && (

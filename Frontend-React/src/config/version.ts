@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 17,
-  tag: 'v3.18.17',
+  patch: 18,
+  tag: 'v3.18.18',
   ultimaActualizacion: '2026-11-11',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Sincronización bidireccional inteligente móvil-web con reasignación automática a turnos activos y botón Sincronizar en cabecera y panel v3.18.17',
+  descripcion: 'Rediseño optimizado y simplificado de la vista Inicio móvil del chofer con panel de control unificado y sincronización prominente v3.18.18',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

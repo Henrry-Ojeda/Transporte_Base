@@ -2104,13 +2104,16 @@ export const AppMovilPage: React.FC = () => {
         ? 'Turno 2 (Tarde)'
         : `Turno ${viajesChofer.length + 1}`;
     const camionEfectivoId = camionNuevoViajeId || dispositivo?.camionId || viajeActivo?.camionId || undefined;
+    // Marca única del turno: si el envío se repite (señal débil, doble toque, reintento), la central
+    // reconoce este código y devuelve el MISMO ticket en vez de crear otro.
+    const uuidViaje = ticketsLocales.nuevoUuid();
     const payloadViaje = {
       fecha: fFinal,
       choferId: choferEfectivoId,
       conductorId: choferEfectivoId,
       camionId: camionEfectivoId,
       rutaLogisticaId: rutaNuevoViajeId || undefined,
-      observaciones: `Viaje creado desde App Móvil - ${turnoNombre}. ${obsNuevoViaje}`.trim(),
+      observaciones: `[LOCAL:${uuidViaje}] Viaje creado desde App Móvil - ${turnoNombre}. ${obsNuevoViaje}`.trim(),
     };
 
     // Crea el ticket SOLO en el teléfono (sin internet). Se subirá solo a la central al recuperar señal.

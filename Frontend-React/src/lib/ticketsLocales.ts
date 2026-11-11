@@ -79,6 +79,36 @@ export const ticketsLocales = {
 
   nuevoIdLocal: (): number => -Math.floor(Date.now() / 1000) - Math.floor(Math.random() * 1000),
 
+  /** Identificador único del turno: la central lo usa para NO duplicar el ticket si el envío se repite. */
+  nuevoUuid: (): string => {
+    try {
+      if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+    } catch {
+      /* usa respaldo */
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`;
+  },
+
+  /** Candado entre pestañas/ventanas para que solo una envíe los tickets locales a la vez. */
+  tomarCandadoEnvio: (): boolean => {
+    try {
+      const k = 'movil_tickets_locales_lock';
+      const t = Number(localStorage.getItem(k) || 0);
+      if (Date.now() - t < 45000) return false;
+      localStorage.setItem(k, String(Date.now()));
+      return true;
+    } catch {
+      return true;
+    }
+  },
+  soltarCandadoEnvio: () => {
+    try {
+      localStorage.removeItem('movil_tickets_locales_lock');
+    } catch {
+      /* tolerante */
+    }
+  },
+
   /** Guarda el último motivo por el que el ticket local aún no pudo subirse a la central. */
   registrarError: (localId: number, mensaje: string) => {
     const lista = ticketsLocales.listarPendientes().map((t) =>

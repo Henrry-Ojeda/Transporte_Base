@@ -9610,6 +9610,19 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
         {
             using var connection = new SqlConnection(_connectionString);
             var fecha = (dto.Fecha ?? DateTime.Today).Date;
+
+            // Idempotencia: un turno iniciado desde el móvil (posiblemente sin internet) lleva una marca única [LOCAL:uuid].
+            // Si ese mismo turno llega más de una vez (reintento, señal débil, doble envío) se devuelve el ticket ya creado.
+            var marcaLocal = System.Text.RegularExpressions.Regex.Match(dto.Observacion ?? string.Empty, @"\[LOCAL:[A-Za-z0-9\-]{8,64}\]");
+            if (marcaLocal.Success)
+            {
+                var ticketExistente = await connection.ExecuteScalarAsync<long?>(
+                    "SELECT TOP 1 Id FROM TB_CONTROL_RUTAS WHERE CHARINDEX(@marca, Observacion) > 0 ORDER BY Id",
+                    new { marca = marcaLocal.Value });
+                if (ticketExistente.HasValue && ticketExistente.Value > 0)
+                    return ticketExistente.Value;
+            }
+
             int conductorEfectivo = 0;
             if (rol.Contains("ADMIN", StringComparison.OrdinalIgnoreCase) || rol.Equals("SUPERVISOR", StringComparison.OrdinalIgnoreCase))
             {

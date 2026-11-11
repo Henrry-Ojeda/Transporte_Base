@@ -176,25 +176,32 @@ class SyncEngine {
     const pendientes = ticketsLocales.listarPendientes();
     if (pendientes.length === 0) return 0;
 
+    // Evita que dos ventanas/pestañas envíen el mismo turno al mismo tiempo (duplicaría el ticket)
+    if (!ticketsLocales.tomarCandadoEnvio()) return 0;
+
     let exitosos = 0;
-    for (const t of pendientes) {
-      try {
-        const res = await operacionesApi.iniciarViaje(t.payload);
-        if (res && res.id) {
-          ticketsLocales.marcarSincronizado(t.localId, res.id);
-          exitosos++;
+    try {
+      for (const t of pendientes) {
+        try {
+          const res = await operacionesApi.iniciarViaje(t.payload);
+          if (res && res.id) {
+            ticketsLocales.marcarSincronizado(t.localId, res.id);
+            exitosos++;
+          }
+        } catch (err: any) {
+          const status = err?.response?.status;
+          // Sin red / servidor caído: reintentar luego. La central reconoce el turno por su [LOCAL:uuid],
+          // así que reintentar nunca duplica el ticket.
+          console.warn(`[SyncEngine] No se pudo crear el ticket local ${t.localId} (status ${status ?? 'sin respuesta'}):`, err?.message);
+          ticketsLocales.registrarError(
+            t.localId,
+            err?.response?.data?.message || (status ? `Error ${status} de la central` : 'Sin conexión con la central')
+          );
+          break; // respetar el orden de creación
         }
-      } catch (err: any) {
-        const status = err?.response?.status;
-        // Sin red / servidor caído: reintentar luego. Cualquier otro error se deja pendiente también
-        // (no se descarta información del chofer).
-        console.warn(`[SyncEngine] No se pudo crear el ticket local ${t.localId} (status ${status ?? 'sin respuesta'}):`, err?.message);
-        ticketsLocales.registrarError(
-          t.localId,
-          err?.response?.data?.message || (status ? `Error ${status} de la central` : 'Sin conexión con la central')
-        );
-        break; // respetar el orden de creación
       }
+    } finally {
+      ticketsLocales.soltarCandadoEnvio();
     }
     return exitosos;
   }

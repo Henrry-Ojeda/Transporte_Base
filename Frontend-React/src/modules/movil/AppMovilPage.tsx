@@ -2244,6 +2244,7 @@ export const AppMovilPage: React.FC = () => {
 
   const handleIniciarNuevoViajeChofer = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (iniciandoViajeChofer) return;
     if (!choferEfectivoId) {
       toast.error('No se ha detectado el conductor asignado');
       return;
@@ -4037,6 +4038,7 @@ export const AppMovilPage: React.FC = () => {
 
     // 1. Paradas confirmadas o en caché local para el viaje activo
     (paradasViajeActivo || []).forEach((p, idx) => {
+      const fotoUrl = p.fotoComprobante || p.FotoComprobante || p.fotoRecibo || p.FotoRecibo || undefined;
       lista.push({
         localId: `server_${p.id || idx}`,
         id: p.id,
@@ -4047,6 +4049,9 @@ export const AppMovilPage: React.FC = () => {
         esAcida: Boolean(p.esAcida || p.EsAcida),
         esDiferido: Boolean(p.esDiferido || p.EsDiferido),
         hora: p.horaRecoleccion || p.hora || (p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Confirmada'),
+        fotoRecibo: fotoUrl,
+        fotoComprobante: fotoUrl,
+        temperatura: p.temperatura || p.Temperatura,
         synced: p.origen !== 'Teléfono',
         origen: p.origen || 'Servidor',
         createdAt: p.createdAt || p.CreatedAt || p.fecha,
@@ -4072,6 +4077,8 @@ export const AppMovilPage: React.FC = () => {
               esAcida: typeof c.esAcida === 'boolean' ? c.esAcida : lista[idxExist].esAcida,
               esDiferido: typeof c.esDiferido === 'boolean' ? c.esDiferido : lista[idxExist].esDiferido,
               hora: c.hora || lista[idxExist].hora,
+              fotoRecibo: c.fotoRecibo || lista[idxExist].fotoRecibo,
+              fotoComprobante: c.fotoRecibo || lista[idxExist].fotoComprobante,
               synced: Boolean(c.synced),
             };
           }
@@ -4086,6 +4093,8 @@ export const AppMovilPage: React.FC = () => {
             esDiferido: c.esDiferido,
             temperatura: c.temperatura,
             hora: c.hora,
+            fotoRecibo: c.fotoRecibo,
+            fotoComprobante: c.fotoRecibo,
             synced: Boolean(c.synced),
             origen: 'Teléfono',
             createdAt: c.fecha || new Date().toISOString(),
@@ -4277,11 +4286,22 @@ export const AppMovilPage: React.FC = () => {
         const tipoLeche = (cargaLocal?.tipoLeche || parada?.tipoLeche || (parada as any)?.TipoLeche || recOtro?.tipoLeche || (f as any).tipoLeche || 'VACA').toUpperCase();
         const horaRecogida = cargaLocal?.hora || (parada ? (parada.hora || (parada as any).createdAt || (parada as any).CreatedAt) : (recOtro?.createdAt ? new Date(recOtro.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null));
 
+        const fotoRecibo =
+          cargaLocal?.fotoRecibo ||
+          parada?.fotoRecibo ||
+          parada?.fotoComprobante ||
+          (parada as any)?.FotoComprobante ||
+          recOtro?.fotoComprobante ||
+          recOtro?.FotoComprobante ||
+          undefined;
+
         return {
           ...f,
           recolectada: esRec,
           parada: esRec && !recogidaPorOtro ? parada : null,
           litrosRecolectados: ltsFinal,
+          fotoRecibo,
+          fotoComprobante: fotoRecibo,
           esAcida,
           esDiferido,
           litrosDiferidos,
@@ -4335,8 +4355,11 @@ export const AppMovilPage: React.FC = () => {
   const totalLitrosCargados = useMemo(() => {
     // Si tenemos fincas planificadas/asignadas en la ruta, calcular directamente de fincasDeMiRuta
     // para evitar cualquier duplicación entre el servidor y cargas locales offline
+    // IMPORTANTE: Solo sumar leche recolectada por ESTE ticket (!f.recogidaPorOtro)
     if (fincasDeMiRuta && fincasDeMiRuta.length > 0) {
-      return fincasDeMiRuta.reduce((acc, f) => acc + (Number(f.litrosRecolectados) || 0), 0);
+      return fincasDeMiRuta
+        .filter((f) => !f.recogidaPorOtro)
+        .reduce((acc, f) => acc + (Number(f.litrosRecolectados) || 0), 0);
     }
     const sumParadasServer = (paradasViajeActivo || []).reduce((acc, p) => acc + Number(p.litros ?? p.Litros ?? 0), 0);
     const idTicketActual = ticketsLocales.resolverId(Number(viajeActivo?.id || 0)) || Number(viajeActivo?.id || 0);
@@ -4530,7 +4553,7 @@ export const AppMovilPage: React.FC = () => {
         litrosDiferir: ltsDiferirPrev,
         temperatura: cargaLocal?.temperatura ? String(cargaLocal.temperatura) : '',
         observacion: cargaLocal?.observacion || '',
-        fotoRecibo: cargaLocal?.fotoRecibo || '',
+        fotoRecibo: cargaLocal?.fotoRecibo || paradaServidor?.fotoComprobante || (paradaServidor as any)?.FotoComprobante || fincaItem.fotoRecibo || fincaItem.fotoComprobante || '',
       };
     });
     setModalRegistro(true);
@@ -8292,6 +8315,31 @@ export const AppMovilPage: React.FC = () => {
                           <div>
                             {f.recolectada ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {f.fotoRecibo && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setFotoReciboVerModal(f.fotoRecibo!);
+                                    }}
+                                    style={{
+                                      background: '#eff6ff',
+                                      color: '#1d4ed8',
+                                      border: '1px solid #bfdbfe',
+                                      borderRadius: '8px',
+                                      padding: '5px 7px',
+                                      fontSize: '11px',
+                                      fontWeight: 800,
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                    }}
+                                    title="Ver comprobante adjunto"
+                                  >
+                                    <i className="fa-solid fa-receipt"></i>
+                                  </button>
+                                )}
                                 <div style={{ textAlign: 'right' }}>
                                   <span style={{ fontSize: '15px', fontWeight: 900, color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                                     <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10b981', animation: 'titilarPuntoPulso 1.5s infinite' }}></span>
@@ -18241,23 +18289,24 @@ export const AppMovilPage: React.FC = () => {
                     type="submit"
                     disabled={iniciandoViajeChofer}
                     style={{
-                      background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                      background: iniciandoViajeChofer ? '#94a3b8' : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
                       border: 'none',
                       fontWeight: 900,
                       height: '46px',
                       color: '#ffffff',
                       borderRadius: '12px',
-                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+                      boxShadow: iniciandoViajeChofer ? 'none' : '0 4px 14px rgba(16, 185, 129, 0.35)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: '8px',
-                      cursor: 'pointer',
+                      cursor: iniciandoViajeChofer ? 'not-allowed' : 'pointer',
                       fontSize: '14px',
+                      opacity: iniciandoViajeChofer ? 0.75 : 1,
                     }}
                   >
                     <i className={`fa-solid ${iniciandoViajeChofer ? 'fa-spinner fa-spin' : 'fa-play'}`}></i>
-                    <span>{iniciandoViajeChofer ? 'Creando Ticket...' : `Iniciar ${nombreSugerido}`}</span>
+                    <span>{iniciandoViajeChofer ? 'Creando...' : `Iniciar ${nombreSugerido}`}</span>
                   </button>
                 </div>
               </form>

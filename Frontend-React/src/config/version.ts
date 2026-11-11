@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sistema Centralizado de Versionado Semántico
  * 
  * Reglas de Versionado del Proyecto:
@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 15,
-  tag: 'v3.18.15',
+  patch: 16,
+  tag: 'v3.18.16',
   ultimaActualizacion: '2026-11-11',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Receptoría: Filtros unificados de Entradas y Salidas sin conflictos, tarjetas de tickets con información completa, chofer real, litros en cisterna y validación estricta v3.18.15',
+  descripcion: 'Corrección SQL en catálogo y reportes de fincas, visualización de fotos en app móvil, aislamiento de litros por ticket y bloqueo de botón crear turno v3.18.16',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

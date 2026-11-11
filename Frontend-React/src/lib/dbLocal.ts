@@ -215,6 +215,17 @@ class LocalDatabase {
     });
   }
 
+  async getRecoleccion(idLocal: number): Promise<RecoleccionLocal | null> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('recolecciones', 'readonly');
+      const store = tx.objectStore('recolecciones');
+      const req = store.get(idLocal);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   async getRecoleccionesPorTicket(empresaCodigo: string, ticketId: number): Promise<RecoleccionLocal[]> {
     const db = await this.openDB();
     return new Promise((resolve, reject) => {

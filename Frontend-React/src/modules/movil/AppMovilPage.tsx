@@ -1918,6 +1918,13 @@ export const AppMovilPage: React.FC = () => {
 
   // Estado de Sincronización
   const [sincronizando, setSincronizando] = useState(false);
+  const [ultimaSincronizacion, setUltimaSincronizacion] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('movil_ultima_sincronizacion') || null;
+    } catch {
+      return null;
+    }
+  });
 
   // Estado de Instalación PWA (Descarga en el Teléfono)
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -2111,6 +2118,20 @@ export const AppMovilPage: React.FC = () => {
       }
     };
 
+    const handleSyncStatus = (e: any) => {
+      const d = e?.detail;
+      if (!d) return;
+      if (typeof d.sincronizando === 'boolean') {
+        setSincronizando(d.sincronizando);
+      }
+      if (d.ultimaSincronizacion) {
+        setUltimaSincronizacion(d.ultimaSincronizacion);
+        try {
+          localStorage.setItem('movil_ultima_sincronizacion', d.ultimaSincronizacion);
+        } catch {}
+      }
+    };
+
     const handleCargasActualizadas = (e: any) => {
       if (Array.isArray(e?.detail)) {
         setCargas(e.detail);
@@ -2125,10 +2146,12 @@ export const AppMovilPage: React.FC = () => {
     };
 
     window.addEventListener('transporte_sync_completada', handleSyncComplete);
+    window.addEventListener('transporte_sync_status', handleSyncStatus);
     window.addEventListener('transporte_cargas_actualizadas', handleCargasActualizadas);
     window.addEventListener('transporte_notificacion_alerta', handleNotifAlerta);
     return () => {
       window.removeEventListener('transporte_sync_completada', handleSyncComplete);
+      window.removeEventListener('transporte_sync_status', handleSyncStatus);
       window.removeEventListener('transporte_cargas_actualizadas', handleCargasActualizadas);
       window.removeEventListener('transporte_notificacion_alerta', handleNotifAlerta);
     };
@@ -4388,6 +4411,18 @@ export const AppMovilPage: React.FC = () => {
     return cargas.filter((c) => !c.synced);
   }, [cargas]);
 
+  const ticketsPendientesCount = useMemo(() => {
+    try {
+      return ticketsLocales.listarPendientes().length;
+    } catch {
+      return 0;
+    }
+  }, [cargas]);
+
+  const pendientesTotalCount = useMemo(() => {
+    return pendientesSync.length + ticketsPendientesCount;
+  }, [pendientesSync.length, ticketsPendientesCount]);
+
   const noLeidasCount = useMemo(() => {
     return notificaciones.filter((n) => !n.leido).length;
   }, [notificaciones]);
@@ -4766,16 +4801,21 @@ export const AppMovilPage: React.FC = () => {
   };
 
   // Sincronizar cargas con servidor mediante el SyncEngine Unificado
-  const sincronizarCargas = async () => {
+  const sincronizarCargas = async (esManual = false) => {
     if (!isOnline && !navigator.onLine) {
-      toast.warning('No hay conexión a internet disponible para sincronizar.');
+      toast.warning('No hay conexión a internet disponible para sincronizar con la central.');
       return;
     }
 
     setSincronizando(true);
+    let toastId: any = null;
+    if (esManual) {
+      toastId = toast.loading('Sincronizando información con la central Web...');
+    }
+
     try {
       // 1. Ejecutar sincronización a través del motor unificado (espera si ya hay una en curso y sube tanto IndexedDB como movil_cargas_local)
-      const resSync = await syncEngine.sincronizarTodo();
+      const resSync = await syncEngine.sincronizarTodo(dispositivo?.empresaCodigo, false, choferEfectivoId);
       const ticketsPendientes = ticketsLocales.listarPendientes();
       const cargasActuales = leerCargasLocalRaw();
       const cargasAunPendientes = cargasActuales.filter((c) => !c.synced);
@@ -4783,18 +4823,30 @@ export const AppMovilPage: React.FC = () => {
       // Sincronizar memoria con lo que realmente se subió (NUNCA marcar como synced lo que aún no ha subido)
       setCargas(cargasActuales);
 
+      const timestampActual = new Date().toISOString();
+      setUltimaSincronizacion(timestampActual);
+      try {
+        localStorage.setItem('movil_ultima_sincronizacion', timestampActual);
+      } catch {}
+
+      // 2. Actualizar paradas consolidadas y todos los tickets activos desde la central
+      await cargarViajeActivo();
+      await cargarDatosAdminEnVivo();
+
+      if (toastId) toast.dismiss(toastId);
+
       if (ticketsPendientes.length > 0) {
         const motivo = ticketsPendientes[0].ultimoError || 'La central no respondió';
         toast.error(`El turno nuevo aún no se pudo enviar a la central: ${motivo}`, { duration: 8000 });
       } else if (resSync.totalSubidos > 0) {
-        toast.success(`¡Sincronización completada! ${resSync.totalSubidos} registro(s) enviados a la central.`);
+        toast.success(`¡Sincronización completada! ${resSync.totalSubidos} registro(s) enviados y actualizados con la Web.`);
       } else if (cargasAunPendientes.length > 0) {
-        toast.info(`Reintentando enviar ${cargasAunPendientes.length} carga(s) pendiente(s) a la central...`);
+        toast.info(`Quedan ${cargasAunPendientes.length} carga(s) pendiente(s) por sincronizar.`);
+      } else if (esManual) {
+        toast.success('¡Información 100% sincronizada con la Web!');
       }
-
-      // 2. Actualizar paradas consolidadas y todos los tickets activos desde la central
-      await cargarViajeActivo();
     } catch (err: any) {
+      if (toastId) toast.dismiss(toastId);
       console.error('Error al sincronizar cargas:', err);
       toast.error('Error al conectar con la central para sincronizar.');
     } finally {
@@ -5839,6 +5891,47 @@ export const AppMovilPage: React.FC = () => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {/* Botón Sincronizar con la Central Web */}
+            <button
+              type="button"
+              onClick={() => sincronizarCargas(true)}
+              disabled={sincronizando}
+              title="Sincronizar datos con la central Web"
+              style={{
+                background: sincronizando ? '#fef3c7' : (pendientesTotalCount > 0 ? '#fff7ed' : '#ecfdf5'),
+                border: sincronizando ? '1.5px solid #fde68a' : (pendientesTotalCount > 0 ? '1.5px solid #fdba74' : '1.5px solid #a7f3d0'),
+                color: sincronizando ? '#b45309' : (pendientesTotalCount > 0 ? '#c2410c' : '#059669'),
+                padding: '6px 11px',
+                borderRadius: '8px',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                cursor: sincronizando ? 'wait' : 'pointer',
+                boxShadow: pendientesTotalCount > 0 ? '0 2px 8px rgba(234,88,12,0.2)' : '0 1px 4px rgba(16,185,129,0.12)',
+              }}
+            >
+              <i className={`fa-solid ${sincronizando ? 'fa-rotate fa-spin' : (pendientesTotalCount > 0 ? 'fa-cloud-arrow-up' : 'fa-arrows-rotate')}`}></i>
+              <span>{sincronizando ? 'Sync...' : 'Sincronizar'}</span>
+              {pendientesTotalCount > 0 && (
+                <span
+                  style={{
+                    background: '#ef4444',
+                    color: '#ffffff',
+                    fontSize: '9.5px',
+                    fontWeight: 900,
+                    borderRadius: '999px',
+                    padding: '0 5px',
+                    minWidth: '16px',
+                    textAlign: 'center',
+                  }}
+                >
+                  {pendientesTotalCount}
+                </span>
+              )}
+            </button>
+
             {/* Botón de Notificaciones con Badge */}
             <button
               type="button"
@@ -7375,6 +7468,82 @@ export const AppMovilPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* TARJETA DE ESTADO Y BOTÓN SINCRONIZAR CON WEB */}
+              <div
+                style={{
+                  background: pendientesTotalCount > 0 ? '#fffbeb' : '#ffffff',
+                  borderRadius: '16px',
+                  padding: '12px 16px',
+                  border: pendientesTotalCount > 0 ? '1.5px solid #fde68a' : '1px solid #e2e8f0',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '10px',
+                      background: pendientesTotalCount > 0 ? '#fef3c7' : '#ecfdf5',
+                      color: pendientesTotalCount > 0 ? '#d97706' : '#059669',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '15px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <i className={`fa-solid ${sincronizando ? 'fa-rotate fa-spin' : (pendientesTotalCount > 0 ? 'fa-cloud-arrow-up' : 'fa-circle-check')}`}></i>
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '12.5px', fontWeight: 900, color: pendientesTotalCount > 0 ? '#92400e' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {sincronizando
+                        ? 'Sincronizando con la Web...'
+                        : pendientesTotalCount > 0
+                        ? `${pendientesTotalCount} carga(s) en teléfono sin subir`
+                        : 'Información Sincronizada con Web'}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '1px' }}>
+                      {ultimaSincronizacion
+                        ? `Última sinc: ${new Date(ultimaSincronizacion).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+                        : isOnline
+                        ? 'Listo para sincronizar'
+                        : 'Modo Offline (guardado local)'}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => sincronizarCargas(true)}
+                  disabled={sincronizando}
+                  style={{
+                    background: pendientesTotalCount > 0
+                      ? 'linear-gradient(135deg, #059669, #10b981)'
+                      : 'linear-gradient(135deg, #0284c7, #0ea5e9)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '8px 14px',
+                    fontSize: '12px',
+                    fontWeight: 900,
+                    cursor: sincronizando ? 'wait' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 3px 10px rgba(0,0,0,0.12)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <i className={`fa-solid fa-rotate ${sincronizando ? 'fa-spin' : ''}`}></i>
+                  <span>{sincronizando ? 'Sincronizando...' : 'Sincronizar'}</span>
+                </button>
+              </div>
+
               {/* SECCIÓN DIRECTA: FINCAS DE LA RUTA Y RECOLECCIÓN RÁPIDA */}
               {viajeActivo && (
                 <div
@@ -7391,19 +7560,43 @@ export const AppMovilPage: React.FC = () => {
                       <i className="fa-solid fa-cow text-emerald-600"></i>
                       <span>Fincas a Recolectar ({fincasDeMiRuta.length})</span>
                     </div>
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 900,
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        background: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '#dcfce7' : '#eff6ff',
-                        color: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '#15803d' : '#1d4ed8',
-                        border: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '1px solid #86efac' : '1px solid #bfdbfe',
-                      }}
-                    >
-                      {recCount}/{fincasDeMiRuta.length} Hechas
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => sincronizarCargas(true)}
+                        disabled={sincronizando}
+                        title="Sincronizar fincas y litros con la Web"
+                        style={{
+                          background: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
+                          color: '#334155',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <i className={`fa-solid fa-arrows-rotate ${sincronizando ? 'fa-spin' : ''}`}></i>
+                        <span>Sync</span>
+                      </button>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 900,
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          background: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '#dcfce7' : '#eff6ff',
+                          color: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '#15803d' : '#1d4ed8',
+                          border: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '1px solid #86efac' : '1px solid #bfdbfe',
+                        }}
+                      >
+                        {recCount}/{fincasDeMiRuta.length} Hechas
+                      </span>
+                    </div>
                   </div>
 
                   {/* Barra de progreso rápida */}
@@ -7909,8 +8102,8 @@ export const AppMovilPage: React.FC = () => {
               </div>
             )}
 
-            {/* Banner Sync si hay cargas pendientes */}
-            {pendientesSync.length > 0 && (
+            {/* Banner Sync si hay cargas o turnos pendientes */}
+            {pendientesTotalCount > 0 && (
               <div
                 style={{
                   background: '#fef3c7',
@@ -7927,28 +8120,32 @@ export const AppMovilPage: React.FC = () => {
                 <div>
                   <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#92400e' }}>
                     <i className="fa-solid fa-clock-rotate-left mr-1"></i>
-                    {pendientesSync.length} carga(s) en teléfono
+                    {pendientesTotalCount} registro(s) guardados en teléfono
                   </div>
                   <div style={{ fontSize: '11px', color: '#b45309' }}>
-                    {isOnline ? 'Listo para enviar a la central' : 'Se enviarán al tener señal'}
+                    {isOnline ? 'Listo para enviar a la central Web' : 'Se enviarán al recuperar señal'}
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => sincronizarCargas()}
+                  onClick={() => sincronizarCargas(true)}
                   disabled={sincronizando || !isOnline}
                   style={{
                     background: isOnline ? '#d97706' : '#cbd5e1',
                     color: '#ffffff',
                     border: 'none',
                     borderRadius: '8px',
-                    padding: '7px 12px',
+                    padding: '7px 14px',
                     fontSize: '11.5px',
                     fontWeight: 800,
                     cursor: isOnline ? 'pointer' : 'not-allowed',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
                   }}
                 >
-                  {sincronizando ? 'Enviando...' : 'Sincronizar'}
+                  <i className={`fa-solid fa-rotate ${sincronizando ? 'fa-spin' : ''}`}></i>
+                  <span>{sincronizando ? 'Enviando...' : 'Sincronizar'}</span>
                 </button>
               </div>
             )}

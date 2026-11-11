@@ -70,10 +70,23 @@ class SyncEngine {
     if (typeof window === 'undefined') return;
 
     dbLocal.getConteoTotalPendientes().then((conteo) => {
+      let pendientesLocalStorage = 0;
+      try {
+        const raw = localStorage.getItem('movil_cargas_local');
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            pendientesLocalStorage = list.filter((x: any) => !x.synced).length;
+          }
+        }
+      } catch {}
+
+      const totalPend = Math.max(conteo.total, pendientesLocalStorage);
+
       const detail: SyncStatusEvent = {
         sincronizando: this.isSyncing,
-        pendientesTotal: conteo.total,
-        pendientesRecolecciones: conteo.recolecciones,
+        pendientesTotal: totalPend,
+        pendientesRecolecciones: Math.max(conteo.recolecciones, pendientesLocalStorage),
         pendientesCombustible: conteo.combustible,
         pendientesAverias: conteo.averias,
         pendientesReceptoria: conteo.receptoria,
@@ -85,12 +98,41 @@ class SyncEngine {
     }).catch(() => {});
   }
 
+  private getChoferIdEfectivo(choferId?: number): number | undefined {
+    if (choferId && choferId > 0) return choferId;
+    if (typeof window === 'undefined') return undefined;
+    try {
+      const rawDev = localStorage.getItem('movil_device_info');
+      if (rawDev) {
+        const dev = JSON.parse(rawDev);
+        if (dev && dev.id) return Number(dev.id);
+      }
+      const rawUser = localStorage.getItem('auth_user') || localStorage.getItem('user');
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        if (u && (u.id || u.usuarioId)) return Number(u.id || u.usuarioId);
+      }
+    } catch {}
+    return undefined;
+  }
+
+  private async resolverViajeActivoAbierto(choferId?: number): Promise<any | null> {
+    try {
+      const idChofer = this.getChoferIdEfectivo(choferId);
+      const v = await operacionesApi.getViajeActivo(idChofer);
+      if (v && v.id) return v;
+    } catch (err) {
+      console.warn('[SyncEngine] Error al consultar viaje activo:', err);
+    }
+    return null;
+  }
+
   /**
    * Sincroniza todos los módulos pendientes (Subida) y descarga novedades (Bajada).
    * Si ya hay una sincronización en curso, espera a que termine y devuelve su resultado
    * (evita condiciones de carrera donde el llamador cree que ya terminó con 0 subidos).
    */
-  async sincronizarTodo(empresaCodigo?: string, silencioso = false): Promise<{
+  async sincronizarTodo(empresaCodigo?: string, silencioso = false, choferId?: number): Promise<{
     recoleccionesSubidas: number;
     combustibleSubido: number;
     averiasSubidas: number;
@@ -121,7 +163,7 @@ class SyncEngine {
         ticketsSubidos = await this.sincronizarTicketsLocales();
 
         // 1. Sincronizar Recolecciones de Leche en Fincas (IndexedDB + respaldo LocalStorage)
-        recoleccionesSubidas = await this.sincronizarRecolecciones(empresaCodigo);
+        recoleccionesSubidas = await this.sincronizarRecolecciones(empresaCodigo, choferId);
 
         // 2. Sincronizar Combustible
         combustibleSubido = await this.sincronizarCombustible(empresaCodigo);
@@ -227,7 +269,7 @@ class SyncEngine {
   /**
    * Sube recolecciones de leche pendientes a la central (desde IndexedDB y respaldo movil_cargas_local)
    */
-  async sincronizarRecolecciones(empresaCodigo?: string): Promise<number> {
+  async sincronizarRecolecciones(empresaCodigo?: string, choferId?: number): Promise<number> {
     let exitosas = 0;
     let huboFalloRed = false;
     const subidosClave = new Set<string>();
@@ -257,9 +299,9 @@ class SyncEngine {
           ticketId = real;
         }
 
-        // Si el ticket no es válido o es 0, buscar viaje activo
+        // Si el ticket no es válido o es <= 0, resolver viaje activo abierto
         if (!ticketId || ticketId <= 0) {
-          const vActivo = await operacionesApi.getViajeActivo();
+          const vActivo = await this.resolverViajeActivoAbierto(choferId);
           if (vActivo && vActivo.id) {
             ticketId = vActivo.id;
           }
@@ -267,8 +309,7 @@ class SyncEngine {
 
         if (ticketId && ticketId > 0) {
           const obsConOrigen = `${carga.observaciones ? carga.observaciones + ' ' : ''}[ORIGEN_MOVIL]`.trim();
-
-          await operacionesApi.agregarFincaViaje(ticketId, {
+          const payloadEnvio = {
             fincaId: Number(carga.fincaId),
             litros: Number(carga.litros),
             esAcida: Boolean(carga.esAcida),
@@ -278,12 +319,43 @@ class SyncEngine {
             observacion: obsConOrigen,
             temperatura: carga.temperatura ?? undefined,
             fotoComprobante: carga.foto && carga.foto !== '[EN_INDEXEDDB]' ? carga.foto : undefined,
-          });
+          };
 
-          await dbLocal.marcarRecoleccionSincronizada(carga.idLocal);
-          subidosDbId.add(carga.idLocal);
-          subidosClave.add(`${ticketId}_${Number(carga.fincaId)}`);
-          exitosas++;
+          let subio = false;
+          try {
+            await operacionesApi.agregarFincaViaje(ticketId, payloadEnvio);
+            subio = true;
+          } catch (errApi: any) {
+            const errMsg = errApi?.response?.data?.message || errApi?.message || '';
+            const status = errApi?.response?.status;
+            const esTicketInvalido = status === 400 || status === 404 ||
+              errMsg.toLowerCase().includes('abierto') ||
+              errMsg.toLowerCase().includes('no existe') ||
+              errMsg.toLowerCase().includes('finalizado') ||
+              errMsg.toLowerCase().includes('cerrado');
+
+            if (esTicketInvalido) {
+              console.warn(`[SyncEngine] Ticket #${ticketId} no disponible para recolección (${errMsg}). Buscando viaje activo abierto...`);
+              const vActivo = await this.resolverViajeActivoAbierto(choferId);
+              if (vActivo && vActivo.id && vActivo.id !== ticketId && (vActivo.procesoActualId === 1 || !vActivo.procesoActualId)) {
+                console.log(`[SyncEngine] Reasignando recolección #${carga.idLocal} a ticket activo abierto #${vActivo.id}`);
+                await operacionesApi.agregarFincaViaje(vActivo.id, payloadEnvio);
+                ticketId = vActivo.id;
+                subio = true;
+              } else {
+                throw errApi;
+              }
+            } else {
+              throw errApi;
+            }
+          }
+
+          if (subio) {
+            await dbLocal.marcarRecoleccionSincronizada(carga.idLocal);
+            subidosDbId.add(carga.idLocal);
+            subidosClave.add(`${ticketId}_${Number(carga.fincaId)}`);
+            exitosas++;
+          }
         }
       } catch (err: any) {
         huboFalloRed = true;
@@ -306,43 +378,100 @@ class SyncEngine {
               if (!c || c.synced) continue;
 
               const tOrig = Number(c.serverTicketId || 0);
-              const tReal = tOrig < 0 ? ticketsLocales.resolverId(tOrig) : tOrig;
+              let tReal = tOrig < 0 ? ticketsLocales.resolverId(tOrig) : tOrig;
               const fId = Number(c.fincaId || 0);
-              const clave = `${tReal}_${fId}`;
+
+              if (tOrig < 0 && tReal <= 0) {
+                huboFalloRed = true;
+                continue;
+              }
 
               // Si ya se subió en el paso 1 por IndexedDB, marcarla como sincronizada
-              if ((c.dbLocalId && subidosDbId.has(Number(c.dbLocalId))) || (tReal > 0 && subidosClave.has(clave))) {
+              const claveYa = `${tReal}_${fId}`;
+              if ((c.dbLocalId && subidosDbId.has(Number(c.dbLocalId))) || (tReal > 0 && subidosClave.has(claveYa))) {
                 listaCargas[i] = { ...c, serverTicketId: tReal > 0 ? tReal : c.serverTicketId, synced: true };
                 huboCambiosCargas = true;
                 continue;
               }
 
-              // Si aún no se subió y tiene un ticket real válido, subirla directamente a la API
-              if (tReal > 0 && fId > 0 && Number(c.litros) > 0) {
-                try {
-                  const obsConOrigen = `${c.observacion ? c.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim();
-                  await operacionesApi.agregarFincaViaje(tReal, {
-                    fincaId: fId,
-                    litros: Number(c.litros),
-                    esAcida: Boolean(c.esAcida),
-                    esDiferido: Boolean(c.esDiferido),
-                    fecha: (c.fecha || new Date().toISOString()).split('T')[0],
-                    tipoLeche: c.tipoLeche || 'VACA',
-                    observacion: obsConOrigen,
-                    temperatura: c.temperatura ? Number(c.temperatura) : undefined,
-                    fotoComprobante: c.fotoRecibo && c.fotoRecibo !== '[EN_INDEXEDDB]' ? c.fotoRecibo : undefined,
-                  });
-
-                  listaCargas[i] = { ...c, serverTicketId: tReal, synced: true };
-                  if (c.dbLocalId) {
-                    await dbLocal.marcarRecoleccionSincronizada(Number(c.dbLocalId)).catch(() => {});
+              if (fId > 0 && Number(c.litros) > 0) {
+                // Si el ticket no es válido o es <= 0, resolver con viaje activo abierto
+                if (!tReal || tReal <= 0) {
+                  const vActivo = await this.resolverViajeActivoAbierto(choferId);
+                  if (vActivo && vActivo.id) {
+                    tReal = vActivo.id;
                   }
-                  subidosClave.add(clave);
-                  huboCambiosCargas = true;
-                  exitosas++;
-                } catch (errCarga) {
-                  huboFalloRed = true;
-                  console.warn(`[SyncEngine] Pendiente reintento de carga local finca #${fId} en ticket #${tReal}:`, errCarga);
+                }
+
+                if (tReal > 0) {
+                  try {
+                    const obsConOrigen = `${c.observacion ? c.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim();
+                    let fotoComprobante = c.fotoRecibo && c.fotoRecibo !== '[EN_INDEXEDDB]' ? c.fotoRecibo : undefined;
+
+                    // Si la foto estaba en IndexedDB por cuota de localStorage, recuperarla
+                    if (!fotoComprobante && c.dbLocalId) {
+                      try {
+                        const recDb = await dbLocal.getRecoleccion(Number(c.dbLocalId));
+                        if (recDb && recDb.foto && recDb.foto !== '[EN_INDEXEDDB]') {
+                          fotoComprobante = recDb.foto;
+                        }
+                      } catch {}
+                    }
+
+                    const payloadEnvio = {
+                      fincaId: fId,
+                      litros: Number(c.litros),
+                      esAcida: Boolean(c.esAcida),
+                      esDiferido: Boolean(c.esDiferido),
+                      fecha: (c.fecha || new Date().toISOString()).split('T')[0],
+                      tipoLeche: c.tipoLeche || 'VACA',
+                      observacion: obsConOrigen,
+                      temperatura: c.temperatura ? Number(c.temperatura) : undefined,
+                      fotoComprobante,
+                    };
+
+                    let subidaOk = false;
+                    try {
+                      await operacionesApi.agregarFincaViaje(tReal, payloadEnvio);
+                      subidaOk = true;
+                    } catch (errAdd: any) {
+                      const errMsg = errAdd?.response?.data?.message || errAdd?.message || '';
+                      const status = errAdd?.response?.status;
+                      const esInvalido = status === 400 || status === 404 ||
+                        errMsg.toLowerCase().includes('abierto') ||
+                        errMsg.toLowerCase().includes('no existe') ||
+                        errMsg.toLowerCase().includes('finalizado') ||
+                        errMsg.toLowerCase().includes('cerrado');
+
+                      if (esInvalido) {
+                        console.warn(`[SyncEngine] Ticket #${tReal} no disponible para finca #${fId} (${errMsg}). Reintentando con viaje activo abierto...`);
+                        const vActivo = await this.resolverViajeActivoAbierto(choferId);
+                        if (vActivo && vActivo.id && vActivo.id !== tReal && (vActivo.procesoActualId === 1 || !vActivo.procesoActualId)) {
+                          console.log(`[SyncEngine] Reasignando carga #${fId} a nuevo ticket activo abierto #${vActivo.id}`);
+                          await operacionesApi.agregarFincaViaje(vActivo.id, payloadEnvio);
+                          tReal = vActivo.id;
+                          subidaOk = true;
+                        } else {
+                          throw errAdd;
+                        }
+                      } else {
+                        throw errAdd;
+                      }
+                    }
+
+                    if (subidaOk) {
+                      listaCargas[i] = { ...c, serverTicketId: tReal, synced: true };
+                      if (c.dbLocalId) {
+                        await dbLocal.marcarRecoleccionSincronizada(Number(c.dbLocalId)).catch(() => {});
+                      }
+                      subidosClave.add(`${tReal}_${fId}`);
+                      huboCambiosCargas = true;
+                      exitosas++;
+                    }
+                  } catch (errCarga) {
+                    huboFalloRed = true;
+                    console.warn(`[SyncEngine] Pendiente reintento de carga local finca #${fId} en ticket #${tReal}:`, errCarga);
+                  }
                 }
               } else if (tOrig < 0 && tReal <= 0) {
                 huboFalloRed = true;

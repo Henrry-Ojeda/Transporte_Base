@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Sistema Centralizado de Versionado Semántico
  * 
  * Reglas de Versionado del Proyecto:
@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 16,
-  tag: 'v3.18.16',
+  patch: 17,
+  tag: 'v3.18.17',
   ultimaActualizacion: '2026-11-11',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Corrección SQL en catálogo y reportes de fincas, visualización de fotos en app móvil, aislamiento de litros por ticket y bloqueo de botón crear turno v3.18.16',
+  descripcion: 'Sincronización bidireccional inteligente móvil-web con reasignación automática a turnos activos y botón Sincronizar en cabecera y panel v3.18.17',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

@@ -101,6 +101,15 @@ const REPORTES_CHOFER = [
 import { APP_VERSION } from '@/config/version';
 export { APP_VERSION };
 
+// Helper para llamadas de red con tiempo límite estricto (3.5 segundos)
+// Evita que conexiones móviles lentas (2G/EDGE o falso online) congelen la interfaz
+function conTimeout<T>(promise: Promise<T>, ms = 3500): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('TIMEOUT_RED_MOVIL')), ms)),
+  ]);
+}
+
 // ---------------------------------------------------------------------------
 // Caché offline por ticket: cada ticket guarda SUS paradas en el teléfono, para poder abrir
 // cualquiera de los tickets del chofer sin internet y NUNCA perder cargas hechas sin WiFi.
@@ -1558,7 +1567,14 @@ export const AppMovilPage: React.FC = () => {
   // Estados para Módulo Administrador - Logística Móvil
   const [fechaLogistica, setFechaLogistica] = useState(hoyStr);
   const [subTabLogistica, setSubTabLogistica] = useState<'asignaciones' | 'circuitos'>('asignaciones');
-  const [planificaciones, setPlanificaciones] = useState<PlanificacionRutaChoferDto[]>([]);
+  const [planificaciones, setPlanificaciones] = useState<PlanificacionRutaChoferDto[]>(() => {
+    try {
+      const saved = localStorage.getItem('movil_planificaciones_cache');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [cargandoPlanificaciones, setCargandoPlanificaciones] = useState(false);
   const [rutasLogisticas, setRutasLogisticas] = useState<RutaLogisticaDto[]>(() => {
     try {
@@ -1588,6 +1604,11 @@ export const AppMovilPage: React.FC = () => {
       try { localStorage.setItem('movil_camiones_cache', JSON.stringify(camionesLista)); } catch {}
     }
   }, [camionesLista]);
+  useEffect(() => {
+    if (planificaciones.length > 0) {
+      try { localStorage.setItem('movil_planificaciones_cache', JSON.stringify(planificaciones)); } catch {}
+    }
+  }, [planificaciones]);
   const [fincasPromedio, setFincasPromedio] = useState<FincaPromedioDto[]>([]);
 
   // Modales de Logística Móvil
@@ -2182,11 +2203,72 @@ export const AppMovilPage: React.FC = () => {
     }
   }, [isOnline, esAdminReal]);
 
+  // Restaurar catálogos desde IndexedDB si la memoria local está vacía
+  useEffect(() => {
+    const codEmpresa = dispositivo?.empresaCodigo || 'EMP';
+    if (fincas.length === 0) {
+      dbLocal.getFincasCache(codEmpresa).then((fs) => {
+        if (Array.isArray(fs) && fs.length > 0) setFincas(fs as any);
+      }).catch(() => {});
+    }
+    if (rutasLogisticas.length === 0) {
+      dbLocal.getRutasCache(codEmpresa).then((rs) => {
+        if (Array.isArray(rs) && rs.length > 0) setRutasLogisticas(rs as any);
+      }).catch(() => {});
+    }
+    if (planificaciones.length === 0) {
+      dbLocal.getPlanificacionesCache(codEmpresa).then((ps) => {
+        if (Array.isArray(ps) && ps.length > 0) setPlanificaciones(ps as any);
+      }).catch(() => {});
+    }
+  }, [dispositivo?.empresaCodigo]);
+
+  // Descarga y sincronización integral de catálogos offline (Fincas, Rutas, Planificaciones y Cisternas)
+  const descargarCatalogosOffline = async () => {
+    const codEmpresa = dispositivo?.empresaCodigo || 'EMP';
+    try {
+      // 1. Catálogo Completo de Fincas
+      const fList = await conTimeout(catalogosApi.getFincas(), 4000).catch(() => null);
+      if (Array.isArray(fList) && fList.length > 0) {
+        setFincas(fList);
+        try { localStorage.setItem('movil_fincas_cache', JSON.stringify(fList)); } catch {}
+        await dbLocal.guardarFincasCache(codEmpresa, fList).catch(() => {});
+      }
+
+      // 2. Rutas Logísticas
+      const rList = await conTimeout(operacionesApi.getRutasLogistica(), 4000).catch(() => null);
+      if (Array.isArray(rList) && rList.length > 0) {
+        setRutasLogisticas(rList);
+        try { localStorage.setItem('movil_rutas_cache', JSON.stringify(rList)); } catch {}
+        await dbLocal.guardarRutasCache(codEmpresa, rList).catch(() => {});
+      }
+
+      // 3. Planificaciones del día para choferes
+      const pList = await conTimeout(operacionesApi.getPlanificacionesChoferes(hoyStr), 4000).catch(() => null);
+      if (Array.isArray(pList) && pList.length > 0) {
+        setPlanificaciones(pList);
+        try { localStorage.setItem('movil_planificaciones_cache', JSON.stringify(pList)); } catch {}
+        await dbLocal.guardarPlanificacionesCache(codEmpresa, pList).catch(() => {});
+      }
+
+      // 4. Cisternas
+      const cList = await conTimeout(catalogosApi.getCamiones(false), 4000).catch(() => null);
+      if (Array.isArray(cList) && cList.length > 0) {
+        setCamionesLista(cList);
+        try { localStorage.setItem('movil_camiones_cache', JSON.stringify(cList)); } catch {}
+      }
+    } catch (e) {
+      console.warn('Descarga offline completada parcialmente o sin conexión:', e);
+    }
+  };
+
+  const cargarFincasServidor = descargarCatalogosOffline;
+
   // Refrescar fincas, entregas, perfil, viaje activo y despacho activo (soporta online y offline sin interrupciones)
   useEffect(() => {
     if (dispositivo) {
       if (isOnline) {
-        cargarFincasServidor();
+        descargarCatalogosOffline();
         cargarPerfilServidor();
       }
       cargarViajeActivo();
@@ -2194,18 +2276,6 @@ export const AppMovilPage: React.FC = () => {
       cargarEntregasChofer();
     }
   }, [choferEfectivoId, isOnline, dispositivo]);
-
-  const cargarFincasServidor = async () => {
-    try {
-      const list = await catalogosApi.getFincas();
-      if (Array.isArray(list) && list.length > 0) {
-        setFincas(list);
-        localStorage.setItem('movil_fincas_cache', JSON.stringify(list));
-      }
-    } catch {
-      console.warn('Usando catálogo local de fincas offline.');
-    }
-  };
 
   const seleccionarViaje = async (v: ControlRutaDto) => {
     if (!v || !v.id) return;
@@ -2491,16 +2561,37 @@ export const AppMovilPage: React.FC = () => {
 
     setCargandoViaje(true);
     try {
-      // 1. Obtener todos los viajes activos del chofer en TB_CONTROL_RUTAS (sin restringir por fecha de hoy para no bloquear tickets abiertos de días anteriores como #21303)
-      let lista = await operacionesApi.getViajesActivosChofer(idBusqueda);
-      if (!Array.isArray(lista) || lista.length === 0) {
-        const fConsulta = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
-        lista = await operacionesApi.getViajesActivosChofer(idBusqueda, fConsulta);
+      // 1. Obtener todos los viajes activos del chofer en TB_CONTROL_RUTAS con tiempo límite de 3.5s
+      let lista: ControlRutaDto[] = [];
+      try {
+        const res = await conTimeout(operacionesApi.getViajesActivosChofer(idBusqueda), 3500);
+        if (Array.isArray(res) && res.length > 0) lista = res;
+      } catch {}
+
+      if (lista.length === 0) {
+        try {
+          const fConsulta = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
+          const res = await conTimeout(operacionesApi.getViajesActivosChofer(idBusqueda, fConsulta), 3500);
+          if (Array.isArray(res) && res.length > 0) lista = res;
+        } catch {}
       }
-      if (!Array.isArray(lista) || lista.length === 0) {
-        const unico = await operacionesApi.getViajeActivo(idBusqueda);
-        if (unico && unico.id) lista = [unico];
-        else lista = [];
+
+      if (lista.length === 0) {
+        try {
+          const unico = await conTimeout(operacionesApi.getViajeActivo(idBusqueda), 3500);
+          if (unico && unico.id) lista = [unico];
+        } catch {}
+      }
+
+      // Si el servidor no respondió o devolvió vacío (por señal inestable), recuperar de caché local de inmediato
+      if (lista.length === 0) {
+        const savedList = localStorage.getItem('movil_viajes_chofer_' + idBusqueda) || localStorage.getItem('movil_viajes_chofer');
+        if (savedList) {
+          try {
+            const listParsed = JSON.parse(savedList);
+            if (Array.isArray(listParsed) && listParsed.length > 0) lista = listParsed;
+          } catch {}
+        }
       }
 
       // REGLA: Los choferes solo ven tickets y rutas de HOY hacia atrás, salvo que se haya forzado un ticket creado
@@ -2583,8 +2674,8 @@ export const AppMovilPage: React.FC = () => {
           });
         }
 
-        // Cargar paradas del viaje seleccionado (un ticket local aún no existe en la central)
-        const paradas = targetV.id < 0 ? null : await operacionesApi.getFincasViaje(targetV.id);
+        // Cargar paradas del viaje seleccionado con timeout de 3.5s
+        const paradas = targetV.id < 0 ? null : await conTimeout(operacionesApi.getFincasViaje(targetV.id), 3500).catch(() => null);
         if (Array.isArray(paradas)) {
           // Unificar con cargas locales de este ticket (incluyendo paradas extras o en modo libre)
           const paradasUnificadas = guardarParadasTicketLocal(targetV.id, paradas);
@@ -2629,7 +2720,7 @@ export const AppMovilPage: React.FC = () => {
         if (otrosTickets.length > 0) {
           Promise.allSettled(
             otrosTickets.map(async (t) => {
-              const ps = await operacionesApi.getFincasViaje(t.id);
+              const ps = await conTimeout(operacionesApi.getFincasViaje(t.id), 3500).catch(() => null);
               if (Array.isArray(ps)) {
                 guardarParadasTicketLocal(t.id, ps);
                 const confirmadosOtro = new Set(
@@ -2666,14 +2757,23 @@ export const AppMovilPage: React.FC = () => {
           await cargarRecoleccionesYSolicitudes(targetV.fecha ? targetV.fecha.split('T')[0] : hoyStr);
         }
       } else {
+        // PRESERVAR CACHÉ: NUNCA borrar el viaje offline si el servidor falló o no encontró registros
+        const savedV = localStorage.getItem('movil_viaje_activo_' + idBusqueda) || localStorage.getItem('movil_viaje_activo');
+        if (savedV) {
+          try {
+            const vParsed = JSON.parse(savedV);
+            if (vParsed && vParsed.id) {
+              setViajeSeleccionadoId(vParsed.id);
+              setViajeActivo(vParsed);
+              const pOffline = leerParadasTicketLocal(vParsed.id);
+              if (pOffline) setParadasViajeActivo(pOffline);
+              return;
+            }
+          } catch {}
+        }
         setViajeSeleccionadoId(null);
         setViajeActivo(null);
         setParadasViajeActivo([]);
-        try {
-          localStorage.removeItem('movil_viaje_seleccionado_id');
-          localStorage.removeItem('movil_viaje_activo');
-          localStorage.removeItem('movil_paradas_activo');
-        } catch {}
       }
 
       // Refrescar permiso de creación de viaje si es chofer y hay dispositivo conectado
@@ -3717,11 +3817,7 @@ export const AppMovilPage: React.FC = () => {
       toast.success(`¡Dispositivo Vinculado a ${nuevoNombreEmpresa}! Bienvenido ${res.nombreCompleto}`);
 
       try {
-        const fincasData = await catalogosApi.getFincas();
-        if (Array.isArray(fincasData)) {
-          setFincas(fincasData);
-          localStorage.setItem('movil_fincas_cache', JSON.stringify(fincasData));
-        }
+        await descargarCatalogosOffline();
       } catch {}
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Código inválido o expirado. Consulta con tu administrador.');
@@ -3851,13 +3947,9 @@ export const AppMovilPage: React.FC = () => {
 
       toast.success(`¡Bienvenido ${res.nombreCompleto}!`);
 
-      // Descargar catálogo de fincas offline para este chofer
+      // Descargar catálogos offline para este chofer (fincas, rutas, planificaciones y cisternas)
       try {
-        const fincasData = await catalogosApi.getFincas();
-        if (Array.isArray(fincasData) && fincasData.length > 0) {
-          setFincas(fincasData);
-          localStorage.setItem('movil_fincas_cache', JSON.stringify(fincasData));
-        }
+        await descargarCatalogosOffline();
       } catch {}
     } catch (err: any) {
       toast.error(
@@ -4165,6 +4257,22 @@ export const AppMovilPage: React.FC = () => {
       fincasRuta = fincas.filter((f) => f.rutaId && rutasActivasIds.includes(f.rutaId));
     }
 
+    // Si aún no hay fincas asignadas, buscar en planificaciones del chofer guardadas offline
+    if (fincasRuta.length === 0) {
+      const fViajeStr = (viajeActivo.fecha || '').split('T')[0];
+      const plan = (planificaciones || []).find(
+        (p) =>
+          (p.controlRutaId && p.controlRutaId === viajeActivo.id) ||
+          (p.conductorId === viajeActivo.usuarioId && (p.fecha || '').split('T')[0] === fViajeStr)
+      );
+      if (plan) {
+        const idsPlan = getFincasIdsDePlan(plan);
+        if (idsPlan.length > 0) {
+          fincasRuta = fincas.filter((f) => idsPlan.includes(f.id));
+        }
+      }
+    }
+
     // Modo Híbrido: Incorporar automáticamente cualquier finca extra recolectada o registrada en este viaje
     const idsParadasExtra = todasLasParadas.map((p) => Number(p.fincaId || p.FincaId || 0)).filter((id) => id > 0);
     idsParadasExtra.forEach((idExtra) => {
@@ -4373,7 +4481,7 @@ export const AppMovilPage: React.FC = () => {
       // 3. Las pendientes por orden alfabético
       return a.nombre.localeCompare(b.nombre);
     });
-  }, [viajeActivo, rutasActivasIds, fincas, todasLasParadas, cargas, recoleccionesHoy, solicitudesExtraordinarias]);
+  }, [viajeActivo, rutasActivasIds, fincas, todasLasParadas, cargas, recoleccionesHoy, solicitudesExtraordinarias, planificaciones]);
 
   const totalLitrosCargados = useMemo(() => {
     // Si tenemos fincas planificadas/asignadas en la ruta, calcular directamente de fincasDeMiRuta
@@ -4550,11 +4658,28 @@ export const AppMovilPage: React.FC = () => {
     });
   };
 
-  // Abrir modal de carga preseleccionando una finca específica (fija y cargando litros previos del ticket actual)
+  // Abrir modal de carga preseleccionando una finca específica (o libre si es null)
   const abrirCargaParaFinca = (fincaItem: any) => {
-    setFincaFijadaParaModal(fincaItem);
+    setFincaFijadaParaModal(fincaItem || null);
     const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
     const idTicketActual = ticketsLocales.resolverId(Number(viajeActivo?.id || 0)) || Number(viajeActivo?.id || 0);
+
+    if (!fincaItem) {
+      setFormCarga({
+        fecha: fechaAUsar,
+        fincaId: 0,
+        litros: '',
+        tipoLeche: 'VACA',
+        esAcida: false,
+        esDiferido: false,
+        litrosDiferir: '',
+        temperatura: '',
+        observacion: '',
+        fotoRecibo: '',
+      });
+      setModalRegistro(true);
+      return;
+    }
 
     // 7.- Cargar los litros que ya se habían colocado en ESTE ticket (offline o servidor)
     const cargaLocal = cargas.find((c) => {
@@ -4829,7 +4954,8 @@ export const AppMovilPage: React.FC = () => {
         localStorage.setItem('movil_ultima_sincronizacion', timestampActual);
       } catch {}
 
-      // 2. Actualizar paradas consolidadas y todos los tickets activos desde la central
+      // 2. Actualizar paradas consolidadas, catálogo offline y todos los tickets activos desde la central
+      await descargarCatalogosOffline();
       await cargarViajeActivo();
       await cargarDatosAdminEnVivo();
 
@@ -7057,6 +7183,29 @@ export const AppMovilPage: React.FC = () => {
                       <span>Fincas a Recolectar ({fincasDeMiRuta.length})</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {!viajeBloqueadoPorReceptoria && (
+                        <button
+                          type="button"
+                          onClick={() => abrirCargaParaFinca(null)}
+                          title="Registrar parada o finca extra"
+                          style={{
+                            background: '#ecfdf5',
+                            border: '1px solid #86efac',
+                            color: '#065f46',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <i className="fa-solid fa-plus text-emerald-600"></i>
+                          <span>+ Parada</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => sincronizarCargas(true)}
@@ -7166,11 +7315,39 @@ export const AppMovilPage: React.FC = () => {
 
                   {/* Lista de Fincas con Detalle y Botón de Cargar Litros */}
                   {fincasDeMiRuta.length === 0 ? (
-                    <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '12px', background: '#f8fafc', borderRadius: '12px' }}>
-                      No hay fincas asignadas específicamente. Usa el botón superior <strong>+ Registrar Parada Libre</strong> para registrar paradas de leche.
+                    <div style={{ textAlign: 'center', padding: '24px 16px', background: '#f8fafc', borderRadius: '14px', border: '1.5px dashed #cbd5e1' }}>
+                      <div style={{ fontSize: '28px', marginBottom: '8px' }}>🥛</div>
+                      <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}>
+                        {viajeActivo.rutaLogisticaNombre ? `Ruta: ${viajeActivo.rutaLogisticaNombre}` : 'Modo Libre (Sin Ruta Fija)'}
+                      </div>
+                      <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 14px 0' }}>
+                        Selecciona la finca donde estás recolectando leche para registrar los litros.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => abrirCargaParaFinca(null)}
+                        style={{
+                          background: 'linear-gradient(135deg, #059669, #10b981)',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '12px',
+                          padding: '11px 18px',
+                          fontSize: '13.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          boxShadow: '0 4px 12px rgba(16,185,129,0.25)',
+                        }}
+                      >
+                        <i className="fa-solid fa-plus-circle"></i>
+                        <span>+ Registrar Parada en Finca</span>
+                      </button>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {fincasDeMiRuta
                         .filter((f) => {
                           if (filtroCircuito === 'pendientes') return !f.recolectada;
@@ -7398,6 +7575,34 @@ export const AppMovilPage: React.FC = () => {
                         );
                       })}
                     </div>
+
+                    {/* Botón para registrar paradas libres o fincas extras en cualquier momento */}
+                    {!viajeBloqueadoPorReceptoria && (
+                      <button
+                        type="button"
+                        onClick={() => abrirCargaParaFinca(null)}
+                        style={{
+                          marginTop: '10px',
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: '12px',
+                          border: '1.5px dashed #86efac',
+                          background: '#f0fdf4',
+                          color: '#15803d',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <i className="fa-solid fa-plus-circle text-emerald-600"></i>
+                        <span>+ Registrar Parada Libre / Finca Extra</span>
+                      </button>
+                    )}
+                    </>
                   )}
 
                   {/* Botones de Acción Móvil: Receptoría/Compañía y Traspaso */}

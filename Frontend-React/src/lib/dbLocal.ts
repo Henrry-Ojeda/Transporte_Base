@@ -117,7 +117,7 @@ export interface NotificacionLocal {
 }
 
 const DB_NAME = 'TransporteLocalDB_v3';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 class LocalDatabase {
   private dbPromise: Promise<IDBDatabase> | null = null;
@@ -185,6 +185,18 @@ class LocalDatabase {
           store.createIndex('empresaCodigo', 'empresaCodigo', { unique: false });
           store.createIndex('usuarioId', 'usuarioId', { unique: false });
           store.createIndex('leida', 'leida', { unique: false });
+        }
+
+        // 8. Caché de Rutas Logísticas
+        if (!db.objectStoreNames.contains('rutas_cache')) {
+          const store = db.createObjectStore('rutas_cache', { keyPath: 'idKey' });
+          store.createIndex('empresaCodigo', 'empresaCodigo', { unique: false });
+        }
+
+        // 9. Caché de Planificaciones de Rutas por Chofer
+        if (!db.objectStoreNames.contains('planificaciones_cache')) {
+          const store = db.createObjectStore('planificaciones_cache', { keyPath: 'idKey' });
+          store.createIndex('empresaCodigo', 'empresaCodigo', { unique: false });
         }
       };
 
@@ -338,6 +350,188 @@ class LocalDatabase {
         list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
         resolve(list[0]);
       };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async guardarViajesChoferCache(empresaCodigo: string, choferId: number, viajes: any[]): Promise<void> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('viajes_cache', 'readwrite');
+      const store = tx.objectStore('viajes_cache');
+      const now = new Date().toISOString();
+      for (const v of viajes) {
+        if (!v || !v.id) continue;
+        const item: ViajeCacheLocal = {
+          idKey: `${empresaCodigo || 'EMP'}_${v.id}`,
+          empresaCodigo: empresaCodigo || 'EMP',
+          ticketId: Number(v.id),
+          numeroTicket: String(v.codigoTicket || v.id),
+          conductorId: Number(v.usuarioId || choferId || 0),
+          conductorNombre: v.conductorNombre || '',
+          camionId: Number(v.camionId || 0),
+          camionPlaca: v.camionPlaca || '',
+          rutaNombre: v.rutaLogisticaNombre || '',
+          estado: v.estado || 'EN RUTA',
+          totalLitros: Number(v.totalLitrosFinca || v.totalLitrosRecogidos || 0),
+          fecha: v.fecha || now,
+          paradas: v.paradas || [],
+          updatedAt: now,
+        };
+        store.put(item);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async getViajesChoferCache(empresaCodigo: string, choferId: number): Promise<any[]> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('viajes_cache', 'readonly');
+      const store = tx.objectStore('viajes_cache');
+      const index = store.index('empresaCodigo');
+      const req = index.getAll(IDBKeyRange.only(empresaCodigo || 'EMP'));
+      req.onsuccess = () => {
+        let list = (req.result || []) as ViajeCacheLocal[];
+        if (choferId > 0) {
+          list = list.filter((v) => Number(v.conductorId) === Number(choferId));
+        }
+        list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        resolve(list);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // =========================================================================
+  // 2.1 CACHÉ DE FINCAS (CATÁLOGO OFFLINE DE FINCAS)
+  // =========================================================================
+
+  async guardarFincasCache(empresaCodigo: string, fincas: any[]): Promise<void> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('fincas_cache', 'readwrite');
+      const store = tx.objectStore('fincas_cache');
+      const now = new Date().toISOString();
+      for (const f of fincas) {
+        if (!f || !f.id) continue;
+        const item: FincaCacheLocal = {
+          idKey: `${empresaCodigo || 'EMP'}_${f.id}`,
+          empresaCodigo: empresaCodigo || 'EMP',
+          fincaId: Number(f.id),
+          nombre: f.nombre || '',
+          productor: f.propietarioNombre || f.propietario || '',
+          codigo: f.codigo || '',
+          ubicacion: f.ubicacion || '',
+          orden: f.orden || 0,
+          tipoLecheDefault: f.tipoLeche || 'VACA',
+          activa: f.activa !== false,
+          updatedAt: now,
+        };
+        store.put(item);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async getFincasCache(empresaCodigo?: string): Promise<any[]> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('fincas_cache', 'readonly');
+      const store = tx.objectStore('fincas_cache');
+      const req = empresaCodigo
+        ? store.index('empresaCodigo').getAll(IDBKeyRange.only(empresaCodigo))
+        : store.getAll();
+      req.onsuccess = () => {
+        const raw = (req.result || []) as FincaCacheLocal[];
+        const mapped = raw.map((item) => ({
+          id: item.fincaId,
+          nombre: item.nombre,
+          propietario: item.productor,
+          propietarioNombre: item.productor,
+          codigo: item.codigo,
+          ubicacion: item.ubicacion,
+          orden: item.orden,
+          tipoLeche: item.tipoLecheDefault || 'VACA',
+          activa: item.activa,
+        }));
+        resolve(mapped);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // =========================================================================
+  // 2.2 CACHÉ DE RUTAS LOGÍSTICAS
+  // =========================================================================
+
+  async guardarRutasCache(empresaCodigo: string, rutas: any[]): Promise<void> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('rutas_cache', 'readwrite');
+      const store = tx.objectStore('rutas_cache');
+      for (const r of rutas) {
+        if (!r || !r.id) continue;
+        store.put({
+          idKey: `${empresaCodigo || 'EMP'}_${r.id}`,
+          empresaCodigo: empresaCodigo || 'EMP',
+          ...r,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async getRutasCache(empresaCodigo?: string): Promise<any[]> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('rutas_cache', 'readonly');
+      const store = tx.objectStore('rutas_cache');
+      const req = empresaCodigo
+        ? store.index('empresaCodigo').getAll(IDBKeyRange.only(empresaCodigo))
+        : store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // =========================================================================
+  // 2.3 CACHÉ DE PLANIFICACIONES DE RUTAS
+  // =========================================================================
+
+  async guardarPlanificacionesCache(empresaCodigo: string, planificaciones: any[]): Promise<void> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('planificaciones_cache', 'readwrite');
+      const store = tx.objectStore('planificaciones_cache');
+      for (const p of planificaciones) {
+        if (!p || (!p.id && !p.controlRutaId)) continue;
+        const key = `${empresaCodigo || 'EMP'}_${p.id || p.controlRutaId}_${p.conductorId || 0}`;
+        store.put({
+          idKey: key,
+          empresaCodigo: empresaCodigo || 'EMP',
+          ...p,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async getPlanificacionesCache(empresaCodigo?: string): Promise<any[]> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('planificaciones_cache', 'readonly');
+      const store = tx.objectStore('planificaciones_cache');
+      const req = empresaCodigo
+        ? store.index('empresaCodigo').getAll(IDBKeyRange.only(empresaCodigo))
+        : store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
   }

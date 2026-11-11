@@ -207,10 +207,10 @@ export const App: React.FC = () => {
             <Route path="/receptoria" element={<ReceptoriaPage />} />
             <Route path="/balance" element={<BalanceLechePage />} />
             <Route path="/evolucion-fincas" element={<EvolucionFincasPage />} />
-            <Route path="/control-tanques" element={<ControlTanquesPage />} />
-            <Route path="/planificacion-rutas" element={<RutasLogisticaPage />} />
-            <Route path="/planificacion-rutas-choferes" element={<PlanificacionRutasChoferesPage />} />
-            <Route path="/bufala" element={<BufalaPage />} />
+            <Route path="/control-tanques" element={<ProtectedRoute requiredTenantModule="MOD_CONTROL_TANQUES"><ControlTanquesPage /></ProtectedRoute>} />
+            <Route path="/planificacion-rutas" element={<ProtectedRoute requiredTenantModule="MOD_LOGISTICA_RUTAS"><RutasLogisticaPage /></ProtectedRoute>} />
+            <Route path="/planificacion-rutas-choferes" element={<ProtectedRoute requiredTenantModule="MOD_LOGISTICA_RUTAS"><PlanificacionRutasChoferesPage /></ProtectedRoute>} />
+            <Route path="/bufala" element={<ProtectedRoute requiredTenantModule="MOD_LECHE_BUFALA"><BufalaPage /></ProtectedRoute>} />
 
             {/* Catálogos */}
             <Route path="/fincas" element={<FincasPage />} />
@@ -222,28 +222,28 @@ export const App: React.FC = () => {
             <Route path="/empresa" element={<EmpresaPage />} />
 
             {/* Flota & Mantenimiento */}
-            <Route path="/combustible" element={<CombustiblePage />} />
-            <Route path="/mantenimiento" element={<MantenimientoPage />} />
-            <Route path="/repuestos" element={<RepuestosPage />} />
+            <Route path="/combustible" element={<ProtectedRoute requiredTenantModule="MOD_COMBUSTIBLE"><CombustiblePage /></ProtectedRoute>} />
+            <Route path="/mantenimiento" element={<ProtectedRoute requiredTenantModule="MOD_MANTENIMIENTO"><MantenimientoPage /></ProtectedRoute>} />
+            <Route path="/repuestos" element={<ProtectedRoute requiredTenantModule="MOD_REPUESTOS"><RepuestosPage /></ProtectedRoute>} />
 
             {/* Liquidación & Finanzas */}
-            <Route path="/semanas" element={<SemanasPage />} />
-            <Route path="/liquidaciones" element={<LiquidacionesPage />} />
-            <Route path="/pagos-personal" element={<PagosPersonalPage />} />
-            <Route path="/historial-pagos" element={<HistorialPagosPage />} />
+            <Route path="/semanas" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><SemanasPage /></ProtectedRoute>} />
+            <Route path="/liquidaciones" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><LiquidacionesPage /></ProtectedRoute>} />
+            <Route path="/pagos-personal" element={<ProtectedRoute requiredTenantModule="MOD_PAGOS_PERSONAL"><PagosPersonalPage /></ProtectedRoute>} />
+            <Route path="/historial-pagos" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><HistorialPagosPage /></ProtectedRoute>} />
             <Route path="/administracion" element={<AdministracionGeneralPage />} />
 
             {/* Adelantos */}
-            <Route path="/adelantos-fincas" element={<AdelantosFincasPage />} />
-            <Route path="/adelantos-personal" element={<AdelantosPersonalPage />} />
+            <Route path="/adelantos-fincas" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><AdelantosFincasPage /></ProtectedRoute>} />
+            <Route path="/adelantos-personal" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><AdelantosPersonalPage /></ProtectedRoute>} />
             <Route path="/abonos-companias" element={<AbonosCompaniasPage />} />
             <Route path="/adelantos-receptoria" element={<AdelantosReceptoriaPage />} />
             <Route path="/abonos-amortizaciones" element={<AbonosAmortizacionesPage />} />
-            <Route path="/historial-adelantos" element={<HistorialAdelantosPage />} />
+            <Route path="/historial-adelantos" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><HistorialAdelantosPage /></ProtectedRoute>} />
 
             {/* Reportes */}
             <Route path="/reportes" element={<ReportesPage />} />
-            <Route path="/historial-bcv" element={<HistorialBcvPage />} />
+            <Route path="/historial-bcv" element={<ProtectedRoute requiredTenantModule="MOD_HISTORIAL_BCV"><HistorialBcvPage /></ProtectedRoute>} />
 
             {/* Sistema */}
             <Route path="/perfil" element={<PerfilPage />} />

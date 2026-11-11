@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
+using Transporte.API.Multitenancy;
 
 namespace Transporte.API.Controllers
 {
@@ -10,6 +11,7 @@ namespace Transporte.API.Controllers
     [Route("api/pagos-usuarios")]
     [Route("api/pagosusuarios")]
     [Authorize]
+    [RequireTenantModule("MOD_PAGOS_PERSONAL")]
     public class PagosUsuariosController : ControllerBase
     {
         private readonly IPagosUsuariosRepository _pagosUsuariosRepo;

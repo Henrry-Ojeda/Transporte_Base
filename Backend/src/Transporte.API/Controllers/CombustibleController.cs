@@ -5,12 +5,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
+using Transporte.API.Multitenancy;
 
 namespace Transporte.API.Controllers
 {
     [ApiController]
     [Route("api/combustible")]
     [Authorize]
+    [RequireTenantModule("MOD_COMBUSTIBLE")]
     public class CombustibleController : ControllerBase
     {
         private readonly ICombustibleRepository _repo;

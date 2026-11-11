@@ -3,12 +3,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
+using Transporte.API.Multitenancy;
 
 namespace Transporte.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [RequireTenantModule("MOD_LIQUIDACIONES")]
     public class AdelantosController : ControllerBase
     {
         private readonly IAdelantosRepository _adelantosRepository;

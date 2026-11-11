@@ -209,8 +209,7 @@ apiClient.interceptors.response.use(
     const status = error.response?.status;
     const url = error.config?.url || '';
 
-    // Manejo global estricto: si cualquier API devuelve 401, 403 o indica que se cerró la sesión, pasar inmediatamente a /login
-    const serverData = error.response?.data;
+    const serverData: any = error.response?.data;
     const dataStr = (
       (typeof serverData === 'string' ? serverData : JSON.stringify(serverData || {})) +
       ' ' +
@@ -219,6 +218,19 @@ apiClient.interceptors.response.use(
       (error.response?.headers?.['www-authenticate'] || '')
     ).toLowerCase();
 
+    // Manejo global de MÓDULO NO CONTRATADO (SaaS Modular)
+    if (status === 403 && (serverData?.error === 'MODULO_NO_CONTRATADO' || dataStr.includes('modulo_no_contratado'))) {
+      const msg = serverData?.message || `El módulo '${serverData?.modulo || ''}' no está activo para su empresa en la plataforma SaaS.`;
+      console.warn('[SaaS Modular Block]', msg);
+      if (typeof window !== 'undefined') {
+        import('sonner').then(({ toast }) => {
+          toast.warning(msg, { duration: 5000, id: 'saas-modulo-bloqueado' });
+        });
+      }
+      return Promise.reject(error);
+    }
+
+    // Manejo global estricto: si cualquier API devuelve 401 o sesión expirada, pasar a /login
     const isSessionClosed =
       status === 401 ||
       (status === 403 && !url.includes('/auth/login') && !url.includes('/fincas')) ||

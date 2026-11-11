@@ -5,12 +5,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
+using Transporte.API.Multitenancy;
 
 namespace Transporte.API.Controllers
 {
     [ApiController]
     [Route("api/repuestos")]
     [Authorize]
+    [RequireTenantModule("MOD_REPUESTOS")]
     public class RepuestosController : ControllerBase
     {
         private readonly IRepuestosRepository _repo;

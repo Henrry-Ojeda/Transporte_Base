@@ -2,12 +2,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
+using Transporte.API.Multitenancy;
 
 namespace Transporte.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [RequireTenantModule("MOD_ASISTENTE_IA")]
     public class ChatController : ControllerBase
     {
         private readonly IChatRepository _chatRepository;

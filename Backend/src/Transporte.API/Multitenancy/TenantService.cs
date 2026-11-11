@@ -259,6 +259,11 @@ namespace Transporte.API.Multitenancy
         public string GetTenantCode() => _currentTenant?.Codigo ?? "VERGEL_CARRILLO";
         public string GetTenantName() => _currentTenant?.Nombre ?? "Transporte Vergel & Carrillo";
         public List<string> GetModulosActivos() => _currentTenant?.Modulos ?? new List<string>();
-        public bool TieneModulo(string moduloCodigo) => _currentTenant?.Modulos.Contains(moduloCodigo) ?? true;
+        public bool TieneModulo(string moduloCodigo)
+        {
+            if (string.IsNullOrWhiteSpace(moduloCodigo)) return true;
+            if (_currentTenant == null || _currentTenant.Modulos == null) return false;
+            return _currentTenant.Modulos.Any(m => string.Equals(m, moduloCodigo, StringComparison.OrdinalIgnoreCase));
+        }
     }
 }

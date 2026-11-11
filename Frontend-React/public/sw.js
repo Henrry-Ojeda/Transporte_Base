@@ -9,13 +9,13 @@ const STATIC_ASSETS = [
   "/manifest.json",
   "/favicon.svg",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css",
-  "/assets/index-BtEujMkz.css",
-  "/assets/index-DSBXJfBB.js",
+  "/assets/index-CiZ6LIB0.js",
+  "/assets/index-DZlfE0ZF.css",
   "/assets/rolldown-runtime-XKyaHtl9.js",
   "/assets/vendor-excel-D_lWTlWp.js",
-  "/assets/vendor-query-DagBFWEK.js",
-  "/assets/vendor-react-gsTGkHJe.js",
-  "/assets/vendor-ui-AkGJ0E7n.js"
+  "/assets/vendor-query-CQi5oAl2.js",
+  "/assets/vendor-react-CwJkGakv.js",
+  "/assets/vendor-ui-D2_SxVJH.js"
 ];
 
 self.addEventListener('install', (event) => {

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
+using Transporte.API.Multitenancy;
 
 namespace Transporte.API.Controllers
 {
@@ -12,6 +13,7 @@ namespace Transporte.API.Controllers
     [Route("api/rutas-logistica")]
     [Route("api/rutaslogistica")]
     [Route("api/rutaslogisticas")]
+    [RequireTenantModule("MOD_LOGISTICA_RUTAS")]
     public class RutasLogisticaController : ControllerBase
     {
         private readonly IRutasLogisticaRepository _rutasLogisticaRepository;

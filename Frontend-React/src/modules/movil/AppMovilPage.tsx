@@ -1699,10 +1699,12 @@ export const AppMovilPage: React.FC = () => {
     const tId = modalVerificarLitros?.ticket?.id;
     if (tId) {
       setCargandoFincasMovil(true);
-      operacionesApi.getFincasViaje(tId)
+      operacionesApi.getFincasViaje(tId, true)
         .then((res) => {
           const list = Array.isArray(res) ? res : [];
-          setFincasVerificarMovil(list);
+          // En validación de Receptoría: Solo visualizar fincas con litros recolectados (> 0)
+          const fincasConLitros = list.filter((f: any) => Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0) > 0);
+          setFincasVerificarMovil(fincasConLitros);
           setFincasVerificadasMovilIds(new Set());
         })
         .catch(() => {

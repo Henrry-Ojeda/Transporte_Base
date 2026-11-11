@@ -295,12 +295,12 @@ namespace Transporte.API.Controllers
         }
 
         /// <summary>
-        /// Obtiene las fincas recolectadas dentro de un viaje específico.
+        /// Obtiene las fincas recolectadas dentro de un viaje específico. Soporta opcionalmente filtrar solo fincas con litros para validación en receptoría.
         /// </summary>
         [HttpGet("{id:long}/fincas")]
-        public async Task<IActionResult> ObtenerFincasViaje([FromRoute] long id)
+        public async Task<IActionResult> ObtenerFincasViaje([FromRoute] long id, [FromQuery] bool? soloConLitros = false)
         {
-            var fincas = await _controlRutasRepository.ObtenerFincasDeViajeAsync(id);
+            var fincas = await _controlRutasRepository.ObtenerFincasDeViajeAsync(id, soloConLitros ?? false);
             return Ok(fincas);
         }
 

@@ -187,8 +187,9 @@ export const operacionesApi = {
     return res.data;
   },
 
-  getFincasViaje: async (id: number): Promise<ControlRutaFincaDto[]> => {
-    const res = await apiClient.get<ControlRutaFincaDto[]>(`/control-rutas/${id}/fincas`);
+  getFincasViaje: async (id: number, soloConLitros?: boolean): Promise<ControlRutaFincaDto[]> => {
+    const query = soloConLitros ? '?soloConLitros=true' : '';
+    const res = await apiClient.get<ControlRutaFincaDto[]>(`/control-rutas/${id}/fincas${query}`);
     return Array.isArray(res.data) ? res.data : [];
   },
 

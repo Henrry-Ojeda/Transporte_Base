@@ -8773,7 +8773,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
         Task<IEnumerable<ControlRutaDto>> ObtenerViajesActivosChoferAsync(int choferId, DateTime? fecha = null);
         Task<long> CrearNuevoViajeAsync(CrearViajeDto dto, int usuarioId, string rol);
         Task<long> AgregarFincaAViajeAsync(AgregarFincaViajeDto dto, int usuarioId, string rol);
-        Task<IEnumerable<RutaItemDto>> ObtenerFincasDeViajeAsync(long controlRutaId);
+        Task<IEnumerable<RutaItemDto>> ObtenerFincasDeViajeAsync(long controlRutaId, bool soloConLitros = false);
         Task<bool> EnviarAReceptoriaAsync(long controlRutaId, int usuarioId, string? observacion);
         Task<bool> RecibirEnReceptoriaAsync(long controlRutaId, RecibirEnReceptoriaDto dto, int usuarioId);
         Task<bool> EntregarDirectoCompaniaAsync(long controlRutaId, EntregarDirectoCompaniaDto dto, int usuarioId);
@@ -10022,7 +10022,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             return nuevaRutaId;
         }
 
-        public async Task<IEnumerable<RutaItemDto>> ObtenerFincasDeViajeAsync(long controlRutaId)
+        public async Task<IEnumerable<RutaItemDto>> ObtenerFincasDeViajeAsync(long controlRutaId, bool soloConLitros = false)
         {
             using var connection = new SqlConnection(_connectionString);
             await EnsureTableNotificacionesExistsAsync(connection);
@@ -10047,7 +10047,9 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             }
             catch { /* Tolerante */ }
 
-            var sql = @"
+            var filtroLitros = soloConLitros ? " AND (r.Litros > 0)" : "";
+
+            var sql = $@"
                 SELECT 
                     r.Id AS Id,
                     r.Fecha AS Fecha,
@@ -10077,10 +10079,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 LEFT JOIN TB_FINCAS f ON r.FincaId = f.Id
                 LEFT JOIN TB_USUARIOS u ON r.UsuarioId = u.Id
                 LEFT JOIN TB_COMPANIAS comp ON f.CompaniaId = comp.Id
-                WHERE r.ControlRutaId = @controlRutaId
+                WHERE (r.ControlRutaId = @controlRutaId
                    OR (r.ControlRutaId IS NULL 
                        AND r.UsuarioId = (SELECT TOP 1 UsuarioId FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId)
-                       AND CAST(r.Fecha AS DATE) = (SELECT TOP 1 CAST(Fecha AS DATE) FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId))
+                       AND CAST(r.Fecha AS DATE) = (SELECT TOP 1 CAST(Fecha AS DATE) FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId)))
+                   {filtroLitros}
                 ORDER BY COALESCE(r.ModifiedAt, r.CreatedAt, r.Fecha) ASC, r.Id ASC";
 
             return await connection.QueryAsync<RutaItemDto>(sql, new { controlRutaId });

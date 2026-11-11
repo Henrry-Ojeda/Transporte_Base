@@ -388,12 +388,15 @@ export const ReceptoriaPage: React.FC = () => {
     setModalValidarFincasTicket(true);
 
     if (viaje?.id) {
-      operacionesApi.getFincasViaje(viaje.id)
+      operacionesApi.getFincasViaje(viaje.id, true)
         .then((fincas) => {
           const list = Array.isArray(fincas) ? fincas : [];
-          setFincasViajeVerificar(list);
+          // En validación de Receptoría: Solo mostrar fincas que tienen litros recolectados (> 0)
+          // Las fincas que no tienen litros ni nada NO se visualizan en la validación
+          const fincasConLitros = list.filter((f: any) => Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0) > 0);
+          setFincasViajeVerificar(fincasConLitros);
           if (ticketsFincasValidadas.has(viaje.id)) {
-            setFincasVerificadasIds(new Set(list.map((f: any, idx: number) => Number(f.id || f.fincaId || idx))));
+            setFincasVerificadasIds(new Set(fincasConLitros.map((f: any, idx: number) => Number(f.id || f.fincaId || idx))));
           } else {
             setFincasVerificadasIds(new Set());
           }
@@ -513,11 +516,12 @@ export const ReceptoriaPage: React.FC = () => {
 
     if (viaje?.id && fincasViajeVerificar.length === 0) {
       setCargandoFincasViaje(true);
-      operacionesApi.getFincasViaje(viaje.id)
+      operacionesApi.getFincasViaje(viaje.id, true)
         .then((fincas) => {
           const list = Array.isArray(fincas) ? fincas : [];
-          setFincasViajeVerificar(list);
-          setFincasVerificadasIds(new Set(list.map((f: any, idx: number) => Number(f.id || f.fincaId || idx))));
+          const fincasConLitros = list.filter((f: any) => Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0) > 0);
+          setFincasViajeVerificar(fincasConLitros);
+          setFincasVerificadasIds(new Set(fincasConLitros.map((f: any, idx: number) => Number(f.id || f.fincaId || idx))));
         })
         .catch(() => {
           setFincasViajeVerificar([]);
@@ -3265,8 +3269,8 @@ export const ReceptoriaPage: React.FC = () => {
               {/* KPIs de Control */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Fincas en Recorrido</span>
-                  <div style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a' }}>{fincasViajeVerificar.length} <small style={{ fontSize: '11px', color: '#64748b' }}>paradas</small></div>
+                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Fincas Recolectadas</span>
+                  <div style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a' }}>{fincasViajeVerificar.length} <small style={{ fontSize: '11px', color: '#64748b' }}>con leche</small></div>
                 </div>
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px' }}>
                   <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Fincas Validadas</span>
@@ -3351,7 +3355,7 @@ export const ReceptoriaPage: React.FC = () => {
                 </div>
               ) : fincasViajeVerificar.length === 0 ? (
                 <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', background: '#ffffff', borderRadius: '10px', border: '1px dashed #cbd5e1' }}>
-                  No hay paradas de fincas registradas individualmente en este ticket.
+                  No hay paradas con leche recolectada en este ticket (las fincas sin litros se omiten de la validación).
                 </div>
               ) : (
                 <div style={{ maxHeight: '340px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff' }}>
@@ -3511,6 +3515,33 @@ export const ReceptoriaPage: React.FC = () => {
                 {fincasVerificadasIds.size} de {fincasViajeVerificar.length} fincas validadas
               </span>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalValidarFincasTicket(false);
+                    handleDevolverTicketAlChofer(Number(viajeParaRecibir.id));
+                  }}
+                  disabled={devolverAlChoferMutation.isPending}
+                  style={{
+                    height: '38px',
+                    padding: '0 14px',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    background: '#fff1f2',
+                    border: '1.5px solid #fecdd3',
+                    borderRadius: '8px',
+                    color: '#e11d48',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease',
+                  }}
+                  title="Devolver ticket al chofer para que agregue o modifique fincas"
+                >
+                  <i className="fa-solid fa-arrow-rotate-left"></i>
+                  {devolverAlChoferMutation.isPending ? 'Devolviendo...' : 'Devolver al Chofer'}
+                </button>
                 <button
                   type="button"
                   className="btn btn-secondary"

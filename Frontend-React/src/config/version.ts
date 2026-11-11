@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sistema Centralizado de Versionado Semántico
  * 
  * Reglas de Versionado del Proyecto:
@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 4,
-  tag: 'v3.18.4',
+  patch: 5,
+  tag: 'v3.18.5',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Inicio móvil unificado en "Inicio de Nuevo Turno", turnos y cargas 100% offline con sincronización automática, Service Worker y sesión resilientes sin internet v3.18.4',
+  descripcion: 'Inicio móvil unificado en "Inicio de Nuevo Turno", turnos y cargas 100% offline con sincronización automática, Service Worker y sesión resilientes sin internet v3.18.5',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;
@@ -63,3 +63,4 @@ export function calcularSiguienteVersion(versionActual: string, tipo: TipoCambio
 }
 
 export default APP_VERSION;
+

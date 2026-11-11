@@ -25,6 +25,10 @@ export interface TicketLocalPendiente {
   };
   /** Representación (ControlRutaDto) para mostrar el ticket en la app mientras no se sincroniza */
   ticket: any;
+  /** Último error al intentar subirlo (para mostrarlo al chofer) */
+  ultimoError?: string;
+  intentos?: number;
+  ultimoIntento?: string;
 }
 
 const leer = <T>(key: string, def: T): T => {
@@ -74,4 +78,14 @@ export const ticketsLocales = {
   },
 
   nuevoIdLocal: (): number => -Math.floor(Date.now() / 1000) - Math.floor(Math.random() * 1000),
+
+  /** Guarda el último motivo por el que el ticket local aún no pudo subirse a la central. */
+  registrarError: (localId: number, mensaje: string) => {
+    const lista = ticketsLocales.listarPendientes().map((t) =>
+      t.localId === localId
+        ? { ...t, ultimoError: mensaje, intentos: (t.intentos || 0) + 1, ultimoIntento: new Date().toISOString() }
+        : t
+    );
+    escribir(KEY_PENDIENTES, lista);
+  },
 };

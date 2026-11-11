@@ -4422,18 +4422,24 @@ export const AppMovilPage: React.FC = () => {
     try {
       // 1. Ejecutar sincronización a través del motor unificado (evita carreras y doble envío)
       const resSync = await syncEngine.sincronizarTodo();
-      if (resSync.totalSubidos > 0) {
+      const ticketsPendientes = ticketsLocales.listarPendientes();
+      if (ticketsPendientes.length > 0) {
+        const motivo = ticketsPendientes[0].ultimoError || 'La central no respondió';
+        toast.error(`El turno nuevo aún no se pudo enviar a la central: ${motivo}`, { duration: 8000 });
+      } else if (resSync.totalSubidos > 0) {
         toast.success(`¡Sincronización completada! ${resSync.totalSubidos} registro(s) sincronizados.`);
       } else {
         toast.info('Todas las cargas ya están sincronizadas con la central.');
       }
 
-      // 2. Marcar estado local como sincronizado
-      setCargas((prev) => {
-        const actualizadas = prev.map((c) => ({ ...c, synced: true }));
-        guardarCargasLocalSeguro(actualizadas);
-        return actualizadas;
-      });
+      // 2. Marcar estado local como sincronizado (solo si no quedan turnos locales por enviar)
+      if (ticketsPendientes.length === 0) {
+        setCargas((prev) => {
+          const actualizadas = prev.map((c) => ({ ...c, synced: true }));
+          guardarCargasLocalSeguro(actualizadas);
+          return actualizadas;
+        });
+      }
 
       // 3. Actualizar paradas consolidadas y viaje activo desde la central
       await cargarViajeActivo();
@@ -6605,7 +6611,8 @@ export const AppMovilPage: React.FC = () => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '16px', fontWeight: 900, color: '#166534' }}>
-                        <i className="fa-solid fa-ticket mr-1 text-emerald-600"></i> Ticket #{viajeActivo.codigoTicket || viajeActivo.id}
+                        <i className="fa-solid fa-ticket mr-1 text-emerald-600"></i>{' '}
+                        {viajeActivo.id < 0 ? 'Ticket nuevo (sin número aún)' : `Ticket #${viajeActivo.codigoTicket || viajeActivo.id}`}
                       </span>
                       <span
                         style={{
@@ -6648,7 +6655,56 @@ export const AppMovilPage: React.FC = () => {
                         {viajeActivo.rutaLogisticaNombre ? `Ruta: ${viajeActivo.rutaLogisticaNombre}` : 'Modo Libre (Paradas Flexibles)'}
                       </strong>
                     </div>
+                    {/* Fecha operativa y fecha/hora de creación del ticket */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                      <i className="fa-solid fa-calendar-day text-emerald-600"></i>
+                      <span>
+                        Fecha: <strong style={{ color: '#0f172a' }}>{viajeActivo.fecha ? String(viajeActivo.fecha).split('T')[0].split('-').reverse().join('/') : '—'}</strong>
+                        {(viajeActivo as any).createdAt
+                          ? ` • Creado ${new Date((viajeActivo as any).createdAt).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+                          : ''}
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Aviso de ticket creado sin conexión que aún no llega a la central */}
+                  {viajeActivo.id < 0 && (() => {
+                    const pend = ticketsLocales.listarPendientes().find((t) => t.localId === viajeActivo.id);
+                    return (
+                      <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '12px', padding: '10px 12px', marginBottom: '12px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 900, color: '#92400e' }}>
+                          ⏳ Pendiente de enviar a la central
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px', lineHeight: 1.4 }}>
+                          Este turno y sus cargas están guardados en tu teléfono. El número de ticket se asigna cuando la central lo recibe; luego aparecerá en la web.
+                        </div>
+                        {pend?.ultimoError && (
+                          <div style={{ fontSize: '11px', color: '#b91c1c', fontWeight: 700, marginTop: '4px' }}>
+                            Último intento ({pend.intentos}): {pend.ultimoError}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => sincronizarCargas()}
+                          disabled={sincronizando || !isOnline}
+                          style={{
+                            marginTop: '8px',
+                            background: isOnline ? '#d97706' : '#cbd5e1',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '6px 12px',
+                            fontSize: '11.5px',
+                            fontWeight: 800,
+                            cursor: isOnline ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          <i className={`fa-solid fa-cloud-arrow-up ${sincronizando ? 'fa-beat' : ''}`}></i>{' '}
+                          {isOnline ? 'Sincronizar ahora' : 'Sin conexión: se enviará solo'}
+                        </button>
+                      </div>
+                    );
+                  })()}
 
                   {/* Estadísticas del Viaje Activo */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '14px' }}>

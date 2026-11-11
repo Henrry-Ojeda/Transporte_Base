@@ -189,6 +189,10 @@ class SyncEngine {
         // Sin red / servidor caído: reintentar luego. Cualquier otro error se deja pendiente también
         // (no se descarta información del chofer).
         console.warn(`[SyncEngine] No se pudo crear el ticket local ${t.localId} (status ${status ?? 'sin respuesta'}):`, err?.message);
+        ticketsLocales.registrarError(
+          t.localId,
+          err?.response?.data?.message || (status ? `Error ${status} de la central` : 'Sin conexión con la central')
+        );
         break; // respetar el orden de creación
       }
     }

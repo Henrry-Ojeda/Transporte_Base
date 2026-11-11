@@ -232,12 +232,13 @@ class LocalDatabase {
     return new Promise((resolve, reject) => {
       const tx = db.transaction('recolecciones', 'readonly');
       const store = tx.objectStore('recolecciones');
-      const index = store.index('estadoSync');
-      const req = index.getAll(IDBKeyRange.only('PENDIENTE'));
+      const req = store.getAll();
       req.onsuccess = () => {
-        let results = (req.result || []) as RecoleccionLocal[];
+        let results = ((req.result || []) as RecoleccionLocal[]).filter(
+          (r) => r.estadoSync !== 'SINCRONIZADO' && Number(r.litros) > 0
+        );
         if (empresaCodigo) {
-          results = results.filter((r) => r.empresaCodigo === empresaCodigo);
+          results = results.filter((r) => !r.empresaCodigo || r.empresaCodigo === empresaCodigo);
         }
         resolve(results);
       };
@@ -274,7 +275,8 @@ class LocalDatabase {
       getReq.onsuccess = () => {
         const item: RecoleccionLocal = getReq.result;
         if (item) {
-          item.estadoSync = 'ERROR';
+          // Mantener PENDIENTE para que se reintente automáticamente cuando estabilice el WiFi
+          item.estadoSync = 'PENDIENTE';
           item.errorSync = errorMsg;
           store.put(item);
         }

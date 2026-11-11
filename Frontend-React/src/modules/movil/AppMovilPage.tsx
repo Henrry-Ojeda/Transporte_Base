@@ -103,16 +103,102 @@ export { APP_VERSION };
 
 // ---------------------------------------------------------------------------
 // Caché offline por ticket: cada ticket guarda SUS paradas en el teléfono, para poder abrir
-// cualquiera de los tickets del chofer sin internet (no solo el último que se vio).
+// cualquiera de los tickets del chofer sin internet y NUNCA perder cargas hechas sin WiFi.
 // ---------------------------------------------------------------------------
-const guardarParadasTicketLocal = (ticketId: number, paradas: any[]) => {
-  if (!ticketId || !Array.isArray(paradas)) return;
+const leerCargasLocalRaw = (): any[] => {
   try {
-    localStorage.setItem(`movil_paradas_ticket_${ticketId}`, JSON.stringify(paradas));
+    const raw = localStorage.getItem('movil_cargas_local');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const unificarParadasConCargasLocales = (ticketId: number, paradasBase: any[] | null, cargasMemoria?: any[]): any[] => {
+  const tReal = ticketsLocales.resolverId(Number(ticketId || 0)) || Number(ticketId || 0);
+  const lista = Array.isArray(paradasBase) ? paradasBase.map((p) => ({ ...p })) : [];
+
+  // También rescatar cualquier parada con litros > 0 que ya estuviera guardada localmente en este ticket
+  // y que aún tenga respaldo en cargas locales o haya sido agregada como parada extra en el teléfono
+  try {
+    const rawPrev = localStorage.getItem(`movil_paradas_ticket_${ticketId}`) || localStorage.getItem(`movil_paradas_ticket_${tReal}`);
+    if (rawPrev) {
+      const prevParadas = JSON.parse(rawPrev);
+      if (Array.isArray(prevParadas)) {
+        for (const pPrev of prevParadas) {
+          const fIdPrev = Number(pPrev.fincaId || pPrev.FincaId || 0);
+          const ltsPrev = Number(pPrev.litros ?? pPrev.Litros ?? 0);
+          if (fIdPrev > 0 && ltsPrev > 0 && pPrev.origen === 'Teléfono') {
+            const idx = lista.findIndex((p) => Number(p.fincaId || p.FincaId || 0) === fIdPrev);
+            if (idx >= 0 && Number(lista[idx].litros ?? lista[idx].Litros ?? 0) === 0) {
+              lista[idx] = { ...lista[idx], ...pPrev, litros: ltsPrev, Litros: ltsPrev };
+            } else if (idx < 0) {
+              lista.push({ ...pPrev });
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+
+  const todasCargas = Array.isArray(cargasMemoria) && cargasMemoria.length > 0 ? cargasMemoria : leerCargasLocalRaw();
+  const cargasTicket = todasCargas.filter((c) => {
+    if (!c || Number(c.litros) <= 0) return false;
+    const cTicket = Number(c.serverTicketId || 0);
+    const cTicketReal = cTicket < 0 ? ticketsLocales.resolverId(cTicket) : cTicket;
+    return cTicket === Number(ticketId) || cTicketReal === tReal;
+  });
+
+  for (const c of cargasTicket) {
+    const fId = Number(c.fincaId || 0);
+    if (fId <= 0) continue;
+    const idx = lista.findIndex((p) => Number(p.fincaId || p.FincaId || 0) === fId);
+    if (idx >= 0) {
+      const ltsActual = Number(lista[idx].litros ?? lista[idx].Litros ?? 0);
+      if (!c.synced || ltsActual === 0) {
+        lista[idx] = {
+          ...lista[idx],
+          litros: Number(c.litros),
+          Litros: Number(c.litros),
+          tipoLeche: c.tipoLeche || lista[idx].tipoLeche || 'VACA',
+          esAcida: typeof c.esAcida === 'boolean' ? c.esAcida : lista[idx].esAcida,
+          esDiferido: typeof c.esDiferido === 'boolean' ? c.esDiferido : lista[idx].esDiferido,
+          litrosDiferir: c.litrosDiferir ?? lista[idx].litrosDiferir,
+        };
+      }
+    } else {
+      lista.push({
+        id: c.dbLocalId || Date.now() + fId,
+        fincaId: fId,
+        fincaNombre: c.fincaNombre || `Finca #${fId}`,
+        litros: Number(c.litros),
+        Litros: Number(c.litros),
+        tipoLeche: c.tipoLeche || 'VACA',
+        esAcida: Boolean(c.esAcida),
+        esDiferido: Boolean(c.esDiferido),
+        litrosDiferir: c.litrosDiferir,
+        hora: c.hora,
+        createdAt: c.fecha || new Date().toISOString(),
+        origen: 'Teléfono',
+      });
+    }
+  }
+
+  return lista;
+};
+
+const guardarParadasTicketLocal = (ticketId: number, paradas: any[], cargasMemoria?: any[]): any[] => {
+  if (!ticketId || !Array.isArray(paradas)) return Array.isArray(paradas) ? paradas : [];
+  const unificadas = unificarParadasConCargasLocales(ticketId, paradas, cargasMemoria);
+  try {
+    localStorage.setItem(`movil_paradas_ticket_${ticketId}`, JSON.stringify(unificadas));
     localStorage.setItem(`movil_paradas_ticket_ts_${ticketId}`, String(Date.now()));
   } catch {
     /* cuota llena: tolerante */
   }
+  return unificadas;
 };
 
 const paradasTicketFrescas = (ticketId: number, maxMs = 60000): boolean => {
@@ -124,13 +210,13 @@ const paradasTicketFrescas = (ticketId: number, maxMs = 60000): boolean => {
   }
 };
 
-const leerParadasTicketLocal = (ticketId: number): any[] | null => {
+const leerParadasTicketLocal = (ticketId: number, cargasMemoria?: any[]): any[] | null => {
   if (!ticketId) return null;
   try {
     const raw = localStorage.getItem(`movil_paradas_ticket_${ticketId}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : null;
+    const base = raw ? JSON.parse(raw) : [];
+    const unificadas = unificarParadasConCargasLocales(ticketId, Array.isArray(base) ? base : [], cargasMemoria);
+    return unificadas.length > 0 || raw ? unificadas : null;
   } catch {
     return null;
   }
@@ -1993,14 +2079,19 @@ export const AppMovilPage: React.FC = () => {
     guardarCargasLocalSeguro(cargas);
   }, [cargas]);
 
-  // Auto-sincronización automática cuando se recupera o detecta conexión a internet
+  // Auto-sincronización automática cuando se recupera o detecta conexión a internet (espera 1s a que estabilice WiFi)
   useEffect(() => {
     if (isOnline && dispositivo) {
-      sincronizarCargas();
+      const t = setTimeout(() => {
+        if (navigator.onLine) {
+          sincronizarCargas();
+        }
+      }, 1000);
+      return () => clearTimeout(t);
     }
   }, [isOnline]);
 
-  // Listener de eventos del SyncEngine (IndexedDB)
+  // Listener de eventos del SyncEngine (IndexedDB + movil_cargas_local)
   useEffect(() => {
     const handleSyncComplete = (e: any) => {
       const detail = e.detail;
@@ -2018,6 +2109,12 @@ export const AppMovilPage: React.FC = () => {
       }
     };
 
+    const handleCargasActualizadas = (e: any) => {
+      if (Array.isArray(e?.detail)) {
+        setCargas(e.detail);
+      }
+    };
+
     const handleNotifAlerta = (e: any) => {
       const d = e.detail;
       if (d) {
@@ -2026,9 +2123,11 @@ export const AppMovilPage: React.FC = () => {
     };
 
     window.addEventListener('transporte_sync_completada', handleSyncComplete);
+    window.addEventListener('transporte_cargas_actualizadas', handleCargasActualizadas);
     window.addEventListener('transporte_notificacion_alerta', handleNotifAlerta);
     return () => {
       window.removeEventListener('transporte_sync_completada', handleSyncComplete);
+      window.removeEventListener('transporte_cargas_actualizadas', handleCargasActualizadas);
       window.removeEventListener('transporte_notificacion_alerta', handleNotifAlerta);
     };
   }, [dispositivo]);
@@ -2108,15 +2207,16 @@ export const AppMovilPage: React.FC = () => {
     try {
       if (v.id < 0) {
         // Ticket iniciado sin conexión: aún no existe en la central, no hay nada que consultar
-        setParadasViajeActivo(leerParadasTicketLocal(v.id) || []);
+        const guardadas = leerParadasTicketLocal(v.id) || [];
+        setParadasViajeActivo(guardadas);
         return;
       }
 
-      // Sin conexión: abrir el ticket con lo que quedó guardado en el teléfono
+      // Sin conexión: abrir el ticket con lo que quedó guardado en el teléfono + cargas locales de este ticket
       if (!navigator.onLine || !isOnline) {
-        const guardadas = leerParadasTicketLocal(v.id);
-        setParadasViajeActivo(guardadas || []);
-        try { localStorage.setItem('movil_paradas_activo', JSON.stringify(guardadas || [])); } catch {}
+        const guardadas = leerParadasTicketLocal(v.id) || [];
+        setParadasViajeActivo(guardadas);
+        try { localStorage.setItem('movil_paradas_activo', JSON.stringify(guardadas)); } catch {}
         return;
       }
 
@@ -2128,9 +2228,9 @@ export const AppMovilPage: React.FC = () => {
         paradas = leerParadasTicketLocal(v.id);
       }
       if (Array.isArray(paradas)) {
-        setParadasViajeActivo(paradas);
-        guardarParadasTicketLocal(v.id, paradas);
-        try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradas)); } catch {}
+        const unificadas = guardarParadasTicketLocal(v.id, paradas);
+        setParadasViajeActivo(unificadas);
+        try { localStorage.setItem('movil_paradas_activo', JSON.stringify(unificadas)); } catch {}
       }
       await cargarDespachoActivo(choferEfectivoId, v.id);
     } catch (err) {
@@ -2354,8 +2454,9 @@ export const AppMovilPage: React.FC = () => {
 
     // Con conexión: primero enviar a la central lo que quedó pendiente (turnos y cargas hechas sin internet)
     try {
-      const conteoPend = await dbLocal.getConteoTotalPendientes();
-      if (conteoPend.total > 0 || ticketsLocales.listarPendientes().length > 0) {
+      const conteoPend = await dbLocal.getConteoTotalPendientes().catch(() => ({ total: 0 }));
+      const hayCargasLocalPend = leerCargasLocalRaw().some((c) => !c.synced);
+      if (conteoPend.total > 0 || ticketsLocales.listarPendientes().length > 0 || hayCargasLocalPend) {
         await syncEngine.sincronizarTodo(undefined, true);
       }
     } catch {
@@ -2459,46 +2560,77 @@ export const AppMovilPage: React.FC = () => {
         // Cargar paradas del viaje seleccionado (un ticket local aún no existe en la central)
         const paradas = targetV.id < 0 ? null : await operacionesApi.getFincasViaje(targetV.id);
         if (Array.isArray(paradas)) {
-          // Unificación Defensiva: No permitir que paradas del servidor con 0 litros sobrescriban
-          // recolecciones locales pendientes o confirmadas recientemente en memoria
-          const paradasUnificadas = paradas.map((p: any) => {
-            const fId = Number(p.fincaId || p.FincaId);
-            const cargaLocal = cargas.find(
-              (c) =>
-                Number(c.fincaId) === fId &&
-                (!c.serverTicketId || ticketsLocales.resolverId(c.serverTicketId) === targetV!.id)
-            );
-            if (cargaLocal && (!p.litros || p.litros === 0)) {
-              return {
-                ...p,
-                litros: cargaLocal.litros,
-                Litros: cargaLocal.litros,
-                tipoLeche: cargaLocal.tipoLeche || p.tipoLeche,
-                esAcida: typeof cargaLocal.esAcida === 'boolean' ? cargaLocal.esAcida : p.esAcida,
-                esDiferido: typeof cargaLocal.esDiferido === 'boolean' ? cargaLocal.esDiferido : p.esDiferido,
-                litrosDiferir: cargaLocal.litrosDiferir,
-              };
-            }
-            return p;
-          });
-
+          // Unificar con cargas locales de este ticket (incluyendo paradas extras o en modo libre)
+          const paradasUnificadas = guardarParadasTicketLocal(targetV.id, paradas);
           setParadasViajeActivo(paradasUnificadas);
-          guardarParadasTicketLocal(targetV.id, paradasUnificadas);
           try { localStorage.setItem('movil_paradas_activo', JSON.stringify(paradasUnificadas)); } catch {}
+
+          // Solo depurar de cargas locales aquellas que YA están confirmadas con litros > 0 en el servidor para este ticket.
+          // Si el servidor aún tiene 0 L para una finca cargada en el móvil, se conserva como pendiente (synced: false) para no perderla jamás.
+          const fIdsConfirmadosServidor = new Set(
+            paradas
+              .filter((p: any) => Number(p.litros ?? p.Litros ?? 0) > 0)
+              .map((p: any) => Number(p.fincaId || p.FincaId || 0))
+          );
+
           setCargas((prev) => {
-            const soloPendientes = prev.filter((c) => !c.synced);
-            guardarCargasLocalSeguro(soloPendientes);
-            return soloPendientes;
+            const actualizadas = prev
+              .map((c) => {
+                const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+                if (cTicket === targetV!.id && !fIdsConfirmadosServidor.has(Number(c.fincaId))) {
+                  // El servidor aún no tiene esta carga: mantenerla pendiente para subirla
+                  return { ...c, synced: false };
+                }
+                return c;
+              })
+              .filter((c) => {
+                const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+                if (cTicket === targetV!.id) {
+                  return !(c.synced && fIdsConfirmadosServidor.has(Number(c.fincaId)));
+                }
+                // Conservar intactas las cargas de los demás tickets del chofer
+                return true;
+              });
+            guardarCargasLocalSeguro(actualizadas);
+            return actualizadas;
           });
+        } else if (targetV.id < 0) {
+          setParadasViajeActivo(leerParadasTicketLocal(targetV.id) || []);
         }
 
-        // Guardar en el teléfono las paradas de TODOS los demás tickets del chofer (para verlos sin internet)
-        const otrosTickets = lista.filter((x) => x.id > 0 && x.id !== targetV!.id && !paradasTicketFrescas(x.id));
+        // Guardar en el teléfono las paradas de TODOS los demás tickets del chofer (unificando siempre con sus cargas locales)
+        const otrosTickets = lista.filter((x) => x.id > 0 && x.id !== targetV!.id);
         if (otrosTickets.length > 0) {
           Promise.allSettled(
             otrosTickets.map(async (t) => {
               const ps = await operacionesApi.getFincasViaje(t.id);
-              if (Array.isArray(ps)) guardarParadasTicketLocal(t.id, ps);
+              if (Array.isArray(ps)) {
+                guardarParadasTicketLocal(t.id, ps);
+                const confirmadosOtro = new Set(
+                  ps
+                    .filter((p: any) => Number(p.litros ?? p.Litros ?? 0) > 0)
+                    .map((p: any) => Number(p.fincaId || p.FincaId || 0))
+                );
+                setCargas((prev) => {
+                  const depuradas = prev
+                    .map((c) => {
+                      const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+                      if (cTicket === t.id && !confirmadosOtro.has(Number(c.fincaId))) {
+                        return { ...c, synced: false };
+                      }
+                      return c;
+                    })
+                    .filter((c) => {
+                      const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+                      if (cTicket === t.id) {
+                        return !(c.synced && confirmadosOtro.has(Number(c.fincaId)));
+                      }
+                      return true;
+                    });
+                  guardarCargasLocalSeguro(depuradas);
+                  return depuradas;
+                });
+              }
             })
           ).catch(() => {});
         }
@@ -2535,19 +2667,30 @@ export const AppMovilPage: React.FC = () => {
       console.warn('No se pudo sincronizar viajes activos con el servidor (recuperando de caché local):', err);
       try {
         const savedList = localStorage.getItem(`movil_viajes_chofer_${idBusqueda}`) || localStorage.getItem('movil_viajes_chofer');
+        let listaOffline: ControlRutaDto[] = [];
         if (savedList) {
           const listParsed = JSON.parse(savedList);
-          if (Array.isArray(listParsed) && listParsed.length > 0) setViajesChofer(listParsed);
+          if (Array.isArray(listParsed) && listParsed.length > 0) {
+            listaOffline = listParsed;
+            setViajesChofer(listParsed);
+          }
         }
-        const savedV = localStorage.getItem(`movil_viaje_activo_${idBusqueda}`) || localStorage.getItem('movil_viaje_activo');
-        if (savedV) {
-          const vParsed = JSON.parse(savedV);
-          if (vParsed && vParsed.id) setViajeActivo(vParsed);
+        const selGuardado = Number(localStorage.getItem('movil_viaje_seleccionado_id') || 0) || viajeSeleccionadoId || 0;
+        let vOffline = listaOffline.find((x) => x.id === (forzarId || selGuardado)) || null;
+        if (!vOffline) {
+          const savedV = localStorage.getItem(`movil_viaje_activo_${idBusqueda}`) || localStorage.getItem('movil_viaje_activo');
+          if (savedV) {
+            const vParsed = JSON.parse(savedV);
+            if (vParsed && vParsed.id) vOffline = vParsed;
+          }
         }
-        const savedP = localStorage.getItem('movil_paradas_activo');
-        if (savedP) {
-          const pParsed = JSON.parse(savedP);
-          if (Array.isArray(pParsed) && pParsed.length > 0) setParadasViajeActivo(pParsed);
+        if (vOffline && vOffline.id) {
+          setViajeSeleccionadoId(vOffline.id);
+          setViajeActivo(vOffline);
+          const paradasTicket = leerParadasTicketLocal(vOffline.id);
+          if (paradasTicket) {
+            setParadasViajeActivo(paradasTicket);
+          }
         }
       } catch {}
     } finally {
@@ -3888,8 +4031,9 @@ export const AppMovilPage: React.FC = () => {
   // Cálculos de Cargas y Paradas del Viaje Activo
   const todasLasParadas = useMemo(() => {
     const lista: any[] = [];
+    const idTicketActual = ticketsLocales.resolverId(Number(viajeActivo?.id || 0)) || Number(viajeActivo?.id || 0);
 
-    // 1. Paradas confirmadas en el servidor para el viaje activo
+    // 1. Paradas confirmadas o en caché local para el viaje activo
     (paradasViajeActivo || []).forEach((p, idx) => {
       lista.push({
         localId: `server_${p.id || idx}`,
@@ -3901,31 +4045,50 @@ export const AppMovilPage: React.FC = () => {
         esAcida: Boolean(p.esAcida || p.EsAcida),
         esDiferido: Boolean(p.esDiferido || p.EsDiferido),
         hora: p.horaRecoleccion || p.hora || (p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Confirmada'),
-        synced: true,
-        origen: 'Servidor',
+        synced: p.origen !== 'Teléfono',
+        origen: p.origen || 'Servidor',
         createdAt: p.createdAt || p.CreatedAt || p.fecha,
         modifiedAt: p.modifiedAt || p.ModifiedAt,
       });
     });
 
-    // 2. Cargas locales en el teléfono aún pendientes de sincronizar (del viaje actual)
+    // 2. Cargas locales en el teléfono del viaje actual (evitando duplicar si ya están en paradasViajeActivo)
     cargas
-      .filter((c) => !c.synced && (!c.serverTicketId || Number(c.serverTicketId) === Number(viajeActivo?.id)))
+      .filter((c) => {
+        const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+        return !c.serverTicketId || cTicket === idTicketActual || Number(c.serverTicketId) === Number(viajeActivo?.id);
+      })
       .forEach((c) => {
-        lista.push({
-          localId: c.localId,
-          fincaId: Number(c.fincaId || 0),
-          fincaNombre: c.fincaNombre,
-          litros: Number(c.litros) || 0,
-          tipoLeche: c.tipoLeche,
-          esAcida: c.esAcida,
-          esDiferido: c.esDiferido,
-          temperatura: c.temperatura,
-          hora: c.hora,
-          synced: false,
-          origen: 'Teléfono',
-          createdAt: c.fecha || new Date().toISOString(),
-        });
+        const fId = Number(c.fincaId || 0);
+        const idxExist = lista.findIndex((p) => Number(p.fincaId) === fId);
+        if (idxExist >= 0) {
+          if (!c.synced || Number(lista[idxExist].litros) === 0) {
+            lista[idxExist] = {
+              ...lista[idxExist],
+              litros: Number(c.litros) || lista[idxExist].litros,
+              tipoLeche: (c.tipoLeche || lista[idxExist].tipoLeche || 'VACA').toUpperCase(),
+              esAcida: typeof c.esAcida === 'boolean' ? c.esAcida : lista[idxExist].esAcida,
+              esDiferido: typeof c.esDiferido === 'boolean' ? c.esDiferido : lista[idxExist].esDiferido,
+              hora: c.hora || lista[idxExist].hora,
+              synced: Boolean(c.synced),
+            };
+          }
+        } else {
+          lista.push({
+            localId: c.localId,
+            fincaId: fId,
+            fincaNombre: c.fincaNombre,
+            litros: Number(c.litros) || 0,
+            tipoLeche: c.tipoLeche,
+            esAcida: c.esAcida,
+            esDiferido: c.esDiferido,
+            temperatura: c.temperatura,
+            hora: c.hora,
+            synced: Boolean(c.synced),
+            origen: 'Teléfono',
+            createdAt: c.fecha || new Date().toISOString(),
+          });
+        }
       });
 
     return lista;
@@ -3954,6 +4117,7 @@ export const AppMovilPage: React.FC = () => {
   // Fincas de la Ruta Asignada al Viaje Activo (con estado: recolectada / pendiente)
   const fincasDeMiRuta = useMemo(() => {
     if (!viajeActivo) return [];
+    const idTicketActual = ticketsLocales.resolverId(Number(viajeActivo.id || 0)) || Number(viajeActivo.id || 0);
 
     let fincasRuta: FincaDto[] = [];
     const planificadas = (viajeActivo as any).fincasPlanificadasIds || (viajeActivo as any).listaFincasIds;
@@ -3990,25 +4154,30 @@ export const AppMovilPage: React.FC = () => {
       }
     });
 
-    // Incorporar también cargas locales offline que pertenezcan a este viaje
-    cargas.forEach((c) => {
-      const cFincaId = Number(c.fincaId);
-      if (cFincaId > 0 && !fincasRuta.some((f) => f.id === cFincaId)) {
-        const fMatch = fincas.find((f) => f.id === cFincaId);
-        if (fMatch) {
-          fincasRuta.push(fMatch);
-        } else {
-          fincasRuta.push({
-            id: cFincaId,
-            nombre: c.fincaNombre || `Finca #${cFincaId}`,
-            propietario: '',
-            propietarioNombre: '',
-            codigo: '',
-            tipoLeche: c.tipoLeche || 'VACA',
-          } as any);
+    // Incorporar también cargas locales offline que pertenezcan EXCLUSIVAMENTE a este viaje
+    cargas
+      .filter((c) => {
+        const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+        return !c.serverTicketId || cTicket === idTicketActual || Number(c.serverTicketId) === Number(viajeActivo.id);
+      })
+      .forEach((c) => {
+        const cFincaId = Number(c.fincaId);
+        if (cFincaId > 0 && !fincasRuta.some((f) => f.id === cFincaId)) {
+          const fMatch = fincas.find((f) => f.id === cFincaId);
+          if (fMatch) {
+            fincasRuta.push(fMatch);
+          } else {
+            fincasRuta.push({
+              id: cFincaId,
+              nombre: c.fincaNombre || `Finca #${cFincaId}`,
+              propietario: '',
+              propietarioNombre: '',
+              codigo: '',
+              tipoLeche: c.tipoLeche || 'VACA',
+            } as any);
+          }
         }
-      }
-    });
+      });
 
     if (fincasRuta.length === 0) {
       const idsParadas = todasLasParadas.map((p) => Number(p.fincaId || p.FincaId || 0)).filter((id) => id > 0);
@@ -4040,18 +4209,21 @@ export const AppMovilPage: React.FC = () => {
           (Number(p.fincaId) > 0 && Number(p.fincaId) === f.id) ||
           (p.fincaNombre && f.nombre && p.fincaNombre.trim().toLowerCase() === f.nombre.trim().toLowerCase())
         );
-        // Solo cargas locales pendientes de sincronizar que pertenezcan a este viaje
-        const cargaLocal = cargas.find((c) =>
-          Number(c.fincaId) === f.id &&
-          !c.synced &&
-          (!c.serverTicketId || Number(c.serverTicketId) === Number(viajeActivo.id))
-        );
+        // Cargas locales que pertenezcan a este viaje (se usan siempre que estén pendientes o si la parada aún tiene 0 L)
+        const cargaLocal = cargas.find((c) => {
+          const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+          return (
+            Number(c.fincaId) === f.id &&
+            (!c.serverTicketId || cTicket === idTicketActual || Number(c.serverTicketId) === Number(viajeActivo.id))
+          );
+        });
 
+        const ltsParadas = paradasDeFinca.reduce((acc, p) => Math.max(acc, Number(p.litros) || 0), 0);
         let lts = 0;
-        if (cargaLocal && Number(cargaLocal.litros) > 0) {
+        if (cargaLocal && (!cargaLocal.synced || ltsParadas === 0) && Number(cargaLocal.litros) > 0) {
           lts = Number(cargaLocal.litros);
-        } else if (paradasDeFinca.length > 0) {
-          lts = paradasDeFinca.reduce((acc, p) => acc + (Number(p.litros) || 0), 0);
+        } else if (ltsParadas > 0) {
+          lts = ltsParadas;
         }
 
         // Revisar recolecciones de hoy por OTRO camión o ticket
@@ -4165,7 +4337,14 @@ export const AppMovilPage: React.FC = () => {
       return fincasDeMiRuta.reduce((acc, f) => acc + (Number(f.litrosRecolectados) || 0), 0);
     }
     const sumParadasServer = (paradasViajeActivo || []).reduce((acc, p) => acc + Number(p.litros ?? p.Litros ?? 0), 0);
-    const sumPendientes = cargas.filter((c) => !c.synced).reduce((acc, c) => acc + (Number(c.litros) || 0), 0);
+    const idTicketActual = ticketsLocales.resolverId(Number(viajeActivo?.id || 0)) || Number(viajeActivo?.id || 0);
+    const sumPendientes = cargas
+      .filter((c) => {
+        if (c.synced) return false;
+        const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+        return (!c.serverTicketId || cTicket === idTicketActual) && !(paradasViajeActivo || []).some((p) => Number(p.fincaId || p.FincaId) === Number(c.fincaId) && Number(p.litros ?? p.Litros ?? 0) > 0);
+      })
+      .reduce((acc, c) => acc + (Number(c.litros) || 0), 0);
     if (!viajeActivo) return sumPendientes;
     const serverTotal = (viajeActivo?.totalLitrosFinca && viajeActivo.totalLitrosFinca > sumParadasServer && (paradasViajeActivo || []).length > 0) 
       ? viajeActivo.totalLitrosFinca 
@@ -4311,13 +4490,20 @@ export const AppMovilPage: React.FC = () => {
     });
   };
 
-  // Abrir modal de carga preseleccionando una finca específica (fija y cargando litros previos)
+  // Abrir modal de carga preseleccionando una finca específica (fija y cargando litros previos del ticket actual)
   const abrirCargaParaFinca = (fincaItem: any) => {
     setFincaFijadaParaModal(fincaItem);
     const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
+    const idTicketActual = ticketsLocales.resolverId(Number(viajeActivo?.id || 0)) || Number(viajeActivo?.id || 0);
 
-    // 7.- Cargar los litros que ya se habían colocado (offline o servidor)
-    const cargaLocal = cargas.find((c) => Number(c.fincaId) === Number(fincaItem.id));
+    // 7.- Cargar los litros que ya se habían colocado en ESTE ticket (offline o servidor)
+    const cargaLocal = cargas.find((c) => {
+      const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+      return (
+        Number(c.fincaId) === Number(fincaItem.id) &&
+        (!c.serverTicketId || cTicket === idTicketActual || Number(c.serverTicketId) === Number(viajeActivo?.id))
+      );
+    });
     const paradaServidor = (paradasViajeActivo || []).find((p) => Number(p.fincaId || p.FincaId) === Number(fincaItem.id));
     let ltsPrevios = '';
     if (cargaLocal && Number(cargaLocal.litros) > 0) {
@@ -4348,7 +4534,7 @@ export const AppMovilPage: React.FC = () => {
     setModalRegistro(true);
   };
 
-  // Guardar nueva carga en local
+  // Guardar nueva carga en local y sincronizar con el ticket seleccionado
   const handleGuardarCarga = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formCarga.fincaId) {
@@ -4368,13 +4554,12 @@ export const AppMovilPage: React.FC = () => {
 
     const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : (formCarga.fecha || hoyStr);
     const litrosDiferirNum = formCarga.esDiferido ? Number(formCarga.litrosDiferir || formCarga.litros) : undefined;
-    const ticketIdEfectivo = ticketsLocales.resolverId(
-      viajeActivo?.id || viajeSeleccionadoId || (viajesChofer.length > 0 ? viajesChofer[0].id : 0)
-    );
+    const rawTicketId = viajeActivo?.id || viajeSeleccionadoId || (viajesChofer.length > 0 ? viajesChofer[0].id : 0);
+    const ticketIdEfectivo = ticketsLocales.resolverId(rawTicketId) || rawTicketId;
 
-    // Intento de guardado directo y síncrono si el dispositivo está online
+    // Intento de guardado directo y síncrono si el dispositivo está online y el ticket ya existe en servidor
     let sincronizadoOnline = false;
-    if (isOnline && ticketIdEfectivo > 0) {
+    if (isOnline && navigator.onLine && ticketIdEfectivo > 0) {
       try {
         const obsConOrigen = `${formCarga.observacion ? formCarga.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim();
         await operacionesApi.agregarFincaViaje(ticketIdEfectivo, {
@@ -4414,13 +4599,17 @@ export const AppMovilPage: React.FC = () => {
       synced: sincronizadoOnline,
     };
 
-    // 7.- Si ya existe una carga local para esta finca, actualizarla en vez de duplicarla
-    const idxExistente = cargas.findIndex((c) => Number(c.fincaId) === Number(formCarga.fincaId));
+    // 7.- Si ya existe una carga local para ESTA finca en ESTE MISMO ticket, actualizarla sin tocar los demás tickets
+    const idxExistente = cargas.findIndex((c) => {
+      const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+      return Number(c.fincaId) === Number(formCarga.fincaId) && cTicket === Number(ticketIdEfectivo);
+    });
     let nuevasCargas: CargaOffline[];
     if (idxExistente >= 0) {
       nuevasCargas = [...cargas];
       nuevasCargas[idxExistente] = {
         ...nuevasCargas[idxExistente],
+        serverTicketId: ticketIdEfectivo || nuevasCargas[idxExistente].serverTicketId,
         litros: litrosNum,
         tipoLeche: formCarga.tipoLeche,
         esAcida: formCarga.esAcida,
@@ -4437,9 +4626,10 @@ export const AppMovilPage: React.FC = () => {
     setCargas(nuevasCargas);
     guardarCargasLocalSeguro(nuevasCargas);
 
-    // Persistencia Robusta en IndexedDB Local (sin límite de tamaño por fotos)
+    // Persistencia Robusta en IndexedDB Local (por ticket + finca)
     const codEmpresa = dispositivo?.empresaCodigo || 'EMPRESA';
     const idLocalPrevio = idxExistente >= 0 ? cargas[idxExistente]?.dbLocalId : undefined;
+    const localIdRef = idxExistente >= 0 ? nuevasCargas[idxExistente].localId : nuevaCarga.localId;
     dbLocal.guardarRecoleccion({
       idLocal: idLocalPrevio,
       empresaCodigo: codEmpresa,
@@ -4459,18 +4649,14 @@ export const AppMovilPage: React.FC = () => {
     }).then((nuevoIdLocal) => {
       if (nuevoIdLocal) {
         setCargas((prev) => {
-          const upd = prev.map((c) =>
-            c.localId === nuevaCarga.localId || Number(c.fincaId) === Number(formCarga.fincaId)
-              ? { ...c, dbLocalId: nuevoIdLocal }
-              : c
-          );
+          const upd = prev.map((c) => (c.localId === localIdRef ? { ...c, dbLocalId: nuevoIdLocal } : c));
           guardarCargasLocalSeguro(upd);
           return upd;
         });
       }
     }).catch((err) => console.warn('Error guardando en IndexedDB (tolerante):', err));
 
-    // 6.- Actualizar inmediatamente las paradas locales para que el móvil las visualice sin wifi
+    // 6.- Actualizar inmediatamente las paradas locales de ESTE ticket y el resumen en viajesChofer
     setParadasViajeActivo((prev) => {
       const list = Array.isArray(prev) ? [...prev] : [];
       const idxP = list.findIndex((p) => Number(p.fincaId || p.FincaId) === Number(formCarga.fincaId));
@@ -4483,6 +4669,7 @@ export const AppMovilPage: React.FC = () => {
           esAcida: formCarga.esAcida,
           esDiferido: formCarga.esDiferido,
           litrosDiferir: litrosDiferirNum,
+          origen: sincronizadoOnline ? 'Servidor' : 'Teléfono',
         };
       } else {
         list.push({
@@ -4496,12 +4683,34 @@ export const AppMovilPage: React.FC = () => {
           esDiferido: formCarga.esDiferido,
           litrosDiferir: litrosDiferirNum,
           createdAt: new Date().toISOString(),
-          origen: 'Teléfono',
+          origen: sincronizadoOnline ? 'Servidor' : 'Teléfono',
         });
       }
-      try { localStorage.setItem('movil_paradas_activo', JSON.stringify(list)); } catch {}
-      guardarParadasTicketLocal(viajeActivo?.id || ticketIdEfectivo, list);
-      return list;
+      const unificadas = guardarParadasTicketLocal(rawTicketId || ticketIdEfectivo, list, nuevasCargas);
+      if (ticketIdEfectivo && ticketIdEfectivo !== rawTicketId) {
+        guardarParadasTicketLocal(ticketIdEfectivo, list, nuevasCargas);
+      }
+      try { localStorage.setItem('movil_paradas_activo', JSON.stringify(unificadas)); } catch {}
+
+      // Actualizar litros y paradas en la tarjeta del ticket en viajesChofer (para ver ambos tickets actualizados al cambiar entre ellos)
+      const nuevoTotalLitrosTicket = unificadas.reduce((acc, p) => acc + Number(p.litros ?? p.Litros ?? 0), 0);
+      const nuevoTotalFincasTicket = unificadas.filter((p) => Number(p.litros ?? p.Litros ?? 0) > 0).length || unificadas.length;
+      setViajesChofer((prevViajes) => {
+        const nuevaLista = prevViajes.map((v) =>
+          v.id === rawTicketId || v.id === ticketIdEfectivo
+            ? { ...v, totalLitrosFinca: nuevoTotalLitrosTicket, totalFincas: nuevoTotalFincasTicket }
+            : v
+        );
+        try {
+          localStorage.setItem('movil_viajes_chofer', JSON.stringify(nuevaLista));
+          if (choferEfectivoId) {
+            localStorage.setItem(`movil_viajes_chofer_${choferEfectivoId}`, JSON.stringify(nuevaLista));
+          }
+        } catch {}
+        return nuevaLista;
+      });
+
+      return unificadas;
     });
 
     setModalRegistro(false);
@@ -4525,8 +4734,8 @@ export const AppMovilPage: React.FC = () => {
       toast.success(`¡Carga de ${litrosNum.toLocaleString()} L guardada y sincronizada con el servidor!`);
     } else {
       toast.info(`Carga de ${litrosNum.toLocaleString()} L guardada en el teléfono (modo offline).`);
-      if (isOnline) {
-        setTimeout(() => sincronizarCargas(), 800);
+      if (isOnline && navigator.onLine) {
+        setTimeout(() => sincronizarCargas(), 1000);
       }
     }
   };
@@ -4540,28 +4749,25 @@ export const AppMovilPage: React.FC = () => {
 
     setSincronizando(true);
     try {
-      // 1. Ejecutar sincronización a través del motor unificado (evita carreras y doble envío)
+      // 1. Ejecutar sincronización a través del motor unificado (espera si ya hay una en curso y sube tanto IndexedDB como movil_cargas_local)
       const resSync = await syncEngine.sincronizarTodo();
       const ticketsPendientes = ticketsLocales.listarPendientes();
+      const cargasActuales = leerCargasLocalRaw();
+      const cargasAunPendientes = cargasActuales.filter((c) => !c.synced);
+
+      // Sincronizar memoria con lo que realmente se subió (NUNCA marcar como synced lo que aún no ha subido)
+      setCargas(cargasActuales);
+
       if (ticketsPendientes.length > 0) {
         const motivo = ticketsPendientes[0].ultimoError || 'La central no respondió';
         toast.error(`El turno nuevo aún no se pudo enviar a la central: ${motivo}`, { duration: 8000 });
       } else if (resSync.totalSubidos > 0) {
-        toast.success(`¡Sincronización completada! ${resSync.totalSubidos} registro(s) sincronizados.`);
-      } else {
-        toast.info('Todas las cargas ya están sincronizadas con la central.');
+        toast.success(`¡Sincronización completada! ${resSync.totalSubidos} registro(s) enviados a la central.`);
+      } else if (cargasAunPendientes.length > 0) {
+        toast.info(`Reintentando enviar ${cargasAunPendientes.length} carga(s) pendiente(s) a la central...`);
       }
 
-      // 2. Marcar estado local como sincronizado (solo si no quedan turnos locales por enviar)
-      if (ticketsPendientes.length === 0) {
-        setCargas((prev) => {
-          const actualizadas = prev.map((c) => ({ ...c, synced: true }));
-          guardarCargasLocalSeguro(actualizadas);
-          return actualizadas;
-        });
-      }
-
-      // 3. Actualizar paradas consolidadas y viaje activo desde la central
+      // 2. Actualizar paradas consolidadas y todos los tickets activos desde la central
       await cargarViajeActivo();
     } catch (err: any) {
       console.error('Error al sincronizar cargas:', err);
@@ -6612,7 +6818,14 @@ export const AppMovilPage: React.FC = () => {
                       {viajesOrdenados.map((v, idx) => {
                         const esSel = viajeActivo?.id === v.id;
                         const info = getTurnoInfo(v, idx);
-                        const lts = (v.totalLitrosFinca || 0).toLocaleString();
+                        const paradasTicketCache = esSel ? todasLasParadas : (leerParadasTicketLocal(v.id, cargas) || []);
+                        const ltsCache = paradasTicketCache.reduce((acc: number, p: any) => acc + Number(p.litros ?? p.Litros ?? 0), 0);
+                        const ltsNum = esSel ? totalLitrosCargados : Math.max(Number(v.totalLitrosFinca || 0), ltsCache);
+                        const lts = ltsNum.toLocaleString();
+                        const paradasCount = Math.max(
+                          Number((v as any).totalFincas || 0),
+                          paradasTicketCache.filter((p: any) => Number(p.litros ?? p.Litros ?? 0) > 0).length || paradasTicketCache.length
+                        );
                         return (
                           <button
                             key={v.id}
@@ -6655,7 +6868,7 @@ export const AppMovilPage: React.FC = () => {
                                 {info.estadoLabel}
                               </span>
                               <span style={{ fontSize: '10px', color: '#64748b' }}>
-                                {(v as any).totalFincas || 0} paradas
+                                {paradasCount} paradas
                               </span>
                             </div>
                           </button>

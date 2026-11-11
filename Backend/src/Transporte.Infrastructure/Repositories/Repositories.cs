@@ -1629,22 +1629,24 @@ namespace Transporte.Infrastructure.Repositories
                     END;
 
                     -- Si ninguna compañía está marcada como Principal, auto-marcar la Receptoría / Planta Matriz del tenant
-                    IF NOT EXISTS (SELECT 1 FROM TB_COMPANIAS WHERE EsPrincipal = 1 AND IsDeleted = 0)
-                    BEGIN
-                        UPDATE TB_COMPANIAS
-                        SET EsPrincipal = 1
-                        WHERE Id = (
-                            SELECT TOP 1 Id FROM TB_COMPANIAS
-                            WHERE IsDeleted = 0
-                            ORDER BY CASE 
-                                WHEN UPPER(Nombre) LIKE '%RECEPTOR%' THEN 1
-                                WHEN UPPER(Nombre) LIKE '%CAMPO%VERDE%' THEN 2
-                                WHEN UPPER(Nombre) LIKE '%VERGEL%' THEN 3
-                                WHEN UPPER(Nombre) LIKE '%PLANTA%' THEN 4
-                                WHEN UPPER(Nombre) LIKE '%MATRIZ%' THEN 5
-                                ELSE 6 END, Id ASC
-                        );
-                    END;";
+                    EXEC sp_executesql N'
+                        IF NOT EXISTS (SELECT 1 FROM TB_COMPANIAS WHERE EsPrincipal = 1 AND IsDeleted = 0)
+                        BEGIN
+                            UPDATE TB_COMPANIAS
+                            SET EsPrincipal = 1
+                            WHERE Id = (
+                                SELECT TOP 1 Id FROM TB_COMPANIAS
+                                WHERE IsDeleted = 0
+                                ORDER BY CASE 
+                                    WHEN UPPER(Nombre) LIKE ''%RECEPTOR%'' THEN 1
+                                    WHEN UPPER(Nombre) LIKE ''%CAMPO%VERDE%'' THEN 2
+                                    WHEN UPPER(Nombre) LIKE ''%VERGEL%'' THEN 3
+                                    WHEN UPPER(Nombre) LIKE ''%PLANTA%'' THEN 4
+                                    WHEN UPPER(Nombre) LIKE ''%MATRIZ%'' THEN 5
+                                    ELSE 6 END, Id ASC
+                            );
+                        END
+                    ';";
                 await connection.ExecuteAsync(sqlCheck);
                 _ensuredCompaniasEsPrincipal[dbKey] = true;
             }

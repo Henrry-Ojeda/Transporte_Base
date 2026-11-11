@@ -13,12 +13,13 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo.
-echo 2. Descomprimiendo, actualizando contenedor y reiniciando api_campoverde...
-ssh -t root@84.247.178.194 "unzip -o /opt/Transporte.API.zip -d /opt/transporte-api/ && docker cp /opt/transporte-api/. api_campoverde:/app/ && docker restart api_campoverde && echo '' && echo '>>> BACKEND ACTUALIZADO Y REINICIADO CON EXITO <<<'"
+echo 2. Descomprimiendo, actualizando contenedor y reiniciando api_transporte...
+ssh -t root@84.247.178.194 "unzip -o /opt/Transporte.API.zip -d /opt/transporte-api/ && docker cp /opt/transporte-api/. api_transporte:/app/ && docker restart api_transporte && echo '' && echo '>>> BACKEND ACTUALIZADO Y REINICIADO CON EXITO <<<'"
 
 echo.
 echo ========================================================
 echo   PROCESO COMPLETADO
 echo ========================================================
 pause
+
 

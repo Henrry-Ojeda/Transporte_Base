@@ -1,4 +1,4 @@
-Write-Host "========================================================" -ForegroundColor Cyan
+﻿Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host "  SUBIENDO Y REINICIANDO BACKEND EN VPS (84.247.178.194)" -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -12,10 +12,11 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-Write-Host "`n2. Descomprimiendo, actualizando contenedor y reiniciando api_campoverde..." -ForegroundColor Yellow
-ssh -t root@84.247.178.194 "unzip -o /opt/Transporte.API.zip -d /opt/transporte-api/ && docker cp /opt/transporte-api/. api_campoverde:/app/ && docker restart api_campoverde && echo '' && echo '>>> BACKEND ACTUALIZADO Y REINICIADO CON EXITO <<<'"
+Write-Host "`n2. Descomprimiendo, actualizando contenedor y reiniciando api_transporte..." -ForegroundColor Yellow
+ssh -t root@84.247.178.194 "unzip -o /opt/Transporte.API.zip -d /opt/transporte-api/ && docker cp /opt/transporte-api/. api_transporte:/app/ && docker restart api_transporte && echo '' && echo '>>> BACKEND ACTUALIZADO Y REINICIADO CON EXITO <<<'"
 
 Write-Host "`n========================================================" -ForegroundColor Green
 Write-Host "  PROCESO COMPLETADO EXITOSAMENTE" -ForegroundColor Green
 Write-Host "========================================================" -ForegroundColor Green
+
 

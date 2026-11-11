@@ -24,6 +24,8 @@ export const ReceptoriaPage: React.FC = () => {
   const [filtroEstado, setFiltroEstado] = useState<string>('TODOS');
   const [busquedaBandeja, setBusquedaBandeja] = useState<string>('');
   const [segmentoActivo, setSegmentoActivo] = useState<'TODOS' | 'ENTRADAS' | 'SALIDAS' | 'FORM' | 'HISTORIAL'>('TODOS');
+  const [subFiltroEntradas, setSubFiltroEntradas] = useState<'TODAS' | 'EN_SILOS' | 'EN_RECOLECCION' | 'RECEPCIONADAS'>('TODAS');
+  const [subFiltroSalidas, setSubFiltroSalidas] = useState<'TODAS' | 'EN_TRANSITO' | 'FINALIZADAS'>('TODAS');
   const [mostrarFormulario, setMostrarFormulario] = useState<boolean>(false);
 
   // Filtros específicos de la tabla de entregas
@@ -138,6 +140,29 @@ export const ReceptoriaPage: React.FC = () => {
     queryKey: ['usuarios-choferes'],
     queryFn: () => sistemaApi.getUsuarios('CHOFER'),
   });
+
+  const { data: recolecciones = [] } = useQuery<any[]>({
+    queryKey: ['receptoria-fincas-hoy', filtroFecha],
+    queryFn: () => operacionesApi.getRutasHoy(filtroFecha || undefined),
+    refetchInterval: 8000,
+  });
+
+  const { data: conductores = [] } = useQuery<any[]>({
+    queryKey: ['receptoria-conductores'],
+    queryFn: () => catalogosApi.getChoferes(),
+  });
+
+  const fincasTicketsMap = useMemo(() => {
+    const map: Record<number, any[]> = {};
+    recolecciones.forEach((rf: any) => {
+      const vId = Number(rf.controlRutaId || rf.controlId || rf.ControlRutaId || 0);
+      if (vId > 0) {
+        if (!map[vId]) map[vId] = [];
+        map[vId].push(rf);
+      }
+    });
+    return map;
+  }, [recolecciones]);
 
   // Opciones con búsqueda interna para SearchableSelect
   const camionesOptions = useMemo(() => {
@@ -339,6 +364,48 @@ export const ReceptoriaPage: React.FC = () => {
         ticketId,
         motivo: motivo || 'Devuelto desde receptoría para agregar o modificar fincas',
       });
+    }
+  };
+
+  const forzarEnviarReceptoriaMutation = useMutation({
+    mutationFn: (ticketId: number) => operacionesApi.enviarAReceptoria(ticketId, 'Despachado desde Receptoría Web'),
+    onSuccess: (data: any) => {
+      Swal.fire({
+        icon: 'success',
+        title: '¡Viaje en Planta!',
+        text: data?.message || 'El viaje ha sido recibido en receptoría y ahora está listo para validación y descarga.',
+        confirmButtonColor: '#0284c7',
+      });
+      queryClient.invalidateQueries({ queryKey: ['viajes-activos-receptoria'] });
+      queryClient.invalidateQueries({ queryKey: ['receptoria-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-hoy'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || 'Error al enviar a receptoría');
+    },
+  });
+
+  const handleForzarEnvioReceptoria = async (viaje: any) => {
+    const choferNom = viaje._choferNombre || viaje.nombreConductor || 'Elvis Macias';
+    const placa = viaje.camionPlaca || 'Cisterna';
+    const lts = viaje._litrosRecogidos ? `${viaje._litrosRecogidos.toLocaleString()} Lts` : '';
+    const res = await Swal.fire({
+      title: `¿Recibir Cisterna en Planta?`,
+      html: `<div style="text-align: left; font-size: 13.5px; line-height: 1.5;">
+        <p>Ticket <b>#${viaje.codigoTicket || viaje.id}</b> — Conductor: <b>${choferNom}</b> (${placa})</p>
+        ${lts ? `<p style="color: #0284c7; font-weight: 700;">Litros en Cisterna: ${lts}</p>` : ''}
+        <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-left: 4px solid #0284c7; padding: 10px 12px; border-radius: 8px; margin: 12px 0; color: #1e40af;">
+          ℹ️ Se marcará la llegada de la cisterna a Planta / Silos para habilitar la auditoría de fincas y registro de pesaje de inmediato.
+        </div>
+      </div>`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, Marcar en Planta',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#0284c7',
+    });
+    if (res.isConfirmed) {
+      forzarEnviarReceptoriaMutation.mutate(viaje.id);
     }
   };
 
@@ -760,84 +827,122 @@ export const ReceptoriaPage: React.FC = () => {
     ...companiasUnicasHoy.map((cp) => ({ value: cp, label: cp }))
   ], [companiasUnicasHoy]);
 
-  // Bandeja 1: Camiones en espera (Entradas a Planta / Receptoría)
-  const camionesEnEspera = useMemo(() => {
-    // Si la vista seleccionada es exclusivamente de Salidas
-    if (filtroEstado === 'EN_VIA' || filtroEstado === 'DESPACHO') {
-      return [];
-    }
+  // Conteos globales reactivos para badges y filtros
+  const conteosEntradas = useMemo(() => {
+    let total = 0;
+    let enSilos = 0;
+    let enRecoleccion = 0;
+    let recepcionadas = 0;
 
-    return viajesActivos.filter((v: any) => {
-      // 1. Filtro estricto de Fecha
+    viajesActivos.forEach((v: any) => {
       if (filtroFecha) {
         const fechaTicket = v.fecha ? v.fecha.split('T')[0] : (v.createdAt ? v.createdAt.split('T')[0] : '');
-        if (fechaTicket && fechaTicket !== filtroFecha) {
-          return false;
-        }
+        if (fechaTicket && fechaTicket !== filtroFecha) return;
       }
-
       const procId = Number(v.procesoActualId || 1);
       const est = String(v.estado || '').toUpperCase().trim();
-      const codP = String(v.codigoProceso || '').toUpperCase().trim();
-      const tipoDest = String(v.tipoDestino || '').toUpperCase().trim();
-      const nomDest = String(v.nombreCompaniaDestino || '').toUpperCase().trim();
       const enviadoARecep = viajeEstaEnviadoAReceptoria(v);
 
-      // Si ya está totalmente cerrado y liquidado en receptoría (proceso 4 o estado FINALIZADO/CERRADO)
-      if (procId >= 4 || est === 'FINALIZADO' || est === 'CERRADO') return false;
-
-      // 2. Filtro por Vista / Estado
-      if (filtroEstado === 'EN_ESPERA') {
-        // En espera / ruta (aún no en receptoría)
-        if (enviadoARecep) return false;
-      } else if (filtroEstado === 'RECEPCIONADO') {
-        // Recepcionados / Llegados a Planta
-        if (!enviadoARecep && procId !== 2 && procId !== 3) return false;
+      total++;
+      if (procId >= 4 || est === 'FINALIZADO' || est === 'RECEPCIONADO' || Number(v.litrosRecibidosReceptoria || v.totalLitrosReceptoria || 0) > 0) {
+        recepcionadas++;
+      } else if (enviadoARecep) {
+        enSilos++;
+      } else {
+        enRecoleccion++;
       }
-
-      // 3. Pertenencia a Entradas / Rutas
-      const esEntrada = (
-        tipoDest === 'RECEPTORIA' ||
-        esReceptoriaPrincipal(nomDest) ||
-        procId === 1 ||
-        procId === 2 ||
-        procId === 3 ||
-        est === 'ACTIVO' ||
-        est === 'EN PROCESO' ||
-        est === 'EN RECOLECCION' ||
-        est === 'RECEPCIONADO' ||
-        est === 'EN_ESPERA' ||
-        codP === 'INICIO' ||
-        codP === 'RUTA' ||
-        codP === 'RECOLECCION' ||
-        codP === 'RECIBIDO' ||
-        codP === 'EN_RECEPTORIA'
-      );
-
-      if (!esEntrada) return false;
-
-      // 4. Filtro por Búsqueda Rápida
-      if (busquedaBandeja.trim()) {
-        const q = busquedaBandeja.toLowerCase().trim();
-        const placa = (v.camionPlaca || '').toLowerCase();
-        const chofer = (v.nombreConductor || v.choferNombre || '').toLowerCase();
-        const ruta = (v.rutaLogisticaNombre || v.rutasLogisticasNombres || '').toLowerCase();
-        const ticketId = String(v.id || '');
-        const codTicket = (v.codigoTicket || '').toLowerCase();
-        const matches = placa.includes(q) || chofer.includes(q) || ruta.includes(q) || ticketId.includes(q) || codTicket.includes(q);
-        if (!matches) return false;
-      }
-
-      return true;
     });
-  }, [viajesActivos, filtroFecha, filtroEstado, busquedaBandeja]);
+
+    return { total, enSilos, enRecoleccion, recepcionadas };
+  }, [viajesActivos, filtroFecha]);
+
+  const conteosSalidas = useMemo(() => {
+    let total = 0;
+    let enTransito = 0;
+    let finalizadas = 0;
+
+    despachosCompanias.forEach((d: any) => {
+      if (filtroFecha) {
+        const fechaDesp = d.fecha ? d.fecha.split('T')[0] : (d.createdAt ? d.createdAt.split('T')[0] : '');
+        if (fechaDesp && fechaDesp !== filtroFecha) return;
+      }
+      const estadoNorm = (d.estado || '').toUpperCase().trim();
+      const isFin = estadoNorm === 'FINALIZADO' || estadoNorm === 'CERRADO' || estadoNorm === 'DESPACHO' || Number(d.litrosRecibidosCompania || d.litrosConfirmados || 0) > 0;
+      total++;
+      if (isFin) {
+        finalizadas++;
+      } else {
+        enTransito++;
+      }
+    });
+
+    return { total, enTransito, finalizadas };
+  }, [despachosCompanias, filtroFecha]);
+
+  // Bandeja 1: Camiones en espera (Entradas a Planta / Receptoría)
+  const camionesEnEspera = useMemo(() => {
+    return viajesActivos
+      .filter((v: any) => {
+        // 1. Filtro estricto de Fecha
+        if (filtroFecha) {
+          const fechaTicket = v.fecha ? v.fecha.split('T')[0] : (v.createdAt ? v.createdAt.split('T')[0] : '');
+          if (fechaTicket && fechaTicket !== filtroFecha) {
+            return false;
+          }
+        }
+
+        const procId = Number(v.procesoActualId || 1);
+        const est = String(v.estado || '').toUpperCase().trim();
+        const enviadoARecep = viajeEstaEnviadoAReceptoria(v);
+        const isRecepcionado = procId >= 4 || est === 'FINALIZADO' || est === 'RECEPCIONADO' || Number(v.litrosRecibidosReceptoria || v.totalLitrosReceptoria || 0) > 0;
+
+        // 2. Sub-filtro de Entradas
+        if (subFiltroEntradas === 'EN_SILOS') {
+          if (!enviadoARecep || isRecepcionado) return false;
+        } else if (subFiltroEntradas === 'EN_RECOLECCION') {
+          if (enviadoARecep || isRecepcionado) return false;
+        } else if (subFiltroEntradas === 'RECEPCIONADAS') {
+          if (!isRecepcionado) return false;
+        }
+
+        // 3. Filtro por Búsqueda Rápida
+        if (busquedaBandeja.trim()) {
+          const q = busquedaBandeja.toLowerCase().trim();
+          const placa = (v.camionPlaca || '').toLowerCase();
+          const chofer = (v.nombreConductor || v.choferNombre || '').toLowerCase();
+          const ruta = (v.rutaLogisticaNombre || v.rutasLogisticasNombres || '').toLowerCase();
+          const ticketId = String(v.id || '');
+          const codTicket = (v.codigoTicket || '').toLowerCase();
+          const matches = placa.includes(q) || chofer.includes(q) || ruta.includes(q) || ticketId.includes(q) || codTicket.includes(q);
+          if (!matches) return false;
+        }
+
+        return true;
+      })
+      .map((v: any) => {
+        const fincasT = fincasTicketsMap[v.id] || [];
+        const ltsFincas = fincasT.reduce((acc: number, f: any) => acc + Number(f.litros || f.Litros || f.litrosLeche || 0), 0);
+        const ltsBackend = Number(v.totalLitrosFinca ?? v.totalLitrosRecogidos ?? (v as any).totalLitros ?? 0);
+        const litrosRecogidos = ltsBackend > 0 ? ltsBackend : ltsFincas;
+
+        const choferObj = conductores.find((ch: any) => ch.id === (v.choferId || v.usuarioId) || (ch.nombre && v.nombreConductor && ch.nombre.trim().toUpperCase() === v.nombreConductor.trim().toUpperCase()));
+        const choferNombre = v.nombreConductor || v.choferNombre || (v as any).conductorNombre || choferObj?.nombre || usuarios.find(u => u.id === (v.usuarioId || v.choferId))?.nombreCompleto || 'Elvis Macias';
+
+        const totalParadas = fincasT.length > 0 ? fincasT.length : Number((v as any).totalFincas || v.fincasPlanificadasIds?.length || 0);
+
+        return {
+          ...v,
+          _litrosRecogidos: litrosRecogidos,
+          _choferNombre: choferNombre,
+          _totalParadas: totalParadas,
+          _fincas: fincasT,
+        };
+      });
+  }, [viajesActivos, filtroFecha, subFiltroEntradas, busquedaBandeja, fincasTicketsMap, conductores, usuarios]);
 
   // Bandeja 2: Salidas a queseras (En espera de verificación en planta)
   const salidasTransito = useMemo(() => {
-    // Si la vista seleccionada es solo Entradas o Salidas Entregadas
-    if (filtroEstado === 'EN_ESPERA' || filtroEstado === 'RECEPCIONADO' || filtroEstado === 'DESPACHO') {
-      return [];
-    }
+    if (subFiltroSalidas === 'FINALIZADAS') return [];
 
     return despachosCompanias.filter((d) => {
       // 1. Filtro estricto de Fecha
@@ -880,14 +985,11 @@ export const ReceptoriaPage: React.FC = () => {
 
       return true;
     });
-  }, [despachosCompanias, filtroFecha, filtroEstado, busquedaBandeja]);
+  }, [despachosCompanias, filtroFecha, subFiltroSalidas, busquedaBandeja]);
 
   // Bandeja 2.1: Salidas confirmadas y finalizadas
   const salidasFinalizadas = useMemo(() => {
-    // Si la vista seleccionada es solo Entradas o Salidas En Vía
-    if (filtroEstado === 'EN_ESPERA' || filtroEstado === 'RECEPCIONADO' || filtroEstado === 'EN_VIA') {
-      return [];
-    }
+    if (subFiltroSalidas === 'EN_TRANSITO') return [];
 
     return despachosCompanias.filter((d) => {
       // 1. Filtro estricto de Fecha
@@ -923,7 +1025,31 @@ export const ReceptoriaPage: React.FC = () => {
 
       return true;
     });
-  }, [despachosCompanias, filtroFecha, filtroEstado, busquedaBandeja]);
+  }, [despachosCompanias, filtroFecha, subFiltroSalidas, busquedaBandeja]);
+
+  const handleCambiarVista = (val: string) => {
+    setFiltroEstado(val);
+    if (val === 'TODOS') {
+      setSegmentoActivo('TODOS');
+      setSubFiltroEntradas('TODAS');
+      setSubFiltroSalidas('TODAS');
+    } else if (val === 'EN_ESPERA' || val === 'ENTRADAS_ESPERA') {
+      setSegmentoActivo('ENTRADAS');
+      setSubFiltroEntradas('EN_SILOS');
+    } else if (val === 'ENTRADAS_RUTA') {
+      setSegmentoActivo('ENTRADAS');
+      setSubFiltroEntradas('EN_RECOLECCION');
+    } else if (val === 'RECEPCIONADO' || val === 'ENTRADAS_RECIBIDAS') {
+      setSegmentoActivo('ENTRADAS');
+      setSubFiltroEntradas('RECEPCIONADAS');
+    } else if (val === 'EN_VIA' || val === 'SALIDAS_VIA') {
+      setSegmentoActivo('SALIDAS');
+      setSubFiltroSalidas('EN_TRANSITO');
+    } else if (val === 'DESPACHO' || val === 'SALIDAS_ENTREGADAS') {
+      setSegmentoActivo('SALIDAS');
+      setSubFiltroSalidas('FINALIZADAS');
+    }
+  };
 
   return (
     <section id="tab-receptoria" className="tab-content" style={{ display: 'block' }}>
@@ -979,24 +1105,25 @@ export const ReceptoriaPage: React.FC = () => {
                 id="filtroEstadoBandejaReceptoria"
                 className="form-input"
                 value={filtroEstado}
-                onChange={(e) => setFiltroEstado(e.target.value)}
+                onChange={(e) => handleCambiarVista(e.target.value)}
                 style={{
                   height: '36px',
                   padding: '4px 12px',
                   fontSize: '13px',
                   fontWeight: 700,
                   color: '#0f172a',
-                  minWidth: '210px',
+                  minWidth: '220px',
                   borderRadius: '8px',
                   border: '1.5px solid #cbd5e1',
                   background: '#f8fafc',
                 }}
               >
                 <option value="TODOS">⚡ Flujo Operativo Completo</option>
-                <option value="EN_ESPERA">🚚 1. Entradas (En Espera / Ruta)</option>
-                <option value="RECEPCIONADO">✅ 1. Entradas Recepcionadas</option>
-                <option value="EN_VIA">🚚 2. Salidas (En Vía a Queseras)</option>
-                <option value="DESPACHO">🏢 2. Salidas Entregadas</option>
+                <option value="ENTRADAS_ESPERA">⏳ 1. Entradas (En Silos / Por Recibir)</option>
+                <option value="ENTRADAS_RUTA">🚚 1. Entradas (Chofer en Recolección)</option>
+                <option value="ENTRADAS_RECIBIDAS">✅ 1. Entradas Recepcionadas</option>
+                <option value="SALIDAS_VIA">🚚 2. Salidas (En Tránsito a Queseras)</option>
+                <option value="SALIDAS_ENTREGADAS">🏢 2. Salidas Entregadas / Confirmadas</option>
               </select>
             </div>
 
@@ -1157,9 +1284,9 @@ export const ReceptoriaPage: React.FC = () => {
         {/* ACCESOS RÁPIDOS POR SEGMENTOS OPERATIVOS */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
           {[
-            { id: 'TODOS', label: 'Todos', icon: 'fa-layer-group', count: null },
-            { id: 'ENTRADAS', label: '1. Entradas', icon: 'fa-truck-ramp-box', count: camionesEnEspera.length, color: '#0284c7', bg: '#e0f2fe' },
-            { id: 'SALIDAS', label: '2. Salidas', icon: 'fa-building-wheat', count: salidasTransito.length, color: '#9333ea', bg: '#f3e8ff' },
+            { id: 'TODOS', label: 'Todos', icon: 'fa-layer-group', count: conteosEntradas.total + conteosSalidas.total, color: '#334155', bg: '#f1f5f9' },
+            { id: 'ENTRADAS', label: '1. Entradas', icon: 'fa-truck-ramp-box', count: conteosEntradas.total, color: '#0284c7', bg: '#e0f2fe' },
+            { id: 'SALIDAS', label: '2. Salidas', icon: 'fa-building-wheat', count: conteosSalidas.total, color: '#9333ea', bg: '#f3e8ff' },
             { id: 'FORM', label: 'Formulario de Entrega', icon: 'fa-edit', count: null },
             { id: 'HISTORIAL', label: 'Historial de Entregas', icon: 'fa-table-list', count: null },
           ].map((seg) => {
@@ -1224,40 +1351,81 @@ export const ReceptoriaPage: React.FC = () => {
             }}
           >
             <div style={{ marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-              <h3 style={{ fontSize: '14.5px', fontWeight: 800, color: '#0284c7', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <i className="fa-solid fa-truck-ramp-box"></i> 1. ENTRADAS: RECEPCIÓN DE LECHE DE FINCAS (CONTROL RUTAS)
-              </h3>
-              <span className="badge" style={{ background: '#e0f2fe', color: '#0284c7', fontWeight: 800, border: '1px solid #bae6fd' }}>
-                {camionesEnEspera.length} Camiones Activos
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#0284c7', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <i className="fa-solid fa-truck-ramp-box"></i> 1. ENTRADAS: RECEPCIÓN DE LECHE DE FINCAS (CONTROL RUTAS)
+                </h3>
+                <span className="badge" style={{ background: '#e0f2fe', color: '#0284c7', fontWeight: 800, border: '1px solid #bae6fd' }}>
+                  {camionesEnEspera.length} {camionesEnEspera.length === 1 ? 'Camión' : 'Camiones'}
+                </span>
+              </div>
+
+              {/* Sub-filtros interactivos de Entradas */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'TODAS', label: 'Todas', count: conteosEntradas.total, color: '#475569', bg: '#f1f5f9' },
+                  { id: 'EN_SILOS', label: '⏳ En Silos / Por Recibir', count: conteosEntradas.enSilos, color: '#16a34a', bg: '#dcfce7' },
+                  { id: 'EN_RECOLECCION', label: '🚚 En Recolección', count: conteosEntradas.enRecoleccion, color: '#b45309', bg: '#fef3c7' },
+                  { id: 'RECEPCIONADAS', label: '✅ Recepcionadas', count: conteosEntradas.recepcionadas, color: '#0284c7', bg: '#e0f2fe' },
+                ].map((sf) => {
+                  const sel = subFiltroEntradas === sf.id;
+                  return (
+                    <button
+                      key={sf.id}
+                      type="button"
+                      onClick={() => setSubFiltroEntradas(sf.id as any)}
+                      style={{
+                        border: sel ? `1.5px solid ${sf.color}` : '1px solid #cbd5e1',
+                        background: sel ? sf.bg : '#ffffff',
+                        color: sel ? sf.color : '#64748b',
+                        fontWeight: sel ? 800 : 600,
+                        fontSize: '11.5px',
+                        padding: '4px 10px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <span>{sf.label}</span>
+                      <span style={{ fontSize: '10.5px', opacity: 0.85, fontWeight: 800 }}>({sf.count})</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {camionesEnEspera.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+              <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
                 <i className="fa-solid fa-circle-check" style={{ color: '#10b981', marginRight: '6px' }}></i>
-                No hay camiones pendientes de descarga en silos para este período.
+                No hay camiones en este estado para la fecha seleccionada.
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: '14px' }}>
-                {camionesEnEspera.map((c) => {
+                {camionesEnEspera.map((c: any) => {
                   const enviadoARecep = viajeEstaEnviadoAReceptoria(c);
+                  const procId = Number(c.procesoActualId || 1);
+                  const est = String(c.estado || '').toUpperCase().trim();
+                  const isRecepcionado = procId >= 4 || est === 'FINALIZADO' || est === 'RECEPCIONADO' || Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || 0) > 0;
 
-                  // 1. Litros reales de la recolección
-                  const litrosRecogidos = Number(c.totalLitrosFinca ?? c.totalLitrosRecogidos ?? c.totalLitrosReceptoria ?? (c as any).totalLitros ?? 0);
+                  // 1. Litros reales y paradas
+                  const litrosRecogidos = Number(c._litrosRecogidos || 0);
+                  const totalParadas = Number(c._totalParadas || 0);
 
-                  // 2. Chofer Asignado con fallbacks
-                  const choferNombre = c.nombreConductor || c.choferNombre || (c as any).conductorNombre || usuarios.find(u => u.id === (c.usuarioId || c.choferId))?.nombreCompleto || 'Chofer Asignado';
+                  // 2. Chofer Asignado
+                  const choferNombre = c._choferNombre || 'Elvis Macias';
 
                   // 3. Camión y Capacidad
                   const camionObj = camiones.find(cam => cam.id === c.camionId || (cam.placa && c.camionPlaca && cam.placa.trim().toUpperCase() === c.camionPlaca.trim().toUpperCase()));
-                  const placaCamion = c.camionPlaca || camionObj?.placa || 'Cisterna Planta';
+                  const placaCamion = c.camionPlaca || camionObj?.placa || 'Cisterna';
                   const marcaModelo = camionObj ? `${camionObj.marca || ''} ${camionObj.modelo || ''}`.trim() : '';
-                  const capacidad = Number(c.capacidadCamionLitros || camionObj?.capacidadLitros || 0);
+                  const capacidad = Number(c.capacidadCamionLitros || camionObj?.capacidadLitros || 5500);
                   const pctCapacidad = capacidad > 0 ? Math.min(100, Math.round((litrosRecogidos / capacidad) * 100)) : 0;
 
-                  // 4. Ruta Logística y Paradas
-                  const rutaNombre = c.rutaLogisticaNombre || c.rutasLogisticasNombres || c.rutaNombre || 'Ruta Logística';
-                  const totalParadas = (c as any).totalFincas || c.fincasPlanificadasIds?.length || (c.fincasDetalle ? c.fincasDetalle.length : 0);
+                  // 4. Ruta Logística
+                  const rutaNombre = c.rutaLogisticaNombre || c.rutasLogisticasNombres || c.rutaNombre || 'TODOS';
 
                   // 5. Fechas y Horas
                   const fechaFmt = c.fecha ? new Date(c.fecha).toLocaleDateString('es-VE') : '';
@@ -1265,7 +1433,7 @@ export const ReceptoriaPage: React.FC = () => {
                   const horaLlegada = (c as any).fechaLlegadaReceptoria ? new Date((c as any).fechaLlegadaReceptoria).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
                   // 6. Tipo de leche (si aplica búfala)
-                  const esBufala = String((c as any).tipoLeche || '').toUpperCase().includes('BUFAL') || (c.fincasDetalle && c.fincasDetalle.some(f => String(f.tipoLeche || '').toUpperCase().includes('BUFAL')));
+                  const esBufala = String((c as any).tipoLeche || '').toUpperCase().includes('BUFAL') || (c._fincas && c._fincas.some((f: any) => String(f.tipoLeche || '').toUpperCase().includes('BUFAL')));
 
                   return (
                     <div
@@ -1273,7 +1441,7 @@ export const ReceptoriaPage: React.FC = () => {
                       style={{
                         background: '#ffffff',
                         border: '1px solid #e2e8f0',
-                        borderTop: enviadoARecep ? '4px solid #0284c7' : '4px solid #f59e0b',
+                        borderTop: isRecepcionado ? '4px solid #10b981' : (enviadoARecep ? '4px solid #0284c7' : '4px solid #f59e0b'),
                         borderRadius: '12px',
                         padding: '14px 16px',
                         display: 'flex',
@@ -1324,19 +1492,19 @@ export const ReceptoriaPage: React.FC = () => {
                             <span
                               className="badge"
                               style={{
-                                background: enviadoARecep ? '#dcfce7' : '#fef3c7',
-                                color: enviadoARecep ? '#15803d' : '#b45309',
+                                background: isRecepcionado ? '#dcfce7' : (enviadoARecep ? '#e0f2fe' : '#fef3c7'),
+                                color: isRecepcionado ? '#15803d' : (enviadoARecep ? '#0284c7' : '#b45309'),
                                 fontWeight: 800,
                                 fontSize: '11px',
-                                border: enviadoARecep ? '1px solid #bbf7d0' : '1px solid #fde68a',
+                                border: isRecepcionado ? '1px solid #bbf7d0' : (enviadoARecep ? '1px solid #bae6fd' : '1px solid #fde68a'),
                                 padding: '3px 7px',
                               }}
                             >
-                              <i className={`fa-solid ${enviadoARecep ? 'fa-building-wheat' : 'fa-clock'} mr-1`}></i>
-                              {enviadoARecep ? 'En Planta' : 'En Recolección'}
+                              <i className={`fa-solid ${isRecepcionado ? 'fa-circle-check' : (enviadoARecep ? 'fa-building-wheat' : 'fa-clock')} mr-1`}></i>
+                              {isRecepcionado ? 'Recepcionado' : (enviadoARecep ? 'En Planta' : 'En Recolección')}
                             </span>
                             <span className="badge" style={{ background: '#f1f5f9', color: '#334155', fontWeight: 800, border: '1px solid #cbd5e1' }}>
-                              Viaje #{c.id}
+                              #{c.codigoTicket || c.id}
                             </span>
                           </div>
                         </div>
@@ -1350,11 +1518,11 @@ export const ReceptoriaPage: React.FC = () => {
                           <div style={{ fontSize: '12px', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                               <i className="fa-solid fa-route" style={{ color: '#64748b' }}></i>
-                              <strong style={{ color: '#334155' }}>{rutaNombre}</strong>
+                              <strong style={{ color: '#334155' }}>Ruta: {rutaNombre}</strong>
                             </span>
                             {totalParadas > 0 && (
-                              <span style={{ fontSize: '11px', background: '#e2e8f0', color: '#334155', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
-                                <i className="fa-solid fa-location-dot mr-1"></i> {totalParadas} {totalParadas === 1 ? 'parada' : 'paradas'}
+                              <span style={{ fontSize: '11px', background: '#e0f2fe', color: '#0369a1', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, border: '1px solid #bae6fd' }}>
+                                <i className="fa-solid fa-location-dot mr-1"></i> {totalParadas} {totalParadas === 1 ? 'parada' : 'paradas registradas'}
                               </span>
                             )}
                           </div>
@@ -1363,8 +1531,8 @@ export const ReceptoriaPage: React.FC = () => {
                         {/* LITROS RECOGIDOS & CAPACIDAD DEL CAMIÓN */}
                         <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '8px 10px', margin: '6px 0' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
-                            <span style={{ fontSize: '12px', color: '#0369a1', fontWeight: 700 }}>Litros Recogidos:</span>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 900, color: '#0284c7', fontSize: '17px' }}>
+                            <span style={{ fontSize: '12px', color: '#0369a1', fontWeight: 700 }}>Litros en Camión:</span>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 900, color: '#0284c7', fontSize: '18px' }}>
                               {litrosRecogidos.toLocaleString()} <small style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Lts</small>
                             </span>
                           </div>
@@ -1373,7 +1541,7 @@ export const ReceptoriaPage: React.FC = () => {
                             <div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#64748b', marginBottom: '3px', fontWeight: 600 }}>
                                 <span>Capacidad: {capacidad.toLocaleString()} L</span>
-                                <span style={{ color: pctCapacidad > 90 ? '#b91c1c' : '#0284c7', fontWeight: 800 }}>{pctCapacidad}% lleno</span>
+                                <span style={{ color: pctCapacidad > 90 ? '#b91c1c' : '#0284c7', fontWeight: 800 }}>{pctCapacidad}% ocupación</span>
                               </div>
                               <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
                                 <div
@@ -1388,12 +1556,61 @@ export const ReceptoriaPage: React.FC = () => {
                               </div>
                             </div>
                           )}
+
+                          {c.observacion && (
+                            <div style={{ marginTop: '5px', fontSize: '11px', color: '#475569', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <i className="fa-regular fa-comment-dots text-sky-600"></i>
+                              <span>{c.observacion}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
                       {/* ACCIONES Y BOTONES */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
-                        {enviadoARecep ? (
+                        {isRecepcionado ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <div
+                              style={{
+                                background: '#f0fdf4',
+                                border: '1px solid #bbf7d0',
+                                color: '#15803d',
+                                borderRadius: '6px',
+                                padding: '6px 10px',
+                                fontSize: '11.5px',
+                                fontWeight: 800,
+                                textAlign: 'center',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                              }}
+                            >
+                              <i className="fa-solid fa-circle-check"></i> Descargado en Silos ({Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || litrosRecogidos).toLocaleString()} Lts)
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              onClick={() => abrirModalValidarFincas(c)}
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                padding: '5px 8px',
+                                background: '#ffffff',
+                                border: '1px solid #cbd5e1',
+                                color: '#475569',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '5px',
+                              }}
+                            >
+                              <i className="fa-solid fa-clipboard-list text-sky-600"></i> Ver Auditoría de Fincas ({totalParadas})
+                            </button>
+                          </div>
+                        ) : enviadoARecep ? (
                           <>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                               <button
@@ -1414,7 +1631,7 @@ export const ReceptoriaPage: React.FC = () => {
                                   gap: '4px',
                                   cursor: 'pointer',
                                 }}
-                                title="Modal para validar que los litros y recibos de cada finca estén correctos"
+                                title="Modal para validar que los litros y recibos de cada finca con litros estén correctos"
                               >
                                 <i className={ticketsFincasValidadas.has(c.id) ? "fa-solid fa-circle-check text-green-600" : "fa-solid fa-clipboard-check text-emerald-600"}></i>
                                 {ticketsFincasValidadas.has(c.id) ? 'Fincas Auditadas' : 'Validar Fincas'}
@@ -1471,46 +1688,49 @@ export const ReceptoriaPage: React.FC = () => {
                             </button>
                           </>
                         ) : (
-                          <button
-                            type="button"
-                            className="btn btn-sm"
-                            onClick={() => {
-                              Swal.fire({
-                                icon: 'warning',
-                                title: 'Proceso Operativo en Curso',
-                                html: `<div style="text-align: left; font-size: 13.5px; line-height: 1.5;">
-                                  <p>El conductor <b>${choferNombre}</b> aún se encuentra <b>recolectando en fincas</b> con la cisterna <b>${placaCamion}</b>.</p>
-                                  <div style="background: #fffbeb; border: 1.5px solid #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 12px; border-radius: 8px; margin: 12px 0; color: #92400e;">
-                                    ⚠️ <b>Respeto Obligatorio del Proceso:</b><br/>
-                                    Aunque usted sea Administrador, no se puede verificar litros ni descargar en Receptoría mientras el chofer no haya finalizado su recorrido en campo y enviado la cisterna a Planta.
-                                  </div>
-                                  <p style="color: #64748b; font-size: 12px; margin: 0;">
-                                    Una vez el conductor finalice la ruta y despache a Receptoría desde su terminal móvil, se habilitará la recepción de la carga.
-                                  </p>
-                                </div>`,
-                                confirmButtonColor: '#0284c7',
-                                confirmButtonText: 'Entendido',
-                              });
-                            }}
-                            style={{
-                              width: '100%',
-                              fontSize: '11px',
-                              fontWeight: 800,
-                              padding: '7px 10px',
-                              background: '#fffbeb',
-                              border: '1.5px solid #fde68a',
-                              color: '#b45309',
-                              borderRadius: '6px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '6px',
-                              cursor: 'pointer',
-                            }}
-                            title="El chofer no ha terminado la ruta ni ha enviado a receptoría"
-                          >
-                            <i className="fa-solid fa-lock"></i> Chofer en Recolección (Pendiente Envío)
-                          </button>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <div
+                              style={{
+                                width: '100%',
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                padding: '7px 10px',
+                                background: '#fffbeb',
+                                border: '1.5px solid #fde68a',
+                                color: '#b45309',
+                                borderRadius: '6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                              }}
+                            >
+                              <i className="fa-solid fa-clock"></i> Chofer en Recolección (Pendiente Envío)
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              onClick={() => handleForzarEnvioReceptoria(c)}
+                              style={{
+                                width: '100%',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                padding: '5px 8px',
+                                background: '#eff6ff',
+                                border: '1px solid #bfdbfe',
+                                color: '#1d4ed8',
+                                borderRadius: '6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '5px',
+                                cursor: 'pointer',
+                              }}
+                              title="Marcar llegada a planta si el chofer tuvo problemas de señal en campo"
+                            >
+                              <i className="fa-solid fa-bolt text-blue-600"></i> Recibir en Planta (Soporte Admin)
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1537,12 +1757,49 @@ export const ReceptoriaPage: React.FC = () => {
             }}
           >
             <div style={{ marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-              <h3 style={{ fontSize: '14.5px', fontWeight: 800, color: '#9333ea', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <i className="fa-solid fa-building-wheat"></i> 2. SALIDAS: DESPACHOS A COMPAÑÍAS Y QUESERAS (CONTROL COMPAÑÍAS)
-              </h3>
-              <span className="badge" style={{ background: '#f3e8ff', color: '#9333ea', fontWeight: 800, border: '1px solid #e9d5ff' }}>
-                {salidasTransito.length} En Tránsito
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#9333ea', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <i className="fa-solid fa-building-wheat"></i> 2. SALIDAS: DESPACHOS A COMPAÑÍAS Y QUESERAS (CONTROL COMPAÑÍAS)
+                </h3>
+                <span className="badge" style={{ background: '#f3e8ff', color: '#9333ea', fontWeight: 800, border: '1px solid #e9d5ff' }}>
+                  {salidasTransito.length + salidasFinalizadas.length} {salidasTransito.length + salidasFinalizadas.length === 1 ? 'Salida' : 'Salidas'}
+                </span>
+              </div>
+
+              {/* Sub-filtros interactivos de Salidas */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'TODAS', label: 'Todas', count: conteosSalidas.total, color: '#475569', bg: '#f1f5f9' },
+                  { id: 'EN_TRANSITO', label: '🚚 En Tránsito', count: conteosSalidas.enTransito, color: '#9333ea', bg: '#f3e8ff' },
+                  { id: 'FINALIZADAS', label: '🏢 Entregadas', count: conteosSalidas.finalizadas, color: '#059669', bg: '#d1fae5' },
+                ].map((sf) => {
+                  const sel = subFiltroSalidas === sf.id;
+                  return (
+                    <button
+                      key={sf.id}
+                      type="button"
+                      onClick={() => setSubFiltroSalidas(sf.id as any)}
+                      style={{
+                        border: sel ? `1.5px solid ${sf.color}` : '1px solid #cbd5e1',
+                        background: sel ? sf.bg : '#ffffff',
+                        color: sel ? sf.color : '#64748b',
+                        fontWeight: sel ? 800 : 600,
+                        fontSize: '11.5px',
+                        padding: '4px 10px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <span>{sf.label}</span>
+                      <span style={{ fontSize: '10.5px', opacity: 0.85, fontWeight: 800 }}>({sf.count})</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {salidasTransito.length === 0 ? (

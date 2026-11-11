@@ -8938,7 +8938,13 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             var sql = $@"
                 SELECT 
                     cr.Id, cr.Fecha, cr.UsuarioId, u.NombreCompleto AS NombreConductor,
-                    cr.CicloId, cr.TotalLitrosFinca, cr.TotalLitrosReceptoria,
+                    cr.CicloId, 
+                    COALESCE(
+                        NULLIF(cr.TotalLitrosFinca, 0),
+                        (SELECT SUM(r.Litros) FROM TB_RUTAS_RECOLECCION r WHERE (r.ControlRutaId = cr.Id OR (r.ControlRutaId IS NULL AND r.UsuarioId = cr.UsuarioId AND CAST(r.Fecha AS DATE) = CAST(cr.Fecha AS DATE)))),
+                        0
+                    ) AS TotalLitrosFinca, 
+                    cr.TotalLitrosReceptoria,
                     cr.DiferenciaLitros, cr.PorcentajeMerma, cr.Estado, cr.Observacion, cr.CreatedAt,
                     cr.ProcesoActualId,
                     pt.Codigo AS CodigoProceso,
@@ -9534,7 +9540,13 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             var sql = @"
                 SELECT 
                     cr.Id, cr.Fecha, cr.UsuarioId, u.NombreCompleto AS NombreConductor,
-                    cr.CicloId, cr.TotalLitrosFinca, cr.TotalLitrosReceptoria,
+                    cr.CicloId, 
+                    COALESCE(
+                        NULLIF(cr.TotalLitrosFinca, 0),
+                        (SELECT SUM(r.Litros) FROM TB_RUTAS_RECOLECCION r WHERE (r.ControlRutaId = cr.Id OR (r.ControlRutaId IS NULL AND r.UsuarioId = cr.UsuarioId AND CAST(r.Fecha AS DATE) = CAST(cr.Fecha AS DATE)))),
+                        0
+                    ) AS TotalLitrosFinca, 
+                    cr.TotalLitrosReceptoria,
                     cr.DiferenciaLitros, cr.PorcentajeMerma, cr.Estado, cr.Observacion, cr.CreatedAt,
                     cr.ProcesoActualId,
                     pt.Codigo AS CodigoProceso,

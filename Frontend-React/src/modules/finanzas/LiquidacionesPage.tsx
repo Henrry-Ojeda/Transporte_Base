@@ -205,43 +205,25 @@ export const LiquidacionesPage: React.FC = () => {
 
   // Menú de opciones de WhatsApp (Image 3 Redesign)
   const abrirMenuWhatsApp = (row: PreliquidacionFincaDto) => {
-    const productor = row.propietarioNombre || (row as any).propietario || (row as any).Propietario || 'Productor';
-    const brutoUSD = row.totalBrutoUSD || ((row.totalLitros || 0) * (row.precioLitroUSD || 0));
-    const adelantoUSD = row.totalAdelantosUSD || 0;
-    const netoUSD = row.totalNetoUSD || Math.max(0, brutoUSD - adelantoUSD);
-    const tasa = row.tasaBCV || cicloActivo?.tasaBCVCierre || 1;
-    const netoBs = row.totalNetoBs || (netoUSD * tasa);
+    const productor = (row.propietarioNombre || (row as any).propietario || (row as any).Propietario || '').trim() || row.fincaNombre;
+    const brutoUSD = Number(row.totalBrutoUSD ?? (row as any).totalUSD ?? (row as any).TotalUSD ?? ((row.totalLitros || 0) * (row.precioLitroUSD || 0)));
+    const adelantoUSD = Number(row.totalAdelantosUSD ?? (row as any).TotalAdelantosUSD ?? 0);
+    const netoUSD = Number(row.totalNetoUSD !== undefined && row.totalNetoUSD !== null ? row.totalNetoUSD : Math.max(0, brutoUSD - adelantoUSD));
+    const tasa = Number(row.tasaBCV || (row as any).tasaBcv || (row as any).TasaBcv || cicloActivo?.tasaBCVCierre || (brutoUSD > 0 && (row as any).totalBrutoBs ? ((row as any).totalBrutoBs / brutoUSD) : 1));
+    const netoBs = Number(row.totalNetoBs || (row as any).TotalNetoBs || (netoUSD * tasa));
 
     Swal.fire({
-      title: `<div style="display: flex; align-items: center; justify-content: center; gap: 9px; color: #16a34a;"><i class="fa-brands fa-whatsapp" style="font-size: 26px;"></i> <span style="font-weight: 800; font-size: 17.5px; color: #0f172a;">WhatsApp • ${row.fincaNombre}</span></div>`,
+      title: `<div style="display: flex; align-items: center; justify-content: center; gap: 8px;"><i class="fa-brands fa-whatsapp" style="color: #25d366; font-size: 28px;"></i> <span style="font-weight: 800; font-size: 20px; color: #1e293b;">WhatsApp - ${row.fincaNombre}</span></div>`,
       html: `
-        <div style="text-align: left; font-size: 13px; color: #334155; padding: 4px 6px;">
-          <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <span style="font-size: 13px; color: #64748b; font-weight: 600;">
-                <i class="fa-regular fa-user" style="color: #2563eb; margin-right: 5px;"></i> Productor:
-              </span>
-              <strong style="color: #0f172a; font-size: 13.5px;">${productor}</strong>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12.5px;">
-              <span style="color: #64748b; font-weight: 600;">
-                <i class="fa-solid fa-cow" style="color: #059669; margin-right: 5px;"></i> Litros Recolectados:
-              </span>
-              <strong style="color: #0284c7; font-weight: 800; font-family: monospace;">${(row.totalLitros || 0).toLocaleString()} Lts</strong>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; padding-top: 10px; border-top: 1.5px solid #e2e8f0;">
-              <div>
-                <span style="font-size: 10.5px; color: #065f46; text-transform: uppercase; font-weight: 700; display: block;">Neto en USD</span>
-                <strong style="font-size: 17px; color: #059669; font-weight: 900; font-family: monospace;">$${netoUSD.toFixed(2)}</strong>
-              </div>
-              <div style="text-align: right;">
-                <span style="font-size: 10.5px; color: #92400e; text-transform: uppercase; font-weight: 700; display: block;">Neto en Bs.</span>
-                <strong style="font-size: 15.5px; color: #b45309; font-weight: 900; font-family: monospace;">Bs. ${netoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}</strong>
-              </div>
-            </div>
+        <div style="text-align: left; font-size: 13.5px; color: #334155; padding: 6px 12px;">
+          <div style="margin-bottom: 8px;">
+            <strong style="color: #1e293b;">Productor:</strong> <span style="color: #475569;">${productor}</span>
           </div>
-          <p style="color: #64748b; font-size: 12px; margin: 0; text-align: center; font-weight: 500;">
-            Seleccione el formato para compartir el comprobante con el productor:
+          <div style="margin-bottom: 12px;">
+            <strong style="color: #1e293b;">Neto a Pagar:</strong> <span style="color: #059669; font-weight: 800;">$${netoUSD.toFixed(2)}</span> <span style="color: #b45309; font-weight: 700;">(Bs. ${netoBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+          </div>
+          <p style="color: #64748b; font-size: 12.5px; margin: 0 0 6px 0;">
+            Seleccione cómo desea enviar la relación de compra de leche:
           </p>
         </div>
       `,
@@ -398,11 +380,11 @@ export const LiquidacionesPage: React.FC = () => {
     let totalAdelantosBs = 0;
 
     fincasSeleccionadasObjetos.forEach((f) => {
-      const bUSD = f.totalBrutoUSD || ((f.totalLitros || 0) * (f.precioLitroUSD || 0)) || 0;
-      const adUSD = f.totalAdelantosUSD || 0;
-      const tasa = f.tasaBCV || cicloActivo?.tasaBCVCierre || 1;
-      const bBs = bUSD * tasa;
-      const adBs = adUSD * tasa;
+      const bUSD = Number(f.totalBrutoUSD ?? (f as any).totalUSD ?? (f as any).TotalUSD ?? ((f.totalLitros || 0) * (f.precioLitroUSD || 0)));
+      const adUSD = Number(f.totalAdelantosUSD ?? (f as any).TotalAdelantosUSD ?? 0);
+      const tasa = Number(f.tasaBCV || (f as any).tasaBcv || cicloActivo?.tasaBCVCierre || (bUSD > 0 && (f as any).totalBrutoBs ? ((f as any).totalBrutoBs / bUSD) : 1));
+      const bBs = Number((f as any).totalBrutoBs ?? (bUSD * tasa));
+      const adBs = Number((f as any).totalAdelantosBs ?? (adUSD * tasa));
 
       totalLitros += f.totalLitros || 0;
       totalUSD += bUSD;
@@ -1209,11 +1191,11 @@ export const LiquidacionesPage: React.FC = () => {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
                   {fincasSeleccionadasObjetos.map((f) => {
                     const nom = f.fincaNombre;
-                    const bUSD = f.totalBrutoUSD || ((f.totalLitros || 0) * (f.precioLitroUSD || 0)) || 0;
-                    const adUSD = f.totalAdelantosUSD || 0;
-                    const tasa = f.tasaBCV || cicloActivo?.tasaBCVCierre || 1;
-                    const adBs = adUSD * tasa;
-                    const bBs = bUSD * tasa;
+                    const bUSD = Number(f.totalBrutoUSD ?? (f as any).totalUSD ?? (f as any).TotalUSD ?? ((f.totalLitros || 0) * (f.precioLitroUSD || 0)));
+                    const adUSD = Number(f.totalAdelantosUSD ?? (f as any).TotalAdelantosUSD ?? 0);
+                    const tasa = Number(f.tasaBCV || (f as any).tasaBcv || cicloActivo?.tasaBCVCierre || (bUSD > 0 && (f as any).totalBrutoBs ? ((f as any).totalBrutoBs / bUSD) : 1));
+                    const bBs = Number((f as any).totalBrutoBs ?? (bUSD * tasa));
+                    const adBs = Number((f as any).totalAdelantosBs ?? (adUSD * tasa));
                     const netoFincaBs = Math.max(0, bBs - adBs);
                     const netoFincaUSD = Math.max(0, bUSD - adUSD);
                     const esDeudorFinca = adUSD > bUSD + 0.01;
@@ -1433,12 +1415,12 @@ export const LiquidacionesPage: React.FC = () => {
 
       {/* MODAL COMPROBANTE OFICIAL DE PAGO Y WHATSAPP (Image 4 Redesign) */}
       {modalRecibo && fincaRecibo && (() => {
-        const productor = fincaRecibo.propietarioNombre || (fincaRecibo as any).propietario || (fincaRecibo as any).Propietario || 'Productor';
-        const brutoUSD = fincaRecibo.totalBrutoUSD || ((fincaRecibo.totalLitros || 0) * (fincaRecibo.precioLitroUSD || 0));
-        const adelantoUSD = fincaRecibo.totalAdelantosUSD || 0;
-        const netoUSD = fincaRecibo.totalNetoUSD || Math.max(0, brutoUSD - adelantoUSD);
-        const tasa = fincaRecibo.tasaBCV || cicloActivo?.tasaBCVCierre || 1;
-        const netoBs = fincaRecibo.totalNetoBs || (netoUSD * tasa);
+        const productor = (fincaRecibo.propietarioNombre || (fincaRecibo as any).propietario || (fincaRecibo as any).Propietario || '').trim() || fincaRecibo.fincaNombre;
+        const brutoUSD = Number(fincaRecibo.totalBrutoUSD ?? (fincaRecibo as any).totalUSD ?? (fincaRecibo as any).TotalUSD ?? ((fincaRecibo.totalLitros || 0) * (fincaRecibo.precioLitroUSD || 0)));
+        const adelantoUSD = Number(fincaRecibo.totalAdelantosUSD ?? (fincaRecibo as any).TotalAdelantosUSD ?? 0);
+        const netoUSD = Number(fincaRecibo.totalNetoUSD !== undefined && fincaRecibo.totalNetoUSD !== null ? fincaRecibo.totalNetoUSD : Math.max(0, brutoUSD - adelantoUSD));
+        const tasa = Number(fincaRecibo.tasaBCV || (fincaRecibo as any).tasaBcv || (fincaRecibo as any).TasaBcv || cicloActivo?.tasaBCVCierre || (brutoUSD > 0 && (fincaRecibo as any).totalBrutoBs ? ((fincaRecibo as any).totalBrutoBs / brutoUSD) : 1));
+        const netoBs = Number(fincaRecibo.totalNetoBs || (fincaRecibo as any).TotalNetoBs || (netoUSD * tasa));
 
         return (
           <div
@@ -1799,12 +1781,12 @@ export const LiquidacionesPage: React.FC = () => {
 
       {/* MODAL REGISTRAR PAGO INDIVIDUAL (Image 2 Redesign) */}
       {modalPagar && fincaPago && (() => {
-        const productor = fincaPago.propietarioNombre || (fincaPago as any).propietario || (fincaPago as any).Propietario || 'Productor';
-        const brutoUSD = fincaPago.totalBrutoUSD || ((fincaPago.totalLitros || 0) * (fincaPago.precioLitroUSD || 0));
-        const adelantoUSD = fincaPago.totalAdelantosUSD || 0;
-        const netoUSD = fincaPago.totalNetoUSD || Math.max(0, brutoUSD - adelantoUSD);
-        const tasa = fincaPago.tasaBCV || cicloActivo?.tasaBCVCierre || 1;
-        const netoBs = fincaPago.totalNetoBs || (netoUSD * tasa);
+        const productor = (fincaPago.propietarioNombre || (fincaPago as any).propietario || (fincaPago as any).Propietario || '').trim();
+        const brutoUSD = Number(fincaPago.totalBrutoUSD ?? (fincaPago as any).totalUSD ?? (fincaPago as any).TotalUSD ?? ((fincaPago.totalLitros || 0) * (fincaPago.precioLitroUSD || 0)));
+        const adelantoUSD = Number(fincaPago.totalAdelantosUSD ?? (fincaPago as any).TotalAdelantosUSD ?? 0);
+        const netoUSD = Number(fincaPago.totalNetoUSD !== undefined && fincaPago.totalNetoUSD !== null ? fincaPago.totalNetoUSD : Math.max(0, brutoUSD - adelantoUSD));
+        const tasa = Number(fincaPago.tasaBCV || (fincaPago as any).tasaBcv || (fincaPago as any).TasaBcv || cicloActivo?.tasaBCVCierre || (brutoUSD > 0 && (fincaPago as any).totalBrutoBs ? ((fincaPago as any).totalBrutoBs / brutoUSD) : 1));
+        const netoBs = Number(fincaPago.totalNetoBs || (fincaPago as any).TotalNetoBs || (netoUSD * tasa));
 
         return (
           <div
@@ -1824,63 +1806,43 @@ export const LiquidacionesPage: React.FC = () => {
               className="content-card"
               style={{
                 width: '100%',
-                maxWidth: '490px',
-                background: '#ffffff',
+                maxWidth: '460px',
+                padding: '0',
                 borderRadius: '16px',
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
                 overflow: 'hidden',
-                padding: 0,
+                background: '#ffffff',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+                border: '1px solid #e2e8f0',
               }}
             >
-              {/* Header con gradiente esmeralda */}
+              {/* Header 1:1 Image 2 */}
               <div
                 style={{
-                  background: 'linear-gradient(135deg, #065f46, #059669, #10b981)',
-                  color: '#ffffff',
                   padding: '18px 22px',
+                  background: '#ffffff',
+                  borderBottom: '1px solid #f1f5f9',
                   display: 'flex',
-                  justifyContent: 'space-between',
                   alignItems: 'center',
+                  justifyContent: 'space-between',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div
-                    style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '12px',
-                      background: 'rgba(255, 255, 255, 0.2)',
-                      color: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '18px',
-                      boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
-                    }}
-                  >
-                    <i className="fa-solid fa-money-bill-wave"></i>
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '17px', fontWeight: 800, margin: 0, color: '#ffffff' }}>
-                      Registrar Pago de Liquidación
-                    </h3>
-                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#d1fae5', fontWeight: 500 }}>
-                      Confirmar desembolso y asociar referencia bancaria
-                    </p>
-                  </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <i className="fa-solid fa-money-bill-wave" style={{ color: '#059669', fontSize: '18px' }}></i>
+                  <h3 style={{ fontSize: '17px', fontWeight: 800, margin: 0, color: '#0f172a' }}>
+                    Registrar Pago de Liquidación
+                  </h3>
                 </div>
                 <button
                   type="button"
                   onClick={() => setModalPagar(false)}
                   style={{
-                    color: '#ffffff',
-                    background: 'rgba(255,255,255,0.15)',
+                    color: '#94a3b8',
+                    background: 'transparent',
                     border: 'none',
                     width: '32px',
                     height: '32px',
                     borderRadius: '8px',
-                    fontSize: '18px',
+                    fontSize: '22px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1904,65 +1866,39 @@ export const LiquidacionesPage: React.FC = () => {
                   });
                 }}
               >
-                <div style={{ padding: '20px', background: '#f8fafc' }}>
-                  {/* Tarjeta de Productor y Finca */}
+                <div style={{ padding: '20px', background: '#ffffff' }}>
+                  {/* Tarjeta de Productor y Totales 1:1 Image 2 */}
                   <div
                     style={{
-                      background: '#ffffff',
-                      border: '1.5px solid #e2e8f0',
+                      background: '#f8fafc',
+                      border: '1px solid #f1f5f9',
                       borderRadius: '12px',
                       padding: '14px 16px',
                       marginBottom: '16px',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '15px' }}>
-                        <i className="fa-solid fa-wheat-awn" style={{ color: '#059669', marginRight: '6px' }}></i>
-                        {fincaPago.fincaNombre}
-                      </div>
-                      {fincaPago.fincaCodigo && (
-                        <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>
-                          #{fincaPago.fincaCodigo}
-                        </span>
-                      )}
+                    <div style={{ fontWeight: 900, color: '#0f172a', fontSize: '16px' }}>
+                      {fincaPago.fincaNombre}
                     </div>
-                    <div style={{ color: '#475569', fontSize: '13px', fontWeight: 600 }}>
-                      <i className="fa-regular fa-user" style={{ color: '#2563eb', marginRight: '5px' }}></i>
-                      Propietario: <strong style={{ color: '#0f172a' }}>{productor}</strong>
+                    <div style={{ color: '#64748b', fontSize: '12.5px', marginTop: '2px' }}>
+                      Propietario: {productor}
                     </div>
-                    {(fincaPago.bancoNombre || fincaPago.numeroCuenta) && (
-                      <div style={{ marginTop: '8px', fontSize: '11.5px', color: '#475569', background: '#f1f5f9', padding: '4px 8px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <i className="fa-solid fa-building-columns" style={{ color: '#059669' }}></i>
-                        <span><strong>{fincaPago.bancoNombre || 'Banco'}:</strong> {fincaPago.numeroCuenta || 'Sin cuenta'}</span>
-                      </div>
-                    )}
 
-                    {/* Dos tarjetas de montos: USD y Bs */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '12px' }}>
-                      <div style={{ background: '#ecfdf5', border: '1.5px solid #a7f3d0', borderRadius: '8px', padding: '8px 10px', textAlign: 'center' }}>
-                        <span style={{ fontSize: '10.5px', color: '#065f46', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
-                          Total a Pagar (USD)
-                        </span>
-                        <strong style={{ fontSize: '16px', color: '#059669', fontWeight: 900, marginTop: '2px', display: 'block', fontFamily: 'monospace' }}>
-                          ${netoUSD.toFixed(2)} USD
-                        </strong>
-                      </div>
-                      <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '8px', padding: '8px 10px', textAlign: 'center' }}>
-                        <span style={{ fontSize: '10.5px', color: '#92400e', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
-                          Equivalente (Bs.)
-                        </span>
-                        <strong style={{ fontSize: '16px', color: '#b45309', fontWeight: 900, marginTop: '2px', display: 'block', fontFamily: 'monospace' }}>
-                          Bs. {netoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
-                        </strong>
-                      </div>
+                    <div style={{ borderTop: '1px solid #e2e8f0', margin: '12px 0' }} />
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 800, color: '#059669', fontFamily: 'monospace' }}>
+                        Total: ${netoUSD.toFixed(2)} USD
+                      </span>
+                      <span style={{ fontSize: '14px', fontWeight: 800, color: '#b45309', fontFamily: 'monospace' }}>
+                        Bs. {netoBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Input de Referencia Bancaria */}
+                  {/* Input de Referencia Bancaria 1:1 Image 2 */}
                   <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                      <i className="fa-solid fa-receipt" style={{ color: '#059669', marginRight: '5px' }}></i>
+                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
                       Referencia Bancaria / Comprobante de Pago *
                     </label>
                     <input
@@ -1970,21 +1906,21 @@ export const LiquidacionesPage: React.FC = () => {
                       value={referenciaPago}
                       onChange={(e) => setReferenciaPago(e.target.value)}
                       className="form-input"
-                      placeholder="Ej: REF-84920491 (Pago Móvil / Transferencia)"
-                      style={{ width: '100%', height: '42px', fontWeight: 700, fontSize: '13px' }}
+                      placeholder="Ej: REF-84920491"
+                      style={{ width: '100%', height: '42px', fontWeight: 700, fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1' }}
                       required
                       autoFocus
                     />
                   </div>
                 </div>
 
-                {/* Footer */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 20px', background: '#ffffff', borderTop: '1px solid #e2e8f0' }}>
+                {/* Footer 1:1 Image 2 */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 20px', background: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
                   <button
                     type="button"
                     onClick={() => setModalPagar(false)}
                     className="btn btn-outline"
-                    style={{ height: '40px', padding: '0 18px', fontWeight: 700 }}
+                    style={{ height: '40px', padding: '0 20px', fontWeight: 700, borderRadius: '8px', border: '1px solid #cbd5e1', color: '#334155' }}
                   >
                     Cancelar
                   </button>
@@ -1994,16 +1930,17 @@ export const LiquidacionesPage: React.FC = () => {
                     className="btn btn-primary"
                     style={{
                       height: '40px',
-                      padding: '0 20px',
-                      background: 'linear-gradient(135deg, #059669, #047857)',
+                      padding: '0 22px',
+                      background: '#047857',
                       fontWeight: 800,
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '6px',
-                      boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)',
+                      borderRadius: '8px',
+                      border: 'none',
+                      color: '#ffffff',
                     }}
                   >
-                    <i className={pagarMutation.isPending ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check-double'}></i>{' '}
                     {pagarMutation.isPending ? 'Guardando...' : 'Confirmar Pago'}
                   </button>
                 </div>

@@ -14,9 +14,10 @@ export const finanzasApi = {
     const list = Array.isArray(res.data) ? res.data : [];
     // Regla de negocio: Semanas operativas 44 y 45 son las activas/visibles; desde la 46 en adelante no debe verse en ningún lado
     return list.filter((c) => {
-      const num = Number(c.numeroSemana || c.id || 0);
-      if (num >= 46) return false;
-      if (c.fechaInicio && new Date(c.fechaInicio) > new Date('2026-11-09T23:59:59')) {
+      const match = (c.codigo || '').match(/Semana\s*#?(\d+)/i);
+      const numSem = match ? parseInt(match[1], 10) : Number(c.numeroSemana || 0);
+      if (numSem > 45 && numSem <= 53) return false;
+      if (c.fechaInicio && new Date(c.fechaInicio) > new Date('2026-11-16T23:59:59')) {
         return false;
       }
       return true;
@@ -82,16 +83,32 @@ export const finanzasApi = {
       const tasa = Number(p.tasaBCV || p.tasaBcv || p.TasaBcv || 1);
       const totalLitros = Number(p.totalLitros || p.TotalLitros || 0);
       const precioLitro = Number(p.precioLitroUSD || p.PrecioLitroUSD || 0);
-      const brutoUSD = Number(p.totalBrutoUSD ?? p.totalUSD ?? p.TotalUSD ?? (totalLitros * precioLitro));
+      const backendUSD = Number(p.totalUSD ?? p.TotalUSD ?? 0);
+      const brutoUSD = Number(
+        p.totalBrutoUSD && Number(p.totalBrutoUSD) > 0
+          ? p.totalBrutoUSD
+          : backendUSD > 0
+          ? backendUSD
+          : totalLitros * precioLitro
+      );
       const adelantoUSD = Number(p.totalAdelantosUSD ?? p.TotalAdelantosUSD ?? 0);
-      const netoUSD = Number(p.totalNetoUSD ?? Math.max(0, brutoUSD - adelantoUSD));
-      const netoBs = Number(p.totalNetoBs ?? p.paidTotalNetoBs ?? p.PaidTotalNetoBs ?? (netoUSD * tasa));
+      const netoUSD = Number(
+        p.totalNetoUSD !== undefined && p.totalNetoUSD !== null && Number(p.totalNetoUSD) > 0
+          ? p.totalNetoUSD
+          : Math.max(0, brutoUSD - adelantoUSD)
+      );
+      const backendNetoBs = Number(p.totalNetoBs ?? p.paidTotalNetoBs ?? p.PaidTotalNetoBs ?? 0);
+      const netoBs = Number(backendNetoBs > 0 ? backendNetoBs : netoUSD * tasa);
+      const brutoBs = Number(p.totalBrutoBs ?? p.paidTotalBrutoBs ?? (brutoUSD * tasa));
+      const adelantoBs = Number(p.totalAdelantosBs ?? p.paidTotalAdelantosBs ?? (adelantoUSD * tasa));
+
       return {
         ...p,
         fincaId: Number(p.fincaId || p.FincaId),
         fincaCodigo: p.fincaCodigo || p.FincaCodigo || undefined,
         fincaNombre: p.fincaNombre || p.FincaNombre || 'Finca',
         propietarioId: Number(p.propietarioId || p.PropietarioId || 0),
+        propietario,
         propietarioNombre: propietario,
         bancoNombre: p.bancoNombre || p.BancoNombre || p.propietarioBancoNombre || '',
         numeroCuenta: p.numeroCuenta || p.NumeroCuenta || p.propietarioNumeroCuenta || '',
@@ -99,10 +116,14 @@ export const finanzasApi = {
         cedulaRif: p.cedulaRIF || p.cedulaRif || p.CedulaRIF || '',
         totalLitros,
         precioLitroUSD: precioLitro,
+        totalUSD: brutoUSD,
         totalBrutoUSD: brutoUSD,
+        totalBrutoBs: brutoBs,
         totalAdelantosUSD: adelantoUSD,
+        totalAdelantosBs: adelantoBs,
         totalNetoUSD: netoUSD,
         totalNetoBs: netoBs,
+        tasaBcv: tasa,
         tasaBCV: tasa,
         pagado: Boolean(p.pagado ?? p.esPagado ?? p.EsPagado),
         fechaPago: p.fechaPago || p.FechaPago,

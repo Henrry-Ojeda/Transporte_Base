@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 18,
-  tag: 'v3.18.18',
+  patch: 19,
+  tag: 'v3.18.19',
   ultimaActualizacion: '2026-11-11',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Rediseño optimizado y simplificado de la vista Inicio móvil del chofer con panel de control unificado y sincronización prominente v3.18.18',
+  descripcion: 'Diseño 1:1 de modales de despacho a receptoría, pago liquidación, comprobante oficial y WhatsApp, más barra de unificación de pagos v3.18.19',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

@@ -8567,22 +8567,22 @@ export const RecoleccionRutasPage: React.FC = () => {
 
         return (
           <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', padding: '16px' }}>
-            <div className="content-card" style={{ width: '100%', maxWidth: '520px', borderRadius: '16px', overflow: 'hidden', padding: 0, border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', background: '#ffffff' }}>
-              {/* Header con gradiente azul Receptoría */}
-              <div style={{ background: 'linear-gradient(135deg, #1e3a8a, #1d4ed8, #2563eb)', color: '#ffffff', padding: '18px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.2)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
+            <div className="modal-custom-card" style={{ width: '100%', maxWidth: '480px', borderRadius: '16px', overflow: 'hidden', padding: 0, border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.3)', background: '#ffffff' }}>
+              {/* Header idéntico Image 1 y v2_11_26 */}
+              <div style={{ padding: '18px 24px', background: '#ffffff', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'rgba(245, 158, 11, 0.15)', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '19px' }}>
                     <i className="fa-solid fa-truck-fast"></i>
                   </div>
                   <div>
-                    <h2 style={{ fontSize: '17px', fontWeight: 800, color: '#ffffff', margin: 0 }}>Enviar Viaje a Receptoría</h2>
-                    <p style={{ fontSize: '12px', color: '#bfdbfe', margin: '2px 0 0 0', fontWeight: 500 }}>Despachar camión con las fincas recolectadas</p>
+                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: 0 }}>Enviar Viaje a Receptoría</h2>
+                    <p style={{ fontSize: '12.5px', color: '#64748b', margin: '2px 0 0 0', fontWeight: 500 }}>Despachar camión con las fincas recolectadas</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setModalEnviarReceptoria(false)}
-                  style={{ color: '#ffffff', background: 'rgba(255,255,255,0.15)', border: 'none', width: '32px', height: '32px', borderRadius: '8px', fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                  style={{ color: '#94a3b8', background: 'transparent', border: 'none', width: '32px', height: '32px', borderRadius: '8px', fontSize: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s ease' }}
                 >
                   &times;
                 </button>
@@ -8594,70 +8594,58 @@ export const RecoleccionRutasPage: React.FC = () => {
                   enviarReceptoriaMutation.mutate(viajeActivo.id);
                 }}
               >
-                <div style={{ padding: '22px', background: '#f8fafc' }}>
-                  {/* 3 Tarjetas de Métricas del Despacho */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '18px' }}>
-                    <div style={{ background: '#eff6ff', border: '1.5px solid #bfdbfe', borderBottomWidth: '3px', borderRadius: '10px', padding: '10px 12px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                      <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'block' }}>
-                        Ticket
-                      </span>
-                      <strong style={{ display: 'block', fontSize: '15px', fontWeight: 900, color: '#2563eb', marginTop: '2px' }}>
-                        #{viajeActivo.codigoTicket || viajeActivo.id}
+                <div style={{ padding: '22px', background: '#ffffff' }}>
+                  {/* Tarjeta oscura con métricas (1:1 Image 1) */}
+                  <div style={{ background: '#334155', borderRadius: '12px', padding: '16px 20px', marginBottom: '16px', color: '#ffffff' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '13.5px' }}>
+                      <span style={{ color: '#94a3b8', fontWeight: 500 }}>Ticket:</span>
+                      <strong style={{ color: '#60a5fa', fontWeight: 800 }}>
+                        #{viajeActivo.codigoTicket || viajeActivo.id} ({viajeActivo.choferNombre || viajeActivo.nombreConductor})
                       </strong>
-                      <small style={{ fontSize: '11px', color: '#64748b', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }} title={viajeActivo.choferNombre || viajeActivo.nombreConductor}>
-                        {viajeActivo.choferNombre || viajeActivo.nombreConductor}
-                      </small>
                     </div>
-
-                    <div style={{ background: '#ecfdf5', border: '1.5px solid #a7f3d0', borderBottomWidth: '3px', borderRadius: '10px', padding: '10px 12px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                      <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'block' }}>
-                        En Cisterna
-                      </span>
-                      <strong style={{ display: 'block', fontSize: '16px', fontWeight: 900, color: '#059669', marginTop: '2px', fontFamily: 'monospace' }}>
-                        {totalLts.toLocaleString()} L
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '13.5px' }}>
+                      <span style={{ color: '#94a3b8', fontWeight: 500 }}>Total Litros en Tanque:</span>
+                      <strong style={{ color: '#34d399', fontSize: '17px', fontWeight: 900, fontFamily: 'monospace' }}>
+                        {totalLts.toLocaleString()} Lts
                       </strong>
-                      <small style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '2px' }}>
-                        {viajeActivo.camionPlaca || 'Cisterna'}
-                      </small>
                     </div>
-
-                    <div style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', borderBottomWidth: '3px', borderRadius: '10px', padding: '10px 12px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                      <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.02em', display: 'block' }}>
-                        Fincas
-                      </span>
-                      <strong style={{ display: 'block', fontSize: '16px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13.5px' }}>
+                      <span style={{ color: '#94a3b8', fontWeight: 500 }}>Fincas Recolectadas:</span>
+                      <strong style={{ color: '#ffffff', fontWeight: 800 }}>
                         {cantFincas}
                       </strong>
-                      <small style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '2px' }}>
-                        recolectadas
-                      </small>
                     </div>
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '12.5px', color: '#334155', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-                      <i className="fa-solid fa-clipboard-list" style={{ color: '#2563eb' }}></i> Nota de Despacho (Opcional)
+                    <label style={{ fontSize: '12.5px', color: '#475569', marginBottom: '6px', display: 'block', fontWeight: 600 }}>
+                      Nota de Despacho (Opcional)
                     </label>
                     <input
                       type="text"
                       value={formReceptoria.observacion}
                       onChange={(e) => setFormReceptoria({ ...formReceptoria, observacion: e.target.value })}
                       className="form-input"
-                      placeholder="Ej: Camión precintado, temperatura 4°C, todo conforme..."
-                      style={{ height: '42px', fontSize: '13px', width: '100%', borderRadius: '10px' }}
+                      placeholder="Ej: Camión precintado, temperatura 4°C..."
+                      style={{ height: '42px', fontSize: '13px', width: '100%', borderRadius: '8px', border: '1.5px solid #cbd5e1' }}
                     />
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 22px', background: '#ffffff', borderTop: '1px solid #e2e8f0' }}>
-                  <button type="button" onClick={() => setModalEnviarReceptoria(false)} className="btn btn-outline" style={{ height: '40px', padding: '0 18px', fontWeight: 700 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '16px 22px', background: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
+                  <button
+                    type="button"
+                    onClick={() => setModalEnviarReceptoria(false)}
+                    className="btn btn-outline"
+                    style={{ height: '42px', padding: '0 22px', fontWeight: 700, borderRadius: '10px', border: '1px solid #cbd5e1', color: '#334155' }}
+                  >
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={enviarReceptoriaMutation.isPending}
-                    className="btn btn-primary"
-                    style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)', border: 'none', fontWeight: 800, padding: '0 22px', height: '40px', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 14px rgba(37,99,235,0.3)', borderRadius: '8px', cursor: 'pointer' }}
+                    className="btn btn-warning"
+                    style={{ background: '#c25e00', border: 'none', fontWeight: 800, padding: '0 24px', height: '42px', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '8px', borderRadius: '10px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(194, 94, 0, 0.25)' }}
                   >
                     <i className={enviarReceptoriaMutation.isPending ? 'fa-solid fa-circle-notch fa-spin' : 'fa-solid fa-paper-plane'}></i>{' '}
                     {enviarReceptoriaMutation.isPending ? 'Enviando...' : 'Confirmar y Enviar'}

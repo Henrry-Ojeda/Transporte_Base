@@ -192,20 +192,13 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           backgroundColor: disabled ? '#f1f5f9' : '#ffffff',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
           {selectedOption ? (
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', overflow: 'hidden' }}>
-              <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a' }}>
-                {selectedOption.label}
-              </span>
-              {selectedOption.subLabel && (
-                <span style={{ fontSize: '11.5px', color: '#64748b' }}>
-                  ({selectedOption.subLabel})
-                </span>
-              )}
-            </div>
+            <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+              {selectedOption.label}
+            </span>
           ) : (
-            <span style={{ fontSize: '13px', color: '#94a3b8' }}>{placeholder}</span>
+            <span style={{ fontSize: '13px', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{placeholder}</span>
           )}
         </div>
 

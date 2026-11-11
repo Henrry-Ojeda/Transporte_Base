@@ -8737,7 +8737,7 @@ export const RecoleccionRutasPage: React.FC = () => {
 
         return (
           <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', padding: '16px' }}>
-            <div className="content-card" style={{ maxWidth: '740px', width: '95%', background: '#ffffff', color: '#0f172a', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden', padding: 0 }}>
+            <div className="content-card" style={{ maxWidth: '840px', width: '95%', background: '#ffffff', color: '#0f172a', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden', padding: 0 }}>
               {/* Header gradiente verde esmeralda */}
               <div style={{ background: 'linear-gradient(135deg, #065f46, #059669, #10b981)', color: '#ffffff', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -8849,7 +8849,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 140px 130px 38px', gap: '10px', padding: '0 12px 6px 12px', fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 140px 130px 40px', gap: '10px', padding: '0 12px 6px 12px', fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
                       <span>Destino / Quesera / Receptoría</span>
                       <span>Tipo de Leche</span>
                       <span style={{ textAlign: 'right', paddingRight: '14px' }}>Litros</span>
@@ -8859,8 +8859,8 @@ export const RecoleccionRutasPage: React.FC = () => {
                     {/* Filas dinámicas */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {filasEntregaDirecta.map((fila, idx) => (
-                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.8fr 140px 130px 38px', gap: '10px', alignItems: 'flex-end' }}>
-                          <div>
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 140px 130px 40px', gap: '10px', alignItems: 'flex-end' }}>
+                          <div style={{ minWidth: 0 }}>
                             {fila.origenServicio && (
                               <div style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 {fila.origenServicio === 'TRANSPORTE' && (
@@ -8920,13 +8920,13 @@ export const RecoleccionRutasPage: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => removerFila(idx)}
-                                style={{ width: '36px', height: '36px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                style={{ width: '40px', height: '40px', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.15s ease' }}
                                 title="Eliminar este destino"
                               >
                                 <i className="fa-solid fa-trash-can"></i>
                               </button>
                             ) : (
-                              <div style={{ width: '36px', height: '36px' }}></div>
+                              <div style={{ width: '40px', height: '40px' }}></div>
                             )}
                           </div>
                         </div>

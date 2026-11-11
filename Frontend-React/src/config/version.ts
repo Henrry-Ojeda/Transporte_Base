@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Sistema Centralizado de Versionado Semántico
  * 
  * Reglas de Versionado del Proyecto:
@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 8,
-  tag: 'v3.18.8',
+  patch: 9,
+  tag: 'v3.18.9',
   ultimaActualizacion: '2026-11-10',
-  tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Sincronización multi-ticket sin pérdida de datos al reconectar WiFi, respaldo dual IndexedDB + LocalStorage y preservación de paradas por ticket v3.18.8',
+  tipoUltimoCambio: 'DISEÑO',
+  descripcion: 'Ajuste de diseño y ancho de columnas en modal Entrega Directa a Compañías / Receptoría v3.18.9',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

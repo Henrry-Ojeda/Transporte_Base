@@ -39,7 +39,7 @@ export const CompaniaSelect: React.FC<CompaniaSelectProps> = ({
       const esRecep = esReceptoriaPrincipal(c);
       return {
         value: c.id,
-        label: esRecep ? `🏢 ${c.nombre} (Receptoría Principal)` : c.nombre,
+        label: esRecep ? `🏢 ${c.nombre} (Principal)` : c.nombre,
         subLabel: esRecep
           ? '🏢 Planta Matriz / Receptoría Principal de Silos'
           : (c.contacto ? `Contacto: ${c.contacto}` : undefined),

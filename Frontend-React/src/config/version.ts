@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sistema Centralizado de Versionado Semántico
  * 
  * Reglas de Versionado del Proyecto:
@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 10,
-  tag: 'v3.18.10',
+  patch: 11,
+  tag: 'v3.18.11',
   ultimaActualizacion: '2026-11-10',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Filtrado inteligente de fincas con leche en validación de receptoría y restauración de circuito completo al devolver ticket al chofer v3.18.10',
+  descripcion: 'Receptoría: Filtros de fecha, vista y buscador reactivo sincronizados, resolución de 0 Lts y Chofer Asignado, tarjetas enriquecidas con capacidad cisterna, barra visual de llenado, ruta, paradas y botón de devolución al chofer v3.18.11',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

@@ -326,7 +326,17 @@ export const AppMovilPage: React.FC = () => {
   // Notificaciones Push y Alertas
   const [notificaciones, setNotificaciones] = useState<NotificacionMovil[]>([]);
   const [modalNotificaciones, setModalNotificaciones] = useState(false);
-  const ultimasIdsNotificadas = useRef<Set<number>>(new Set());
+  const ultimasIdsNotificadas = useRef<Set<number>>((() => {
+    try {
+      const saved = localStorage.getItem('movil_notificadas_ids');
+      if (saved) {
+        const arr = JSON.parse(saved);
+        if (Array.isArray(arr)) return new Set(arr);
+      }
+    } catch {}
+    return new Set();
+  })());
+  const esPrimeraCargaNotificaciones = useRef(true);
   const [permisoNotificaciones, setPermisoNotificaciones] = useState<NotificationPermission>(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       return Notification.permission;
@@ -765,12 +775,44 @@ export const AppMovilPage: React.FC = () => {
   });
   const [cargandoDespacho, setCargandoDespacho] = useState(false);
 
+  // Catálogo de Compañías para distinguir Receptoría Principal (EsPrincipal = true) vs Otras Compañías
+  const [companiasReceptoria, setCompaniasReceptoria] = useState<CompaniaDto[]>(() => {
+    try {
+      const saved = localStorage.getItem('movil_catalogo_companias');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  // Helper estricto para identificar si un destino corresponde a la Receptoría Principal (EsPrincipal = true)
+  const esDestinoReceptoriaPrincipal = (item: any): boolean => {
+    if (!item) return false;
+    const compId = Number(item.companiaDestinoId || item.companiaId || 0);
+    if (compId > 0 && companiasReceptoria.length > 0) {
+      const comp = companiasReceptoria.find((c) => c.id === compId);
+      if (comp) return Boolean(comp.esPrincipal || (comp as any).EsPrincipal);
+    }
+    const nom = String(
+      item.nombreCompaniaDestino ||
+      item.NombreCompaniaDestino ||
+      item.companiaNombre ||
+      item.nombreCompania ||
+      ''
+    ).trim();
+    if (nom && companiasReceptoria.length > 0) {
+      const compNom = companiasReceptoria.find((c) => c.nombre?.toUpperCase().trim() === nom.toUpperCase());
+      if (compNom) return Boolean(compNom.esPrincipal || (compNom as any).EsPrincipal);
+    }
+    if (!compId && !nom) return true;
+    return esReceptoriaPrincipal(item);
+  };
+
   // Helper para identificar si un despacho es hacia Receptoría / Planta
   const esDestinoReceptoria = (d: DespachoCompaniaDto | null | undefined): boolean => {
-    if (!d) return false;
-    if (Number(d.companiaId) === 5028) return true;
-    const nom = (d.nombreCompania || (d as any).companiaNombre || '').toUpperCase();
-    return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA') || esReceptoriaPrincipal(d) || esReceptoriaPrincipal(nom);
+    return esDestinoReceptoriaPrincipal(d);
   };
 
   // Persistir despachos activos en LocalStorage
@@ -1724,7 +1766,6 @@ export const AppMovilPage: React.FC = () => {
   const [despachosSalidaReceptoria, setDespachosSalidaReceptoria] = useState<DespachoCompaniaDto[]>([]);
   const [cargandoReceptoria, setCargandoReceptoria] = useState(false);
   const [fechaReceptoria, setFechaReceptoria] = useState(hoyStr);
-  const [companiasReceptoria, setCompaniasReceptoria] = useState<CompaniaDto[]>([]);
   const [busquedaReceptoria, setBusquedaReceptoria] = useState('');
 
   // Modales de Receptoría
@@ -1884,6 +1925,27 @@ export const AppMovilPage: React.FC = () => {
   const [guardandoTraspaso, setGuardandoTraspaso] = useState(false);
   const [viajesDisponiblesTraspaso, setViajesDisponiblesTraspaso] = useState<ControlRutaDto[]>([]);
 
+  // Rotar imagen base64 físicamente en 90° para corregir fotos de lado o invertidas
+  const rotarImagenBase64 = (base64: string): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!base64) return resolve(base64);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.height;
+        canvas.height = img.width;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(base64);
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((90 * Math.PI) / 180);
+        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => resolve(base64);
+      img.src = base64;
+    });
+  };
+
   const comprimirImagenMovil = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1970,18 +2032,29 @@ export const AppMovilPage: React.FC = () => {
     }
     setGuardandoConfirmacionDespacho(true);
     try {
-      const res = await operacionesApi.validarEntregaCompania(modalConfirmarDespachoChofer.id, {
-        litrosConfirmados: litrosNum,
-        litrosRecibidosCompania: litrosNum,
-        observacion: formConfirmacionDespacho.observacion || 'Confirmado por chofer desde App Móvil',
-        observaciones: formConfirmacionDespacho.observacion || 'Confirmado por chofer desde App Móvil',
-        fotoReciboUrl: formConfirmacionDespacho.fotoReciboUrl || undefined,
-      });
-      toast.success(res.message || '¡Entrega confirmada y recibo enviado exitosamente!');
+      const item = modalConfirmarDespachoChofer as any;
+      let res: any;
+      if (item.esRuta || (!item.litrosDespachados && item.totalLitrosFinca)) {
+        res = await operacionesApi.entregarDirectoCompania(item.id, {
+          companiaId: Number(item.companiaDestinoId || item.companiaId || 0),
+          litrosEntregados: litrosNum,
+          observaciones: formConfirmacionDespacho.observacion || 'Entrega directa validada por chofer desde App Móvil',
+        });
+      } else {
+        res = await operacionesApi.validarEntregaCompania(modalConfirmarDespachoChofer.id, {
+          litrosConfirmados: litrosNum,
+          litrosRecibidosCompania: litrosNum,
+          observacion: formConfirmacionDespacho.observacion || 'Confirmado por chofer desde App Móvil',
+          observaciones: formConfirmacionDespacho.observacion || 'Confirmado por chofer desde App Móvil',
+          fotoReciboUrl: formConfirmacionDespacho.fotoReciboUrl || undefined,
+        });
+      }
+      toast.success(res?.message || '¡Entrega confirmada y recibo enviado exitosamente!');
       setModalConfirmarDespachoChofer(null);
       setFormConfirmacionDespacho({ litrosRecibidos: '', observacion: '', fotoReciboUrl: '' });
       await cargarEntregasChofer();
       await cargarDespachoActivo();
+      await cargarViajeActivo();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Error al confirmar la entrega en planta');
     } finally {
@@ -2070,42 +2143,52 @@ export const AppMovilPage: React.FC = () => {
       try {
         const data = await notificacionesApi.getMisNotificaciones(30);
         if (Array.isArray(data)) {
-          // Detectar nuevas notificaciones no leídas para emitir vibración / aviso toast
-          const nuevas = data.filter(
-            (n) => !n.leido && !ultimasIdsNotificadas.current.has(n.id)
-          );
+          if (esPrimeraCargaNotificaciones.current) {
+            // Primera carga al ingresar a la app: registrar todas las notificaciones existentes en el set sin disparar alarmas repetidas
+            data.forEach((n) => ultimasIdsNotificadas.current.add(n.id));
+            try {
+              localStorage.setItem('movil_notificadas_ids', JSON.stringify(Array.from(ultimasIdsNotificadas.current).slice(-150)));
+            } catch {}
+            esPrimeraCargaNotificaciones.current = false;
+          } else {
+            // En consultas posteriores: solo emitir alerta si llega una notificación verdaderamente nueva no leída
+            const nuevas = data.filter(
+              (n) => !n.leido && !ultimasIdsNotificadas.current.has(n.id)
+            );
 
-          if (nuevas.length > 0) {
-            nuevas.forEach((n) => ultimasIdsNotificadas.current.add(n.id));
+            if (nuevas.length > 0) {
+              nuevas.forEach((n) => ultimasIdsNotificadas.current.add(n.id));
+              try {
+                localStorage.setItem('movil_notificadas_ids', JSON.stringify(Array.from(ultimasIdsNotificadas.current).slice(-150)));
+              } catch {}
 
-            // Alerta visual Toast en pantalla si la app está visible
-            const nReciente = nuevas[0];
-            toast.info(`🔔 ${nReciente.titulo}`, {
-              description: nReciente.mensaje,
-              duration: 8000,
-              action: {
-                label: 'Ver Alerta',
-                onClick: () => setModalNotificaciones(true),
-              },
-            });
+              // Alerta visual Toast en pantalla si la app está visible
+              const nReciente = nuevas[0];
+              toast.info(`🔔 ${nReciente.titulo}`, {
+                description: nReciente.mensaje,
+                duration: 8000,
+                action: {
+                  label: 'Ver Alerta',
+                  onClick: () => setModalNotificaciones(true),
+                },
+              });
 
-            // AVISO DIRECTO AL TELÉFONO (Vibración + Sonido + Notificación en Pantalla Bloqueada vía Service Worker)
-            emitirNotificacionTelefono(nReciente.titulo, nReciente.mensaje, nReciente.id);
+              // AVISO DIRECTO AL TELÉFONO (Vibración + Sonido + Notificación en Pantalla Bloqueada vía Service Worker)
+              emitirNotificacionTelefono(nReciente.titulo, nReciente.mensaje, nReciente.id);
 
-            // AUTO-ACTUALIZACIÓN INMEDIATA MULTI-ROL:
-            // Al recibir una notificación (recolección de leche, nueva finca, cambio de ruta, confirmación, etc.):
-            // Recargar automáticamente todas las vistas según el modo activo sin requerir refresh manual
-            cargarViajeActivo();
-            cargarDespachoActivo();
-            cargarDatosAdminEnVivo(true);
-            cargarDatosLogisticaAdmin();
-            if (modalTimelapseMovil && viajeTimelapseMovil?.id) {
-              operacionesApi.getFincasViaje(viajeTimelapseMovil.id).then((p) => {
-                if (Array.isArray(p)) setParadasTimelapseMovil(ordenarParadasTimelapse(p));
-              }).catch(() => {});
-            }
-            if (modoActivo === 'TALLER') {
-              cargarDatosTaller();
+              // AUTO-ACTUALIZACIÓN INMEDIATA MULTI-ROL
+              cargarViajeActivo();
+              cargarDespachoActivo();
+              cargarDatosAdminEnVivo(true);
+              cargarDatosLogisticaAdmin();
+              if (modalTimelapseMovil && viajeTimelapseMovil?.id) {
+                operacionesApi.getFincasViaje(viajeTimelapseMovil.id).then((p) => {
+                  if (Array.isArray(p)) setParadasTimelapseMovil(ordenarParadasTimelapse(p));
+                }).catch(() => {});
+              }
+              if (modoActivo === 'TALLER') {
+                cargarDatosTaller();
+              }
             }
           }
 
@@ -2120,7 +2203,7 @@ export const AppMovilPage: React.FC = () => {
     // Consultar cada 6 segundos para respuesta casi instantánea a cambios de ruta y cargas en vivo
     const interval = setInterval(pollingNotificaciones, 6000);
     return () => clearInterval(interval);
-  }, [dispositivo, authUser, isOnline, modoActivo, tabActiva, modalTimelapseMovil, viajeTimelapseMovil?.id]);
+  }, [dispositivo?.id, authUser?.id, isOnline]);
 
   // Sincronización continua en segundo plano cada 12s para todas las vistas (auto-actualización silenciosa)
   useEffect(() => {
@@ -2139,6 +2222,22 @@ export const AppMovilPage: React.FC = () => {
     }, 12000);
     return () => clearInterval(intervalAutoSync);
   }, [isOnline, modoActivo, tabActiva, fechaLogistica, viajeSeleccionadoId]);
+
+  // Sincronizar catálogo de compañías para clasificar Receptoría Principal (EsPrincipal = true) vs Otras Compañías (offline y online)
+  useEffect(() => {
+    if (!isOnline) return;
+    catalogosApi
+      .getCompanias(true)
+      .then((comps) => {
+        if (Array.isArray(comps) && comps.length > 0) {
+          setCompaniasReceptoria(comps);
+          try {
+            localStorage.setItem('movil_catalogo_companias', JSON.stringify(comps));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [isOnline]);
 
   // Helper para persistencia segura de cargas locales tolerante a cuota de localStorage
   const guardarCargasLocalSeguro = (listaCargas: CargaOffline[]) => {
@@ -2595,8 +2694,9 @@ export const AppMovilPage: React.FC = () => {
           }
         }
 
-        // REGLA: En rol Chofer SOLO se muestran tickets ABIERTOS en ruta
-        if (esChoferReal) {
+        // REGLA: En rol Chofer y Admin supervisando chofer SOLO se muestran tickets ABIERTOS en ruta
+        const aplicarFiltroEstrictoAbierto = esChoferReal || modoActivo === 'CHOFER';
+        if (aplicarFiltroEstrictoAbierto) {
           if (vOffline && !esTicketAbiertoEnRuta(vOffline)) vOffline = null;
           if (!vOffline) {
             vOffline = listaOffline.find((x) => esTicketAbiertoEnRuta(x)) || null;
@@ -2614,7 +2714,7 @@ export const AppMovilPage: React.FC = () => {
           } else {
             setParadasViajeActivo([]);
           }
-        } else if (esChoferReal) {
+        } else if (aplicarFiltroEstrictoAbierto) {
           setViajeSeleccionadoId(null);
           setViajeActivo(null);
           setParadasViajeActivo([]);
@@ -2713,8 +2813,9 @@ export const AppMovilPage: React.FC = () => {
       if (!targetV && !idTarget && viajeSeleccionadoId) {
         targetV = lista.find((x) => x.id === viajeSeleccionadoId) || null;
       }
-      // REGLA: En rol Chofer SOLO se muestran tickets ABIERTOS en ruta
-      if (esChoferReal) {
+      // REGLA: En rol Chofer y Admin supervisando chofer SOLO se muestran tickets ABIERTOS en ruta
+      const aplicarFiltroEstrictoAbierto = esChoferReal || modoActivo === 'CHOFER';
+      if (aplicarFiltroEstrictoAbierto) {
         if (targetV && !esTicketAbiertoEnRuta(targetV)) targetV = null;
         if (!targetV) {
           targetV = lista.find((x) => esTicketAbiertoEnRuta(x)) || null;
@@ -2851,7 +2952,8 @@ export const AppMovilPage: React.FC = () => {
           try {
             const vParsed = JSON.parse(savedV);
             if (vParsed && vParsed.id) {
-              if (esChoferReal && !esTicketAbiertoEnRuta(vParsed)) {
+              const aplicarFiltroEstrictoAbierto = esChoferReal || modoActivo === 'CHOFER';
+              if (aplicarFiltroEstrictoAbierto && !esTicketAbiertoEnRuta(vParsed)) {
                 setViajeSeleccionadoId(null);
                 setViajeActivo(null);
                 setParadasViajeActivo([]);
@@ -4699,6 +4801,52 @@ export const AppMovilPage: React.FC = () => {
 
   // Filtro de circuito en pestaña Recolección
   const [filtroCircuito, setFiltroCircuito] = useState<'todas' | 'pendientes' | 'recolectadas'>('todas');
+
+  // Indicadores de flechas para la pestaña Entregas (Receptoría = Flecha Verde Arriba ⬆️, Otra Compañía = Flecha Roja Abajo ⬇️)
+  const tieneTicketReceptoriaHoy = useMemo(() => {
+    // 1. En viajesChofer (tickets de ruta enviados a receptoría o en espera de recepción)
+    const enViajes = (viajesChofer || []).some((v: any) => {
+      const fViaje = v.fecha ? String(v.fecha).split('T')[0] : '';
+      if (fViaje && fViaje !== hoyStr) return false;
+      const enviado = viajeEstaEnviadoAReceptoria(v) || (v.procesoActualId != null && Number(v.procesoActualId) >= 2);
+      return enviado && esDestinoReceptoriaPrincipal(v);
+    });
+    // 2. En ticketsReceptoria del chofer efectivo
+    const enReceptoria = (ticketsReceptoria || []).some((tr: any) => {
+      const chId = tr.usuarioId || tr.choferId || (tr as any).conductorId;
+      if (chId && Number(chId) === Number(choferEfectivoId)) {
+        const fTr = tr.fecha ? String(tr.fecha).split('T')[0] : '';
+        if (fTr && fTr !== hoyStr) return false;
+        return esDestinoReceptoriaPrincipal(tr);
+      }
+      return false;
+    });
+    // 3. En entregas si alguna va hacia Receptoría Principal
+    const enEntregas = (entregas || []).some((d: any) => {
+      const fD = d.fecha ? String(d.fecha).split('T')[0] : '';
+      if (fD && fD !== hoyStr) return false;
+      return esDestinoReceptoriaPrincipal(d);
+    });
+    return enViajes || enReceptoria || enEntregas;
+  }, [viajesChofer, ticketsReceptoria, entregas, choferEfectivoId, companiasReceptoria, hoyStr]);
+
+  const tieneDespachoOtraCompaniaHoy = useMemo(() => {
+    // 1. En entregas (despachos a compañías externas donde no es principal)
+    const enEntregas = (entregas || []).some((d: any) => {
+      const fD = d.fecha ? String(d.fecha).split('T')[0] : '';
+      if (fD && fD !== hoyStr) return false;
+      const est = String(d.estado || '').toUpperCase();
+      return est !== 'FINALIZADO' && est !== 'CERRADO' && !esDestinoReceptoriaPrincipal(d);
+    });
+    // 2. En viajesChofer si tiene ruta con destino explícito a otra compañía
+    const enViajesOtra = (viajesChofer || []).some((v: any) => {
+      const fViaje = v.fecha ? String(v.fecha).split('T')[0] : '';
+      if (fViaje && fViaje !== hoyStr) return false;
+      const enviado = viajeEstaEnviadoAReceptoria(v) || (v.procesoActualId != null && Number(v.procesoActualId) >= 2);
+      return enviado && !esDestinoReceptoriaPrincipal(v);
+    });
+    return enEntregas || enViajesOtra;
+  }, [entregas, viajesChofer, companiasReceptoria, hoyStr]);
 
   // Configuración dinámica de pestañas de navegación según modo activo
   const tabsNavegacion = useMemo(() => {
@@ -8744,7 +8892,7 @@ export const AppMovilPage: React.FC = () => {
             return list;
           })();
 
-          // 1. Entradas a Receptoría del chofer (tickets de ruta enviados a silos/planta o en espera de verificación)
+          // 1. Tickets de ruta enviados a receptoría o en espera de recepción del chofer efectivo
           const misTicketsRutaEnviados = (() => {
             const fFiltro = filtroFechaEntregas || hoyStr;
             return viajesChofer.filter((v: any) => {
@@ -8754,20 +8902,31 @@ export const AppMovilPage: React.FC = () => {
             });
           })();
 
-          const listaEntradasReceptoria = (() => {
-            const list = [...misTicketsRutaEnviados];
+          // Todos los tickets consolidados del chofer para la fecha seleccionada
+          const todosLosTicketsEntregas = (() => {
+            const map = new Map<string, any>();
+            misTicketsRutaEnviados.forEach((t: any) => map.set(`ruta-${t.id}`, { ...t, esRuta: true }));
             (ticketsReceptoria || []).forEach((tr: any) => {
               const chId = tr.usuarioId || tr.choferId || (tr as any).conductorId;
               if (chId && Number(chId) === Number(choferEfectivoId)) {
-                if (!list.some((x: any) => x.id === tr.id)) {
-                  list.push(tr);
+                if (!map.has(`ruta-${tr.id}`)) {
+                  map.set(`ruta-${tr.id}`, { ...tr, esRuta: true });
                 }
               }
             });
-            return list;
+            listaEntregasEfectiva.forEach((d: any) => {
+              map.set(`despacho-${d.id}`, { ...d, esDespacho: true });
+            });
+            return Array.from(map.values());
           })();
 
-          const totalGeneral = listaEntradasReceptoria.length + listaEntregasEfectiva.length;
+          // SECCIÓN 1: Entradas con DESTINO Receptoría Principal (EsPrincipal = true)
+          const listaEntradasReceptoria = todosLosTicketsEntregas.filter((t) => esDestinoReceptoriaPrincipal(t));
+
+          // SECCIÓN 2: Salidas con DESTINO a OTRA Compañía (Queseras, pasteurizadoras, etc. EsPrincipal = false)
+          const listaSalidasOtrasCompanias = todosLosTicketsEntregas.filter((t) => !esDestinoReceptoriaPrincipal(t));
+
+          const totalGeneral = listaEntradasReceptoria.length + listaSalidasOtrasCompanias.length;
 
           return (
           <div>
@@ -9036,277 +9195,198 @@ export const AppMovilPage: React.FC = () => {
                   )}
                 </div>
 
-                {/* 2. SECCIÓN SALIDAS: DESPACHOS A COMPAÑÍAS Y QUESERAS */}
+                {/* 2. SECCIÓN SALIDAS: DESPACHOS A OTRAS COMPAÑÍAS Y QUESERAS */}
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 900, color: '#7e22ce' }}>
                       <i className="fa-solid fa-truck-fast"></i>
-                      <span>2. SALIDAS: DESPACHOS A COMPAÑÍAS Y QUESERAS (CONTROL COMPAÑÍAS)</span>
+                      <span>2. SALIDAS: DESPACHOS A OTRAS COMPAÑÍAS Y QUESERAS (CONTROL COMPAÑÍAS)</span>
                     </div>
                     <span style={{ fontSize: '11px', fontWeight: 800, color: '#7e22ce', background: '#f5f3ff', padding: '2px 8px', borderRadius: '6px' }}>
-                      {listaEntregasEfectiva.length} {listaEntregasEfectiva.length === 1 ? 'Salida' : 'Salidas'}
+                      {listaSalidasOtrasCompanias.length} {listaSalidasOtrasCompanias.length === 1 ? 'Salida' : 'Salidas'}
                     </span>
                   </div>
 
-                  {listaEntregasEfectiva.length === 0 ? (
+                  {listaSalidasOtrasCompanias.length === 0 ? (
                     <div style={{ background: '#ffffff', borderRadius: '12px', padding: '16px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>
-                      No tienes despachos a compañías asignados en esta fecha.
+                      No tienes despachos a otras compañías asignados en esta fecha.
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {listaEntregasEfectiva.map((d: any) => {
-                  const desp = Number(d.litrosDespachados || 0);
-                  const rec = Number(d.litrosRecibidosCompania || d.litrosConfirmados || 0);
-                  const merma = rec > 0 ? rec - desp : 0;
-                  const est = (d.estado || 'En Ruta').toUpperCase();
+                      {listaSalidasOtrasCompanias.map((d: any) => {
+                        const desp = Number(d.litrosDespachados || d.totalLitrosFinca || (d as any).litrosCargadosTotal || 0);
+                        const rec = Number(d.litrosRecibidosCompania || d.litrosConfirmados || d.totalLitrosReceptoria || 0);
+                        const merma = rec > 0 ? rec - desp : 0;
+                        const est = (d.estado || 'En Ruta').toUpperCase();
+                        const yaConfirmado = est === 'FINALIZADO' || est === 'ENTREGADO' || rec > 0;
+                        const destNombre = d.nombreCompania || d.companiaNombre || d.nombreCompaniaDestino || 'Otra Compañía';
+                        const choferNom = d.nombreConductor || d.choferNombre || d.conductorNombre || choferEfectivoNombre;
+                        const placa = d.camionPlaca || dispositivo?.placaCamion || 'S/P';
+                        const tipoLeche = String(d.tipoLeche || 'VACA').toUpperCase();
 
-                  return (
-                    <div
-                      key={d.id}
-                      style={{
-                        background: '#ffffff',
-                        borderRadius: '16px',
-                        padding: '16px',
-                        border: '1px solid #e2e8f0',
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#7e22ce' }}>
-                          Ticket #{d.id} • Receptoría
-                        </span>
-                        <span
-                          style={{
-                            fontSize: '10.5px',
-                            fontWeight: 800,
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                            background: est === 'FINALIZADO' || est === 'ENTREGADO' ? '#dcfce7' : '#fef3c7',
-                            color: est === 'FINALIZADO' || est === 'ENTREGADO' ? '#15803d' : '#b45309',
-                          }}
-                        >
-                          {d.estado || 'EN RUTA'}
-                        </span>
-                      </div>
+                        return (
+                          <div
+                            key={`salida-${d.id}`}
+                            style={{
+                              background: '#ffffff',
+                              borderRadius: '16px',
+                              padding: '16px',
+                              border: yaConfirmado ? '1.5px solid #86efac' : '1px solid #e2e8f0',
+                              boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ background: '#7e22ce', color: '#ffffff', fontSize: '11px', fontWeight: 900, padding: '2px 7px', borderRadius: '6px' }}>
+                                  <i className="fa-solid fa-truck"></i> {placa}
+                                </span>
+                                <span style={{ background: '#f5f3ff', color: '#7e22ce', border: '1px solid #e9d5ff', fontSize: '10.5px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px' }}>
+                                  🥛 {tipoLeche}
+                                </span>
+                              </div>
+                              <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#334155' }}>
+                                #{d.codigoTicket || d.id}
+                              </span>
+                            </div>
 
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>
-                        <i className="fa-solid fa-building-wheat mr-1.5 text-purple-600"></i>
-                        Destino: {d.nombreCompania || d.companiaNombre || 'Receptoría Principal'}
-                      </div>
+                            <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}>
+                              <i className="fa-solid fa-building-wheat mr-1.5 text-purple-600"></i>
+                              Destino: <strong style={{ color: '#7e22ce' }}>{destNombre}</strong>
+                            </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', background: '#f8fafc', padding: '10px', borderRadius: '10px' }}>
-                        <div>
-                          <span style={{ fontSize: '10.5px', color: '#64748b', display: 'block' }}>Despachados:</span>
-                          <strong style={{ fontSize: '14px', color: '#0369a1' }}>{desp.toLocaleString()} L</strong>
-                        </div>
-                        <div>
-                          <span style={{ fontSize: '10.5px', color: '#64748b', display: 'block' }}>En Planta:</span>
-                          <strong style={{ fontSize: '14px', color: '#15803d' }}>
-                            {rec > 0 ? `${rec.toLocaleString()} L` : 'Pendiente'}
-                          </strong>
-                        </div>
-                      </div>
+                            <div style={{ fontSize: '11.5px', color: '#64748b', marginBottom: '8px' }}>
+                              <i className="fa-solid fa-user mr-1 text-slate-400"></i>
+                              Chofer: {choferNom}
+                            </div>
 
-                      {merma !== 0 && (
-                        <div style={{ marginTop: '8px', fontSize: '11.5px', color: merma < 0 ? '#dc2626' : '#15803d', fontWeight: 700 }}>
-                          Merma: {merma > 0 ? `+${merma.toLocaleString()} L` : `${merma.toLocaleString()} L`}
-                        </div>
-                      )}
-
-                      {/* Botones de Acción de Entrega (Chofer y Opciones Admin) */}
-                      {est !== 'FINALIZADO' && est !== 'CERRADO' ? (
-                        esDestinoReceptoria(d) ? (
-                          <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div
-                              style={{
-                                background: '#ecfdf5',
-                                border: '1.5px solid #a7f3d0',
-                                borderRadius: '12px',
-                                padding: '10px 14px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '10px',
-                              }}
-                            >
-                              <i className="fa-solid fa-hourglass-half text-emerald-600 text-lg"></i>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', background: '#f8fafc', padding: '10px', borderRadius: '10px' }}>
                               <div>
-                                <div style={{ fontWeight: 800, fontSize: '12.5px', color: '#065f46' }}>
-                                  ⏳ Pendiente por Recepcionar en Planta
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#047857' }}>
-                                  La comprobación y descarga de este ticket la gestiona el personal de Receptoría.
-                                </div>
+                                <span style={{ fontSize: '10.5px', color: '#64748b', display: 'block' }}>Despachados:</span>
+                                <strong style={{ fontSize: '14px', color: '#0369a1' }}>{desp.toLocaleString()} L</strong>
+                              </div>
+                              <div>
+                                <span style={{ fontSize: '10.5px', color: '#64748b', display: 'block' }}>En Báscula/Planta:</span>
+                                <strong style={{ fontSize: '14px', color: rec > 0 ? '#15803d' : '#d97706' }}>
+                                  {rec > 0 ? `${rec.toLocaleString()} L` : 'Pendiente'}
+                                </strong>
                               </div>
                             </div>
 
-                            {/* Opciones avanzadas de Receptoría exclusivas para Rol Admin en Vista Chofer */}
-                            {esAdminReal && (
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                            {merma !== 0 && (
+                              <div style={{ marginTop: '8px', fontSize: '11.5px', color: merma < 0 ? '#dc2626' : '#15803d', fontWeight: 700 }}>
+                                Merma: {merma > 0 ? `+${merma.toLocaleString()} L` : `${merma.toLocaleString()} L`}
+                              </div>
+                            )}
+
+                            {/* Botones de Acción: Validar Litros en Compañía y Subir Recibo */}
+                            {!yaConfirmado ? (
+                              <div style={{ marginTop: '12px' }}>
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const ticketObj =
-                                      viajesEnVivo.find((v) => v.id === d.controlRutaId || v.id === d.id) ||
-                                      (viajeActivo?.id === d.controlRutaId ? viajeActivo : null);
-                                    if (ticketObj) {
-                                      abrirTimelapseMovil(ticketObj);
-                                    } else {
-                                      toast.info(`Cargando paradas del ticket #${d.id}...`);
-                                    }
+                                    setModalConfirmarDespachoChofer(d);
+                                    setFormConfirmacionDespacho({
+                                      litrosRecibidos: desp || '',
+                                      observacion: '',
+                                      fotoReciboUrl: d.fotoReciboUrl || '',
+                                    });
                                   }}
+                                  style={{
+                                    width: '100%',
+                                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                                    color: '#ffffff',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    padding: '11px 16px',
+                                    fontWeight: 800,
+                                    fontSize: '13px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                    boxShadow: '0 3px 10px rgba(16,185,129,0.25)',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <i className="fa-solid fa-clipboard-check"></i>
+                                  Validar Litros & Subir Recibo
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div
+                                  style={{
+                                    background: '#f0fdf4',
+                                    border: '1px solid #bbf7d0',
+                                    borderRadius: '10px',
+                                    padding: '8px 12px',
+                                    fontSize: '12px',
+                                    fontWeight: 700,
+                                    color: '#166534',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                  }}
+                                >
+                                  <span>
+                                    <i className="fa-solid fa-circle-check text-emerald-600 mr-1.5"></i>
+                                    Entregado: {rec.toLocaleString()} L
+                                  </span>
+                                  {d.fotoReciboUrl && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setFotoReciboVerModal(d.fotoReciboUrl)}
+                                      style={{
+                                        background: '#ffffff',
+                                        color: '#7e22ce',
+                                        border: '1px solid #d8b4fe',
+                                        borderRadius: '8px',
+                                        padding: '4px 10px',
+                                        fontWeight: 800,
+                                        fontSize: '11px',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
+                                      <i className="fa-solid fa-camera"></i> Ver Recibo
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Opciones avanzadas adicionales si es Admin supervisando */}
+                            {esAdminReal && (
+                              <div style={{ marginTop: '8px', display: 'flex', gap: '6px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => abrirTimelapseMovil(d)}
                                   style={{
                                     background: '#eff6ff',
                                     color: '#1d4ed8',
                                     border: '1px solid #bfdbfe',
-                                    borderRadius: '10px',
-                                    padding: '8px 6px',
+                                    borderRadius: '8px',
+                                    padding: '6px 10px',
                                     fontSize: '11px',
                                     fontWeight: 800,
                                     cursor: 'pointer',
-                                    display: 'flex',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
-                                    justifyContent: 'center',
                                     gap: '4px',
                                   }}
                                 >
-                                  <i className="fa-solid fa-clock-rotate-left"></i>
-                                  <span>Timelapse</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const ticketObj =
-                                      viajesEnVivo.find((v) => v.id === d.controlRutaId || v.id === d.id) ||
-                                      (viajeActivo?.id === d.controlRutaId ? viajeActivo : null);
-                                    setModalVerificarLitros({
-                                      open: true,
-                                      ticket: (ticketObj || {
-                                        id: d.controlRutaId || d.id,
-                                        totalLitrosFinca: desp,
-                                        camionPlaca: d.camionPlaca,
-                                        nombreConductor: d.conductorNombre || choferEfectivoNombre,
-                                      }) as any,
-                                      litrosRecibidos: rec > 0 ? rec : desp,
-                                      observacion: '',
-                                    });
-                                  }}
-                                  style={{
-                                    background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
-                                    color: '#ffffff',
-                                    border: 'none',
-                                    borderRadius: '10px',
-                                    padding: '8px 6px',
-                                    fontSize: '11px',
-                                    fontWeight: 800,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '4px',
-                                  }}
-                                >
-                                  <i className="fa-solid fa-scale-balanced"></i>
-                                  <span>Recepcionar</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setModalDevolverTicket({
-                                      open: true,
-                                      ticketId: d.controlRutaId || d.id,
-                                      motivo: '',
-                                    });
-                                  }}
-                                  style={{
-                                    background: '#fff1f2',
-                                    color: '#e11d48',
-                                    border: '1px solid #fecdd3',
-                                    borderRadius: '10px',
-                                    padding: '8px 6px',
-                                    fontSize: '11px',
-                                    fontWeight: 800,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '4px',
-                                  }}
-                                >
-                                  <i className="fa-solid fa-arrow-rotate-left"></i>
-                                  <span>Devolver</span>
+                                  <i className="fa-solid fa-timeline"></i> Timelapse
                                 </button>
                               </div>
                             )}
                           </div>
-                        ) : (
-                          <div style={{ marginTop: '12px' }}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setModalConfirmarDespachoChofer(d);
-                                setFormConfirmacionDespacho({
-                                  litrosRecibidos: d.litrosDespachados || '',
-                                  observacion: '',
-                                  fotoReciboUrl: d.fotoReciboUrl || '',
-                                });
-                              }}
-                              style={{
-                                width: '100%',
-                                background: 'linear-gradient(135deg, #10b981, #059669)',
-                                color: '#ffffff',
-                                border: 'none',
-                                borderRadius: '12px',
-                                padding: '11px 16px',
-                                fontWeight: 800,
-                                fontSize: '13px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '8px',
-                                boxShadow: '0 3px 10px rgba(16,185,129,0.25)',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              <i className="fa-solid fa-clipboard-check"></i>
-                              Confirmar Entrega en Planta & Subir Recibo
-                            </button>
-                          </div>
-                        )
-                      ) : (
-                        d.fotoReciboUrl && (
-                          <div style={{ marginTop: '10px' }}>
-                            <button
-                              type="button"
-                              onClick={() => setFotoReciboVerModal(d.fotoReciboUrl)}
-                              style={{
-                                width: '100%',
-                                background: '#f5f3ff',
-                                color: '#7e22ce',
-                                border: '1px solid #d8b4fe',
-                                borderRadius: '10px',
-                                padding: '8px 12px',
-                                fontWeight: 700,
-                                fontSize: '12px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '6px',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              <i className="fa-solid fa-camera"></i> Ver Recibo de Báscula / Planta
-                            </button>
-                          </div>
-                        )
-                      )}
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                  )}
+                </div>
         </div>
       )}
 
@@ -9545,6 +9625,32 @@ export const AppMovilPage: React.FC = () => {
                               <div style={{ fontSize: '11px', color: '#64748b' }}>Listo para enviar</div>
                             </div>
                             <div style={{ display: 'flex', gap: '6px' }}>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (formConfirmacionDespacho.fotoReciboUrl) {
+                                    const rotada = await rotarImagenBase64(formConfirmacionDespacho.fotoReciboUrl);
+                                    setFormConfirmacionDespacho((prev) => ({ ...prev, fotoReciboUrl: rotada }));
+                                  }
+                                }}
+                                style={{
+                                  background: '#f0fdf4',
+                                  border: '1px solid #86efac',
+                                  color: '#15803d',
+                                  borderRadius: '8px',
+                                  padding: '6px 10px',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                                title="Rotar imagen 90° hacia la derecha"
+                              >
+                                <i className="fa-solid fa-rotate-right"></i>
+                                Rotar
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => inputFotoReciboDespachoRef.current?.click()}
@@ -13847,11 +13953,48 @@ export const AppMovilPage: React.FC = () => {
                 transform: isActiva ? 'scale(1.05)' : 'scale(1)',
               }}
             >
-              <i className={`fa-solid ${item.icon}`} style={{ fontSize: '18px' }}></i>
+              {item.key === 'entregas' && (tieneTicketReceptoriaHoy || tieneDespachoOtraCompaniaHoy) ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', height: '18px' }}>
+                  {tieneTicketReceptoriaHoy && (
+                    <span
+                      title="Ticket en Receptoría (Entrada)"
+                      style={{
+                        color: '#16a34a',
+                        fontSize: '16px',
+                        fontWeight: 900,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        lineHeight: 1,
+                        filter: 'drop-shadow(0 1px 2px rgba(22, 163, 74, 0.4))',
+                      }}
+                    >
+                      <i className="fa-solid fa-arrow-up"></i>
+                    </span>
+                  )}
+                  {tieneDespachoOtraCompaniaHoy && (
+                    <span
+                      title="Despacho a Otra Compañía (Salida)"
+                      style={{
+                        color: '#dc2626',
+                        fontSize: '16px',
+                        fontWeight: 900,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        lineHeight: 1,
+                        filter: 'drop-shadow(0 1px 2px rgba(220, 38, 38, 0.4))',
+                      }}
+                    >
+                      <i className="fa-solid fa-arrow-down"></i>
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <i className={`fa-solid ${item.icon}`} style={{ fontSize: '18px' }}></i>
+              )}
               <span style={{ fontSize: '10.5px', fontWeight: isActiva ? 900 : 600, letterSpacing: '-0.2px' }}>
                 {item.label}
               </span>
-              {item.badge && item.badge > 0 ? (
+              {item.badge && item.badge > 0 && !(item.key === 'entregas' && (tieneTicketReceptoriaHoy || tieneDespachoOtraCompaniaHoy)) ? (
                 <span
                   style={{
                     position: 'absolute',

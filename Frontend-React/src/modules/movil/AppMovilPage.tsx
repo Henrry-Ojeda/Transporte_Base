@@ -7115,7 +7115,7 @@ export const AppMovilPage: React.FC = () => {
                           }
                         >
                           <i className={`fa-solid ${choferTieneTicketEnRutaActivo && !esAdminReal ? 'fa-lock' : 'fa-plus text-emerald-600'}`}></i>
-                          <span>+ Turno</span>
+                          <span>+ Ticket</span>
                         </button>
                       )}
                     </div>

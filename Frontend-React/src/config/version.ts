@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 27,
-  tag: 'v3.18.27',
+  patch: 28,
+  tag: 'v3.18.28',
   ultimaActualizacion: '2026-11-12',
-  tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil v3.18.27: Persistencia offline completa para entregas y receptoría. Soporte de hasta 3 turnos por chofer sin internet con cola de despachos pendientes, cotejo fincas vs recibos offline-first en receptoría, botones de acción siempre visibles y unificación de botón sincronizar.',
+  tipoUltimoCambio: 'DISEÑO',
+  descripcion: 'App Móvil v3.18.28: Reorganización visual del encabezado superior en dos filas limpias, cambio de etiqueta "Sincronizar" a "Sync", eliminación de placa de camión en barra superior y retiro del botón Sync duplicado en Fincas a Recolectar.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

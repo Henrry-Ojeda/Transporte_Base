@@ -6747,7 +6747,7 @@ export const AppMovilPage: React.FC = () => {
         style={{
           background: '#ffffff',
           color: '#0f172a',
-          padding: '12px 16px',
+          padding: '10px 14px',
           position: 'sticky',
           top: 0,
           zIndex: 100,
@@ -6755,57 +6755,106 @@ export const AppMovilPage: React.FC = () => {
           borderBottom: '1px solid #e2e8f0',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  background: isOnline ? '#ecfdf5' : '#fef3c7',
-                  color: isOnline ? '#059669' : '#d97706',
-                  padding: '2px 8px',
-                  borderRadius: '20px',
-                  fontSize: '10.5px',
-                  fontWeight: 800,
-                  border: isOnline ? '1px solid #a7f3d0' : '1px solid #fde68a',
-                }}
-              >
-                <i className={`fa-solid ${isOnline ? 'fa-signal' : 'fa-plane'}`}></i>
-                {isOnline ? 'En Línea' : 'Offline'}
-              </span>
-              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                {(dispositivo.empresaLogo || logoGuardado) && (
-                  <img
-                    src={dispositivo.empresaLogo || logoGuardado}
-                    alt="Logo"
-                    style={{ width: '16px', height: '16px', objectFit: 'contain', borderRadius: '3px' }}
-                  />
-                )}
+        {/* Fila 1: Conectividad, Nombre de Empresa y Versión */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            paddingBottom: '6px',
+            borderBottom: '1px solid #f1f5f9',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                background: isOnline ? '#ecfdf5' : '#fef3c7',
+                color: isOnline ? '#059669' : '#d97706',
+                padding: '2px 8px',
+                borderRadius: '999px',
+                fontSize: '10.5px',
+                fontWeight: 800,
+                border: isOnline ? '1px solid #a7f3d0' : '1px solid #fde68a',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              <i className={`fa-solid ${isOnline ? 'fa-signal' : 'fa-plane'}`}></i>
+              {isOnline ? 'En Línea' : 'Offline'}
+            </span>
+            <span
+              style={{
+                fontSize: '11.5px',
+                color: '#475569',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                minWidth: 0,
+              }}
+            >
+              {(dispositivo.empresaLogo || logoGuardado) && (
+                <img
+                  src={dispositivo.empresaLogo || logoGuardado}
+                  alt="Logo"
+                  style={{ width: '16px', height: '16px', objectFit: 'contain', borderRadius: '3px', flexShrink: 0 }}
+                />
+              )}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {dispositivo.empresaNombre}
               </span>
-              <span
-                style={{
-                  background: '#e0f2fe',
-                  color: '#0284c7',
-                  padding: '1px 6px',
-                  borderRadius: '6px',
-                  fontSize: '10px',
-                  fontWeight: 800,
-                  border: '1px solid #bae6fd',
-                }}
-              >
-                {APP_VERSION}
-              </span>
-            </div>
-            <h2 style={{ fontSize: '16px', fontWeight: 900, margin: '3px 0 0 0', color: '#0f172a' }}>
-              {dispositivo.nombreCompleto}
-            </h2>
+            </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {/* Botón Unificado Sincronizar y Actualizar Versión */}
+          <span
+            style={{
+              background: '#e0f2fe',
+              color: '#0284c7',
+              padding: '2px 7px',
+              borderRadius: '6px',
+              fontSize: '10px',
+              fontWeight: 800,
+              border: '1px solid #bae6fd',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {APP_VERSION}
+          </span>
+        </div>
+
+        {/* Fila 2: Usuario, Sync, Notificaciones y Cerrar Sesión */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            paddingTop: '7px',
+          }}
+        >
+          <h2
+            style={{
+              fontSize: '15.5px',
+              fontWeight: 900,
+              margin: 0,
+              color: '#0f172a',
+              minWidth: 0,
+              flex: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {dispositivo.nombreCompleto}
+          </h2>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            {/* Botón Unificado Sync y Actualizar Versión */}
             <button
               type="button"
               onClick={async () => {
@@ -6818,19 +6867,21 @@ export const AppMovilPage: React.FC = () => {
                 background: sincronizando ? '#fef3c7' : (pendientesTotalCount > 0 ? '#fff7ed' : '#ecfdf5'),
                 border: sincronizando ? '1.5px solid #fde68a' : (pendientesTotalCount > 0 ? '1.5px solid #fdba74' : '1.5px solid #a7f3d0'),
                 color: sincronizando ? '#b45309' : (pendientesTotalCount > 0 ? '#c2410c' : '#059669'),
-                padding: '6px 11px',
-                borderRadius: '8px',
+                height: '34px',
+                padding: '0 11px',
+                borderRadius: '9px',
                 fontSize: '11.5px',
                 fontWeight: 800,
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '5px',
+                whiteSpace: 'nowrap',
                 cursor: sincronizando ? 'wait' : 'pointer',
                 boxShadow: pendientesTotalCount > 0 ? '0 2px 8px rgba(234,88,12,0.2)' : '0 1px 4px rgba(16,185,129,0.12)',
               }}
             >
               <i className={`fa-solid ${sincronizando ? 'fa-rotate fa-spin' : (pendientesTotalCount > 0 ? 'fa-cloud-arrow-up' : 'fa-arrows-rotate')}`}></i>
-              <span>{sincronizando ? 'Sync...' : 'Sincronizar'}</span>
+              <span>{sincronizando ? 'Sync...' : 'Sync'}</span>
               {pendientesTotalCount > 0 && (
                 <span
                   style={{
@@ -6861,11 +6912,12 @@ export const AppMovilPage: React.FC = () => {
                 color: noLeidasCount > 0 ? '#ef4444' : '#64748b',
                 width: '34px',
                 height: '34px',
-                borderRadius: '8px',
+                borderRadius: '9px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
+                flexShrink: 0,
               }}
             >
               <i className={`fa-solid fa-bell ${noLeidasCount > 0 ? 'fa-shake' : ''}`}></i>
@@ -6894,22 +6946,7 @@ export const AppMovilPage: React.FC = () => {
                 </span>
               )}
             </button>
-            {dispositivo.placaCamion && (
-              <span
-                style={{
-                  background: '#f1f5f9',
-                  color: '#1e293b',
-                  padding: '5px 9px',
-                  borderRadius: '8px',
-                  fontSize: '11.5px',
-                  fontWeight: 800,
-                  border: '1px solid #cbd5e1',
-                }}
-              >
-                <i className="fa-solid fa-truck mr-1 text-sky-600"></i>
-                {dispositivo.placaCamion}
-              </span>
-            )}
+
             <button
               type="button"
               onClick={handleCerrarSesion}
@@ -6920,11 +6957,12 @@ export const AppMovilPage: React.FC = () => {
                 color: '#d97706',
                 width: '34px',
                 height: '34px',
-                borderRadius: '8px',
+                borderRadius: '9px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
+                flexShrink: 0,
               }}
             >
               <i className="fa-solid fa-arrow-right-from-bracket"></i>
@@ -7861,7 +7899,7 @@ export const AppMovilPage: React.FC = () => {
                       <i className="fa-solid fa-cow text-emerald-600"></i>
                       <span>Fincas a Recolectar ({fincasDeMiRuta.length})</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                       {!viajeBloqueadoPorReceptoria && (
                         <button
                           type="button"
@@ -7878,41 +7916,21 @@ export const AppMovilPage: React.FC = () => {
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '4px',
+                            whiteSpace: 'nowrap',
                             cursor: 'pointer',
                           }}
                         >
                           <i className="fa-solid fa-plus text-emerald-600"></i>
-                          <span>+ Parada</span>
+                          <span>Parada</span>
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => sincronizarCargas(true)}
-                        disabled={sincronizando}
-                        title="Sincronizar fincas y litros con la Web"
-                        style={{
-                          background: '#f1f5f9',
-                          border: '1px solid #cbd5e1',
-                          color: '#334155',
-                          padding: '2px 8px',
-                          borderRadius: '6px',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <i className={`fa-solid fa-arrows-rotate ${sincronizando ? 'fa-spin' : ''}`}></i>
-                        <span>Sync</span>
-                      </button>
                       <span
                         style={{
                           fontSize: '11px',
                           fontWeight: 900,
                           padding: '2px 8px',
                           borderRadius: '6px',
+                          whiteSpace: 'nowrap',
                           background: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '#dcfce7' : '#eff6ff',
                           color: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '#15803d' : '#1d4ed8',
                           border: recCount === fincasDeMiRuta.length && fincasDeMiRuta.length > 0 ? '1px solid #86efac' : '1px solid #bfdbfe',

@@ -9099,8 +9099,22 @@ export const AppMovilPage: React.FC = () => {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {listaEntradasReceptoria.map((t: any) => {
-                        const ltsCargados = Number(t.totalLitrosFinca || (t as any).litrosCargadosTotal || 0);
-                        const ltsConfirmados = Number(t.totalLitrosReceptoria || t.litrosEntregadosCompania || 0);
+                        const ltsCargados = Number(
+                          t.totalLitrosFinca ||
+                          t.litrosDespachados ||
+                          t.totalLitrosRecogidos ||
+                          (t as any).litrosCargadosTotal ||
+                          t.litros ||
+                          0
+                        );
+                        const ltsConfirmados = Number(
+                          t.totalLitrosReceptoria ||
+                          t.litrosRecibidosCompania ||
+                          t.litrosConfirmados ||
+                          t.litrosEntregadosCompania ||
+                          t.litrosRecibidosReceptoria ||
+                          0
+                        );
                         const yaConfirmado = ltsConfirmados > 0 || String(t.estado || '').toUpperCase() === 'FINALIZADO';
                         const tipoLeche = String(t.tipoLeche || (t as any).tipo || 'VACA').toUpperCase();
                         const capacidadCamion = Number(t.capacidadCamionLitros || dispositivo?.capacidadTanqueLitros || 6000);

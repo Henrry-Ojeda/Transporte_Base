@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 20,
-  tag: 'v3.18.20',
-  ultimaActualizacion: '2026-11-11',
+  patch: 21,
+  tag: 'v3.18.21',
+  ultimaActualizacion: '2026-11-12',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Arquitectura offline-first móvil ultra-resiliente: soporte para rutas asignadas y modo libre sin internet, descarga y persistencia en IndexedDB/localStorage de catálogo de fincas, rutas y turnos, sincronización bidireccional y optimización de pantalla Inicio v3.18.20',
+  descripcion: 'App Móvil v3.18.21: Restricción de 1 ticket por chofer en ruta, modo Admin sin conexión con aislamiento estricto de memoria por chofer, receptoría con chofer visible, rotación de fotos, orden cronológico de timelapse y botón unificado sincronizar/actualizar.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

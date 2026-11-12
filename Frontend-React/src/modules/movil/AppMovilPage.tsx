@@ -231,6 +231,45 @@ const leerParadasTicketLocal = (ticketId: number, cargasMemoria?: any[]): any[] 
   }
 };
 
+// Helper estricto: determina si un ticket de ruta está ABIERTO en curso (fase de recolección en campo)
+export const esTicketAbiertoEnRuta = (x: ControlRutaDto | null | undefined): boolean => {
+  if (!x || !x.id) return false;
+  const est = String(x.estado || '').toUpperCase().trim();
+  if ([
+    'FINALIZADO',
+    'CERRADO',
+    'ENTREGADO',
+    'ENTREGADO_RECEPTORIA',
+    'EN_ESPERA_RECEPTORIA',
+    'EN ESPERA',
+    'EN RECEPTORIA',
+    'RECEPCIONADO',
+    'POR VERIFICACIÓN',
+    'POR VERIFICACION',
+    'EN_RECEPTORIA',
+    'EN SILOS',
+    'EN SILO',
+    'CAMINO A COMPAÑIA',
+    'CAMINO A COMPANIA'
+  ].includes(est)) {
+    return false;
+  }
+  if (x.procesoActualId != null && Number(x.procesoActualId) >= 2) {
+    return false;
+  }
+  if (
+    Number(x.totalLitrosReceptoria || 0) > 0 ||
+    Number(x.litrosEntregadosCompania || 0) > 0 ||
+    Number((x as any).litrosRecibidosReceptoria || 0) > 0
+  ) {
+    return false;
+  }
+  if (viajeEstaEnviadoAReceptoria(x)) {
+    return false;
+  }
+  return true;
+};
+
 export const AppMovilPage: React.FC = () => {
   // Navegación de Pestañas Móviles
   const [tabActiva, setTabActiva] = useState<TabMovil>('principal');
@@ -1645,17 +1684,11 @@ export const AppMovilPage: React.FC = () => {
     return [];
   });
 
-  // Mapa reactivo de Choferes que tienen viaje o ruta activa actualmente
+  // Mapa reactivo de Choferes que tienen viaje o ruta activa actualmente (Fase de recolección en campo)
   const choferesConViajeActivo = useMemo(() => {
     const mapActivos = new Map<number, ControlRutaDto>();
     viajesEnVivo.forEach((v) => {
-      const est = String(v.estado || '').toUpperCase();
-      const esActivo =
-        (v.procesoActualId || 1) < 4 &&
-        est !== 'FINALIZADO' &&
-        est !== 'CERRADO' &&
-        est !== 'AUDITADO' &&
-        est !== 'CUADRADO';
+      const esActivo = esTicketAbiertoEnRuta(v);
       if (esActivo) {
         if (v.usuarioId && !mapActivos.has(v.usuarioId)) {
           mapActivos.set(v.usuarioId, v);
@@ -1854,26 +1887,89 @@ export const AppMovilPage: React.FC = () => {
     observacion: string;
   } | null>(null);
 
-  // Cargar fincas del ticket al abrir el modal de verificación de litros en receptoría
+  // Cargar fincas del ticket al abrir el modal de verificación de litros en receptoría (Offline-First en memoria)
   useEffect(() => {
     const tId = modalVerificarLitros?.ticket?.id;
     if (tId) {
       setCargandoFincasMovil(true);
-      operacionesApi.getFincasViaje(tId, true)
-        .then((res) => {
-          const list = Array.isArray(res) ? res : [];
-          // En validación de Receptoría: Solo visualizar fincas con litros recolectados (> 0)
-          const fincasConLitros = list.filter((f: any) => Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0) > 0);
-          setFincasVerificarMovil(fincasConLitros);
-          setFincasVerificadasMovilIds(new Set());
-        })
-        .catch(() => {
-          setFincasVerificarMovil([]);
-          setFincasVerificadasMovilIds(new Set());
-        })
-        .finally(() => {
-          setCargandoFincasMovil(false);
-        });
+
+      // 1. Cargar offline-first inmediatamente de memoria local
+      let fincasLocales: any[] = [];
+      try {
+        const cachedVerif = localStorage.getItem(`movil_fincas_verificar_${tId}`);
+        if (cachedVerif) {
+          const parsed = JSON.parse(cachedVerif);
+          if (Array.isArray(parsed) && parsed.length > 0) fincasLocales = parsed;
+        }
+      } catch {}
+
+      if (fincasLocales.length === 0) {
+        const paradasLocal = leerParadasTicketLocal(tId) || [];
+        if (Array.isArray(paradasLocal) && paradasLocal.length > 0) {
+          fincasLocales = paradasLocal.map((p: any, idx: number) => ({
+            id: p.id || p.fincaId || idx + 1,
+            fincaId: p.fincaId,
+            fincaNombre: p.fincaNombre || p.nombreFinca || p.nombre || `Finca #${p.fincaId}`,
+            litros: Number(p.litros ?? p.Litros ?? p.litrosLeche ?? 0),
+            fotoComprobante: p.fotoComprobante || p.fotoReciboUrl || p.fotoRecibo || p.fotoTicket,
+            fotoReciboUrl: p.fotoReciboUrl || p.fotoComprobante || p.fotoRecibo || p.fotoTicket,
+            hora: p.hora || p.horaRecoleccion,
+          }));
+        }
+      }
+
+      if (fincasLocales.length === 0) {
+        try {
+          const rawCargas = localStorage.getItem('movil_cargas_local');
+          if (rawCargas) {
+            const todasCargas: any[] = JSON.parse(rawCargas);
+            const cargasDelTicket = todasCargas.filter((c: any) => Number(c.ticketId || c.controlRutaId) === Number(tId));
+            if (cargasDelTicket.length > 0) {
+              fincasLocales = cargasDelTicket.map((c: any, idx: number) => ({
+                id: c.id || idx + 1,
+                fincaId: c.fincaId,
+                fincaNombre: c.fincaNombre || `Finca #${c.fincaId}`,
+                litros: Number(c.litros ?? c.litrosLeche ?? 0),
+                fotoComprobante: c.fotoTicket || c.fotoRecibo,
+                fotoReciboUrl: c.fotoTicket || c.fotoRecibo,
+                hora: c.hora,
+              }));
+            }
+          }
+        } catch {}
+      }
+
+      const fincasConLitrosLocales = fincasLocales.filter(
+        (f: any) => Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0) > 0
+      );
+
+      if (fincasConLitrosLocales.length > 0) {
+        setFincasVerificarMovil(fincasConLitrosLocales);
+      }
+
+      // 2. Si hay conexión y ticket en BD (> 0), consultar API y persistir en caché
+      if (navigator.onLine && isOnline && tId > 0) {
+        operacionesApi.getFincasViaje(tId, true)
+          .then((res) => {
+            const list = Array.isArray(res) ? res : [];
+            const fincasConLitros = list.filter((f: any) => Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0) > 0);
+            if (fincasConLitros.length > 0) {
+              setFincasVerificarMovil(fincasConLitros);
+              try {
+                localStorage.setItem(`movil_fincas_verificar_${tId}`, JSON.stringify(fincasConLitros));
+              } catch {}
+            }
+          })
+          .catch((err) => {
+            console.warn('[Receptoría] Sin conexión; manteniendo fincas guardadas en memoria del teléfono:', err);
+            // IMPORTANTE: NO limpiar la lista si no hay internet
+          })
+          .finally(() => {
+            setCargandoFincasMovil(false);
+          });
+      } else {
+        setCargandoFincasMovil(false);
+      }
     } else {
       setFincasVerificarMovil([]);
       setFincasVerificadasMovilIds(new Set());
@@ -2483,6 +2579,14 @@ export const AppMovilPage: React.FC = () => {
         setCamionesLista(cList);
         try { localStorage.setItem('movil_camiones_cache', JSON.stringify(cList)); } catch {}
       }
+
+      // 5. Catálogo de Compañías / Receptoría (para entregas y despachos offline)
+      const compList = await conTimeout(catalogosApi.getCompanias(true), 4000).catch(() => null);
+      if (Array.isArray(compList) && compList.length > 0) {
+        setCompaniasReceptoria(compList);
+        setListaCompaniasMovil(compList);
+        try { localStorage.setItem('movil_catalogo_companias', JSON.stringify(compList)); } catch {}
+      }
     } catch (e) {
       console.warn('Descarga offline completada parcialmente o sin conexión:', e);
     }
@@ -2717,45 +2821,6 @@ export const AppMovilPage: React.FC = () => {
     }
 
     return { tituloTurno, iconoTurno, estadoLabel, estadoColor, estadoBg, esFinalizado, esReceptoria, esPlanta };
-  };
-
-  // Helper estricto: determina si un ticket de ruta está ABIERTO en curso (fase de recolección en campo)
-  const esTicketAbiertoEnRuta = (x: ControlRutaDto | null | undefined): boolean => {
-    if (!x || !x.id) return false;
-    const est = String(x.estado || '').toUpperCase().trim();
-    if ([
-      'FINALIZADO',
-      'CERRADO',
-      'ENTREGADO',
-      'ENTREGADO_RECEPTORIA',
-      'EN_ESPERA_RECEPTORIA',
-      'EN ESPERA',
-      'EN RECEPTORIA',
-      'RECEPCIONADO',
-      'POR VERIFICACIÓN',
-      'POR VERIFICACION',
-      'EN_RECEPTORIA',
-      'EN SILOS',
-      'EN SILO',
-      'CAMINO A COMPAÑIA',
-      'CAMINO A COMPANIA'
-    ].includes(est)) {
-      return false;
-    }
-    if (x.procesoActualId != null && Number(x.procesoActualId) >= 2) {
-      return false;
-    }
-    if (
-      Number(x.totalLitrosReceptoria || 0) > 0 ||
-      Number(x.litrosEntregadosCompania || 0) > 0 ||
-      Number((x as any).litrosRecibidosReceptoria || 0) > 0
-    ) {
-      return false;
-    }
-    if (viajeEstaEnviadoAReceptoria(x)) {
-      return false;
-    }
-    return true;
   };
 
   const cargarViajeActivo = async (idTarget?: number, forzarId?: number) => {
@@ -5278,7 +5343,20 @@ export const AppMovilPage: React.FC = () => {
       if (ticketIdEfectivo && ticketIdEfectivo !== rawTicketId) {
         guardarParadasTicketLocal(ticketIdEfectivo, list, nuevasCargas);
       }
-      try { localStorage.setItem('movil_paradas_activo', JSON.stringify(unificadas)); } catch {}
+      try {
+        localStorage.setItem('movil_paradas_activo', JSON.stringify(unificadas));
+        const fincasParaVerif = unificadas.map((p: any, idx: number) => ({
+          id: p.id || p.fincaId || idx + 1,
+          fincaId: p.fincaId,
+          fincaNombre: p.fincaNombre || p.nombreFinca || p.nombre || `Finca #${p.fincaId}`,
+          litros: Number(p.litros ?? p.Litros ?? p.litrosLeche ?? 0),
+          fotoComprobante: p.fotoComprobante || p.fotoReciboUrl || p.fotoRecibo || p.fotoTicket,
+          fotoReciboUrl: p.fotoReciboUrl || p.fotoComprobante || p.fotoRecibo || p.fotoTicket,
+          hora: p.hora || p.horaRecoleccion,
+        }));
+        if (rawTicketId) localStorage.setItem(`movil_fincas_verificar_${rawTicketId}`, JSON.stringify(fincasParaVerif));
+        if (ticketIdEfectivo) localStorage.setItem(`movil_fincas_verificar_${ticketIdEfectivo}`, JSON.stringify(fincasParaVerif));
+      } catch {}
 
       // Actualizar litros y paradas en la tarjeta del ticket en viajesChofer (para ver ambos tickets actualizados al cambiar entre ellos)
       const nuevoTotalLitrosTicket = unificadas.reduce((acc, p) => acc + Number(p.litros ?? p.Litros ?? 0), 0);
@@ -5394,40 +5472,59 @@ export const AppMovilPage: React.FC = () => {
 
     setAbriendoEntregaDirecta(true);
     try {
-      // 1. Obtener lista fresca de compañías si no están en memoria
-    let comps = listaCompaniasMovil;
-    if (!comps || comps.length === 0) {
-      try {
-        comps = await catalogosApi.getCompanias(true);
-        if (Array.isArray(comps)) {
-          setListaCompaniasMovil(comps);
+      // 1. Obtener lista de compañías (desde estado, API o caché local offline)
+      let comps = listaCompaniasMovil;
+      if (!comps || comps.length === 0) {
+        if (navigator.onLine && isOnline) {
+          try {
+            comps = await catalogosApi.getCompanias(true);
+            if (Array.isArray(comps) && comps.length > 0) {
+              setListaCompaniasMovil(comps);
+            }
+          } catch (err) {
+            console.warn('Error al cargar compañías para entrega directa:', err);
+          }
         }
-      } catch (err) {
-        console.warn('Error al cargar compañías para entrega directa:', err);
       }
-    }
-    if (!comps || comps.length === 0) {
-      comps = companiasReceptoria || [];
-    }
+      if (!comps || comps.length === 0) {
+        comps = companiasReceptoria || [];
+      }
+      if (!comps || comps.length === 0) {
+        try {
+          const raw = localStorage.getItem('movil_catalogo_companias');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) comps = parsed;
+          }
+        } catch {}
+      }
 
-    // 2. Cargar paradas del ticket si no están o asegurar sincronización
-    let fincasT = paradasViajeActivo;
-    if (!fincasT || fincasT.length === 0) {
-      try {
-        const resParadas = await operacionesApi.getFincasViaje(viajeActivo.id);
-        if (Array.isArray(resParadas)) {
-          fincasT = resParadas;
-          setParadasViajeActivo(resParadas);
+      // 2. Cargar paradas del ticket (offline-first: memoria local garantizada)
+      let fincasT = paradasViajeActivo;
+      if (!fincasT || fincasT.length === 0) {
+        const guardadasLocal = leerParadasTicketLocal(viajeActivo.id) || [];
+        if (guardadasLocal.length > 0) {
+          fincasT = guardadasLocal;
+          setParadasViajeActivo(guardadasLocal);
         }
-      } catch (err) {
-        console.warn('Error al cargar paradas del viaje:', err);
       }
-    }
 
-    const totalCamion = ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos || 0) > 0
-      ? ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos)
-      : (fincasT || []).reduce((a: number, f: any) => a + Number(f.litros || f.Litros || 0), 0);
-    const yaAsignado = (viajeActivo as any)._litrosEntregados || (viajeActivo as any).litrosEntregadosCompania || viajeActivo.totalLitrosEntregados || 0;
+      if ((!fincasT || fincasT.length === 0) && navigator.onLine && isOnline && viajeActivo.id > 0) {
+        try {
+          const resParadas = await operacionesApi.getFincasViaje(viajeActivo.id);
+          if (Array.isArray(resParadas) && resParadas.length > 0) {
+            fincasT = resParadas;
+            setParadasViajeActivo(resParadas);
+          }
+        } catch (err) {
+          console.warn('Error al cargar paradas del viaje:', err);
+        }
+      }
+
+      const totalCamion = ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos || 0) > 0
+        ? ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosFinca || viajeActivo.totalLitrosRecogidos)
+        : (fincasT || []).reduce((a: number, f: any) => a + Number(f.litros || f.Litros || 0), 0);
+      const yaAsignado = (viajeActivo as any)._litrosEntregados || (viajeActivo as any).litrosEntregadosCompania || viajeActivo.totalLitrosEntregados || 0;
     const faltante = Math.max(0, totalCamion - yaAsignado);
 
     // Identificar compañía receptoría y transporte por defecto (ej. COLONA, Campo Verde)
@@ -5562,7 +5659,83 @@ export const AppMovilPage: React.FC = () => {
     setGuardandoEntregaDirecta(true);
     try {
       const primeraFilaValida = filasEntregaDirecta.find((f) => Number(f.companiaId) > 0 && Number(f.litros) > 0) || filasEntregaDirecta[0];
-      const resp = await operacionesApi.enviarACompania(viajeActivo.id, {
+      const esOffline = !navigator.onLine || !isOnline || viajeActivo.id < 0;
+
+      // Intentar envío online si hay red y ticket creado en servidor
+      if (!esOffline) {
+        try {
+          const resp = await operacionesApi.enviarACompania(viajeActivo.id, {
+            companiaId: Number(primeraFilaValida?.companiaId || 0),
+            litrosDespachados: Number(primeraFilaValida?.litros || 0),
+            observacion: obsEntregaDirecta,
+            destinos: filasEntregaDirecta.map((f) => ({
+              companiaId: Number(f.companiaId),
+              litros: Number(f.litros || 0),
+              litrosDespachados: Number(f.litros || 0),
+              tipoLeche: f.tipoLeche || 'VACA',
+              observacion: obsEntregaDirecta,
+            })),
+          });
+
+          // Guardar copia local de fincas para verificación en receptoría
+          try {
+            const paradasLocal = paradasViajeActivo || leerParadasTicketLocal(viajeActivo.id) || [];
+            localStorage.setItem(`movil_fincas_verificar_${viajeActivo.id}`, JSON.stringify(paradasLocal));
+          } catch {}
+
+          // Liberar cisterna en pantalla de Inicio para que el chofer pueda iniciar su siguiente turno
+          const idChofer = viajeActivo.usuarioId || viajeActivo.choferId || choferEfectivoId;
+          const ticketActualizado: ControlRutaDto = {
+            ...viajeActivo,
+            procesoActualId: 2,
+            estado: 'EN_RECEPTORIA',
+            litrosEntregadosCompania: filasEntregaDirecta.reduce((acc, f) => acc + Number(f.litros || 0), 0),
+            totalLitrosEntregados: filasEntregaDirecta.reduce((acc, f) => acc + Number(f.litros || 0), 0),
+          };
+          const viajesActualizados = viajesChofer.map((v) => (v.id === viajeActivo.id ? ticketActualizado : v));
+          setViajesChofer(viajesActualizados);
+          try {
+            localStorage.setItem(`movil_viajes_chofer_${idChofer}`, JSON.stringify(viajesActualizados));
+            localStorage.setItem('movil_viajes_chofer', JSON.stringify(viajesActualizados));
+            localStorage.removeItem('movil_viaje_activo');
+            localStorage.removeItem(`movil_viaje_activo_${idChofer}`);
+            localStorage.removeItem('movil_viaje_seleccionado_id');
+            localStorage.removeItem('movil_paradas_activo');
+          } catch {}
+
+          setViajeActivo(null);
+          setViajeSeleccionadoId(null);
+          setParadasViajeActivo([]);
+
+          await Swal.fire({
+            icon: 'success',
+            title: '¡Despacho Registrado Exitosamente!',
+            text: resp?.message || 'Los litros fueron enviados a su destino. Tu cisterna ha quedado libre para iniciar tu siguiente turno.',
+            confirmButtonColor: '#059669',
+            timer: 2800,
+            showConfirmButton: false,
+          });
+
+          setModalEntregaDirecta(false);
+          await cargarDespachoActivo();
+          await cargarEntregasChofer();
+          setTabActiva('principal');
+          return;
+        } catch (errApi: any) {
+          console.warn('[Entrega Directa] Fallo envío online a la central, guardando en memoria offline:', errApi);
+        }
+      }
+
+      // =========================================================================
+      // FLUJO OFFLINE COMPLETO: Guardar despacho en memoria local del teléfono
+      // =========================================================================
+      const idDespachoLocal = `despacho_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const nuevoDespachoPendiente = {
+        idLocal: idDespachoLocal,
+        ticketId: viajeActivo.id,
+        choferId: viajeActivo.usuarioId || viajeActivo.choferId || choferEfectivoId,
+        camionId: viajeActivo.camionId,
+        fecha: new Date().toISOString(),
         companiaId: Number(primeraFilaValida?.companiaId || 0),
         litrosDespachados: Number(primeraFilaValida?.litros || 0),
         observacion: obsEntregaDirecta,
@@ -5573,24 +5746,68 @@ export const AppMovilPage: React.FC = () => {
           tipoLeche: f.tipoLeche || 'VACA',
           observacion: obsEntregaDirecta,
         })),
-      });
+        synced: false,
+      };
+
+      // 1. Guardar en cola de despachos pendientes
+      let despachosPendientes: any[] = [];
+      try {
+        const rawDesp = localStorage.getItem('movil_despachos_locales_pendientes');
+        if (rawDesp) despachosPendientes = JSON.parse(rawDesp);
+      } catch {}
+      despachosPendientes.push(nuevoDespachoPendiente);
+      try {
+        localStorage.setItem('movil_despachos_locales_pendientes', JSON.stringify(despachosPendientes));
+      } catch {}
+
+      // 2. Guardar fincas y fotos en memoria local para cotejo en Receptoría
+      try {
+        const paradasLocal = paradasViajeActivo || leerParadasTicketLocal(viajeActivo.id) || [];
+        localStorage.setItem(`movil_fincas_verificar_${viajeActivo.id}`, JSON.stringify(paradasLocal));
+      } catch {}
+
+      // 3. Marcar el ticket como despachado en local
+      const ltsEntregadosTot = filasEntregaDirecta.reduce((acc, f) => acc + Number(f.litros || 0), 0);
+      const ticketActualizado: ControlRutaDto = {
+        ...viajeActivo,
+        procesoActualId: 2,
+        estado: 'EN_RECEPTORIA',
+        litrosEntregadosCompania: ltsEntregadosTot,
+        totalLitrosEntregados: ltsEntregadosTot,
+      };
+
+      const idChofer = viajeActivo.usuarioId || viajeActivo.choferId || choferEfectivoId;
+      const viajesActualizados = viajesChofer.map((v) => (v.id === viajeActivo.id ? ticketActualizado : v));
+      setViajesChofer(viajesActualizados);
+      try {
+        localStorage.setItem(`movil_viajes_chofer_${idChofer}`, JSON.stringify(viajesActualizados));
+        localStorage.setItem('movil_viajes_chofer', JSON.stringify(viajesActualizados));
+      } catch {}
+
+      // 4. Liberar la cisterna / viaje activo de la pantalla de Inicio para permitir el siguiente turno
+      setViajeActivo(null);
+      setViajeSeleccionadoId(null);
+      setParadasViajeActivo([]);
+      try {
+        localStorage.removeItem('movil_viaje_activo');
+        localStorage.removeItem(`movil_viaje_activo_${idChofer}`);
+        localStorage.removeItem('movil_viaje_seleccionado_id');
+        localStorage.removeItem('movil_paradas_activo');
+      } catch {}
 
       await Swal.fire({
         icon: 'success',
-        title: '¡Entrega Registrada Exitosamente!',
-        text: resp?.message || 'Se registraron los despachos a compañía correctamente.',
+        title: '¡Despacho Registrado en el Teléfono!',
+        text: 'Los litros fueron asignados a su destino sin conexión. Tu cisterna quedó disponible para iniciar tu siguiente turno (puedes registrar hasta 3 turnos sin internet).',
         confirmButtonColor: '#059669',
-        timer: 2800,
+        timer: 3200,
         showConfirmButton: false,
       });
 
       setModalEntregaDirecta(false);
-      await cargarViajeActivo();
-      await cargarDespachoActivo();
-      await cargarEntregasChofer();
-      setTabActiva('entregas');
+      setTabActiva('principal');
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Error al despachar a compañía / receptoría');
+      toast.error(err.response?.data?.message || 'Error al procesar el despacho a compañía / receptoría');
     } finally {
       setGuardandoEntregaDirecta(false);
     }
@@ -7085,21 +7302,10 @@ export const AppMovilPage: React.FC = () => {
                             </div>
                             <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginTop: '2px' }}>
                               {viajeDelSeleccionado ? (
-                                <>
-                                  {esTicketHoySel ? (
-                                    <span style={{ background: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: '4px', fontWeight: 900, fontSize: '9.5px' }}>
-                                      🟢 HOY
-                                    </span>
-                                  ) : (
-                                    <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #f59e0b', padding: '1px 6px', borderRadius: '4px', fontWeight: 900, fontSize: '9.5px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                      <i className="fa-solid fa-clock-rotate-left"></i> DÍA ANTERIOR ({fechaViajeSel})
-                                    </span>
-                                  )}
-                                  <span style={{ color: esTicketHoySel ? '#15803d' : '#b45309', fontWeight: 800 }}>
-                                    Ticket #{viajeDelSeleccionado.codigoTicket || viajeDelSeleccionado.id} • {ltsSeleccionado.toLocaleString()} L
-                                    {viajeDelSeleccionado.camionPlaca ? ` • 🚛 ${viajeDelSeleccionado.camionPlaca}` : ''}
-                                  </span>
-                                </>
+                                <span style={{ color: '#15803d', fontWeight: 800 }}>
+                                  Ticket #{viajeDelSeleccionado.codigoTicket || viajeDelSeleccionado.id} • {ltsSeleccionado.toLocaleString()} L
+                                  {viajeDelSeleccionado.camionPlaca ? ` • 🚛 ${viajeDelSeleccionado.camionPlaca}` : ''}
+                                </span>
                               ) : (
                                 <span>Sin viaje activo</span>
                               )}
@@ -7206,20 +7412,9 @@ export const AppMovilPage: React.FC = () => {
                                         </div>
                                         <div style={{ fontSize: '10.5px', marginTop: '2px' }}>
                                           {v ? (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                              {esHoyV ? (
-                                                <span style={{ background: '#dcfce7', color: '#15803d', padding: '1px 5px', borderRadius: '4px', fontWeight: 900, fontSize: '9.5px' }}>
-                                                  🟢 HOY
-                                                </span>
-                                              ) : (
-                                                <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde047', padding: '1px 5px', borderRadius: '4px', fontWeight: 900, fontSize: '9.5px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                                  <i className="fa-solid fa-clock-rotate-left"></i> DÍA ANTERIOR ({fViaje})
-                                                </span>
-                                              )}
-                                              <span style={{ color: esHoyV ? '#15803d' : '#b45309', fontWeight: 700 }}>
-                                                Ticket #{v.codigoTicket || v.id} • {lts.toLocaleString()} L{v.camionPlaca ? ` • ${v.camionPlaca}` : ''}
-                                              </span>
-                                            </div>
+                                            <span style={{ color: '#15803d', fontWeight: 700 }}>
+                                              Ticket #{v.codigoTicket || v.id} • {lts.toLocaleString()} L{v.camionPlaca ? ` • ${v.camionPlaca}` : ''}
+                                            </span>
                                           ) : (
                                             <span style={{ color: '#94a3b8' }}>Sin ticket activo</span>
                                           )}
@@ -7566,107 +7761,10 @@ export const AppMovilPage: React.FC = () => {
                         </div>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => sincronizarCargas(true)}
-                      disabled={sincronizando}
-                      style={{
-                        background: pendientesTotalCount > 0
-                          ? 'linear-gradient(135deg, #d97706, #b45309)'
-                          : 'linear-gradient(135deg, #059669, #10b981)',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        padding: '6px 12px',
-                        fontSize: '11.5px',
-                        fontWeight: 900,
-                        cursor: sincronizando ? 'wait' : 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.12)',
-                        flexShrink: 0,
-                      }}
-                      title="Sincronizar información de la ruta con la central Web"
-                    >
-                      <i className={`fa-solid fa-rotate ${sincronizando ? 'fa-spin' : ''}`}></i>
-                      <span>{sincronizando ? 'Sync...' : 'Sincronizar'}</span>
-                      {pendientesTotalCount > 0 && (
-                        <span
-                          style={{
-                            background: '#ef4444',
-                            color: '#ffffff',
-                            fontSize: '9.5px',
-                            fontWeight: 900,
-                            borderRadius: '999px',
-                            padding: '0 5px',
-                          }}
-                        >
-                          {pendientesTotalCount}
-                        </span>
-                      )}
-                    </button>
                   </div>
                 </div>
               ) : !despachoActivo ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {/* Banner si el chofer tiene tickets en receptoría esperando confirmación de litros */}
-                  {ticketsEnReceptoriaChofer.length > 0 && (
-                    <div
-                      style={{
-                        background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
-                        borderRadius: '18px',
-                        padding: '16px',
-                        border: '1.5px solid #fde68a',
-                        textAlign: 'left',
-                        boxShadow: '0 2px 8px rgba(245, 158, 11, 0.08)',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#fde047', color: '#854d0e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>
-                            <i className="fa-solid fa-hourglass-half"></i>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: '14px', fontWeight: 900, color: '#92400e' }}>
-                              {ticketsEnReceptoriaChofer.length === 1
-                                ? `Ticket #${ticketsEnReceptoriaChofer[0].codigoTicket || ticketsEnReceptoriaChofer[0].id} en Receptoría`
-                                : `${ticketsEnReceptoriaChofer.length} tickets en Receptoría`}
-                            </div>
-                            <div style={{ fontSize: '11.5px', color: '#b45309', fontWeight: 700 }}>
-                              Esperando confirmación por litros (Le corresponde a Receptoría finalizarlo)
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setTabActiva('entregas')}
-                          style={{
-                            background: '#d97706',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '10px',
-                            padding: '8px 14px',
-                            fontSize: '11.5px',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            boxShadow: '0 2px 6px rgba(217, 119, 6, 0.25)',
-                          }}
-                        >
-                          <span>Ver en Entregas</span>
-                          <i className="fa-solid fa-arrow-right text-[10px]"></i>
-                        </button>
-                      </div>
-                      <div style={{ marginTop: '10px', fontSize: '11.5px', color: '#78350f', lineHeight: '1.45', background: 'rgba(255, 255, 255, 0.7)', padding: '8px 12px', borderRadius: '10px', border: '1px solid #fef08a' }}>
-                        ℹ️ <strong>Nota:</strong> Este ticket no aparece en tu ruta de Inicio porque Receptoría debe verificar los litros recibidos y finalizarlo. <strong>Si Receptoría te lo devuelve</strong>, volverá a aparecer aquí en tu Inicio para continuar la recolección.
-                      </div>
-                    </div>
-                  )}
-
                   <div
                     style={{
                       background: '#ffffff',
@@ -17092,17 +17190,17 @@ export const AppMovilPage: React.FC = () => {
 
               {/* Formulario con Scroll Vertical Libre y Fluido */}
               <form
+                id="form-verificar-litros-receptoria"
                 onSubmit={handleConfirmarVerificarLitros}
                 style={{
                   flex: 1,
                   overflowY: 'auto',
                   WebkitOverflowScrolling: 'touch',
                   minHeight: 0,
-                  padding: '18px 20px',
-                  paddingBottom: '36px',
+                  padding: '16px 18px',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '16px',
+                  gap: '14px',
                 }}
               >
                 {/* Comparativo Visual */}
@@ -17174,11 +17272,11 @@ export const AppMovilPage: React.FC = () => {
                       Sin desglose de fincas para este ticket.
                     </div>
                   ) : (
-                    <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {fincasVerificarMovil.map((f, idx) => {
                         const fid = Number(f.id || f.fincaId || idx);
                         const verificado = fincasVerificadasMovilIds.has(fid);
-                        const foto = f.fotoComprobante || f.fotoReciboUrl;
+                        const foto = f.fotoComprobante || f.fotoReciboUrl || f.fotoRecibo || f.fotoTicket || (f as any).foto;
                         const lts = Number(f.litros || f.litrosLeche || 0);
                         const nomFinca = f.fincaNombre || f.nombre || `Finca #${f.fincaId || fid}`;
 
@@ -17401,45 +17499,60 @@ export const AppMovilPage: React.FC = () => {
                     />
                   </div>
                 </div>
-
-                {/* Botones de Acción (Siempre visibles y accesibles) */}
-                <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setModalVerificarLitros(null)}
-                    style={{
-                      flex: 1,
-                      padding: '13px',
-                      borderRadius: '12px',
-                      border: '1px solid #cbd5e1',
-                      background: '#f8fafc',
-                      color: '#475569',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    style={{
-                      flex: 2,
-                      padding: '13px',
-                      borderRadius: '12px',
-                      border: 'none',
-                      background: 'linear-gradient(135deg, #10b981, #059669)',
-                      color: '#ffffff',
-                      fontWeight: 900,
-                      fontSize: '14px',
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
-                    }}
-                  >
-                    <i className="fa-solid fa-circle-check mr-1.5"></i>
-                    Confirmar y Finalizar Ticket
-                  </button>
-                </div>
               </form>
+
+              {/* FOOTER INFERIOR FIJO: Botones de Acción (Siempre visibles en pantalla sin importar scroll) */}
+              <div
+                style={{
+                  padding: '12px 18px',
+                  background: '#ffffff',
+                  borderTop: '1.5px solid #e2e8f0',
+                  display: 'flex',
+                  gap: '8px',
+                  flexShrink: 0,
+                  boxShadow: '0 -4px 14px rgba(0,0,0,0.06)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setModalVerificarLitros(null)}
+                  style={{
+                    flex: 1,
+                    padding: '13px',
+                    borderRadius: '12px',
+                    border: '1px solid #cbd5e1',
+                    background: '#f8fafc',
+                    color: '#475569',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="form-verificar-litros-receptoria"
+                  style={{
+                    flex: 2,
+                    padding: '13px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    color: '#ffffff',
+                    fontWeight: 900,
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <i className="fa-solid fa-circle-check"></i>
+                  <span>Confirmar y Finalizar Ticket</span>
+                </button>
+              </div>
             </div>
           </div>
         );

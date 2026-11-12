@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 26,
-  tag: 'v3.18.26',
+  patch: 27,
+  tag: 'v3.18.27',
   ultimaActualizacion: '2026-11-12',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil v3.18.26: Solución integral al problema de la hora. Sincronización oficial de hora Venezuela (UTC-4), transmisión de hora exacta de recolección en finca al backend y corrección de desfase de 4 horas.',
+  descripcion: 'App Móvil v3.18.27: Persistencia offline completa para entregas y receptoría. Soporte de hasta 3 turnos por chofer sin internet con cola de despachos pendientes, cotejo fincas vs recibos offline-first en receptoría, botones de acción siempre visibles y unificación de botón sincronizar.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

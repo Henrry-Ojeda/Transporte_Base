@@ -13,6 +13,7 @@ import { operacionesApi } from '@/api/operaciones.api';
 import { combustibleApi } from '@/api/combustible.api';
 import { mantenimientoApi } from '@/api/mantenimiento.api';
 import { notificacionesApi } from '@/api/notificaciones.api';
+import { catalogosApi } from '@/api/catalogos.api';
 import { ticketsLocales } from './ticketsLocales';
 
 export interface SyncStatusEvent {
@@ -33,6 +34,7 @@ class SyncEngine {
     combustibleSubido: number;
     averiasSubidas: number;
     receptoriaSubida: number;
+    despachosSubidos: number;
     totalSubidos: number;
   }> | null = null;
   private syncTimer: any = null;
@@ -81,7 +83,18 @@ class SyncEngine {
         }
       } catch {}
 
-      const totalPend = Math.max(conteo.total, pendientesLocalStorage);
+      let pendientesDespachos = 0;
+      try {
+        const rawDesp = localStorage.getItem('movil_despachos_locales_pendientes');
+        if (rawDesp) {
+          const listD = JSON.parse(rawDesp);
+          if (Array.isArray(listD)) {
+            pendientesDespachos = listD.filter((x: any) => !x.synced).length;
+          }
+        }
+      } catch {}
+
+      const totalPend = Math.max(conteo.total, pendientesLocalStorage) + pendientesDespachos;
 
       const detail: SyncStatusEvent = {
         sincronizando: this.isSyncing,
@@ -89,7 +102,7 @@ class SyncEngine {
         pendientesRecolecciones: Math.max(conteo.recolecciones, pendientesLocalStorage),
         pendientesCombustible: conteo.combustible,
         pendientesAverias: conteo.averias,
-        pendientesReceptoria: conteo.receptoria,
+        pendientesReceptoria: conteo.receptoria + pendientesDespachos,
         ultimaSincronizacion: this.ultimaSincronizacion,
         ...extra,
       };
@@ -137,6 +150,7 @@ class SyncEngine {
     combustibleSubido: number;
     averiasSubidas: number;
     receptoriaSubida: number;
+    despachosSubidos: number;
     totalSubidos: number;
   }> {
     if (this.isSyncing && this.activeSyncPromise) {
@@ -145,7 +159,7 @@ class SyncEngine {
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       this.emitirEstado({ error: 'Sin conexión a internet' });
-      return { recoleccionesSubidas: 0, combustibleSubido: 0, averiasSubidas: 0, receptoriaSubida: 0, totalSubidos: 0 };
+      return { recoleccionesSubidas: 0, combustibleSubido: 0, averiasSubidas: 0, receptoriaSubida: 0, despachosSubidos: 0, totalSubidos: 0 };
     }
 
     this.isSyncing = true;
@@ -156,6 +170,7 @@ class SyncEngine {
       let combustibleSubido = 0;
       let averiasSubidas = 0;
       let receptoriaSubida = 0;
+      let despachosSubidos = 0;
       let ticketsSubidos = 0;
 
       try {
@@ -164,6 +179,9 @@ class SyncEngine {
 
         // 1. Sincronizar Recolecciones de Leche en Fincas (IndexedDB + respaldo LocalStorage)
         recoleccionesSubidas = await this.sincronizarRecolecciones(empresaCodigo, choferId);
+
+        // 1.5 Sincronizar Despachos Offline a Receptoría / Compañías
+        despachosSubidos = await this.sincronizarDespachosPendientes(empresaCodigo, choferId);
 
         // 2. Sincronizar Combustible
         combustibleSubido = await this.sincronizarCombustible(empresaCodigo);
@@ -174,7 +192,10 @@ class SyncEngine {
         // 4. Sincronizar Descargas de Receptoría
         receptoriaSubida = await this.sincronizarReceptoria(empresaCodigo);
 
-        const totalSubidos = recoleccionesSubidas + combustibleSubido + averiasSubidas + receptoriaSubida + ticketsSubidos;
+        const totalSubidos = recoleccionesSubidas + combustibleSubido + averiasSubidas + receptoriaSubida + despachosSubidos + ticketsSubidos;
+
+        // Descargar catálogos actualizados desde la central (fincas, compañías, rutas)
+        await this.refrescarCatalogosOffline(empresaCodigo);
 
         if (totalSubidos > 0) {
           this.ultimaSincronizacion = new Date().toISOString();
@@ -183,7 +204,7 @@ class SyncEngine {
           console.log(`[SyncEngine] Sincronización exitosa: ${totalSubidos} registros subidos.`);
           window.dispatchEvent(
             new CustomEvent('transporte_sync_completada', {
-              detail: { totalSubidos, recoleccionesSubidas, combustibleSubido, averiasSubidas, receptoriaSubida },
+              detail: { totalSubidos, recoleccionesSubidas, combustibleSubido, averiasSubidas, receptoriaSubida, despachosSubidos },
             })
           );
 
@@ -206,6 +227,7 @@ class SyncEngine {
           combustibleSubido,
           averiasSubidas,
           receptoriaSubida,
+          despachosSubidos,
           totalSubidos,
         };
       } catch (err: any) {
@@ -216,7 +238,8 @@ class SyncEngine {
           combustibleSubido,
           averiasSubidas,
           receptoriaSubida,
-          totalSubidos: recoleccionesSubidas + combustibleSubido + averiasSubidas + receptoriaSubida + ticketsSubidos,
+          despachosSubidos,
+          totalSubidos: recoleccionesSubidas + combustibleSubido + averiasSubidas + receptoriaSubida + despachosSubidos + ticketsSubidos,
         };
       } finally {
         this.isSyncing = false;
@@ -598,6 +621,115 @@ class SyncEngine {
     }
 
     return exitosas;
+  }
+
+  /**
+   * Sube despachos offline a receptoría / compañías pendientes
+   */
+  async sincronizarDespachosPendientes(empresaCodigo?: string, choferId?: number): Promise<number> {
+    if (typeof window === 'undefined') return 0;
+    let raw = '';
+    try {
+      raw = localStorage.getItem('movil_despachos_locales_pendientes') || '';
+    } catch {
+      return 0;
+    }
+    if (!raw) return 0;
+
+    let pendientes: any[] = [];
+    try {
+      pendientes = JSON.parse(raw);
+    } catch {
+      return 0;
+    }
+    if (!Array.isArray(pendientes) || pendientes.length === 0) return 0;
+
+    let exitosos = 0;
+    const restantes: any[] = [];
+
+    for (const d of pendientes) {
+      if (!d || d.synced) continue;
+
+      let ticketId = d.ticketId;
+      // Si el ticketId fue creado offline (< 0), resolver ID real asignado por el servidor
+      if (ticketId && ticketId < 0) {
+        const real = ticketsLocales.resolverId(ticketId);
+        if (real <= 0) {
+          // El ticket aún no se ha creado en el servidor, mantener pendiente para el siguiente ciclo
+          restantes.push(d);
+          continue;
+        }
+        ticketId = real;
+      }
+
+      if (!ticketId || ticketId <= 0) {
+        restantes.push(d);
+        continue;
+      }
+
+      try {
+        const dto = {
+          companiaId: Number(d.companiaId || 0),
+          choferId: d.choferId ? Number(d.choferId) : undefined,
+          litrosDespachados: Number(d.litrosDespachados || 0),
+          observacion: d.observacion || '',
+          destinos: Array.isArray(d.destinos)
+            ? d.destinos.map((dest: any) => ({
+                companiaId: Number(dest.companiaId),
+                litros: Number(dest.litros || dest.litrosDespachados || 0),
+                tipoLeche: dest.tipoLeche || 'VACA',
+                observacion: dest.observacion || d.observacion || '',
+              }))
+            : undefined,
+        };
+
+        await operacionesApi.enviarACompania(ticketId, dto);
+        exitosos++;
+        console.log(`[SyncEngine] Despacho pendiente del ticket #${ticketId} enviado exitosamente.`);
+      } catch (err: any) {
+        const msg = String(err?.response?.data?.message || err?.message || '').toLowerCase();
+        const status = err?.response?.status;
+        if (msg.includes('ya') || msg.includes('cerrado') || msg.includes('finalizado') || msg.includes('recepcionado') || status === 409) {
+          console.warn(`[SyncEngine] Despacho ticket #${ticketId} ya procesado en servidor.`);
+          exitosos++;
+        } else {
+          console.error(`[SyncEngine] Error al sincronizar despacho del ticket #${ticketId}:`, err);
+          restantes.push(d);
+        }
+      }
+    }
+
+    try {
+      if (restantes.length > 0) {
+        localStorage.setItem('movil_despachos_locales_pendientes', JSON.stringify(restantes));
+      } else {
+        localStorage.removeItem('movil_despachos_locales_pendientes');
+      }
+    } catch {}
+
+    return exitosos;
+  }
+
+  /**
+   * Refresca los catálogos en memoria del teléfono (Fincas, Compañías, Camiones)
+   */
+  async refrescarCatalogosOffline(empresaCodigo?: string): Promise<void> {
+    if (typeof window === 'undefined' || !navigator.onLine) return;
+    try {
+      // 1. Catálogo Fincas
+      const fList = await catalogosApi.getFincas().catch(() => null);
+      if (Array.isArray(fList) && fList.length > 0) {
+        try { localStorage.setItem('movil_fincas_cache', JSON.stringify(fList)); } catch {}
+        if (empresaCodigo) await dbLocal.guardarFincasCache(empresaCodigo, fList).catch(() => {});
+      }
+      // 2. Catálogo Compañías
+      const cList = await catalogosApi.getCompanias(true).catch(() => null);
+      if (Array.isArray(cList) && cList.length > 0) {
+        try { localStorage.setItem('movil_catalogo_companias', JSON.stringify(cList)); } catch {}
+      }
+    } catch (e) {
+      console.warn('[SyncEngine] Error refrescando catálogos offline:', e);
+    }
   }
 
   /**

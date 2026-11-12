@@ -170,7 +170,7 @@ export const operacionesApi = {
     return res.data;
   },
 
-  agregarFincaViaje: async (id: number, dto: { fincaId: number; litrosLeche?: number; litros?: number; esAcida?: boolean; esDiferido?: boolean; fecha?: string; tipoLeche?: string; observacion?: string; temperatura?: number; fotoComprobante?: string }): Promise<{ success: boolean; message: string }> => {
+  agregarFincaViaje: async (id: number, dto: { fincaId: number; litrosLeche?: number; litros?: number; esAcida?: boolean; esDiferido?: boolean; fecha?: string; hora?: string; tipoLeche?: string; observacion?: string; temperatura?: number; fotoComprobante?: string }): Promise<{ success: boolean; message: string }> => {
     const payload = {
       controlRutaId: id,
       fincaId: dto.fincaId,
@@ -178,6 +178,7 @@ export const operacionesApi = {
       esAcida: Boolean(dto.esAcida),
       esDiferido: Boolean(dto.esDiferido),
       fecha: dto.fecha,
+      hora: dto.hora,
       tipoLeche: dto.tipoLeche || 'VACA',
       observacion: dto.observacion || '',
       temperatura: dto.temperatura,

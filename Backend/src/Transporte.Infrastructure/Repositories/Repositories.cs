@@ -3271,13 +3271,13 @@ namespace Transporte.Infrastructure.Repositories
                 // 3. Registrar o actualizar en TB_HISTORIAL_BCV para la fecha actual
                 var sqlHistorial = @"
                     MERGE TB_HISTORIAL_BCV AS target
-                    USING (SELECT CAST(GETDATE() AS DATE) AS Fecha) AS source
+                    USING (SELECT CAST(DATEADD(hour, -4, GETUTCDATE()) AS DATE) AS Fecha) AS source
                     ON (CAST(target.Fecha AS DATE) = source.Fecha)
                     WHEN MATCHED THEN
-                        UPDATE SET TasaDolarBs = @TasaBcv, Observacion = 'Actualización desde Pre-Liquidación (Pendientes)', CreatedAt = GETDATE()
+                        UPDATE SET TasaDolarBs = @TasaBcv, Observacion = 'Actualización desde Pre-Liquidación (Pendientes)', CreatedAt = DATEADD(hour, -4, GETUTCDATE())
                     WHEN NOT MATCHED THEN
                         INSERT (Fecha, TasaDolarBs, Fuente, Observacion, CreatedAt)
-                        VALUES (CAST(GETDATE() AS DATE), @TasaBcv, 'BANCO CENTRAL DE VENEZUELA (BCV)', 'Actualización desde Pre-Liquidación (Pendientes)', GETDATE());";
+                        VALUES (CAST(DATEADD(hour, -4, GETUTCDATE()) AS DATE), @TasaBcv, 'BANCO CENTRAL DE VENEZUELA (BCV)', 'Actualización desde Pre-Liquidación (Pendientes)', DATEADD(hour, -4, GETUTCDATE()));";
                 await connection.ExecuteAsync(sqlHistorial, new { dto.TasaBcv }, transaction);
 
                 // 4. Si existen registros en TB_PAGOS_LIQUIDACION en estado no pagado (ej. PENDIENTE / DRAFT), actualizarlos
@@ -4543,7 +4543,7 @@ namespace Transporte.Infrastructure.Repositories
                             SELECT 1 FROM TB_CONTROL_RUTAS cr2 WHERE cr2.Id = e.ControlRutaId AND (cr2.Estado IN ('FINALIZADO', 'CERRADO') OR cr2.ProcesoActualId = 4)
                         ) THEN 0
                         WHEN e.ControlCompaniaId IS NOT NULL OR e.Observacion LIKE '%Control Compañías #%' THEN 0
-                        WHEN e.UsuarioId = @usuarioId AND CAST(e.Fecha AS DATE) = CAST(GETDATE() AS DATE)
+                        WHEN e.UsuarioId = @usuarioId AND CAST(e.Fecha AS DATE) = CAST(DATEADD(hour, -4, GETUTCDATE()) AS DATE)
                              AND NOT EXISTS (
                                  SELECT 1 FROM TB_CONTROL_RUTAS cr2 
                                  WHERE (cr2.Id = e.ControlRutaId OR (cr2.UsuarioId = e.UsuarioId AND CAST(cr2.Fecha AS DATE) = CAST(e.Fecha AS DATE)))
@@ -8981,7 +8981,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 LEFT JOIN TB_CAMIONES cam_plan ON cam_plan.Id = plc.CamionId
                 WHERE {whereFecha}
                   AND (@cicloId IS NULL OR cr.CicloId = @cicloId)
-                  AND (UPPER(@rol) LIKE '%ADMIN%' OR @rol IN ('SUPERVISOR', 'GERENTE') OR (cr.UsuarioId = @usuarioId AND CAST(cr.Fecha AS DATE) <= CAST(GETDATE() AS DATE)))
+                  AND (UPPER(@rol) LIKE '%ADMIN%' OR @rol IN ('SUPERVISOR', 'GERENTE') OR (cr.UsuarioId = @usuarioId AND CAST(cr.Fecha AS DATE) <= CAST(DATEADD(hour, -4, GETUTCDATE()) AS DATE)))
                 ORDER BY cr.Fecha DESC, cr.Id DESC";
 
             return await connection.QueryAsync<ControlRutaDto>(sql, new { inicio, fin, cicloId, rol, usuarioId });
@@ -9586,11 +9586,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                       (@fecha IS NOT NULL AND CAST(cr.Fecha AS DATE) = CAST(@fecha AS DATE))
                       OR (
                           @fecha IS NULL AND (
-                              CAST(cr.Fecha AS DATE) = CAST(GETDATE() AS DATE)
+                              CAST(cr.Fecha AS DATE) = CAST(DATEADD(hour, -4, GETUTCDATE()) AS DATE)
                               OR (
                                   UPPER(ISNULL(cr.Estado, '')) NOT IN ('FINALIZADO', 'CERRADO') 
                                   AND ISNULL(cr.ProcesoActualId, 1) < 4
-                                  AND DATEDIFF(day, cr.Fecha, GETDATE()) <= 30
+                                  AND DATEDIFF(day, cr.Fecha, DATEADD(hour, -4, GETUTCDATE())) <= 30
                               )
                           )
                       )
@@ -9714,7 +9714,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             var sqlInsert = @"
                 INSERT INTO TB_CONTROL_RUTAS
                 (Fecha, UsuarioId, CicloId, TotalLitrosFinca, TotalLitrosReceptoria, DiferenciaLitros, PorcentajeMerma, Estado, ProcesoActualId, RutaLogisticaId, Observacion, CreatedAt, CreatedBy)
-                VALUES (@fecha, @conductorEfectivo, @cicloId, 0, 0, 0, 0, 'ABIERTO', 1, @rutaLogisticaId, @observacion, GETDATE(), @usuarioId);
+                VALUES (@fecha, @conductorEfectivo, @cicloId, 0, 0, 0, 0, 'ABIERTO', 1, @rutaLogisticaId, @observacion, DATEADD(hour, -4, GETUTCDATE()), @usuarioId);
                 SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
             var nuevoId = await connection.ExecuteScalarAsync<long>(sqlInsert, new
@@ -9735,7 +9735,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                             INSERT INTO TB_PLANIFICACION_RUTAS_CHOFERES
                             (Fecha, CamionId, ConductorId, RutaLogisticaId, ControlRutaId, Observacion, Activo, CreatedAt)
                             VALUES
-                            (@fecha, @camionId, @conductorEfectivo, @primaryRutaId, @nuevoId, @obs, 1, GETDATE());
+                            (@fecha, @camionId, @conductorEfectivo, @primaryRutaId, @nuevoId, @obs, 1, DATEADD(hour, -4, GETUTCDATE()));
                         END",
                         new { fecha, camionId = dto.CamionId.Value, conductorEfectivo, primaryRutaId, nuevoId, obs = observacionFinal });
                 }
@@ -9902,6 +9902,16 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 new { controlRutaId = dto.ControlRutaId, fincaId = dto.FincaId });
 
             long nuevaRutaId;
+            DateTime createdAtEfectivo = DateTime.UtcNow.AddHours(-4);
+            if (!string.IsNullOrWhiteSpace(dto.Hora))
+            {
+                var hStr = dto.Hora.Trim();
+                if (DateTime.TryParse($"{fechaEfectiva:yyyy-MM-dd} {hStr}", out var parsedDt))
+                {
+                    createdAtEfectivo = parsedDt;
+                }
+            }
+
             if (paradaExistenteId.HasValue)
             {
                 var sqlUpdateRuta = @"
@@ -9915,7 +9925,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         TasaDolarBsAplicada = @tasaActual,
                         Observacion = @observacion,
                         FotoComprobante = ISNULL(@fotoComprobante, FotoComprobante),
-                        ModifiedAt = GETDATE(),
+                        CreatedAt = CASE WHEN CreatedAt IS NULL OR CAST(CreatedAt AS DATE) != CAST(@fechaEfectiva AS DATE) THEN @createdAtEfectivo ELSE CreatedAt END,
+                        ModifiedAt = @createdAtEfectivo,
                         ModifiedBy = @usuarioId
                     WHERE Id = @paradaExistenteId;
 
@@ -9938,7 +9949,9 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     usuarioId,
                     controlRutaId = dto.ControlRutaId,
                     fincaId = dto.FincaId,
-                    paradaExistenteId = paradaExistenteId.Value
+                    paradaExistenteId = paradaExistenteId.Value,
+                    fechaEfectiva,
+                    createdAtEfectivo
                 });
                 nuevaRutaId = paradaExistenteId.Value;
             }
@@ -9947,7 +9960,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 var sqlInsertRuta = @"
                     INSERT INTO TB_RUTAS_RECOLECCION
                     (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, LitrosOriginales, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy, ModifiedAt, ModifiedBy)
-                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, GETDATE(), @usuarioId, GETDATE(), @usuarioId);
+                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, @createdAtEfectivo, @usuarioId, @createdAtEfectivo, @usuarioId);
                     SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
                 nuevaRutaId = await connection.ExecuteScalarAsync<long>(sqlInsertRuta, new
@@ -9966,6 +9979,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     observacion = dto.Observacion,
                     fotoComprobante = dto.FotoComprobante,
                     controlRutaId = dto.ControlRutaId,
+                    createdAtEfectivo,
                     usuarioId
                 });
             }
@@ -10130,15 +10144,15 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 UPDATE TB_CONTROL_RUTAS
                 SET ProcesoActualId = 2,
                     TipoDestino = 'RECEPTORIA',
-                    FechaLlegadaReceptoria = GETDATE(),
-                    ModifiedAt = GETDATE(),
+                    FechaLlegadaReceptoria = DATEADD(hour, -4, GETUTCDATE()),
+                    ModifiedAt = DATEADD(hour, -4, GETUTCDATE()),
                     ModifiedBy = @usuarioId
                 WHERE Id = @controlRutaId",
                 new { controlRutaId, usuarioId });
 
             await connection.ExecuteAsync(@"
                 INSERT INTO TB_HISTORIAL_PROCESOS_TICKET (ControlRutaId, ProcesoId, FechaCambio, CambiadoPor, Observacion)
-                VALUES (@controlRutaId, 2, GETDATE(), @usuarioId, @obs);",
+                VALUES (@controlRutaId, 2, DATEADD(hour, -4, GETUTCDATE()), @usuarioId, @obs);",
                 new { controlRutaId, usuarioId, obs = observacion ?? "Viaje despachado y enviado a Receptoría" });
 
             // Los choferes ya no requieren permiso para crear tickets: no se revoca nada al despachar.
@@ -10171,16 +10185,16 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         MermaTotalLitros = @diferenciaRec,
                         ProcesoActualId = 4,
                         Estado = @estado,
-                        FechaLlegadaReceptoria = ISNULL(FechaLlegadaReceptoria, GETDATE()),
+                        FechaLlegadaReceptoria = ISNULL(FechaLlegadaReceptoria, DATEADD(hour, -4, GETUTCDATE())),
                         CerradoPor = @usuarioId,
-                        ModifiedAt = GETDATE(),
+                        ModifiedAt = DATEADD(hour, -4, GETUTCDATE()),
                         ModifiedBy = @usuarioId
                     WHERE Id = @controlRutaId",
                     new { litrosRecibidos = dto.LitrosRecibidos, diferenciaRec, porcentajeRec, estado, usuarioId, controlRutaId });
 
                 await connection.ExecuteAsync(@"
                     INSERT INTO TB_HISTORIAL_PROCESOS_TICKET (ControlRutaId, ProcesoId, FechaCambio, CambiadoPor, Observacion)
-                    VALUES (@controlRutaId, 4, GETDATE(), @usuarioId, @obs);",
+                    VALUES (@controlRutaId, 4, DATEADD(hour, -4, GETUTCDATE()), @usuarioId, @obs);",
                     new
                     {
                         controlRutaId,
@@ -10214,7 +10228,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                             Observacion = @obs,
                             Fecha = @fecha,
                             UsuarioId = @choferId,
-                            ModifiedAt = GETDATE(),
+                            ModifiedAt = DATEADD(hour, -4, GETUTCDATE()),
                             ModifiedBy = @usuarioId
                         WHERE Id = @entregaExistenteId;",
                         new
@@ -10231,7 +10245,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 {
                     await connection.ExecuteAsync(@"
                         INSERT INTO TB_ENTREGAS_COMPANIA (CicloId, CompaniaId, UsuarioId, Fecha, Litros, Observacion, ControlRutaId, CreatedAt, CreatedBy)
-                        VALUES (@cicloId, @compReceptoriaId, @choferId, @fecha, @litros, @obs, @controlRutaId, GETDATE(), @usuarioId);",
+                        VALUES (@cicloId, @compReceptoriaId, @choferId, @fecha, @litros, @obs, @controlRutaId, DATEADD(hour, -4, GETUTCDATE()), @usuarioId);",
                         new
                         {
                             cicloId = (int?)viaje.CicloId,

@@ -29,7 +29,7 @@ import type {
 import { dbLocal } from '@/lib/dbLocal';
 import { syncEngine } from '@/lib/syncEngine';
 import { ticketsLocales } from '@/lib/ticketsLocales';
-import { getTimestampParada, formatFechaHoraParada } from '@/utils/timelapseUtils';
+import { getTimestampParada, formatFechaHoraParada, parseRawDateComponents } from '@/utils/timelapseUtils';
 import { CompaniaSelect } from '@/components/selectors/CompaniaSelect';
 import { ChoferSelect } from '@/components/selectors/ChoferSelect';
 import { viajeEstaEnviadoAReceptoria, esReceptoriaPrincipal } from '@/utils/procesoViaje';
@@ -5155,6 +5155,7 @@ export const AppMovilPage: React.FC = () => {
           esAcida: formCarga.esAcida,
           esDiferido: formCarga.esDiferido,
           fecha: fechaAUsar,
+          hora: horaStr,
           tipoLeche: formCarga.tipoLeche,
           observacion: obsConOrigen,
           temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
@@ -9387,7 +9388,7 @@ export const AppMovilPage: React.FC = () => {
                         const choferNom = t.nombreConductor || t.choferNombre || (t as any).conductorNombre || choferEfectivoNombre;
                         const rutaNom = t.rutaLogisticaNombre || (t as any).rutaNombre || 'TODOS';
                         const fStr = t.fecha ? String(t.fecha).split('T')[0] : hoyStr;
-                        const horaSalida = t.horaSalida || (t.createdAt ? String(t.createdAt).split('T')[1]?.substring(0, 5) : '11:53');
+                        const horaSalida = t.horaSalida || (t.createdAt ? (parseRawDateComponents(t.createdAt)?.formatted || new Date(t.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : 'En ruta');
 
                         return (
                           <div

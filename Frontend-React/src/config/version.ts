@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 25,
-  tag: 'v3.18.25',
+  patch: 26,
+  tag: 'v3.18.26',
   ultimaActualizacion: '2026-11-12',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil v3.18.25: Regla estricta de Menú Inicio para Chofer y Admin. Solo se muestran tickets activos/en ruta. Los tickets enviados a receptoría esperando verificación de litros se ocultan de Inicio (van a Entregas) y solo reaparecen en Inicio si Receptoría los devuelve/revierte.',
+  descripcion: 'App Móvil v3.18.26: Solución integral al problema de la hora. Sincronización oficial de hora Venezuela (UTC-4), transmisión de hora exacta de recolección en finca al backend y corrección de desfase de 4 horas.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

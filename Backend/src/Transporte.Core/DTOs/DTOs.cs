@@ -1558,6 +1558,7 @@ namespace Transporte.Core.DTOs
         public string? TipoLeche { get; set; } = "VACA";
         public bool EsDiferido { get; set; } = false;
         public DateTime? Fecha { get; set; }
+        public string? Hora { get; set; }
         public int? NumeroCompartimiento { get; set; }
         public string? Observacion { get; set; }
         public string? FotoComprobante { get; set; }

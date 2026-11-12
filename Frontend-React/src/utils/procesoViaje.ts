@@ -59,46 +59,23 @@ export const viajeEstaEnviadoAReceptoria = (viaje: Partial<ControlRutaDto> | any
   const procesoId = Number(viaje.procesoActualId || viaje.ProcesoActualId || 1);
   const estado = String(viaje.estado || viaje.Estado || '').toUpperCase().trim();
   const codigoProceso = String(viaje.codigoProceso || viaje.CodigoProceso || '').toUpperCase().trim();
-  const tipoDestino = String(viaje.tipoDestino || viaje.TipoDestino || '').toUpperCase().trim();
   const fechaLlegada = viaje.fechaLlegadaReceptoria || viaje.FechaLlegadaReceptoria;
-  const nomDestino = String(
-    viaje.nombreCompaniaDestino ||
-    viaje.NombreCompaniaDestino ||
-    viaje.companiaNombre ||
-    viaje.nombreCompania ||
-    ''
-  ).toUpperCase().trim();
+  const litrosRecep = Number(viaje.totalLitrosReceptoria || viaje.TotalLitrosReceptoria || 0);
 
-  // Si tiene llegada registrada a receptoría o destino fijado a RECEPTORIA o Receptoría Principal
-  if (fechaLlegada || tipoDestino === 'RECEPTORIA' || esReceptoriaPrincipal(nomDestino)) {
-    return true;
-  }
-
-  // ProcesoActualId: 1 = En Ruta / Recolección, 2 = Recibido / Llegada Receptoría, 3 = Descargado / Despachado, 4 = Finalizado
+  // 1. ProcesoActualId >= 2 significa que concluyó recolección y pasó a Receptoría (2), Descarga/Despacho (3) o Finalizado (4)
   if (procesoId >= 2) return true;
 
-  // Si los códigos de proceso o estado indican que ya arribó a receptoría o está despachado / finalizado
-  if (
-    codigoProceso === 'RECIBIDO' ||
-    codigoProceso === 'EN_RECEPTORIA' ||
-    codigoProceso === 'COMPANIA' ||
-    codigoProceso === 'EN_VIA' ||
-    codigoProceso === 'RECEPCIONADO' ||
-    codigoProceso === 'ENTREGADO' ||
-    codigoProceso === 'FINALIZADO'
-  ) {
-    return true;
-  }
+  // 2. Si tiene fecha de llegada a receptoría registrada o ya se le asignaron litros para receptoría
+  if (fechaLlegada != null || litrosRecep > 0) return true;
 
-  if (
-    estado === 'RECIBIDO' ||
-    estado === 'EN RECEPTORIA' ||
-    estado === 'RECEPCIONADO' ||
-    estado === 'EN VIA' ||
-    estado === 'ENTREGADO' ||
-    estado === 'FINALIZADO' ||
-    estado === 'CERRADO'
-  ) {
+  // 3. Códigos de proceso o estados que indican que ya arribó a receptoría o está despachado / finalizado
+  const estadosEnviado = [
+    'RECIBIDO', 'EN RECEPTORIA', 'EN_RECEPTORIA', 'RECEPCIONADO', 
+    'EN ESPERA', 'EN_ESPERA_RECEPTORIA', 'POR VERIFICACIÓN', 'POR VERIFICACION', 
+    'EN SILOS', 'EN SILO', 'CAMINO_COMPANIA', 'CAMINO A COMPAÑIA', 'EN VIA', 
+    'ENTREGADO', 'FINALIZADO', 'CERRADO'
+  ];
+  if (estadosEnviado.includes(codigoProceso) || estadosEnviado.includes(estado)) {
     return true;
   }
 

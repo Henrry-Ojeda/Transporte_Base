@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 24,
-  tag: 'v3.18.24',
+  patch: 25,
+  tag: 'v3.18.25',
   ultimaActualizacion: '2026-11-12',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil v3.18.24: Corrección de scroll y botón en modal de recepción, confirmación por MEDIDOR en 2 pasos, ocultamiento de tickets finalizados en vista activa de entregas y deduplicación estricta de notificaciones.',
+  descripcion: 'App Móvil v3.18.25: Regla estricta de Menú Inicio para Chofer y Admin. Solo se muestran tickets activos/en ruta. Los tickets enviados a receptoría esperando verificación de litros se ocultan de Inicio (van a Entregas) y solo reaparecen en Inicio si Receptoría los devuelve/revierte.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

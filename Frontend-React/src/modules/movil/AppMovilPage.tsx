@@ -742,7 +742,17 @@ export const AppMovilPage: React.FC = () => {
   const [viajeActivo, setViajeActivo] = useState<ControlRutaDto | null>(() => {
     try {
       const saved = localStorage.getItem('movil_viaje_activo');
-      return saved ? JSON.parse(saved) : null;
+      if (!saved) return null;
+      const parsed = JSON.parse(saved);
+      if (!parsed || !parsed.id) return null;
+      const est = String(parsed.estado || '').toUpperCase().trim();
+      const cerradoORecep = [
+        'FINALIZADO', 'CERRADO', 'ENTREGADO', 'ENTREGADO_RECEPTORIA',
+        'EN_ESPERA_RECEPTORIA', 'EN ESPERA', 'EN RECEPTORIA', 'RECEPCIONADO',
+        'POR VERIFICACIÓN', 'POR VERIFICACION', 'EN_RECEPTORIA', 'EN SILOS', 'EN SILO'
+      ].includes(est) || (parsed.procesoActualId != null && Number(parsed.procesoActualId) >= 2);
+      if (cerradoORecep) return null;
+      return parsed;
     } catch {
       return null;
     }
@@ -1369,7 +1379,20 @@ export const AppMovilPage: React.FC = () => {
     if (!viajeActivo) {
       try {
         const savedV = localStorage.getItem('movil_viaje_activo');
-        if (savedV) setViajeActivo(JSON.parse(savedV));
+        if (savedV) {
+          const parsed = JSON.parse(savedV);
+          const est = String(parsed?.estado || '').toUpperCase().trim();
+          const cerradoORecep = [
+            'FINALIZADO', 'CERRADO', 'ENTREGADO', 'ENTREGADO_RECEPTORIA',
+            'EN_ESPERA_RECEPTORIA', 'EN ESPERA', 'EN RECEPTORIA', 'RECEPCIONADO',
+            'POR VERIFICACIÓN', 'POR VERIFICACION', 'EN_RECEPTORIA', 'EN SILOS', 'EN SILO'
+          ].includes(est) || (parsed?.procesoActualId != null && Number(parsed.procesoActualId) >= 2);
+          if (!cerradoORecep) {
+            setViajeActivo(parsed);
+          } else {
+            localStorage.removeItem('movil_viaje_activo');
+          }
+        }
       } catch {}
     }
     if (!paradasViajeActivo || paradasViajeActivo.length === 0) {
@@ -1516,6 +1539,31 @@ export const AppMovilPage: React.FC = () => {
       return !enRecep && !finalizado;
     });
   }, [esAdminReal, viajesChofer]);
+
+  // REGLA MAESTRA CHOFER / INICIO:
+  // En menú Inicio solo se muestran turnos que están ABIERTOS O EN RUTA (proceso 1).
+  // Si el ticket está en receptoría esperando confirmación por litros, NO se muestra en Inicio (aparece en Entregas).
+  // Si Receptoría lo devuelve, vuelve a proceso 1 y aparece aquí.
+  const viajesChoferEnRuta = useMemo(() => {
+    return viajesChofer.filter((v) => {
+      const est = String(v.estado || '').toUpperCase().trim();
+      const esFin = est === 'FINALIZADO' || est === 'CERRADO' || Number(v.procesoActualId) === 4;
+      if (esFin) return false;
+      const enviadoRecep = viajeEstaEnviadoAReceptoria(v) || (v.procesoActualId != null && Number(v.procesoActualId) >= 2);
+      if (enviadoRecep) return false;
+      return true;
+    });
+  }, [viajesChofer]);
+
+  // Tickets del chofer que están en Receptoría esperando confirmación de litros
+  const ticketsEnReceptoriaChofer = useMemo(() => {
+    return viajesChofer.filter((v) => {
+      const est = String(v.estado || '').toUpperCase().trim();
+      const esFin = est === 'FINALIZADO' || est === 'CERRADO' || Number(v.procesoActualId) === 4;
+      if (esFin) return false;
+      return viajeEstaEnviadoAReceptoria(v) || (v.procesoActualId != null && Number(v.procesoActualId) >= 2);
+    });
+  }, [viajesChofer]);
 
   // Estados para creación de viajes/tickets por el chofer con selección de fecha, turno y camión
   const [fechaNuevoViaje, setFechaNuevoViaje] = useState(hoyStr);
@@ -2745,7 +2793,7 @@ export const AppMovilPage: React.FC = () => {
         }
 
         // REGLA: En rol Chofer y Admin supervisando chofer SOLO se muestran tickets ABIERTOS en ruta
-        const aplicarFiltroEstrictoAbierto = esChoferReal || modoActivo === 'CHOFER';
+        const aplicarFiltroEstrictoAbierto = esChoferReal || modoActivo === 'CHOFER' || Boolean(choferSimuladoId);
         if (aplicarFiltroEstrictoAbierto) {
           if (vOffline && !esTicketAbiertoEnRuta(vOffline)) vOffline = null;
           if (!vOffline) {
@@ -2864,7 +2912,7 @@ export const AppMovilPage: React.FC = () => {
         targetV = lista.find((x) => x.id === viajeSeleccionadoId) || null;
       }
       // REGLA: En rol Chofer y Admin supervisando chofer SOLO se muestran tickets ABIERTOS en ruta
-      const aplicarFiltroEstrictoAbierto = esChoferReal || modoActivo === 'CHOFER';
+      const aplicarFiltroEstrictoAbierto = esChoferReal || modoActivo === 'CHOFER' || Boolean(choferSimuladoId);
       if (aplicarFiltroEstrictoAbierto) {
         if (targetV && !esTicketAbiertoEnRuta(targetV)) targetV = null;
         if (!targetV) {
@@ -3002,7 +3050,7 @@ export const AppMovilPage: React.FC = () => {
           try {
             const vParsed = JSON.parse(savedV);
             if (vParsed && vParsed.id) {
-              const aplicarFiltroEstrictoAbierto = esChoferReal || modoActivo === 'CHOFER';
+              const aplicarFiltroEstrictoAbierto = esChoferReal || modoActivo === 'CHOFER' || Boolean(choferSimuladoId);
               if (aplicarFiltroEstrictoAbierto && !esTicketAbiertoEnRuta(vParsed)) {
                 setViajeSeleccionadoId(null);
                 setViajeActivo(null);
@@ -3792,7 +3840,8 @@ export const AppMovilPage: React.FC = () => {
       });
       toast.success(res.message || 'Ticket devuelto al chofer');
       setModalDevolverTicket(null);
-      cargarDatosReceptoria(fechaReceptoria);
+      await cargarDatosReceptoria(fechaReceptoria);
+      await cargarViajeActivo();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Error al devolver ticket');
     }
@@ -7307,7 +7356,7 @@ export const AppMovilPage: React.FC = () => {
               )}
 
               {/* PANEL DE CONTROL UNIFICADO: TURNO, TICKET, CISTERNA & BOTÓN SINCRONIZAR */}
-              {viajeActivo ? (
+              {viajeActivo && esTicketAbiertoEnRuta(viajeActivo) ? (
                 <div
                   style={{
                     background: '#ffffff',
@@ -7374,13 +7423,13 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Selector Horizontal de Turnos si tiene más de 1 en el día */}
-                  {viajesChofer.length > 1 && (() => {
-                    const viajesOrdenados = [...viajesChofer].sort((a, b) => a.id - b.id);
+                  {/* Selector Horizontal de Turnos si tiene más de 1 en el día que estén estrictamente EN RUTA */}
+                  {viajesChoferEnRuta.length > 1 && (() => {
+                    const viajesOrdenados = [...viajesChoferEnRuta].sort((a, b) => a.id - b.id);
                     return (
                       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(viajesOrdenados.length, 3)}, 1fr)`, gap: '6px' }}>
                         {viajesOrdenados.map((v, idx) => {
-                          const esSel = viajeActivo.id === v.id;
+                          const esSel = viajeActivo?.id === v.id;
                           const info = getTurnoInfo(v, idx);
                           return (
                             <button
@@ -7560,87 +7609,145 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                 </div>
               ) : !despachoActivo ? (
-                <div
-                  style={{
-                    background: '#ffffff',
-                    borderRadius: '20px',
-                    padding: '24px 18px',
-                    border: '1.5px dashed #cbd5e1',
-                    textAlign: 'center',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
-                  }}
-                >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Banner si el chofer tiene tickets en receptoría esperando confirmación de litros */}
+                  {ticketsEnReceptoriaChofer.length > 0 && (
+                    <div
+                      style={{
+                        background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+                        borderRadius: '18px',
+                        padding: '16px',
+                        border: '1.5px solid #fde68a',
+                        textAlign: 'left',
+                        boxShadow: '0 2px 8px rgba(245, 158, 11, 0.08)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#fde047', color: '#854d0e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>
+                            <i className="fa-solid fa-hourglass-half"></i>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: 900, color: '#92400e' }}>
+                              {ticketsEnReceptoriaChofer.length === 1
+                                ? `Ticket #${ticketsEnReceptoriaChofer[0].codigoTicket || ticketsEnReceptoriaChofer[0].id} en Receptoría`
+                                : `${ticketsEnReceptoriaChofer.length} tickets en Receptoría`}
+                            </div>
+                            <div style={{ fontSize: '11.5px', color: '#b45309', fontWeight: 700 }}>
+                              Esperando confirmación por litros (Le corresponde a Receptoría finalizarlo)
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setTabActiva('entregas')}
+                          style={{
+                            background: '#d97706',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '10px',
+                            padding: '8px 14px',
+                            fontSize: '11.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            boxShadow: '0 2px 6px rgba(217, 119, 6, 0.25)',
+                          }}
+                        >
+                          <span>Ver en Entregas</span>
+                          <i className="fa-solid fa-arrow-right text-[10px]"></i>
+                        </button>
+                      </div>
+                      <div style={{ marginTop: '10px', fontSize: '11.5px', color: '#78350f', lineHeight: '1.45', background: 'rgba(255, 255, 255, 0.7)', padding: '8px 12px', borderRadius: '10px', border: '1px solid #fef08a' }}>
+                        ℹ️ <strong>Nota:</strong> Este ticket no aparece en tu ruta de Inicio porque Receptoría debe verificar los litros recibidos y finalizarlo. <strong>Si Receptoría te lo devuelve</strong>, volverá a aparecer aquí en tu Inicio para continuar la recolección.
+                      </div>
+                    </div>
+                  )}
+
                   <div
                     style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '14px',
-                      background: '#eff6ff',
-                      color: '#2563eb',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '22px',
-                      margin: '0 auto 10px auto',
+                      background: '#ffffff',
+                      borderRadius: '20px',
+                      padding: '24px 18px',
+                      border: '1.5px dashed #cbd5e1',
+                      textAlign: 'center',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
                     }}
                   >
-                    <i className="fa-solid fa-truck-ramp-box"></i>
-                  </div>
-                  <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#1e293b' }}>
-                    Sin Ticket de Ruta Activo
-                  </div>
-                  <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 14px 0', lineHeight: '1.4' }}>
-                    Inicia un nuevo turno o recorrido para comenzar a recolectar leche.
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '320px', margin: '0 auto' }}>
-                    <button
-                      type="button"
-                      onClick={() => abrirModalCrearTicket()}
+                    <div
                       style={{
-                        background: 'linear-gradient(135deg, #059669, #10b981)',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '12px',
-                        padding: '11px 18px',
-                        fontSize: '13.5px',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '14px',
+                        background: '#eff6ff',
+                        color: '#2563eb',
+                        display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '8px',
-                        boxShadow: '0 4px 12px rgba(16,185,129,0.25)',
+                        fontSize: '22px',
+                        margin: '0 auto 10px auto',
                       }}
                     >
-                      <i className="fa-solid fa-truck-fast"></i>
-                      <span>Inicio de Nuevo Turno</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => cargarViajeActivo()}
-                      style={{
-                        background: 'transparent',
-                        color: '#64748b',
-                        border: 'none',
-                        padding: '6px 12px',
-                        fontSize: '11.5px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '5px',
-                      }}
-                    >
-                      <i className={`fa-solid fa-rotate ${cargandoViaje ? 'fa-spin' : ''}`}></i>
-                      <span>Consultar asignaciones del Admin</span>
-                    </button>
+                      <i className="fa-solid fa-truck-ramp-box"></i>
+                    </div>
+                    <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#1e293b' }}>
+                      Sin Ticket de Ruta Activo
+                    </div>
+                    <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 14px 0', lineHeight: '1.4' }}>
+                      Inicia un nuevo turno o recorrido para comenzar a recolectar leche.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '320px', margin: '0 auto' }}>
+                      <button
+                        type="button"
+                        onClick={() => abrirModalCrearTicket()}
+                        style={{
+                          background: 'linear-gradient(135deg, #059669, #10b981)',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '12px',
+                          padding: '11px 18px',
+                          fontSize: '13.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          boxShadow: '0 4px 12px rgba(16,185,129,0.25)',
+                        }}
+                      >
+                        <i className="fa-solid fa-truck-fast"></i>
+                        <span>Inicio de Nuevo Turno</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => cargarViajeActivo()}
+                        style={{
+                          background: 'transparent',
+                          color: '#64748b',
+                          border: 'none',
+                          padding: '6px 12px',
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '5px',
+                        }}
+                      >
+                        <i className={`fa-solid fa-rotate ${cargandoViaje ? 'fa-spin' : ''}`}></i>
+                        <span>Consultar asignaciones del Admin</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : null}
 
-              {/* SECCIÓN DIRECTA: FINCAS DE LA RUTA Y RECOLECCIÓN RÁPIDA */}
-              {viajeActivo && (
+              {/* SECCIÓN DIRECTA: FINCAS DE LA RUTA Y RECOLECCIÓN RÁPIDA (SOLO SI EL VIAJE ESTÁ ABIERTO EN RUTA) */}
+              {viajeActivo && esTicketAbiertoEnRuta(viajeActivo) && (
                 <div
                   style={{
                     background: '#ffffff',
@@ -8194,9 +8301,9 @@ export const AppMovilPage: React.FC = () => {
            =================================================================== */}
         {tabActiva === 'recoleccion' && (
           <div>
-            {/* SELECTOR RÁPIDO DE TURNOS EN RECOLECCIÓN (MAÑANA / TARDE) */}
-            {viajesChofer.length > 1 && (() => {
-              const viajesOrdenados = [...viajesChofer].sort((a, b) => a.id - b.id);
+            {/* SELECTOR RÁPIDO DE TURNOS EN RECOLECCIÓN (MAÑANA / TARDE) - SOLO EN RUTA */}
+            {viajesChoferEnRuta.length > 1 && (() => {
+              const viajesOrdenados = [...viajesChoferEnRuta].sort((a, b) => a.id - b.id);
               return (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', marginBottom: '12px' }}>
                   {viajesOrdenados.map((v, idx) => {
@@ -8233,7 +8340,7 @@ export const AppMovilPage: React.FC = () => {
             })()}
 
             {/* Banner de Viaje / Ticket Activo */}
-            {viajeActivo && (
+            {viajeActivo && esTicketAbiertoEnRuta(viajeActivo) && (
               <div
                 style={{
                   background: '#f0fdf4',

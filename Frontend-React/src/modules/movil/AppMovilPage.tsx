@@ -326,15 +326,15 @@ export const AppMovilPage: React.FC = () => {
   // Notificaciones Push y Alertas
   const [notificaciones, setNotificaciones] = useState<NotificacionMovil[]>([]);
   const [modalNotificaciones, setModalNotificaciones] = useState(false);
-  const ultimasIdsNotificadas = useRef<Set<number>>((() => {
+  const ultimasIdsNotificadas = useRef<Set<string>>((() => {
     try {
       const saved = localStorage.getItem('movil_notificadas_ids');
       if (saved) {
         const arr = JSON.parse(saved);
-        if (Array.isArray(arr)) return new Set(arr);
+        if (Array.isArray(arr)) return new Set(arr.map(String));
       }
     } catch {}
-    return new Set();
+    return new Set<string>();
   })());
   const esPrimeraCargaNotificaciones = useRef(true);
   const [permisoNotificaciones, setPermisoNotificaciones] = useState<NotificationPermission>(() => {
@@ -692,6 +692,7 @@ export const AppMovilPage: React.FC = () => {
   const [entregas, setEntregas] = useState<DespachoCompaniaDto[]>([]);
   const [cargandoEntregas, setCargandoEntregas] = useState(false);
   const [filtroFechaEntregas, setFiltroFechaEntregas] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [subFiltroEntregasTab, setSubFiltroEntregasTab] = useState<'PENDIENTES' | 'TODOS' | 'FINALIZADAS'>('PENDIENTES');
 
   // Estado para animar/titilar finca cuando se ingresan litros
   const [fincaRecienActualizadaId, setFincaRecienActualizadaId] = useState<number | null>(null);
@@ -2143,23 +2144,49 @@ export const AppMovilPage: React.FC = () => {
       try {
         const data = await notificacionesApi.getMisNotificaciones(30);
         if (Array.isArray(data)) {
+          // Deduplicar notificaciones por clave de contenido para no mostrar tarjetas repetidas
+          const dataDeduplicada = (() => {
+            const map = new Map<string, NotificacionMovil>();
+            data.forEach((n) => {
+              const claveContenido = `${n.tipo || ''}-${n.referenciaId || ''}-${(n.titulo || '').trim()}-${(n.mensaje || '').trim()}`;
+              if (!map.has(claveContenido)) {
+                map.set(claveContenido, n);
+              } else {
+                const existing = map.get(claveContenido)!;
+                if (n.id > existing.id || n.leido) {
+                  map.set(claveContenido, n);
+                }
+              }
+            });
+            return Array.from(map.values()).sort((a, b) => b.id - a.id);
+          })();
+
           if (esPrimeraCargaNotificaciones.current) {
             // Primera carga al ingresar a la app: registrar todas las notificaciones existentes en el set sin disparar alarmas repetidas
-            data.forEach((n) => ultimasIdsNotificadas.current.add(n.id));
+            dataDeduplicada.forEach((n) => {
+              ultimasIdsNotificadas.current.add(String(n.id));
+              ultimasIdsNotificadas.current.add(`${n.tipo || ''}-${n.referenciaId || ''}-${(n.titulo || '').trim()}`);
+            });
             try {
-              localStorage.setItem('movil_notificadas_ids', JSON.stringify(Array.from(ultimasIdsNotificadas.current).slice(-150)));
+              localStorage.setItem('movil_notificadas_ids', JSON.stringify(Array.from(ultimasIdsNotificadas.current).slice(-200)));
             } catch {}
             esPrimeraCargaNotificaciones.current = false;
           } else {
             // En consultas posteriores: solo emitir alerta si llega una notificación verdaderamente nueva no leída
-            const nuevas = data.filter(
-              (n) => !n.leido && !ultimasIdsNotificadas.current.has(n.id)
-            );
+            const nuevas = dataDeduplicada.filter((n) => {
+              if (n.leido) return false;
+              const idKey = String(n.id);
+              const signatureKey = `${n.tipo || ''}-${n.referenciaId || ''}-${(n.titulo || '').trim()}`;
+              return !ultimasIdsNotificadas.current.has(idKey) && !ultimasIdsNotificadas.current.has(signatureKey);
+            });
 
             if (nuevas.length > 0) {
-              nuevas.forEach((n) => ultimasIdsNotificadas.current.add(n.id));
+              nuevas.forEach((n) => {
+                ultimasIdsNotificadas.current.add(String(n.id));
+                ultimasIdsNotificadas.current.add(`${n.tipo || ''}-${n.referenciaId || ''}-${(n.titulo || '').trim()}`);
+              });
               try {
-                localStorage.setItem('movil_notificadas_ids', JSON.stringify(Array.from(ultimasIdsNotificadas.current).slice(-150)));
+                localStorage.setItem('movil_notificadas_ids', JSON.stringify(Array.from(ultimasIdsNotificadas.current).slice(-200)));
               } catch {}
 
               // Alerta visual Toast en pantalla si la app está visible
@@ -2192,7 +2219,7 @@ export const AppMovilPage: React.FC = () => {
             }
           }
 
-          setNotificaciones(data);
+          setNotificaciones(dataDeduplicada);
         }
       } catch (err) {
         console.warn('Error al consultar notificaciones móvil:', err);
@@ -2648,10 +2675,33 @@ export const AppMovilPage: React.FC = () => {
   const esTicketAbiertoEnRuta = (x: ControlRutaDto | null | undefined): boolean => {
     if (!x || !x.id) return false;
     const est = String(x.estado || '').toUpperCase().trim();
-    if (['FINALIZADO', 'CERRADO', 'ENTREGADO', 'ENTREGADO_RECEPTORIA', 'EN_ESPERA_RECEPTORIA', 'EN ESPERA', 'EN RECEPTORIA'].includes(est)) {
+    if ([
+      'FINALIZADO',
+      'CERRADO',
+      'ENTREGADO',
+      'ENTREGADO_RECEPTORIA',
+      'EN_ESPERA_RECEPTORIA',
+      'EN ESPERA',
+      'EN RECEPTORIA',
+      'RECEPCIONADO',
+      'POR VERIFICACIÓN',
+      'POR VERIFICACION',
+      'EN_RECEPTORIA',
+      'EN SILOS',
+      'EN SILO',
+      'CAMINO A COMPAÑIA',
+      'CAMINO A COMPANIA'
+    ].includes(est)) {
       return false;
     }
     if (x.procesoActualId != null && Number(x.procesoActualId) >= 2) {
+      return false;
+    }
+    if (
+      Number(x.totalLitrosReceptoria || 0) > 0 ||
+      Number(x.litrosEntregadosCompania || 0) > 0 ||
+      Number((x as any).litrosRecibidosReceptoria || 0) > 0
+    ) {
       return false;
     }
     if (viajeEstaEnviadoAReceptoria(x)) {
@@ -3689,7 +3739,7 @@ export const AppMovilPage: React.FC = () => {
     if (!modalVerificarLitros || !modalVerificarLitros.ticket) return;
     const lts = Number(modalVerificarLitros.litrosRecibidos);
     if (!lts || lts <= 0) {
-      toast.error('Ingresa los litros recibidos en tanque/báscula');
+      toast.error('Ingresa los litros recibidos por medidor');
       return;
     }
     try {
@@ -4802,14 +4852,32 @@ export const AppMovilPage: React.FC = () => {
   // Filtro de circuito en pestaña Recolección
   const [filtroCircuito, setFiltroCircuito] = useState<'todas' | 'pendientes' | 'recolectadas'>('todas');
 
+  // Helper que determina si un ticket ya está completado/finalizado/recepcionado
+  const esTicketCompletado = (t: any): boolean => {
+    if (!t) return false;
+    const est = String(t.estado || '').toUpperCase().trim();
+    if (['FINALIZADO', 'RECEPCIONADO', 'CERRADO', 'ENTREGADO'].includes(est)) return true;
+    if (t.procesoActualId != null && Number(t.procesoActualId) >= 4) return true;
+    const ltsRec = Number(
+      t.totalLitrosReceptoria ||
+      t.litrosRecibidosCompania ||
+      t.litrosConfirmados ||
+      t.litrosEntregadosCompania ||
+      t.litrosRecibidosReceptoria ||
+      0
+    );
+    if (ltsRec > 0) return true;
+    return false;
+  };
+
   // Indicadores de flechas para la pestaña Entregas (Receptoría = Flecha Verde Arriba ⬆️, Otra Compañía = Flecha Roja Abajo ⬇️)
   const tieneTicketReceptoriaHoy = useMemo(() => {
-    // 1. En viajesChofer (tickets de ruta enviados a receptoría o en espera de recepción)
+    // 1. En viajesChofer (tickets de ruta enviados a receptoría o en espera de recepción que NO estén finalizados)
     const enViajes = (viajesChofer || []).some((v: any) => {
       const fViaje = v.fecha ? String(v.fecha).split('T')[0] : '';
       if (fViaje && fViaje !== hoyStr) return false;
       const enviado = viajeEstaEnviadoAReceptoria(v) || (v.procesoActualId != null && Number(v.procesoActualId) >= 2);
-      return enviado && esDestinoReceptoriaPrincipal(v);
+      return enviado && esDestinoReceptoriaPrincipal(v) && !esTicketCompletado(v);
     });
     // 2. En ticketsReceptoria del chofer efectivo
     const enReceptoria = (ticketsReceptoria || []).some((tr: any) => {
@@ -4817,33 +4885,32 @@ export const AppMovilPage: React.FC = () => {
       if (chId && Number(chId) === Number(choferEfectivoId)) {
         const fTr = tr.fecha ? String(tr.fecha).split('T')[0] : '';
         if (fTr && fTr !== hoyStr) return false;
-        return esDestinoReceptoriaPrincipal(tr);
+        return esDestinoReceptoriaPrincipal(tr) && !esTicketCompletado(tr);
       }
       return false;
     });
-    // 3. En entregas si alguna va hacia Receptoría Principal
+    // 3. En entregas si alguna va hacia Receptoría Principal y sigue pendiente
     const enEntregas = (entregas || []).some((d: any) => {
       const fD = d.fecha ? String(d.fecha).split('T')[0] : '';
       if (fD && fD !== hoyStr) return false;
-      return esDestinoReceptoriaPrincipal(d);
+      return esDestinoReceptoriaPrincipal(d) && !esTicketCompletado(d);
     });
     return enViajes || enReceptoria || enEntregas;
   }, [viajesChofer, ticketsReceptoria, entregas, choferEfectivoId, companiasReceptoria, hoyStr]);
 
   const tieneDespachoOtraCompaniaHoy = useMemo(() => {
-    // 1. En entregas (despachos a compañías externas donde no es principal)
+    // 1. En entregas (despachos a compañías externas donde no es principal y sigue pendiente)
     const enEntregas = (entregas || []).some((d: any) => {
       const fD = d.fecha ? String(d.fecha).split('T')[0] : '';
       if (fD && fD !== hoyStr) return false;
-      const est = String(d.estado || '').toUpperCase();
-      return est !== 'FINALIZADO' && est !== 'CERRADO' && !esDestinoReceptoriaPrincipal(d);
+      return !esDestinoReceptoriaPrincipal(d) && !esTicketCompletado(d);
     });
-    // 2. En viajesChofer si tiene ruta con destino explícito a otra compañía
+    // 2. En viajesChofer si tiene ruta con destino explícito a otra compañía y sigue pendiente
     const enViajesOtra = (viajesChofer || []).some((v: any) => {
       const fViaje = v.fecha ? String(v.fecha).split('T')[0] : '';
       if (fViaje && fViaje !== hoyStr) return false;
       const enviado = viajeEstaEnviadoAReceptoria(v) || (v.procesoActualId != null && Number(v.procesoActualId) >= 2);
-      return enviado && !esDestinoReceptoriaPrincipal(v);
+      return enviado && !esDestinoReceptoriaPrincipal(v) && !esTicketCompletado(v);
     });
     return enEntregas || enViajesOtra;
   }, [entregas, viajesChofer, companiasReceptoria, hoyStr]);
@@ -8921,10 +8988,24 @@ export const AppMovilPage: React.FC = () => {
           })();
 
           // SECCIÓN 1: Entradas con DESTINO Receptoría Principal (EsPrincipal = true)
-          const listaEntradasReceptoria = todosLosTicketsEntregas.filter((t) => esDestinoReceptoriaPrincipal(t));
+          const todasEntradas = todosLosTicketsEntregas.filter((t) => esDestinoReceptoriaPrincipal(t));
 
           // SECCIÓN 2: Salidas con DESTINO a OTRA Compañía (Queseras, pasteurizadoras, etc. EsPrincipal = false)
-          const listaSalidasOtrasCompanias = todosLosTicketsEntregas.filter((t) => !esDestinoReceptoriaPrincipal(t));
+          const todasSalidas = todosLosTicketsEntregas.filter((t) => !esDestinoReceptoriaPrincipal(t));
+
+          // Por regla de negocio, los tickets ya recepcionados o finalizados se ocultan de la vista activa
+          // (a menos que el usuario pulse explícitamente la pestaña de Finalizadas)
+          const listaEntradasReceptoria = subFiltroEntregasTab === 'FINALIZADAS'
+            ? todasEntradas.filter((t) => esTicketCompletado(t))
+            : subFiltroEntregasTab === 'TODOS'
+            ? todasEntradas
+            : todasEntradas.filter((t) => !esTicketCompletado(t));
+
+          const listaSalidasOtrasCompanias = subFiltroEntregasTab === 'FINALIZADAS'
+            ? todasSalidas.filter((t) => esTicketCompletado(t))
+            : subFiltroEntregasTab === 'TODOS'
+            ? todasSalidas
+            : todasSalidas.filter((t) => !esTicketCompletado(t));
 
           const totalGeneral = listaEntradasReceptoria.length + listaSalidasOtrasCompanias.length;
 
@@ -9071,6 +9152,81 @@ export const AppMovilPage: React.FC = () => {
                   Hoy ({totalGeneral})
                 </span>
               )}
+            </div>
+
+            {/* SELECTOR DE ESTADO: EN PROCESO vs FINALIZADAS */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setSubFiltroEntregasTab('PENDIENTES')}
+                style={{
+                  padding: '7px 8px',
+                  borderRadius: '10px',
+                  border: subFiltroEntregasTab === 'PENDIENTES' ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
+                  background: subFiltroEntregasTab === 'PENDIENTES' ? '#e0f2fe' : '#ffffff',
+                  color: subFiltroEntregasTab === 'PENDIENTES' ? '#0369a1' : '#64748b',
+                  fontWeight: 800,
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span>⏳ En Proceso</span>
+                <span style={{ background: subFiltroEntregasTab === 'PENDIENTES' ? '#0284c7' : '#e2e8f0', color: subFiltroEntregasTab === 'PENDIENTES' ? '#fff' : '#475569', fontSize: '9.5px', padding: '1px 5px', borderRadius: '10px', fontWeight: 900 }}>
+                  {todasEntradas.filter((t) => !esTicketCompletado(t)).length + todasSalidas.filter((t) => !esTicketCompletado(t)).length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSubFiltroEntregasTab('FINALIZADAS')}
+                style={{
+                  padding: '7px 8px',
+                  borderRadius: '10px',
+                  border: subFiltroEntregasTab === 'FINALIZADAS' ? '1.5px solid #16a34a' : '1px solid #cbd5e1',
+                  background: subFiltroEntregasTab === 'FINALIZADAS' ? '#dcfce7' : '#ffffff',
+                  color: subFiltroEntregasTab === 'FINALIZADAS' ? '#15803d' : '#64748b',
+                  fontWeight: 800,
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span>✅ Finalizadas</span>
+                <span style={{ background: subFiltroEntregasTab === 'FINALIZADAS' ? '#16a34a' : '#e2e8f0', color: subFiltroEntregasTab === 'FINALIZADAS' ? '#fff' : '#475569', fontSize: '9.5px', padding: '1px 5px', borderRadius: '10px', fontWeight: 900 }}>
+                  {todasEntradas.filter((t) => esTicketCompletado(t)).length + todasSalidas.filter((t) => esTicketCompletado(t)).length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSubFiltroEntregasTab('TODOS')}
+                style={{
+                  padding: '7px 8px',
+                  borderRadius: '10px',
+                  border: subFiltroEntregasTab === 'TODOS' ? '1.5px solid #64748b' : '1px solid #cbd5e1',
+                  background: subFiltroEntregasTab === 'TODOS' ? '#f1f5f9' : '#ffffff',
+                  color: subFiltroEntregasTab === 'TODOS' ? '#0f172a' : '#64748b',
+                  fontWeight: 800,
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span>Todas</span>
+                <span style={{ background: '#cbd5e1', color: '#1e293b', fontSize: '9.5px', padding: '1px 5px', borderRadius: '10px', fontWeight: 900 }}>
+                  {todasEntradas.length + todasSalidas.length}
+                </span>
+              </button>
             </div>
 
             {cargandoEntregas ? (
@@ -9279,7 +9435,7 @@ export const AppMovilPage: React.FC = () => {
                                 <strong style={{ fontSize: '14px', color: '#0369a1' }}>{desp.toLocaleString()} L</strong>
                               </div>
                               <div>
-                                <span style={{ fontSize: '10.5px', color: '#64748b', display: 'block' }}>En Báscula/Planta:</span>
+                                <span style={{ fontSize: '10.5px', color: '#64748b', display: 'block' }}>En Medidor/Planta:</span>
                                 <strong style={{ fontSize: '14px', color: rec > 0 ? '#15803d' : '#d97706' }}>
                                   {rec > 0 ? `${rec.toLocaleString()} L` : 'Pendiente'}
                                 </strong>
@@ -9323,7 +9479,7 @@ export const AppMovilPage: React.FC = () => {
                                   }}
                                 >
                                   <i className="fa-solid fa-clipboard-check"></i>
-                                  Validar Litros & Subir Recibo
+                                  Validar Litros & Subir Recibo (MEDIDOR)
                                 </button>
                               </div>
                             ) : (
@@ -9436,6 +9592,7 @@ export const AppMovilPage: React.FC = () => {
                       flexDirection: 'column',
                       boxShadow: '0 -10px 25px rgba(0,0,0,0.2)',
                       animation: 'slideUp 0.25s ease-out',
+                      overflow: 'hidden',
                     }}
                   >
                     {/* Header */}
@@ -9450,11 +9607,12 @@ export const AppMovilPage: React.FC = () => {
                         borderTopLeftRadius: '24px',
                         borderTopRightRadius: '24px',
                         color: '#ffffff',
+                        flexShrink: 0,
                       }}
                     >
                       <div>
                         <h3 style={{ fontSize: '16px', fontWeight: 800, margin: 0 }}>
-                          Confirmar Entrega en Planta
+                          Confirmar Entrega en Planta / Compañía
                         </h3>
                         <p style={{ fontSize: '11.5px', margin: '2px 0 0 0', opacity: 0.9 }}>
                           Ticket #{modalConfirmarDespachoChofer.id} • {modalConfirmarDespachoChofer.nombreCompania || 'Planta Destino'}
@@ -9481,12 +9639,16 @@ export const AppMovilPage: React.FC = () => {
                       </button>
                     </div>
 
-                    {/* Form Body */}
+                    {/* Form Body con Scroll Vertical Libre */}
                     <form
                       onSubmit={handleConfirmarEntregaChofer}
                       style={{
                         padding: '20px',
+                        paddingBottom: '36px',
                         overflowY: 'auto',
+                        WebkitOverflowScrolling: 'touch',
+                        flex: 1,
+                        minHeight: 0,
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '14px',
@@ -9525,7 +9687,7 @@ export const AppMovilPage: React.FC = () => {
                       {/* Input Litros Recibidos */}
                       <div>
                         <label style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', display: 'block', marginBottom: '6px' }}>
-                          Litros Recibidos en Planta / Báscula *
+                          Litros Recibidos en Planta (MEDIDOR) *
                         </label>
                         <input
                           type="number"
@@ -9598,7 +9760,7 @@ export const AppMovilPage: React.FC = () => {
                       {/* Subir / Tomar Foto del Recibo de Planta */}
                       <div>
                         <label style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', display: 'block', marginBottom: '6px' }}>
-                          Foto del Recibo / Ticket de Báscula
+                          Foto del Recibo / Ticket de MEDIDOR
                         </label>
                         <input
                           ref={inputFotoReciboDespachoRef}
@@ -9719,7 +9881,7 @@ export const AppMovilPage: React.FC = () => {
                             }}
                           >
                             <i className="fa-solid fa-camera text-2xl text-emerald-600"></i>
-                            <span>Tomar Foto del Recibo de Báscula</span>
+                            <span>Tomar Foto del Recibo de MEDIDOR</span>
                             <small style={{ fontSize: '11px', color: '#94a3b8' }}>o seleccionar desde la galería</small>
                           </button>
                         )}
@@ -9794,19 +9956,20 @@ export const AppMovilPage: React.FC = () => {
                             </>
                           ) : (
                             <>
-                              <i className="fa-solid fa-circle-check"></i> Finalizar y Confirmar
+                              <i className="fa-solid fa-circle-check"></i>
+                              <span>Confirmar Entrega y Finalizar</span>
                             </>
                           )}
                         </button>
                       </div>
                     </form>
+                    </div>
                   </div>
-                </div>
-              );
-            })()}
-          </div>
-          );
-        })()}
+                );
+              })()}
+            </div>
+            );
+          })()}
 
         {/* ===================================================================
             PESTAÑA 4: REPORTES (SOLO NÚMEROS 1, 2, 3, 4 Y 7)
@@ -16780,13 +16943,14 @@ export const AppMovilPage: React.FC = () => {
                 background: '#ffffff',
                 borderTopLeftRadius: '24px',
                 borderTopRightRadius: '24px',
-                maxHeight: '90vh',
+                maxHeight: '92vh',
                 display: 'flex',
                 flexDirection: 'column',
                 boxShadow: '0 -10px 40px rgba(0,0,0,0.3)',
+                overflow: 'hidden',
               }}
             >
-              {/* Header */}
+              {/* Header Fijo */}
               <div
                 style={{
                   padding: '16px 20px',
@@ -16798,6 +16962,7 @@ export const AppMovilPage: React.FC = () => {
                   color: '#ffffff',
                   borderTopLeftRadius: '24px',
                   borderTopRightRadius: '24px',
+                  flexShrink: 0,
                 }}
               >
                 <div>
@@ -16817,8 +16982,21 @@ export const AppMovilPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* Formulario */}
-              <form onSubmit={handleConfirmarVerificarLitros} style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Formulario con Scroll Vertical Libre y Fluido */}
+              <form
+                onSubmit={handleConfirmarVerificarLitros}
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  minHeight: 0,
+                  padding: '18px 20px',
+                  paddingBottom: '36px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '16px',
+                }}
+              >
                 {/* Comparativo Visual */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
@@ -16842,11 +17020,16 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* VERIFICACIÓN DE FINCAS Y COMPROBANTES / FOTOS */}
-                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '14px', border: '1.5px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>
-                      📋 Fincas a Verificar ({fincasVerificadasMovilIds.size}/{fincasVerificarMovil.length})
+                {/* PASO 1: VERIFICACIÓN DE FINCAS Y RECIBOS DE MATERAS */}
+                <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '14px', border: '1.5px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                    <div>
+                      <div style={{ fontSize: '12.5px', fontWeight: 900, color: '#1e293b' }}>
+                        📋 Paso 1: Cotejar Fincas vs Recibos de Materas
+                      </div>
+                      <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                        Verificadas {fincasVerificadasMovilIds.size} de {fincasVerificarMovil.length} fincas
+                      </div>
                     </div>
                     {fincasVerificarMovil.length > 0 && (
                       <button
@@ -16974,142 +17157,151 @@ export const AppMovilPage: React.FC = () => {
                   )}
                 </div>
 
-                {/* Input Litros Recibidos */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
-                    Litros Recibidos en Planta (Tanque / Báscula) *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="0.5"
-                    required
-                    value={modalVerificarLitros.litrosRecibidos}
-                    onChange={(e) =>
-                      setModalVerificarLitros((prev) =>
-                        prev ? { ...prev, litrosRecibidos: e.target.value } : null
-                      )
-                    }
-                    style={{
-                      width: '100%',
-                      padding: '12px 14px',
-                      borderRadius: '12px',
-                      border: '2px solid #4f46e5',
-                      fontSize: '18px',
-                      fontWeight: 900,
-                      color: '#1e1b4b',
-                    }}
-                  />
-                </div>
+                {/* PASO 2: CONFIRMAR LITROS EN PLANTA (MEDIDOR) & COMPROBANTE */}
+                <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: '14px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 900, color: '#166534' }}>
+                    🥛 Paso 2: Descarga en Silos y Confirmación por MEDIDOR
+                  </div>
 
-                {/* Subir / Tomar Foto del Recibo de Receptoría */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
-                    📷 Foto del Recibo de Receptoría (Comprobante Físico de Báscula)
-                  </label>
-                  <input
-                    ref={inputFotoReciboReceptoriaRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    style={{ display: 'none' }}
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      try {
-                        const base64 = await comprimirImagenMovil(file);
-                        setModalVerificarLitros((prev) => (prev ? { ...prev, fotoRecibo: base64 } : null));
-                        toast.success('Foto del recibo de receptoría adjuntada');
-                      } catch {
-                        toast.error('Error al procesar la foto');
+                  {/* Input Litros Recibidos */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#166534', marginBottom: '6px' }}>
+                      Litros Recibidos en Planta (Tanque / MEDIDOR) *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.5"
+                      required
+                      value={modalVerificarLitros.litrosRecibidos}
+                      onChange={(e) =>
+                        setModalVerificarLitros((prev) =>
+                          prev ? { ...prev, litrosRecibidos: e.target.value } : null
+                        )
                       }
-                      e.target.value = '';
-                    }}
-                  />
-                  {modalVerificarLitros.fotoRecibo ? (
-                    <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1.5px solid #86efac', background: '#020617', display: 'flex', justifyContent: 'center' }}>
-                      <img
-                        src={modalVerificarLitros.fotoRecibo}
-                        alt="Recibo Receptoría"
-                        style={{ maxWidth: '100%', maxHeight: '140px', objectFit: 'contain' }}
-                      />
+                      style={{
+                        width: '100%',
+                        padding: '12px 14px',
+                        borderRadius: '12px',
+                        border: '2px solid #16a34a',
+                        fontSize: '18px',
+                        fontWeight: 900,
+                        color: '#14532d',
+                        background: '#ffffff',
+                      }}
+                    />
+                  </div>
+
+                  {/* Subir / Tomar Foto del Recibo de Receptoría */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#166534', marginBottom: '6px' }}>
+                      📷 Foto del Recibo de Receptoría (Comprobante Físico de MEDIDOR)
+                    </label>
+                    <input
+                      ref={inputFotoReciboReceptoriaRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      style={{ display: 'none' }}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const base64 = await comprimirImagenMovil(file);
+                          setModalVerificarLitros((prev) => (prev ? { ...prev, fotoRecibo: base64 } : null));
+                          toast.success('Foto del recibo de receptoría adjuntada');
+                        } catch {
+                          toast.error('Error al procesar la foto');
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                    {modalVerificarLitros.fotoRecibo ? (
+                      <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1.5px solid #86efac', background: '#020617', display: 'flex', justifyContent: 'center' }}>
+                        <img
+                          src={modalVerificarLitros.fotoRecibo}
+                          alt="Recibo Receptoría"
+                          style={{ maxWidth: '100%', maxHeight: '140px', objectFit: 'contain' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setModalVerificarLitros((prev) => (prev ? { ...prev, fotoRecibo: undefined } : null))}
+                          style={{
+                            position: 'absolute',
+                            top: '6px',
+                            right: '6px',
+                            background: 'rgba(239, 68, 68, 0.9)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '28px',
+                            height: '28px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <i className="fa-solid fa-xmark"></i>
+                        </button>
+                      </div>
+                    ) : (
                       <button
                         type="button"
-                        onClick={() => setModalVerificarLitros((prev) => (prev ? { ...prev, fotoRecibo: undefined } : null))}
+                        onClick={() => inputFotoReciboReceptoriaRef.current?.click()}
                         style={{
-                          position: 'absolute',
-                          top: '6px',
-                          right: '6px',
-                          background: 'rgba(239, 68, 68, 0.9)',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '50%',
-                          width: '28px',
-                          height: '28px',
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: '12px',
+                          border: '1.5px dashed #16a34a',
+                          background: '#ffffff',
+                          color: '#15803d',
+                          fontSize: '12.5px',
+                          fontWeight: 800,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
                           cursor: 'pointer',
                         }}
                       >
-                        <i className="fa-solid fa-xmark"></i>
+                        <i className="fa-solid fa-camera text-emerald-600"></i>
+                        <span>Tomar / Subir Foto del Recibo de MEDIDOR</span>
                       </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => inputFotoReciboReceptoriaRef.current?.click()}
+                    )}
+                  </div>
+
+                  {/* Observaciones */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                      Observaciones / Notas de Receptoría
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Pesaje conforme en medidor, acidez adecuada"
+                      value={modalVerificarLitros.observacion}
+                      onChange={(e) =>
+                        setModalVerificarLitros((prev) =>
+                          prev ? { ...prev, observacion: e.target.value } : null
+                        )
+                      }
                       style={{
                         width: '100%',
-                        padding: '10px 14px',
-                        borderRadius: '12px',
-                        border: '1.5px dashed #818cf8',
-                        background: '#eef2ff',
-                        color: '#4338ca',
-                        fontSize: '12.5px',
-                        fontWeight: 800,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        cursor: 'pointer',
+                        padding: '10px 12px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #cbd5e1',
+                        fontSize: '13px',
+                        background: '#ffffff',
                       }}
-                    >
-                      <i className="fa-solid fa-camera text-indigo-600"></i>
-                      <span>Tomar / Subir Foto del Recibo</span>
-                    </button>
-                  )}
+                    />
+                  </div>
                 </div>
 
-                {/* Observaciones */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
-                    Observaciones / Notas de Receptoría
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej: Pesaje conforme, acidez adecuada, merma normal de transporte"
-                    value={modalVerificarLitros.observacion}
-                    onChange={(e) =>
-                      setModalVerificarLitros((prev) =>
-                        prev ? { ...prev, observacion: e.target.value } : null
-                      )
-                    }
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '10px',
-                      border: '1.5px solid #cbd5e1',
-                      fontSize: '13px',
-                    }}
-                  />
-                </div>
-
-                {/* Botones */}
+                {/* Botones de Acción (Siempre visibles y accesibles) */}
                 <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                   <button
                     type="button"
                     onClick={() => setModalVerificarLitros(null)}
                     style={{
                       flex: 1,
-                      padding: '12px',
+                      padding: '13px',
                       borderRadius: '12px',
                       border: '1px solid #cbd5e1',
                       background: '#f8fafc',
@@ -17124,18 +17316,19 @@ export const AppMovilPage: React.FC = () => {
                     type="submit"
                     style={{
                       flex: 2,
-                      padding: '12px',
+                      padding: '13px',
                       borderRadius: '12px',
                       border: 'none',
-                      background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
                       color: '#ffffff',
                       fontWeight: 900,
-                      fontSize: '13.5px',
+                      fontSize: '14px',
                       cursor: 'pointer',
-                      boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
+                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
                     }}
                   >
-                    Confirmar y Conciliar
+                    <i className="fa-solid fa-circle-check mr-1.5"></i>
+                    Confirmar y Finalizar Ticket
                   </button>
                 </div>
               </form>

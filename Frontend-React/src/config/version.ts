@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 23,
-  tag: 'v3.18.23',
+  patch: 24,
+  tag: 'v3.18.24',
   ultimaActualizacion: '2026-11-12',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil v3.18.23: Separación de Entregas en Receptoría Principal (EsPrincipal) vs Otras Compañías con validación y rotación de recibo, flechas verde/roja en menú Entregas, filtro de tickets abiertos unificado para Admin/Chofer y fix de notificaciones duplicadas.',
+  descripcion: 'App Móvil v3.18.24: Corrección de scroll y botón en modal de recepción, confirmación por MEDIDOR en 2 pasos, ocultamiento de tickets finalizados en vista activa de entregas y deduplicación estricta de notificaciones.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

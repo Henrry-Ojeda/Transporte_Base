@@ -10002,6 +10002,15 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 if (viaje.UsuarioId != null && (int)viaje.UsuarioId != usuarioId)
                 {
                     await connection.ExecuteAsync(@"
+                        IF NOT EXISTS (
+                            SELECT 1 FROM TB_NOTIFICACIONES_MOVIL
+                            WHERE UsuarioId = @UsuarioId
+                              AND Tipo = 'FINCA_AGREGADA'
+                              AND ReferenciaId = @ReferenciaId
+                              AND Titulo = @Titulo
+                              AND Mensaje = @Mensaje
+                              AND CreatedAt >= DATEADD(minute, -30, GETDATE())
+                        )
                         INSERT INTO TB_NOTIFICACIONES_MOVIL (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
                         VALUES (@UsuarioId, 'FINCA_AGREGADA', @Titulo, @Mensaje, @FechaOperativa, @ReferenciaId, 0, GETDATE())",
                         new
@@ -10017,6 +10026,15 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 foreach (var destUserId in usuariosNotif)
                 {
                     await connection.ExecuteAsync(@"
+                        IF NOT EXISTS (
+                            SELECT 1 FROM TB_NOTIFICACIONES_MOVIL
+                            WHERE UsuarioId = @UsuarioId
+                              AND Tipo = 'FINCA_AGREGADA'
+                              AND ReferenciaId = @ReferenciaId
+                              AND Titulo = @Titulo
+                              AND Mensaje = @Mensaje
+                              AND CreatedAt >= DATEADD(minute, -30, GETDATE())
+                        )
                         INSERT INTO TB_NOTIFICACIONES_MOVIL (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
                         VALUES (@UsuarioId, 'FINCA_AGREGADA', @Titulo, @Mensaje, @FechaOperativa, @ReferenciaId, 0, GETDATE())",
                         new

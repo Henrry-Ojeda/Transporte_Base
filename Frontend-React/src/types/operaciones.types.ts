@@ -97,6 +97,7 @@ export interface DespachoCompaniaDto {
   id: number;
   fecha: string;
   usuarioId?: number;
+  conductorId?: number;
   nombreConductor?: string;
   camionId?: number;
   camionPlaca?: string;

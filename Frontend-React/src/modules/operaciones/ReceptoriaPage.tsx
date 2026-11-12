@@ -41,6 +41,7 @@ export const ReceptoriaPage: React.FC = () => {
   const [modalNuevoDespacho, setModalNuevoDespacho] = useState<boolean>(false);
   const [modalConfirmar, setModalConfirmar] = useState<boolean>(false);
   const [modalVerFotoRecibo, setModalVerFotoRecibo] = useState<string | null>(null);
+  const [rotacionWebFoto, setRotacionWebFoto] = useState<number>(0);
   const [despachoSeleccionado, setDespachoSeleccionado] = useState<DespachoCompaniaDto | null>(null);
   const [litrosConfirmadosInput, setLitrosConfirmadosInput] = useState<number>(0);
   const [obsConfirmacionInput, setObsConfirmacionInput] = useState<string>('');
@@ -3708,26 +3709,62 @@ export const ReceptoriaPage: React.FC = () => {
               <strong style={{ fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <i className="fa-solid fa-camera text-emerald-400"></i> Comprobante / Recibo de Báscula del Chofer
               </strong>
-              <button
-                type="button"
-                onClick={() => setModalVerFotoRecibo(null)}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}
-              >
-                <i className="fa-solid fa-xmark"></i>
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setRotacionWebFoto((prev) => (prev + 90) % 360)}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.15)',
+                    border: '1px solid rgba(255, 255, 255, 0.25)',
+                    color: '#ffffff',
+                    borderRadius: '6px',
+                    padding: '4px 10px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                  title="Girar imagen 90°"
+                >
+                  <i className="fa-solid fa-rotate-right"></i>
+                  <span>Rotar ({rotacionWebFoto}°)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalVerFotoRecibo(null);
+                    setRotacionWebFoto(0);
+                  }}
+                  style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
             </div>
-            <div style={{ padding: '12px', background: '#020617', display: 'flex', justifyContent: 'center', overflowY: 'auto' }}>
+            <div style={{ padding: '12px', background: '#020617', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px', overflow: 'hidden' }}>
               <img
                 src={modalVerFotoRecibo}
                 alt="Recibo Chofer"
-                style={{ maxWidth: '100%', maxHeight: '72vh', objectFit: 'contain', borderRadius: '8px' }}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '72vh',
+                  objectFit: 'contain',
+                  borderRadius: '8px',
+                  transform: `rotate(${rotacionWebFoto}deg)`,
+                  transition: 'transform 0.25s ease',
+                }}
               />
             </div>
             <div style={{ padding: '12px 20px', background: '#f8fafc', display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => setModalVerFotoRecibo(null)}
+                onClick={() => {
+                  setModalVerFotoRecibo(null);
+                  setRotacionWebFoto(0);
+                }}
                 style={{ height: '36px', padding: '0 16px', fontWeight: 700 }}
               >
                 Cerrar

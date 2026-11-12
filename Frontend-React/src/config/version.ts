@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 18,
-  patch: 21,
-  tag: 'v3.18.21',
+  patch: 22,
+  tag: 'v3.18.22',
   ultimaActualizacion: '2026-11-12',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil v3.18.21: Restricción de 1 ticket por chofer en ruta, modo Admin sin conexión con aislamiento estricto de memoria por chofer, receptoría con chofer visible, rotación de fotos, orden cronológico de timelapse y botón unificado sincronizar/actualizar.',
+  descripcion: 'App Móvil v3.18.22: Fix permanente de habilitación SaaS para Vergel & Carrillo y Campo Verde, retiro de banner Probar en Bloqueo, filtro estricto de tickets abiertos en Inicio chofer y visualización de tickets en Receptoría 1:1 con Web.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

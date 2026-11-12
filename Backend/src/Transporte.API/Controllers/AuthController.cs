@@ -378,7 +378,7 @@ namespace Transporte.API.Controllers
                 PlacaCamion = placaCamion,
                 CapacidadTanqueLitros = capacidadTanqueLitros,
                 Permisos = permisos,
-                ModulosHabilitados = new[] { "MOD_LOGISTICA_RUTAS" }
+                ModulosHabilitados = _tenantService.GetModulosActivos().Any() ? _tenantService.GetModulosActivos() : new[] { "MOD_LOGISTICA_RUTAS", "MOD_APP_MOVIL" }
             });
         }
     }

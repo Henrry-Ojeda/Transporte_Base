@@ -2545,6 +2545,22 @@ export const AppMovilPage: React.FC = () => {
     return { tituloTurno, iconoTurno, estadoLabel, estadoColor, estadoBg, esFinalizado, esReceptoria, esPlanta };
   };
 
+  // Helper estricto: determina si un ticket de ruta está ABIERTO en curso (fase de recolección en campo)
+  const esTicketAbiertoEnRuta = (x: ControlRutaDto | null | undefined): boolean => {
+    if (!x || !x.id) return false;
+    const est = String(x.estado || '').toUpperCase().trim();
+    if (['FINALIZADO', 'CERRADO', 'ENTREGADO', 'ENTREGADO_RECEPTORIA', 'EN_ESPERA_RECEPTORIA', 'EN ESPERA', 'EN RECEPTORIA'].includes(est)) {
+      return false;
+    }
+    if (x.procesoActualId != null && Number(x.procesoActualId) >= 2) {
+      return false;
+    }
+    if (viajeEstaEnviadoAReceptoria(x)) {
+      return false;
+    }
+    return true;
+  };
+
   const cargarViajeActivo = async (idTarget?: number, forzarId?: number) => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
@@ -2578,7 +2594,16 @@ export const AppMovilPage: React.FC = () => {
             if (vParsed && vParsed.id) vOffline = listaOffline.find((x) => x.id === vParsed.id) || vParsed;
           }
         }
-        if (!vOffline && listaOffline.length > 0) vOffline = listaOffline[0];
+
+        // REGLA: En rol Chofer SOLO se muestran tickets ABIERTOS en ruta
+        if (esChoferReal) {
+          if (vOffline && !esTicketAbiertoEnRuta(vOffline)) vOffline = null;
+          if (!vOffline) {
+            vOffline = listaOffline.find((x) => esTicketAbiertoEnRuta(x)) || null;
+          }
+        } else {
+          if (!vOffline && listaOffline.length > 0) vOffline = listaOffline[0];
+        }
 
         if (vOffline && vOffline.id) {
           setViajeSeleccionadoId(vOffline.id);
@@ -2589,6 +2614,15 @@ export const AppMovilPage: React.FC = () => {
           } else {
             setParadasViajeActivo([]);
           }
+        } else if (esChoferReal) {
+          setViajeSeleccionadoId(null);
+          setViajeActivo(null);
+          setParadasViajeActivo([]);
+          try {
+            localStorage.removeItem('movil_viaje_seleccionado_id');
+            localStorage.removeItem('movil_viaje_activo');
+            localStorage.removeItem(`movil_viaje_activo_${idBusqueda}`);
+          } catch {}
         }
       } catch {}
       return;
@@ -2679,15 +2713,23 @@ export const AppMovilPage: React.FC = () => {
       if (!targetV && !idTarget && viajeSeleccionadoId) {
         targetV = lista.find((x) => x.id === viajeSeleccionadoId) || null;
       }
-      if (!targetV && lista.length > 0) {
-        // Priorizar el primer viaje que esté en proceso < 4 (abierto o en ruta)
-        const abierto = lista.find(
-          (x) =>
-            (x.procesoActualId || 1) < 4 &&
-            String(x.estado || '').toUpperCase() !== 'FINALIZADO' &&
-            String(x.estado || '').toUpperCase() !== 'CERRADO'
-        );
-        targetV = abierto || lista[0] || lista[lista.length - 1];
+      // REGLA: En rol Chofer SOLO se muestran tickets ABIERTOS en ruta
+      if (esChoferReal) {
+        if (targetV && !esTicketAbiertoEnRuta(targetV)) targetV = null;
+        if (!targetV) {
+          targetV = lista.find((x) => esTicketAbiertoEnRuta(x)) || null;
+        }
+      } else {
+        if (!targetV && lista.length > 0) {
+          // Priorizar el primer viaje que esté en proceso < 4 (abierto o en ruta)
+          const abierto = lista.find(
+            (x) =>
+              (x.procesoActualId || 1) < 4 &&
+              String(x.estado || '').toUpperCase() !== 'FINALIZADO' &&
+              String(x.estado || '').toUpperCase() !== 'CERRADO'
+          );
+          targetV = abierto || lista[0] || lista[lista.length - 1];
+        }
       }
 
       if (targetV && targetV.id) {
@@ -2803,12 +2845,23 @@ export const AppMovilPage: React.FC = () => {
           await cargarRecoleccionesYSolicitudes(targetV.fecha ? targetV.fecha.split('T')[0] : hoyStr);
         }
       } else {
-        // PRESERVAR CACHÉ: NUNCA borrar el viaje offline si el servidor falló o no encontró registros
+        // PRESERVAR CACHÉ: Solo restaurar si el ticket sigue ABIERTO en ruta (no enviado a receptoría ni cerrado)
         const savedV = localStorage.getItem('movil_viaje_activo_' + idBusqueda) || localStorage.getItem('movil_viaje_activo');
         if (savedV) {
           try {
             const vParsed = JSON.parse(savedV);
             if (vParsed && vParsed.id) {
+              if (esChoferReal && !esTicketAbiertoEnRuta(vParsed)) {
+                setViajeSeleccionadoId(null);
+                setViajeActivo(null);
+                setParadasViajeActivo([]);
+                try {
+                  localStorage.removeItem('movil_viaje_seleccionado_id');
+                  localStorage.removeItem('movil_viaje_activo');
+                  localStorage.removeItem('movil_viaje_activo_' + idBusqueda);
+                } catch {}
+                return;
+              }
               setViajeSeleccionadoId(vParsed.id);
               setViajeActivo(vParsed);
               const pOffline = leerParadasTicketLocal(vParsed.id);
@@ -2820,6 +2873,11 @@ export const AppMovilPage: React.FC = () => {
         setViajeSeleccionadoId(null);
         setViajeActivo(null);
         setParadasViajeActivo([]);
+        try {
+          localStorage.removeItem('movil_viaje_seleccionado_id');
+          localStorage.removeItem('movil_viaje_activo');
+          localStorage.removeItem('movil_viaje_activo_' + idBusqueda);
+        } catch {}
       }
 
       // Refrescar permiso de creación de viaje si es chofer y hay dispositivo conectado
@@ -6015,9 +6073,27 @@ export const AppMovilPage: React.FC = () => {
   // CONTROL DE ACCESO SAAS: SI LA EMPRESA NO TIENE EL MÓDULO DE APP MÓVIL
   // =========================================================================
   const modulosDispositivo = dispositivo?.modulosHabilitados || [];
-  const tieneModuloMovil = modulosDispositivo.length === 0
-    ? hasTenantModule('MOD_APP_MOVIL')
-    : modulosDispositivo.some((m: string) => m.toUpperCase() === 'MOD_APP_MOVIL');
+  const empCode = (dispositivo?.empresaCodigo || currentTenant.codigo || '').toUpperCase();
+  const empNom = (dispositivo?.empresaNombre || currentTenant.nombre || '').toUpperCase();
+  const hostActual = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+  const esEmpresaHabilitada =
+    empCode.includes('VERGEL') ||
+    empNom.includes('VERGEL') ||
+    empCode.includes('CAMPO') ||
+    empNom.includes('CAMPO') ||
+    empCode.includes('BASE') ||
+    hostActual.includes('vergel') ||
+    hostActual.includes('campoverde') ||
+    hostActual.includes('base');
+
+  const tieneModuloMovil = esEmpresaHabilitada || (
+    modulosDispositivo.length === 0
+      ? (hasTenantModule('MOD_APP_MOVIL') || hasTenantModule('MOD_LOGISTICA_RUTAS'))
+      : modulosDispositivo.some((m: string) => {
+          const u = m.toUpperCase();
+          return u === 'MOD_APP_MOVIL' || u === 'MOD_LOGISTICA_RUTAS' || u === 'MOD_RUTAS';
+        })
+  );
 
   if (!tieneModuloMovil) {
     return (
@@ -6416,45 +6492,7 @@ export const AppMovilPage: React.FC = () => {
           </div>
         )}
 
-        {permisoNotificaciones === 'granted' && (
-          <div
-            style={{
-              background: '#f0fdf4',
-              border: '1px solid #bbf7d0',
-              borderRadius: '10px',
-              padding: '6px 12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '8px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#166534', fontWeight: 700 }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#16a34a' }}></span>
-              <span>Avisos de ruta activos (Pantalla bloqueada)</span>
-            </div>
-            <button
-              type="button"
-              onClick={probarNotificacionPantallaApagada}
-              style={{
-                background: '#16a34a',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '6px',
-                padding: '4px 8px',
-                fontSize: '10.5px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-              title="Programa un push en 5 segundos para que apagues tu pantalla y verifiques que suena y vibra"
-            >
-              <i className="fa-solid fa-mobile-screen"></i> Probar en Bloqueo (5s)
-            </button>
-          </div>
-        )}
+
 
         {/* Barra de Cambio Rápido de Módulo (Chofer / Admin / Taller / Receptoría) - Exclusivo Administradores */}
         {esAdminReal && (
@@ -8706,6 +8744,31 @@ export const AppMovilPage: React.FC = () => {
             return list;
           })();
 
+          // 1. Entradas a Receptoría del chofer (tickets de ruta enviados a silos/planta o en espera de verificación)
+          const misTicketsRutaEnviados = (() => {
+            const fFiltro = filtroFechaEntregas || hoyStr;
+            return viajesChofer.filter((v: any) => {
+              const fViaje = v.fecha ? String(v.fecha).split('T')[0] : '';
+              if (fFiltro && fViaje && fViaje !== fFiltro) return false;
+              return viajeEstaEnviadoAReceptoria(v) || (v.procesoActualId != null && Number(v.procesoActualId) >= 2);
+            });
+          })();
+
+          const listaEntradasReceptoria = (() => {
+            const list = [...misTicketsRutaEnviados];
+            (ticketsReceptoria || []).forEach((tr: any) => {
+              const chId = tr.usuarioId || tr.choferId || (tr as any).conductorId;
+              if (chId && Number(chId) === Number(choferEfectivoId)) {
+                if (!list.some((x: any) => x.id === tr.id)) {
+                  list.push(tr);
+                }
+              }
+            });
+            return list;
+          })();
+
+          const totalGeneral = listaEntradasReceptoria.length + listaEntregasEfectiva.length;
+
           return (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -8722,6 +8785,7 @@ export const AppMovilPage: React.FC = () => {
                 onClick={() => {
                   cargarEntregasChofer();
                   cargarDespachoActivo();
+                  cargarDatosReceptoria();
                 }}
                 disabled={cargandoEntregas || !isOnline}
                 style={{
@@ -8845,7 +8909,7 @@ export const AppMovilPage: React.FC = () => {
                     borderRadius: '6px',
                   }}
                 >
-                  Hoy ({listaEntregasEfectiva.length})
+                  Hoy ({totalGeneral})
                 </span>
               )}
             </div>
@@ -8855,27 +8919,141 @@ export const AppMovilPage: React.FC = () => {
                 <i className="fa-solid fa-spinner fa-spin text-2xl mb-2 text-purple-600"></i>
                 <div style={{ fontSize: '12.5px', fontWeight: 700 }}>Cargando tus despachos...</div>
               </div>
-            ) : listaEntregasEfectiva.length === 0 ? (
-              <div
-                style={{
-                  background: '#ffffff',
-                  borderRadius: '16px',
-                  padding: '36px 16px',
-                  textAlign: 'center',
-                  border: '1.5px dashed #cbd5e1',
-                  color: '#94a3b8',
-                }}
-              >
-                <i className="fa-solid fa-warehouse text-3xl mb-2 text-purple-300"></i>
-                <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#64748b' }}>
-                  No tienes entregas a receptoría asignadas
-                </div>
-                <p style={{ fontSize: '11.5px', margin: '4px 0 0 0' }}>
-                  Cuando el administrador asigne un despacho a tu camión, aparecerá aquí.
-                </p>
-              </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* 1. SECCIÓN ENTRADAS: RECEPCIÓN DE LECHE DE FINCAS (RÉPLICA 1:1 WEB) */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 900, color: '#0369a1' }}>
+                      <i className="fa-solid fa-truck-ramp-box"></i>
+                      <span>1. ENTRADAS: RECEPCIÓN DE LECHE DE FINCAS (CONTROL RUTAS)</span>
+                    </div>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#0284c7', background: '#e0f2fe', padding: '2px 8px', borderRadius: '6px' }}>
+                      {listaEntradasReceptoria.length} {listaEntradasReceptoria.length === 1 ? 'Camión' : 'Camiones'}
+                    </span>
+                  </div>
+
+                  {listaEntradasReceptoria.length === 0 ? (
+                    <div style={{ background: '#ffffff', borderRadius: '12px', padding: '16px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>
+                      No tienes tickets de recolección enviados a receptoría en esta fecha.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {listaEntradasReceptoria.map((t: any) => {
+                        const ltsCargados = Number(t.totalLitrosFinca || (t as any).litrosCargadosTotal || 0);
+                        const ltsConfirmados = Number(t.totalLitrosReceptoria || t.litrosEntregadosCompania || 0);
+                        const yaConfirmado = ltsConfirmados > 0 || String(t.estado || '').toUpperCase() === 'FINALIZADO';
+                        const tipoLeche = String(t.tipoLeche || (t as any).tipo || 'VACA').toUpperCase();
+                        const capacidadCamion = Number(t.capacidadCamionLitros || dispositivo?.capacidadTanqueLitros || 6000);
+                        const pctOcupacion = capacidadCamion > 0 ? Math.min(100, Math.round((ltsCargados / capacidadCamion) * 100)) : 0;
+                        const paradas = (t as any).paradas || [];
+                        const totalParadas = paradas.length > 0 ? paradas.length : Number(t.totalFincasVisitadas || 1);
+                        const choferNom = t.nombreConductor || t.choferNombre || (t as any).conductorNombre || choferEfectivoNombre;
+                        const rutaNom = t.rutaLogisticaNombre || (t as any).rutaNombre || 'TODOS';
+                        const fStr = t.fecha ? String(t.fecha).split('T')[0] : hoyStr;
+                        const horaSalida = t.horaSalida || (t.createdAt ? String(t.createdAt).split('T')[1]?.substring(0, 5) : '11:53');
+
+                        return (
+                          <div
+                            key={`entrada-${t.id}`}
+                            style={{
+                              background: '#ffffff',
+                              borderRadius: '16px',
+                              border: yaConfirmado ? '1.5px solid #86efac' : '1.5px solid #fed7aa',
+                              padding: '14px 16px',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+                            }}
+                          >
+                            {/* Cabecera idéntica a Web: Placa, Tipo Leche, Estado, #Ticket */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span style={{ background: '#0284c7', color: '#ffffff', fontSize: '11px', fontWeight: 900, padding: '2px 7px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <i className="fa-solid fa-truck"></i> {t.camionPlaca || dispositivo?.placaCamion || 'S/P'}
+                                </span>
+                                <span style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '10.5px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px' }}>
+                                  🥛 {tipoLeche}
+                                </span>
+                                <span style={{ background: yaConfirmado ? '#dcfce7' : '#fef3c7', color: yaConfirmado ? '#15803d' : '#b45309', border: `1px solid ${yaConfirmado ? '#bbf7d0' : '#fde68a'}`, fontSize: '10.5px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px' }}>
+                                  {yaConfirmado ? '✅ Recepcionada' : '⏳ En Silos / Por Recibir'}
+                                </span>
+                              </div>
+                              <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#334155' }}>
+                                #{t.codigoTicket || t.id}
+                              </span>
+                            </div>
+
+                            <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
+                              📅 {fStr} • Salida: {horaSalida}
+                            </div>
+
+                            <div style={{ fontSize: '13.5px', fontWeight: 900, color: '#0f172a', marginBottom: '4px' }}>
+                              <i className="fa-solid fa-user text-blue-600 mr-1.5"></i>
+                              {choferNom}
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11.5px', color: '#475569', marginBottom: '8px' }}>
+                              <span><i className="fa-solid fa-route text-sky-600 mr-1"></i> Ruta: <strong>{rutaNom}</strong></span>
+                              <span><i className="fa-solid fa-location-dot text-emerald-600 mr-1"></i> <strong>{totalParadas}</strong> {totalParadas === 1 ? 'parada' : 'paradas'}</span>
+                            </div>
+
+                            {/* Litros en Camión y % Ocupación */}
+                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '8px 10px', marginBottom: '8px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: '11px', color: '#64748b' }}>Litros en Camión:</span>
+                                <strong style={{ fontSize: '14px', color: '#0284c7' }}>{ltsCargados.toLocaleString()} Lts</strong>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '10.5px', color: '#64748b' }}>
+                                <span>Capacidad: {capacidadCamion.toLocaleString()} L</span>
+                                <span style={{ fontWeight: 800, color: pctOcupacion > 90 ? '#dc2626' : '#15803d' }}>{pctOcupacion}% ocupación</span>
+                              </div>
+                            </div>
+
+                            {/* Observaciones */}
+                            {t.observacion && (
+                              <div style={{ fontSize: '11px', color: '#475569', background: '#f1f5f9', padding: '5px 8px', borderRadius: '6px', marginBottom: '8px', fontStyle: 'italic' }}>
+                                <i className="fa-solid fa-comment mr-1 text-slate-400"></i> {t.observacion}
+                              </div>
+                            )}
+
+                            {/* Banner de Estado Receptoría */}
+                            <div style={{ background: yaConfirmado ? '#f0fdf4' : '#fffbeb', border: `1px solid ${yaConfirmado ? '#bbf7d0' : '#fde68a'}`, borderRadius: '8px', padding: '7px 10px', fontSize: '11.5px', fontWeight: 700, color: yaConfirmado ? '#166534' : '#92400e', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                              <span>
+                                <i className={`fa-solid ${yaConfirmado ? 'fa-circle-check text-emerald-600' : 'fa-hourglass-half text-amber-600'} mr-1.5`}></i>
+                                {yaConfirmado ? `Recepcionado en Planta: ${ltsConfirmados.toLocaleString()} L` : 'Esperando Verificación (Por Recibir en Silos)'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => abrirTimelapseMovil(t)}
+                                style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '2px 7px', color: '#2563eb', fontWeight: 800, fontSize: '11px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                <i className="fa-solid fa-timeline"></i> Timelapse
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. SECCIÓN SALIDAS: DESPACHOS A COMPAÑÍAS Y QUESERAS */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 900, color: '#7e22ce' }}>
+                      <i className="fa-solid fa-truck-fast"></i>
+                      <span>2. SALIDAS: DESPACHOS A COMPAÑÍAS Y QUESERAS (CONTROL COMPAÑÍAS)</span>
+                    </div>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#7e22ce', background: '#f5f3ff', padding: '2px 8px', borderRadius: '6px' }}>
+                      {listaEntregasEfectiva.length} {listaEntregasEfectiva.length === 1 ? 'Salida' : 'Salidas'}
+                    </span>
+                  </div>
+
+                  {listaEntregasEfectiva.length === 0 ? (
+                    <div style={{ background: '#ffffff', borderRadius: '12px', padding: '16px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>
+                      No tienes despachos a compañías asignados en esta fecha.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {listaEntregasEfectiva.map((d: any) => {
                   const desp = Number(d.litrosDespachados || 0);
                   const rec = Number(d.litrosRecibidosCompania || d.litrosConfirmados || 0);
@@ -9128,6 +9306,9 @@ export const AppMovilPage: React.FC = () => {
                 })}
               </div>
             )}
+          </div>
+        </div>
+      )}
 
             {/* MODAL MÓVIL: CHOFER CONFIRMA LITROS Y SUBE FOTO DE RECIBO */}
             {modalConfirmarDespachoChofer && (() => {

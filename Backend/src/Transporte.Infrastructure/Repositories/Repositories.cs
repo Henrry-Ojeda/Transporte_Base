@@ -10804,6 +10804,14 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 "SELECT * FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId", new { controlRutaId });
             if (viaje == null) throw new Exception("Viaje de ruta no encontrado.");
 
+            // Evitar despachos duplicados (idempotencia ante reintentos offline / señal inestable)
+            string estadoActual = Convert.ToString(viaje.Estado ?? "").Trim().ToUpperInvariant();
+            int procesoActual = viaje.ProcesoActualId != null ? Convert.ToInt32(viaje.ProcesoActualId) : 1;
+            if (estadoActual == "RECEPCIONADO" || estadoActual == "FINALIZADO" || estadoActual == "CERRADO" || procesoActual >= 3)
+            {
+                throw new InvalidOperationException($"El ticket #{controlRutaId} ya fue recepcionado y despachado a compañía.");
+            }
+
             // Priorizar el chofer asignado explícitamente o el que recolectó la ruta (no el admin creador)
             int choferDespacho = (dto.ChoferId.HasValue && dto.ChoferId.Value > 0)
                 ? dto.ChoferId.Value

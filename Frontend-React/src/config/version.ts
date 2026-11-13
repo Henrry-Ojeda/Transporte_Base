@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 18,
-  patch: 28,
-  tag: 'v3.18.28',
-  ultimaActualizacion: '2026-11-12',
-  tipoUltimoCambio: 'DISEÑO',
-  descripcion: 'App Móvil v3.18.28: Reorganización visual del encabezado superior en dos filas limpias, cambio de etiqueta "Sincronizar" a "Sync", eliminación de placa de camión en barra superior y retiro del botón Sync duplicado en Fincas a Recolectar.',
+  minor: 19,
+  patch: 1,
+  tag: 'v3.19.1',
+  ultimaActualizacion: '2026-11-13',
+  tipoUltimoCambio: 'DISEÑO_LOGICA',
+  descripcion: 'App Móvil y Backend v3.19.1: Aislamiento de caché y estado al cambiar de chofer supervisado, habilitación permanente de "Inicio de Nuevo Turno" cuando no hay ticket abierto en ruta aunque existan despachos en receptoría, y bloqueo de despachos duplicados en backend (idempotencia).',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

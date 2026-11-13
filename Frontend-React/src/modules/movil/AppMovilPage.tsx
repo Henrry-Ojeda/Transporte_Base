@@ -2826,15 +2826,21 @@ export const AppMovilPage: React.FC = () => {
   const cargarViajeActivo = async (idTarget?: number, forzarId?: number) => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
+    const esModoSupervision = esAdminReal && (Boolean(idTarget) || Boolean(choferSimuladoId));
+    const coincideChofer = (t: any) => {
+      if (!t) return false;
+      const cid = Number(t.usuarioId || t.choferId || t.conductorId || 0);
+      return cid === 0 || cid === Number(idBusqueda);
+    };
 
     // Si no hay red disponible, recuperar de LocalStorage inmediatamente (TODOS los tickets del chofer)
     if (!navigator.onLine || !isOnline) {
       try {
-        const savedList = localStorage.getItem(`movil_viajes_chofer_${idBusqueda}`) || localStorage.getItem('movil_viajes_chofer');
+        const savedList = localStorage.getItem(`movil_viajes_chofer_${idBusqueda}`) || (esModoSupervision ? null : localStorage.getItem('movil_viajes_chofer'));
         let listaOffline: ControlRutaDto[] = [];
         if (savedList) {
           const listParsed = JSON.parse(savedList);
-          if (Array.isArray(listParsed)) listaOffline = listParsed;
+          if (Array.isArray(listParsed)) listaOffline = listParsed.filter(coincideChofer);
         }
         // Turnos iniciados sin conexión que aún no llegan a la central
         ticketsLocales
@@ -2843,17 +2849,19 @@ export const AppMovilPage: React.FC = () => {
           .forEach((t) => {
             if (!listaOffline.some((x) => x.id === t.localId)) listaOffline.push(t.ticket as ControlRutaDto);
           });
-        if (listaOffline.length > 0) setViajesChofer(listaOffline);
+        setViajesChofer(listaOffline);
 
         // Ticket a mostrar: el seleccionado por el chofer, si no el último activo guardado, si no el primero
         const selGuardado = Number(localStorage.getItem('movil_viaje_seleccionado_id') || 0) || viajeSeleccionadoId || 0;
         let vOffline: ControlRutaDto | null =
           listaOffline.find((x) => x.id === (forzarId || selGuardado)) || null;
         if (!vOffline) {
-          const savedV = localStorage.getItem(`movil_viaje_activo_${idBusqueda}`) || localStorage.getItem('movil_viaje_activo');
+          const savedV = localStorage.getItem(`movil_viaje_activo_${idBusqueda}`) || (esModoSupervision ? null : localStorage.getItem('movil_viaje_activo'));
           if (savedV) {
             const vParsed = JSON.parse(savedV);
-            if (vParsed && vParsed.id) vOffline = listaOffline.find((x) => x.id === vParsed.id) || vParsed;
+            if (vParsed && vParsed.id && coincideChofer(vParsed)) {
+              vOffline = listaOffline.find((x) => x.id === vParsed.id) || vParsed;
+            }
           }
         }
 
@@ -2906,33 +2914,43 @@ export const AppMovilPage: React.FC = () => {
     try {
       // 1. Obtener todos los viajes activos del chofer en TB_CONTROL_RUTAS con tiempo límite de 3.5s
       let lista: ControlRutaDto[] = [];
+      let servidorRespondioOk = false;
       try {
         const res = await conTimeout(operacionesApi.getViajesActivosChofer(idBusqueda), 3500);
-        if (Array.isArray(res) && res.length > 0) lista = res;
+        if (Array.isArray(res)) {
+          servidorRespondioOk = true;
+          if (res.length > 0) lista = res;
+        }
       } catch {}
 
       if (lista.length === 0) {
         try {
-          const fConsulta = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr;
+          const fConsulta = !idTarget && viajeActivo?.fecha && coincideChofer(viajeActivo) ? viajeActivo.fecha.split('T')[0] : hoyStr;
           const res = await conTimeout(operacionesApi.getViajesActivosChofer(idBusqueda, fConsulta), 3500);
-          if (Array.isArray(res) && res.length > 0) lista = res;
+          if (Array.isArray(res)) {
+            servidorRespondioOk = true;
+            if (res.length > 0) lista = res;
+          }
         } catch {}
       }
 
       if (lista.length === 0) {
         try {
           const unico = await conTimeout(operacionesApi.getViajeActivo(idBusqueda), 3500);
+          servidorRespondioOk = true;
           if (unico && unico.id) lista = [unico];
         } catch {}
       }
 
-      // Si el servidor no respondió o devolvió vacío (por señal inestable), recuperar de caché local de inmediato
-      if (lista.length === 0) {
-        const savedList = localStorage.getItem('movil_viajes_chofer_' + idBusqueda) || localStorage.getItem('movil_viajes_chofer');
+      // Si el servidor no respondió (por señal inestable), recuperar de caché local del chofer
+      if (lista.length === 0 && !servidorRespondioOk) {
+        const savedList = localStorage.getItem('movil_viajes_chofer_' + idBusqueda) || (esModoSupervision ? null : localStorage.getItem('movil_viajes_chofer'));
         if (savedList) {
           try {
             const listParsed = JSON.parse(savedList);
-            if (Array.isArray(listParsed) && listParsed.length > 0) lista = listParsed;
+            if (Array.isArray(listParsed) && listParsed.length > 0) {
+              lista = listParsed.filter(coincideChofer);
+            }
           } catch {}
         }
       }
@@ -3109,12 +3127,14 @@ export const AppMovilPage: React.FC = () => {
           await cargarRecoleccionesYSolicitudes(targetV.fecha ? targetV.fecha.split('T')[0] : hoyStr);
         }
       } else {
-        // PRESERVAR CACHÉ: Solo restaurar si el ticket sigue ABIERTO en ruta (no enviado a receptoría ni cerrado)
-        const savedV = localStorage.getItem('movil_viaje_activo_' + idBusqueda) || localStorage.getItem('movil_viaje_activo');
+        // PRESERVAR CACHÉ: Solo restaurar si el servidor no respondió (fallo de red) y el ticket sigue ABIERTO en ruta
+        const savedV = !servidorRespondioOk
+          ? (localStorage.getItem('movil_viaje_activo_' + idBusqueda) || (esModoSupervision ? null : localStorage.getItem('movil_viaje_activo')))
+          : null;
         if (savedV) {
           try {
             const vParsed = JSON.parse(savedV);
-            if (vParsed && vParsed.id) {
+            if (vParsed && vParsed.id && coincideChofer(vParsed)) {
               const aplicarFiltroEstrictoAbierto = esChoferReal || modoActivo === 'CHOFER' || Boolean(choferSimuladoId);
               if (aplicarFiltroEstrictoAbierto && !esTicketAbiertoEnRuta(vParsed)) {
                 setViajeSeleccionadoId(null);
@@ -7235,11 +7255,18 @@ export const AppMovilPage: React.FC = () => {
                 const seleccionarChofer = (nuevoId: number) => {
                   setChoferSimuladoId(nuevoId);
                   setDropdownChoferSupervisarAbierto(false);
+                  // Limpiar inmediatamente estado y caché global del chofer anterior para evitar mezcla de información
+                  setViajeActivo(null);
+                  setViajeSeleccionadoId(null);
+                  setViajesChofer([]);
+                  setParadasViajeActivo([]);
                   try {
                     localStorage.setItem('movil_chofer_simulado_id', String(nuevoId));
+                    localStorage.removeItem('movil_viaje_activo');
+                    localStorage.removeItem('movil_viajes_chofer');
+                    localStorage.removeItem('movil_viaje_seleccionado_id');
+                    localStorage.removeItem('movil_paradas_activo');
                   } catch {}
-                  // Limpiar inmediatamente las paradas anteriores para evitar mezcla de información
-                  setParadasViajeActivo([]);
                   cargarViajeActivo(nuevoId);
                   cargarDespachoActivo(nuevoId);
                   cargarEntregasChofer(nuevoId);
@@ -7801,7 +7828,7 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              ) : !despachoActivo ? (
+              ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div
                     style={{
@@ -7881,7 +7908,7 @@ export const AppMovilPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              ) : null}
+              )}
 
               {/* SECCIÓN DIRECTA: FINCAS DE LA RUTA Y RECOLECCIÓN RÁPIDA (SOLO SI EL VIAJE ESTÁ ABIERTO EN RUTA) */}
               {viajeActivo && esTicketAbiertoEnRuta(viajeActivo) && (

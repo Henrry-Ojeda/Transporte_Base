@@ -1,0 +1,56 @@
+name: Deploy - Ambiente QA (Transporte V2)
+
+on:
+  push:
+    branches: [qa]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy-qa:
+    name: Build y Despliegue a QA
+    runs-on: ubuntu-latest
+    environment:
+      name: qa
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Frontend-React/package-lock.json
+
+      - name: Build Frontend QA
+        working-directory: Frontend-React
+        env:
+          VITE_API_URL: ${{ vars.QA_VITE_API_URL || 'https://qa-api.transporte.local/api' }}
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish Backend QA (.NET 8)
+        run: |
+          dotnet publish Backend/src/Transporte.API/Transporte.API.csproj -c Release -o ./publish-qa
+
+      - name: Subir Artefactos QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: transporte-qa-bundle
+          path: |
+            Frontend-React/dist/
+            publish-qa/
+
+      # Descomentar cuando configures SSH hacia tu VPS Contabo QA:
+      # - name: Deploy por SSH a Contabo QA
+      #   uses: appleboy/scp-action@v0.1.7
+      #   with:
+      #     host: ${{ secrets.QA_SSH_HOST }}
+      #     username: ${{ secrets.QA_SSH_USER }}
+      #     key: ${{ secrets.QA_SSH_KEY }}
+      #     source: "Frontend-React/dist/*,publish-qa/*"
+      #     target: "/var/www/transporte-qa"
+

@@ -1,0 +1,59 @@
+name: CI - Transporte V2 (Lint, Build & Promotion Gate)
+
+on:
+  pull_request:
+    branches: [develop, qa, main]
+  push:
+    branches: [develop, qa, main]
+
+jobs:
+  promotion-gate:
+    name: Validar Flujo de Promoción (DEV -> QA -> PROD)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar rama origen permitida
+        run: |
+          BASE="${{ github.base_ref }}"
+          HEAD="${{ github.head_ref }}"
+          echo "PR desde '$HEAD' hacia '$BASE'"
+          if [ "$BASE" = "main" ]; then
+            if [[ "$HEAD" != "qa" && "$HEAD" != hotfix/* ]]; then
+              echo "ERROR: No se permite pasar directo a PRODUCCION (main) desde '$HEAD'. Debe pasar primero por 'qa' (o 'hotfix/*')."
+              exit 1
+            fi
+          fi
+          if [ "$BASE" = "qa" ]; then
+            if [[ "$HEAD" != "develop" && "$HEAD" != release/* && "$HEAD" != hotfix/* ]]; then
+              echo "ERROR: A 'qa' solo se promueve desde 'develop', 'release/*' o 'hotfix/*'."
+              exit 1
+            fi
+          fi
+
+  frontend-ci:
+    name: Frontend-React (TypeScript + Vite Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend-React
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Frontend-React/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  backend-ci:
+    name: Backend (.NET 8 Build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore Backend/Transporte.sln
+      - run: dotnet build Backend/Transporte.sln --configuration Release --no-restore
+

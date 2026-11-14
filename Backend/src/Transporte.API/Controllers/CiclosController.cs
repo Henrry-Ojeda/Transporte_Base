@@ -83,6 +83,24 @@ namespace Transporte.API.Controllers
             }
         }
 
+        [HttpPost("completar-52")]
+        public async Task<IActionResult> Completar52Semanas([FromBody] Completar52SemanasDto? dto)
+        {
+            try
+            {
+                var creadas = await _ciclosRepository.Completar52SemanasAsync(dto?.Anio);
+                var semanas = await _ciclosRepository.ObtenerSemanasAsync();
+                string msg = creadas > 0
+                    ? $"Se completaron {creadas} semanas operativas restantes hasta la Semana 52."
+                    : "Las 52 semanas operativas ya están completas.";
+                return Ok(new { message = msg, totalCreadas = creadas, semanas });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error al completar hasta las 52 semanas: " + ex.Message });
+            }
+        }
+
         [HttpGet("{id}/validar-activacion")]
         public async Task<IActionResult> ValidarActivacion([FromRoute] int id)
         {

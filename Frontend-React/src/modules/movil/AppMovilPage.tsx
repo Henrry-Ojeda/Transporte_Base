@@ -32,7 +32,7 @@ import { ticketsLocales } from '@/lib/ticketsLocales';
 import { getTimestampParada, formatFechaHoraParada, parseRawDateComponents } from '@/utils/timelapseUtils';
 import { CompaniaSelect } from '@/components/selectors/CompaniaSelect';
 import { ChoferSelect } from '@/components/selectors/ChoferSelect';
-import { viajeEstaEnviadoAReceptoria, esReceptoriaPrincipal } from '@/utils/procesoViaje';
+import { viajeEstaEnviadoAReceptoria, esReceptoriaPrincipal, esTicketVisibleEnReceptoria } from '@/utils/procesoViaje';
 
 interface DispositivoMovilData {
   token: string;
@@ -3863,7 +3863,8 @@ export const AppMovilPage: React.FC = () => {
         operacionesApi.getDespachosCompanias(f),
         catalogosApi.getCompanias(true),
       ]);
-      setTicketsReceptoria(Array.isArray(tickets) ? tickets : []);
+      const listaTickets = Array.isArray(tickets) ? tickets : [];
+      setTicketsReceptoria(listaTickets.filter(esTicketVisibleEnReceptoria));
       setDespachosSalidaReceptoria(Array.isArray(despachos) ? despachos : []);
       setCompaniasReceptoria(Array.isArray(comps) ? comps : []);
     } catch {
@@ -12051,6 +12052,7 @@ export const AppMovilPage: React.FC = () => {
               </div>
             ) : (() => {
               const ticketsFiltrados = ticketsReceptoria.filter((t) => {
+                if (!esTicketVisibleEnReceptoria(t)) return false;
                 if (!busquedaReceptoria.trim()) return true;
                 const term = busquedaReceptoria.toLowerCase();
                 const choferNom = String(t.nombreConductor || t.choferNombre || (t as any).conductorNombre || (t as any).usuarioNombre || '');

@@ -11,7 +11,7 @@ import { CamionSelect, ChoferSelect, CompaniaSelect, TipoLecheSelect } from '@/c
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import Swal from 'sweetalert2';
 import type { CompaniaDto, CamionDto, UsuarioDto, DespachoCompaniaDto, ControlRutaDto } from '@/types';
-import { viajeEstaEnviadoAReceptoria, esReceptoriaPrincipal } from '@/utils/procesoViaje';
+import { viajeEstaEnviadoAReceptoria, esReceptoriaPrincipal, esTicketVisibleEnReceptoria } from '@/utils/procesoViaje';
 
 export const ReceptoriaPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -24,7 +24,7 @@ export const ReceptoriaPage: React.FC = () => {
   const [filtroEstado, setFiltroEstado] = useState<string>('TODOS');
   const [busquedaBandeja, setBusquedaBandeja] = useState<string>('');
   const [segmentoActivo, setSegmentoActivo] = useState<'TODOS' | 'ENTRADAS' | 'SALIDAS' | 'FORM' | 'HISTORIAL'>('TODOS');
-  const [subFiltroEntradas, setSubFiltroEntradas] = useState<'TODAS' | 'EN_SILOS' | 'EN_RECOLECCION' | 'RECEPCIONADAS'>('TODAS');
+  const [subFiltroEntradas, setSubFiltroEntradas] = useState<'TODAS' | 'EN_SILOS' | 'RECEPCIONADAS'>('TODAS');
   const [subFiltroSalidas, setSubFiltroSalidas] = useState<'TODAS' | 'EN_TRANSITO' | 'FINALIZADAS'>('TODAS');
   const [mostrarFormulario, setMostrarFormulario] = useState<boolean>(false);
 
@@ -828,33 +828,30 @@ export const ReceptoriaPage: React.FC = () => {
     ...companiasUnicasHoy.map((cp) => ({ value: cp, label: cp }))
   ], [companiasUnicasHoy]);
 
-  // Conteos globales reactivos para badges y filtros
+  // Conteos globales reactivos para badges y filtros (excluye tickets abiertos en ruta)
   const conteosEntradas = useMemo(() => {
     let total = 0;
     let enSilos = 0;
-    let enRecoleccion = 0;
     let recepcionadas = 0;
 
     viajesActivos.forEach((v: any) => {
+      if (!esTicketVisibleEnReceptoria(v)) return;
       if (filtroFecha) {
         const fechaTicket = v.fecha ? v.fecha.split('T')[0] : (v.createdAt ? v.createdAt.split('T')[0] : '');
         if (fechaTicket && fechaTicket !== filtroFecha) return;
       }
       const procId = Number(v.procesoActualId || 1);
       const est = String(v.estado || '').toUpperCase().trim();
-      const enviadoARecep = viajeEstaEnviadoAReceptoria(v);
 
       total++;
       if (procId >= 4 || est === 'FINALIZADO' || est === 'RECEPCIONADO' || Number(v.litrosRecibidosReceptoria || v.totalLitrosReceptoria || 0) > 0) {
         recepcionadas++;
-      } else if (enviadoARecep) {
-        enSilos++;
       } else {
-        enRecoleccion++;
+        enSilos++;
       }
     });
 
-    return { total, enSilos, enRecoleccion, recepcionadas };
+    return { total, enSilos, recepcionadas };
   }, [viajesActivos, filtroFecha]);
 
   const conteosSalidas = useMemo(() => {
@@ -880,10 +877,15 @@ export const ReceptoriaPage: React.FC = () => {
     return { total, enTransito, finalizadas };
   }, [despachosCompanias, filtroFecha]);
 
-  // Bandeja 1: Camiones en espera (Entradas a Planta / Receptoría)
+  // Bandeja 1: Camiones en espera (Entradas a Planta / Receptoría — solo tickets enviados a receptoría)
   const camionesEnEspera = useMemo(() => {
     return viajesActivos
       .filter((v: any) => {
+        // 0. Excluir estrictamente tickets abiertos en ruta (aún no enviados a receptoría)
+        if (!esTicketVisibleEnReceptoria(v)) {
+          return false;
+        }
+
         // 1. Filtro estricto de Fecha
         if (filtroFecha) {
           const fechaTicket = v.fecha ? v.fecha.split('T')[0] : (v.createdAt ? v.createdAt.split('T')[0] : '');
@@ -894,14 +896,11 @@ export const ReceptoriaPage: React.FC = () => {
 
         const procId = Number(v.procesoActualId || 1);
         const est = String(v.estado || '').toUpperCase().trim();
-        const enviadoARecep = viajeEstaEnviadoAReceptoria(v);
         const isRecepcionado = procId >= 4 || est === 'FINALIZADO' || est === 'RECEPCIONADO' || Number(v.litrosRecibidosReceptoria || v.totalLitrosReceptoria || 0) > 0;
 
         // 2. Sub-filtro de Entradas
         if (subFiltroEntradas === 'EN_SILOS') {
-          if (!enviadoARecep || isRecepcionado) return false;
-        } else if (subFiltroEntradas === 'EN_RECOLECCION') {
-          if (enviadoARecep || isRecepcionado) return false;
+          if (isRecepcionado) return false;
         } else if (subFiltroEntradas === 'RECEPCIONADAS') {
           if (!isRecepcionado) return false;
         }
@@ -1037,9 +1036,6 @@ export const ReceptoriaPage: React.FC = () => {
     } else if (val === 'EN_ESPERA' || val === 'ENTRADAS_ESPERA') {
       setSegmentoActivo('ENTRADAS');
       setSubFiltroEntradas('EN_SILOS');
-    } else if (val === 'ENTRADAS_RUTA') {
-      setSegmentoActivo('ENTRADAS');
-      setSubFiltroEntradas('EN_RECOLECCION');
     } else if (val === 'RECEPCIONADO' || val === 'ENTRADAS_RECIBIDAS') {
       setSegmentoActivo('ENTRADAS');
       setSubFiltroEntradas('RECEPCIONADAS');
@@ -1121,7 +1117,6 @@ export const ReceptoriaPage: React.FC = () => {
               >
                 <option value="TODOS">⚡ Flujo Operativo Completo</option>
                 <option value="ENTRADAS_ESPERA">⏳ 1. Entradas (En Silos / Por Recibir)</option>
-                <option value="ENTRADAS_RUTA">🚚 1. Entradas (Chofer en Recolección)</option>
                 <option value="ENTRADAS_RECIBIDAS">✅ 1. Entradas Recepcionadas</option>
                 <option value="SALIDAS_VIA">🚚 2. Salidas (En Tránsito a Queseras)</option>
                 <option value="SALIDAS_ENTREGADAS">🏢 2. Salidas Entregadas / Confirmadas</option>
@@ -1366,7 +1361,6 @@ export const ReceptoriaPage: React.FC = () => {
                 {[
                   { id: 'TODAS', label: 'Todas', count: conteosEntradas.total, color: '#475569', bg: '#f1f5f9' },
                   { id: 'EN_SILOS', label: '⏳ En Silos / Por Recibir', count: conteosEntradas.enSilos, color: '#16a34a', bg: '#dcfce7' },
-                  { id: 'EN_RECOLECCION', label: '🚚 En Recolección', count: conteosEntradas.enRecoleccion, color: '#b45309', bg: '#fef3c7' },
                   { id: 'RECEPCIONADAS', label: '✅ Recepcionadas', count: conteosEntradas.recepcionadas, color: '#0284c7', bg: '#e0f2fe' },
                 ].map((sf) => {
                   const sel = subFiltroEntradas === sf.id;

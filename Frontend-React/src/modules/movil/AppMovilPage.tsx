@@ -1038,7 +1038,13 @@ export const AppMovilPage: React.FC = () => {
     setModalTimelapseMovil(true);
     setCargandoTimelapseMovil(true);
     try {
-      const paradas = await operacionesApi.getFincasViaje(viaje.id);
+      const vAny = viaje as any;
+      const obsMatch = String(vAny.observacion || vAny.observaciones || '').match(/Ticket\s*#(\d+)/i);
+      const rutaIdResuelto =
+        Number(vAny.controlRutaId || vAny.ControlRutaId || 0) ||
+        (vAny.esDespacho ? (obsMatch ? Number(obsMatch[1]) : 0) : Number(viaje.id || 0));
+
+      const paradas = rutaIdResuelto > 0 ? await operacionesApi.getFincasViaje(rutaIdResuelto) : [];
       const paradasArray = Array.isArray(paradas) ? paradas : [];
 
       // Buscar si existen fincas planificadas para este ticket o conductor en la fecha del ticket
@@ -1053,13 +1059,13 @@ export const AppMovilPage: React.FC = () => {
 
       const plan = (plans || []).find(
         (p) =>
-          (p.controlRutaId && p.controlRutaId === viaje.id) ||
-          (p.conductorId === viaje.usuarioId && (p.fecha || '').split('T')[0] === fViajeStr)
+          (p.controlRutaId && p.controlRutaId === rutaIdResuelto) ||
+          (!vAny.esDespacho && paradasArray.length === 0 && p.conductorId === viaje.usuarioId && (p.fecha || '').split('T')[0] === fViajeStr)
       );
 
       let todasParadas = [...paradasArray];
 
-      if (plan) {
+      if (plan && (!vAny.esDespacho || plan.controlRutaId === rutaIdResuelto)) {
         const fincasIdsPlan = getFincasIdsDePlan(plan);
         const yaIncluidas = new Set(
           paradasArray.map((p) => Number(p.fincaId || (p as any).FincaId || 0))
@@ -1075,7 +1081,7 @@ export const AppMovilPage: React.FC = () => {
               propietario: (fObj as any)?.propietario || '',
               litros: 0,
               esPlanificada: true,
-              controlRutaId: viaje.id,
+              controlRutaId: rutaIdResuelto || viaje.id,
               esAcida: false,
               tipoLeche: 'VACA',
             } as any);
@@ -9238,11 +9244,19 @@ export const AppMovilPage: React.FC = () => {
             return Array.from(map.values());
           })();
 
-          // SECCIÓN 1: Entradas con DESTINO Receptoría Principal (EsPrincipal = true)
-          const todasEntradas = todosLosTicketsEntregas.filter((t) => esDestinoReceptoriaPrincipal(t));
+          // SECCIÓN 1: Entradas con DESTINO Receptoría Principal (solo tickets ControlRuta, nunca despachos TB_CONTROL_COMPANIAS)
+          const todasEntradas = todosLosTicketsEntregas.filter((t) => !t.esDespacho && esDestinoReceptoriaPrincipal(t));
 
-          // SECCIÓN 2: Salidas con DESTINO a OTRA Compañía (Queseras, pasteurizadoras, etc. EsPrincipal = false)
-          const todasSalidas = todosLosTicketsEntregas.filter((t) => !esDestinoReceptoriaPrincipal(t));
+          // SECCIÓN 2: Salidas con DESTINO a OTRA Compañía (DespachoCompania externos o ControlRuta directo sin despacho hijo aún)
+          const rutasConDespachoHijo = new Set(
+            todosLosTicketsEntregas
+              .filter((t) => t.esDespacho && Number(t.controlRutaId || 0) > 0)
+              .map((t) => Number(t.controlRutaId))
+          );
+          const todasSalidas = todosLosTicketsEntregas.filter((t) => {
+            if (t.esDespacho) return !esDestinoReceptoriaPrincipal(t);
+            return !esDestinoReceptoriaPrincipal(t) && !rutasConDespachoHijo.has(Number(t.id));
+          });
 
           // Por regla de negocio, los tickets ya recepcionados o finalizados se ocultan de la vista activa
           // (a menos que el usuario pulse explícitamente la pestaña de Finalizadas)
@@ -9666,7 +9680,7 @@ export const AppMovilPage: React.FC = () => {
                                 </span>
                               </div>
                               <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#334155' }}>
-                                #{d.codigoTicket || d.id}
+                                #{d.codigoTicket || (d.controlRutaId ? `${d.controlRutaId}-1` : d.id)}
                               </span>
                             </div>
 
@@ -12145,7 +12159,9 @@ export const AppMovilPage: React.FC = () => {
                             <span>
                               {paradas.filter((p: any) => Number(p.litros || p.litrosLeche || p.litrosCargados || 0) > 0).length > 0
                                 ? `${paradas.filter((p: any) => Number(p.litros || p.litrosLeche || p.litrosCargados || 0) > 0).length} Fincas Recolectadas`
-                                : '⏳ Chofer en ruta (0 Lts)'}
+                                : ltsChofer > 0
+                                  ? `${Number((t as any).totalFincasVisitadas || 1)} ${Number((t as any).totalFincasVisitadas || 1) === 1 ? 'Finca' : 'Fincas'} • ${ltsChofer.toLocaleString()} Lts`
+                                  : '⏳ Chofer en ruta (0 Lts)'}
                             </span>
                           </div>
                           {ltsRecibidos > 0 && (

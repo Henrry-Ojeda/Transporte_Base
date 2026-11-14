@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 19,
+  minor: 20,
   patch: 1,
-  tag: 'v3.19.1',
-  ultimaActualizacion: '2026-11-13',
+  tag: 'v3.20.1',
+  ultimaActualizacion: '2026-11-14',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil y Backend v3.19.1: Aislamiento de caché y estado al cambiar de chofer supervisado, habilitación permanente de "Inicio de Nuevo Turno" cuando no hay ticket abierto en ruta aunque existan despachos en receptoría, y bloqueo de despachos duplicados en backend (idempotencia).',
+  descripcion: 'App Móvil y Backend v3.20.1: Separación estricta de Entradas (ControlRuta) y Salidas (DespachoCompania) en Entregas del Chofer, resolución de controlRutaId en Timelapse evitando fincas en 0 L, código #<ControlRutaId>-<N> en despachos vinculados y resumen de litros en tarjeta de Receptoría.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

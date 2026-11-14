@@ -4000,7 +4000,8 @@ namespace Transporte.Infrastructure.Repositories
         Task<SemanaDetalleDto?> ObtenerCicloActivoAsync();
         Task<int> CrearSemanaAsync(CrearCicloDto dto);
         Task<bool> EditarSemanaAsync(int id, EditarCicloDto dto);
-        Task<bool> Generar52SemanasAsync(Generar52SemanasDto dto);
+        Task<int> Generar52SemanasAsync(Generar52SemanasDto dto);
+        Task<int> Completar52SemanasAsync(int? anio = null);
         Task<bool> ActivarSemanaAsync(int id, decimal? stockInicialPersonalizado = null);
         Task<bool> CerrarSemanaAsync(int id, decimal? stockFinalTanques = null);
         Task<decimal> ObtenerBalanceTanqueCicloAsync(int cicloId);
@@ -4150,13 +4151,25 @@ namespace Transporte.Infrastructure.Repositories
             });
         }
 
-        public async Task<bool> Generar52SemanasAsync(Generar52SemanasDto dto)
+        public async Task<int> Generar52SemanasAsync(Generar52SemanasDto dto)
         {
             using var connection = new SqlConnection(_connectionString);
-            DateTime cursor = new DateTime(dto.Anio, 1, 1);
-            int diff = ((int)dto.DiaInicio - (int)cursor.DayOfWeek + 7) % 7;
-            cursor = cursor.AddDays(diff);
+            DateTime cursor;
+            if (dto.FechaPrimerInicio.HasValue)
+            {
+                cursor = dto.FechaPrimerInicio.Value.Date;
+            }
+            else
+            {
+                cursor = new DateTime(dto.Anio, 1, 1);
+                int diff = ((int)dto.DiaInicio - (int)cursor.DayOfWeek + 7) % 7;
+                cursor = cursor.AddDays(diff);
+            }
 
+            bool yaHayAbierta = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM TB_CICLOS_OPERATIVOS WHERE Estado = 'ABIERTO'") > 0;
+
+            int creadas = 0;
             for (int semanaNum = 1; semanaNum <= 52; semanaNum++)
             {
                 DateTime fIni = cursor;
@@ -4169,7 +4182,7 @@ namespace Transporte.Infrastructure.Repositories
 
                 if (existe == 0)
                 {
-                    string estado = (semanaNum == 1) ? "ABIERTO" : "PROGRAMADO";
+                    string estado = (!yaHayAbierta && semanaNum == 1) ? "ABIERTO" : "PROGRAMADO";
                     var sql = @"
                         INSERT INTO TB_CICLOS_OPERATIVOS (Codigo, FechaInicio, FechaFin, Estado, Observaciones, CreatedAt)
                         VALUES (@codigo, @fIni, @fFin, @estado, @obs, GETDATE());";
@@ -4182,12 +4195,86 @@ namespace Transporte.Infrastructure.Repositories
                         estado,
                         obs = $"Semana generada automáticamente para el año {dto.Anio}"
                     });
+                    creadas++;
                 }
 
                 cursor = cursor.AddDays(7);
             }
 
-            return true;
+            return creadas;
+        }
+
+        public async Task<int> Completar52SemanasAsync(int? anio = null)
+        {
+            using var connection = new SqlConnection(_connectionString);
+
+            var ultima = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                @"SELECT TOP 1 Id, Codigo, FechaInicio, FechaFin
+                  FROM TB_CICLOS_OPERATIVOS
+                  WHERE (@anio IS NULL OR YEAR(FechaInicio) = @anio OR YEAR(FechaFin) = @anio)
+                  ORDER BY FechaFin DESC, Id DESC",
+                new { anio });
+
+            int anioObjetivo = anio ?? (ultima != null ? ((DateTime)ultima.FechaInicio).Year : DateTime.Now.Year);
+
+            if (ultima == null)
+            {
+                return await Generar52SemanasAsync(new Generar52SemanasDto { Anio = anioObjetivo, DiaInicio = 2, DiaFin = 1 });
+            }
+
+            int existentes = await connection.ExecuteScalarAsync<int>(
+                @"SELECT COUNT(1) FROM TB_CICLOS_OPERATIVOS
+                  WHERE YEAR(FechaInicio) = @anioObjetivo OR Codigo LIKE @patron",
+                new { anioObjetivo, patron = $"%({anioObjetivo})%" });
+
+            // Extraer número de semana de la última semana si existe (ej. "Semana 45" -> 45)
+            int ultimaNum = existentes;
+            string ultCodigo = Convert.ToString(ultima.Codigo ?? "") ?? "";
+            var match = System.Text.RegularExpressions.Regex.Match(ultCodigo, @"\b(\d{1,2})\b");
+            if (match.Success && int.TryParse(match.Groups[1].Value, out int parsedNum) && parsedNum >= 1 && parsedNum <= 52)
+            {
+                ultimaNum = Math.Max(ultimaNum, parsedNum);
+            }
+
+            if (ultimaNum >= 52) return 0;
+
+            bool yaHayAbierta = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM TB_CICLOS_OPERATIVOS WHERE Estado = 'ABIERTO'") > 0;
+
+            DateTime cursor = ((DateTime)ultima.FechaFin).Date.AddDays(1);
+            int creadas = 0;
+
+            for (int semanaNum = ultimaNum + 1; semanaNum <= 52; semanaNum++)
+            {
+                DateTime fIni = cursor;
+                DateTime fFin = cursor.AddDays(6);
+                string codigo = $"Semana {semanaNum:D2} ({anioObjetivo})";
+
+                var existe = await connection.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM TB_CICLOS_OPERATIVOS WHERE (FechaInicio = @fIni AND FechaFin = @fFin) OR Codigo = @codigo",
+                    new { fIni, fFin, codigo });
+
+                if (existe == 0)
+                {
+                    string estado = (!yaHayAbierta && creadas == 0) ? "ABIERTO" : "PROGRAMADO";
+                    await connection.ExecuteAsync(@"
+                        INSERT INTO TB_CICLOS_OPERATIVOS (Codigo, FechaInicio, FechaFin, Estado, Observaciones, CreatedAt)
+                        VALUES (@codigo, @fIni, @fFin, @estado, @obs, GETDATE());",
+                        new
+                        {
+                            codigo,
+                            fIni,
+                            fFin,
+                            estado,
+                            obs = $"Semana completada automáticamente hasta la semana 52 ({anioObjetivo})"
+                        });
+                    creadas++;
+                }
+
+                cursor = cursor.AddDays(7);
+            }
+
+            return creadas;
         }
 
         public async Task<bool> ActivarSemanaAsync(int id, decimal? stockInicialPersonalizado = null)

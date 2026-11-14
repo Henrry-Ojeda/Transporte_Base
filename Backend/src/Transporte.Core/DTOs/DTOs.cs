@@ -438,6 +438,12 @@ namespace Transporte.Core.DTOs
         public int Anio { get; set; }
         public int DiaInicio { get; set; } = 2; // 2 = Martes
         public int DiaFin { get; set; } = 1;    // 1 = Lunes
+        public DateTime? FechaPrimerInicio { get; set; }
+    }
+
+    public class Completar52SemanasDto
+    {
+        public int? Anio { get; set; }
     }
 
     public class SemanaDetalleDto

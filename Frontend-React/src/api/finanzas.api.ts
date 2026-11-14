@@ -11,17 +11,7 @@ export const finanzasApi = {
   // SEMANAS / CICLOS
   getCiclos: async (): Promise<CicloSemanalDto[]> => {
     const res = await apiClient.get<CicloSemanalDto[]>('/ciclos');
-    const list = Array.isArray(res.data) ? res.data : [];
-    // Regla de negocio: Semanas operativas 44 y 45 son las activas/visibles; desde la 46 en adelante no debe verse en ningún lado
-    return list.filter((c) => {
-      const match = (c.codigo || '').match(/Semana\s*#?(\d+)/i);
-      const numSem = match ? parseInt(match[1], 10) : Number(c.numeroSemana || 0);
-      if (numSem > 45 && numSem <= 53) return false;
-      if (c.fechaInicio && new Date(c.fechaInicio) > new Date('2026-11-16T23:59:59')) {
-        return false;
-      }
-      return true;
-    });
+    return Array.isArray(res.data) ? res.data : [];
   },
   getCicloActivo: async (): Promise<CicloSemanalDto> => {
     const res = await apiClient.get<CicloSemanalDto>('/catalogos/ciclo-activo');
@@ -47,7 +37,12 @@ export const finanzasApi = {
       anio: dto.anio,
       diaInicio: dto.diaInicio,
       diaFin: dto.diaFin,
+      fechaPrimerInicio: dto.fechaPrimerInicio || undefined,
     });
+    return res.data;
+  },
+  completar52Semanas: async (anio?: number): Promise<{ message: string; totalCreadas?: number }> => {
+    const res = await apiClient.post('/ciclos/completar-52', anio ? { anio } : {});
     return res.data;
   },
   validarActivacionCiclo: async (id: number): Promise<any> => {

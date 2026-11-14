@@ -82,4 +82,14 @@ export const viajeEstaEnviadoAReceptoria = (viaje: Partial<ControlRutaDto> | any
   return false;
 };
 
+/**
+ * Determina si un ticket es visible en Receptoría (Entrada / Reportes / Web).
+ * Excluye estrictamente tickets abiertos en ruta ("ABIERTO", "ABIERTO-EN RUTA", "EN RUTA", etc.)
+ * que solo deben verse en la vista de Chofer / Recolección en Ruta hasta que sean enviados a Receptoría.
+ */
+export const esTicketVisibleEnReceptoria = (x: Partial<ControlRutaDto> | any): boolean => {
+  if (!x || !x.id) return false;
+  return viajeEstaEnviadoAReceptoria(x);
+};
+
 

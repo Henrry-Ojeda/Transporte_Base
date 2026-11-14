@@ -21,9 +21,9 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 20,
+  minor: 21,
   patch: 1,
-  tag: 'v3.20.1',
+  tag: 'v3.21.1',
   ultimaActualizacion: '2026-11-14',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
   descripcion: 'App Móvil y Backend v3.20.1: Separación estricta de Entradas (ControlRuta) y Salidas (DespachoCompania) en Entregas del Chofer, resolución de controlRutaId en Timelapse evitando fincas en 0 L, código #<ControlRutaId>-<N> en despachos vinculados y resumen de litros en tarjeta de Receptoría.',

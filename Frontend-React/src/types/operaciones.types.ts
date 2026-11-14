@@ -116,6 +116,8 @@ export interface DespachoCompaniaDto {
   observaciones?: string;
   observacion?: string;
   controlRutaId?: number;
+  codigoTicket?: string;
+  esPrincipal?: boolean;
   fotoReciboUrl?: string;
   createdAt?: string;
 }

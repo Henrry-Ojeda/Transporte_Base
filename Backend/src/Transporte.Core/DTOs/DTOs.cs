@@ -1804,6 +1804,8 @@ namespace Transporte.Core.DTOs
         public DateTime? FechaSalida { get; set; }
         public DateTime? FechaEntrega { get; set; }
         public long? ControlRutaId { get; set; }
+        public string? CodigoTicket { get; set; }
+        public bool? EsPrincipal { get; set; }
         public string? FotoReciboUrl { get; set; }
         public DateTime CreatedAt { get; set; }
     }

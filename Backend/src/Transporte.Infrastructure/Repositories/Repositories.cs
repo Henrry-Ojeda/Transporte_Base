@@ -12379,6 +12379,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     cc.FechaSalida,
                     cc.FechaEntrega,
                     cc.ControlRutaId,
+                    CASE 
+                        WHEN cc.ControlRutaId IS NOT NULL THEN CONCAT(cc.ControlRutaId, '-', ROW_NUMBER() OVER (PARTITION BY cc.ControlRutaId ORDER BY cc.Id))
+                        ELSE CAST(cc.Id AS VARCHAR(20))
+                    END AS CodigoTicket,
+                    CAST(ISNULL(c.EsPrincipal, 0) AS BIT) AS EsPrincipal,
                     cc.FotoReciboUrl,
                     cc.CreatedAt
                 FROM TB_CONTROL_COMPANIAS cc
@@ -12466,6 +12471,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     cc.FechaSalida,
                     cc.FechaEntrega,
                     cc.ControlRutaId,
+                    CASE 
+                        WHEN cc.ControlRutaId IS NOT NULL THEN CONCAT(cc.ControlRutaId, '-', ROW_NUMBER() OVER (PARTITION BY cc.ControlRutaId ORDER BY cc.Id))
+                        ELSE CAST(cc.Id AS VARCHAR(20))
+                    END AS CodigoTicket,
+                    CAST(ISNULL(c.EsPrincipal, 0) AS BIT) AS EsPrincipal,
                     cc.FotoReciboUrl,
                     cc.CreatedAt
                 FROM TB_CONTROL_COMPANIAS cc
@@ -12530,6 +12540,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     cc.FechaSalida,
                     cc.FechaEntrega,
                     cc.ControlRutaId,
+                    CASE 
+                        WHEN cc.ControlRutaId IS NOT NULL THEN CONCAT(cc.ControlRutaId, '-', ROW_NUMBER() OVER (PARTITION BY cc.ControlRutaId ORDER BY cc.Id))
+                        ELSE CAST(cc.Id AS VARCHAR(20))
+                    END AS CodigoTicket,
+                    CAST(ISNULL(c.EsPrincipal, 0) AS BIT) AS EsPrincipal,
                     cc.FotoReciboUrl,
                     cc.CreatedAt
                 FROM TB_CONTROL_COMPANIAS cc

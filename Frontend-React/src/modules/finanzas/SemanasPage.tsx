@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import Swal from 'sweetalert2';
 import { finanzasApi } from '@/api/finanzas.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -222,6 +223,33 @@ export const SemanasPage: React.FC = () => {
       toast.error(err.response?.data?.message || 'No se pudieron generar las semanas.');
     },
   });
+
+  const completar52Mutation = useMutation({
+    mutationFn: (anio?: number) => finanzasApi.completar52Semanas(anio),
+    onSuccess: (data) => {
+      toast.success(data?.message || 'Semanas completadas hasta la Semana 52.');
+      refrescarTodo();
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || 'No se pudieron completar las 52 semanas.');
+    },
+  });
+
+  const handleCompletar52 = async () => {
+    const anioDefault = parseInt(form52.anio) || new Date().getFullYear();
+    const res = await Swal.fire({
+      title: 'Completar hasta la Semana 52',
+      text: `Se generarán automáticamente las semanas faltantes a partir de la última semana registrada hasta llegar a la Semana 52 (${anioDefault}), sin duplicar ni alterar las existentes.`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, completar 52 semanas',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#0284c7',
+    });
+    if (res.isConfirmed) {
+      completar52Mutation.mutate(anioDefault);
+    }
+  };
 
   const activarMutation = useMutation({
     mutationFn: ({ id, stockPersonalizado }: { id: number; stockPersonalizado?: number }) =>
@@ -616,6 +644,23 @@ export const SemanasPage: React.FC = () => {
             }}
           >
             <i className="fa-solid fa-wand-magic-sparkles"></i> Generar 52 Semanas (Año Completo)
+          </button>
+          <button
+            type="button"
+            className="btn"
+            id="btnCompletar52"
+            onClick={handleCompletar52}
+            disabled={completar52Mutation.isPending}
+            style={{
+              background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+              color: '#ffffff',
+              border: 'none',
+              fontWeight: 700,
+              boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)',
+            }}
+          >
+            <i className={completar52Mutation.isPending ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-calendar-check'}></i>{' '}
+            {completar52Mutation.isPending ? 'Completando...' : 'Terminar las 52 Semanas'}
           </button>
         </div>
       </div>

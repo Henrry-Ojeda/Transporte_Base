@@ -64,8 +64,10 @@ namespace Transporte.API.Multitenancy
                 connStr = connStr.Replace("84.247.178.194", "127.0.0.1");
             }
 
-            // Forzar protocolo TCP directo para eliminar el bloqueo de 15s de Named Pipes/Shared Memory
-            if (!connStr.Contains("tcp:", StringComparison.OrdinalIgnoreCase))
+            // Forzar protocolo TCP directo para servidores remotos o Docker (en Windows localhost usa Shared Memory / Named Pipes)
+            bool isLocalWindowsSql = !IsRunningInDocker && !OperatingSystem.IsLinux() &&
+                (connStr.Contains("localhost", StringComparison.OrdinalIgnoreCase) || connStr.Contains("(local)", StringComparison.OrdinalIgnoreCase));
+            if (!isLocalWindowsSql && !connStr.Contains("tcp:", StringComparison.OrdinalIgnoreCase))
             {
                 connStr = connStr.Replace("Server=", "Server=tcp:", StringComparison.OrdinalIgnoreCase);
                 connStr = connStr.Replace("Data Source=", "Data Source=tcp:", StringComparison.OrdinalIgnoreCase);
@@ -105,6 +107,30 @@ namespace Transporte.API.Multitenancy
 
         private void ResolveTenant()
         {
+            if (_configuration.GetValue<bool>("LocalDev:UseLocalDatabase"))
+            {
+                string localConn = _configuration.GetConnectionString("DefaultConnection")
+                    ?? "Server=localhost;Database=DB_DEV_VERGEL_CARRILLO;Integrated Security=True;TrustServerCertificate=True;Encrypt=False;Connect Timeout=30;Pooling=true;";
+                _currentTenant = new TenantInfo
+                {
+                    EmpresaId = 1,
+                    Codigo = _configuration["LocalDev:TenantCode"] ?? "VERGEL_CARRILLO",
+                    Nombre = _configuration["LocalDev:TenantName"] ?? "Transporte Vergel & Carrillo (DEV LOCAL)",
+                    ConnectionString = AdjustConnectionStringForEnvironment(localConn),
+                    Estado = "ACTIVA",
+                    FechaVencimiento = DateTime.UtcNow.AddYears(5),
+                    DiasGracia = 30,
+                    Modulos = new List<string>
+                    {
+                        "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LECHE_BUFALA",
+                        "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE",
+                        "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES",
+                        "MOD_HISTORIAL_BCV", "MOD_ASISTENTE_IA", "MOD_APP_MOVIL"
+                    }
+                };
+                return;
+            }
+
             var context = _httpContextAccessor.HttpContext;
             string host = "localhost";
 

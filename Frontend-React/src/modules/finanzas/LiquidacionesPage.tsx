@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 import { finanzasApi } from '@/api/finanzas.api';
 import { useAuthStore } from '@/stores/authStore';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import type { PreliquidacionFincaDto, CicloSemanalDto } from '@/types';
 
 export const LiquidacionesPage: React.FC = () => {
@@ -31,15 +32,25 @@ export const LiquidacionesPage: React.FC = () => {
     queryFn: () => finanzasApi.getCiclos(),
   });
 
-  // Ciclos ordenados descendente
+  // Ciclos operativos disponibles para liquidación (solo actuales y anteriores, excluyendo semanas futuras/programadas)
   const ciclosOrdenados = useMemo(() => {
-    return [...ciclos].sort((a, b) => (b.id || 0) - (a.id || 0));
+    const hoy = new Date();
+    const hoyLocal = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+    return [...ciclos]
+      .filter((c) => {
+        const est = String(c.estado || (c as any).Estado || '').toUpperCase().trim();
+        if (est === 'PROGRAMADO' || est === 'FUTURO' || est === 'PROGRAMADA' || est === 'FUTURA') return false;
+        const fIni = c.fechaInicio ? String(c.fechaInicio).split('T')[0] : '';
+        if (fIni && fIni > hoyLocal && est !== 'ABIERTO' && est !== 'ACTIVO') return false;
+        return true;
+      })
+      .sort((a, b) => (b.id || 0) - (a.id || 0));
   }, [ciclos]);
 
   const cicloActivo = useMemo(() => {
     return (
-      ciclos.find((c) => c.id === cicloSeleccionadoId) ||
-      ciclos.find(
+      ciclosOrdenados.find((c) => c.id === cicloSeleccionadoId) ||
+      ciclosOrdenados.find(
         (c) =>
           c.estado?.toUpperCase() === 'ABIERTO' ||
           c.estado?.toUpperCase() === 'ACTIVO' ||
@@ -48,7 +59,7 @@ export const LiquidacionesPage: React.FC = () => {
       ) ||
       ciclosOrdenados[0]
     );
-  }, [ciclos, cicloSeleccionadoId, ciclosOrdenados]);
+  }, [ciclosOrdenados, cicloSeleccionadoId]);
 
   const { data: preliquidacion = [], isLoading } = useQuery<PreliquidacionFincaDto[]>({
     queryKey: ['preliquidacion', cicloSeleccionadoId || cicloActivo?.id],
@@ -775,37 +786,29 @@ export const LiquidacionesPage: React.FC = () => {
             <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap' }}>
               <i className="fa-solid fa-calendar-week" style={{ color: '#0284c7', marginRight: '6px' }}></i> Semana:
             </label>
-            <select
-              value={cicloSeleccionadoId || ''}
-              onChange={(e) => setCicloSeleccionadoId(e.target.value ? Number(e.target.value) : undefined)}
-              className="form-input"
-              style={{
-                height: '36px',
-                padding: '0 10px',
-                fontSize: '13px',
-                fontWeight: 700,
-                borderRadius: '6px',
-                minWidth: '240px',
-                border: '1px solid #94a3b8',
-                color: '#0f172a',
-                background: '#f8fafc',
-              }}
-            >
-              {ciclosOrdenados.map((c) => {
-                const esActivo =
-                  c.estado?.toUpperCase() === 'ABIERTO' ||
-                  c.estado?.toUpperCase() === 'ACTIVO' ||
-                  (c as any).Estado === 'ABIERTO' ||
-                  (c as any).Estado === 'ACTIVO';
-                const fIni = c.fechaInicio ? new Date(c.fechaInicio).toLocaleDateString('es-VE') : '';
-                const fFin = c.fechaFin ? new Date(c.fechaFin).toLocaleDateString('es-VE') : '';
-                return (
-                  <option key={c.id} value={c.id}>
-                    Semana #{c.numeroSemana || c.id} ({fIni} al {fFin}) {esActivo ? '★ [ACTIVA]' : ''}
-                  </option>
-                );
-              })}
-            </select>
+            <div style={{ minWidth: '290px' }}>
+              <SearchableSelect
+                value={cicloSeleccionadoId || cicloActivo?.id || ''}
+                onChange={(val) => setCicloSeleccionadoId(val ? Number(val) : undefined)}
+                placeholder="Seleccionar semana operativa..."
+                searchPlaceholder="Buscar semana o fecha..."
+                allowClear={false}
+                options={ciclosOrdenados.map((c) => {
+                  const esActivo =
+                    c.estado?.toUpperCase() === 'ABIERTO' ||
+                    c.estado?.toUpperCase() === 'ACTIVO' ||
+                    (c as any).Estado === 'ABIERTO' ||
+                    (c as any).Estado === 'ACTIVO';
+                  const fIni = c.fechaInicio ? new Date(c.fechaInicio).toLocaleDateString('es-VE') : '';
+                  const fFin = c.fechaFin ? new Date(c.fechaFin).toLocaleDateString('es-VE') : '';
+                  return {
+                    value: c.id,
+                    label: `Semana #${c.numeroSemana || c.id} (${fIni} al ${fFin})`,
+                    badge: esActivo ? 'ACTIVA' : undefined,
+                  };
+                })}
+              />
+            </div>
           </div>
 
           {/* Badge Ciclo Activo */}
@@ -1137,58 +1140,83 @@ export const LiquidacionesPage: React.FC = () => {
 
         {/* PANEL FLOTANTE DE UNIFICACIÓN / PAGOS EN LOTE 1:1 CON V2_3_11_26 (Image 5) */}
         {fincasSeleccionadas.length > 0 && (
+          <>
+          <div style={{ height: '150px' }} />
           <div
             id="panelBarraUnificarPagos"
+            className="fixed bottom-4 left-4 right-20 lg:left-[268px]"
             style={{
-              position: 'fixed',
-              bottom: '16px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: '95%',
-              maxWidth: '1280px',
-              background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+              background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.97) 0%, rgba(30, 41, 59, 0.97) 100%)',
+              backdropFilter: 'blur(12px)',
               color: '#ffffff',
-              borderRadius: '14px',
-              padding: '14px 22px',
-              boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.5), 0 0 0 1.5px #3b82f6',
-              border: '1.5px solid #3b82f6',
-              zIndex: 999,
+              borderRadius: '16px',
+              padding: '14px 18px',
+              boxShadow: '0 22px 48px -12px rgba(2, 6, 23, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06) inset',
+              border: '1px solid rgba(59, 130, 246, 0.45)',
+              zIndex: 40,
             }}
           >
             <div
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
-                alignItems: 'center',
+                alignItems: 'stretch',
                 flexWrap: 'wrap',
                 gap: '14px',
               }}
             >
-              <div style={{ flex: 1, minWidth: '320px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span
-                    className="badge"
-                    style={{
-                      background: '#2563eb',
-                      color: '#ffffff',
-                      fontWeight: 800,
-                      fontSize: '11.5px',
-                      padding: '3px 9px',
-                      borderRadius: '6px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                    }}
-                  >
-                    <i className="fa-solid fa-link"></i> UNIFICACIÓN DE PAGOS
-                  </span>
-                  <span id="labelContadorFincasUnificar" style={{ fontWeight: 800, fontSize: '13.5px', color: '#93c5fd' }}>
-                    {fincasSeleccionadasObjetos.length} Finca{fincasSeleccionadasObjetos.length > 1 ? 's' : ''} Seleccionada{fincasSeleccionadasObjetos.length > 1 ? 's' : ''}
-                  </span>
+              {/* Lado izquierdo: Cabecera, Píldoras y Resumen */}
+              <div style={{ flex: 1, minWidth: '300px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span
+                      className="badge"
+                      style={{
+                        background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                        color: '#ffffff',
+                        fontWeight: 800,
+                        fontSize: '11px',
+                        letterSpacing: '0.03em',
+                        padding: '4px 10px',
+                        borderRadius: '8px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)',
+                      }}
+                    >
+                      <i className="fa-solid fa-link"></i> UNIFICACIÓN DE PAGOS
+                    </span>
+                    <span
+                      id="labelContadorFincasUnificar"
+                      style={{
+                        fontWeight: 800,
+                        fontSize: '12.5px',
+                        color: '#bfdbfe',
+                        background: 'rgba(59, 130, 246, 0.14)',
+                        border: '1px solid rgba(59, 130, 246, 0.28)',
+                        padding: '3px 10px',
+                        borderRadius: '999px',
+                      }}
+                    >
+                      {fincasSeleccionadasObjetos.length} Finca{fincasSeleccionadasObjetos.length > 1 ? 's' : ''} Seleccionada{fincasSeleccionadasObjetos.length > 1 ? 's' : ''}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Lista de píldoras por finca seleccionada (1:1 V2_3_11_26) */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                {/* Lista compacta de píldoras por finca seleccionada */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                    maxHeight: '86px',
+                    overflowY: 'auto',
+                    paddingRight: '4px',
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: 'rgba(148, 163, 184, 0.35) transparent',
+                  }}
+                >
                   {fincasSeleccionadasObjetos.map((f) => {
                     const nom = f.fincaNombre;
                     const bUSD = Number(f.totalBrutoUSD ?? (f as any).totalUSD ?? (f as any).TotalUSD ?? ((f.totalLitros || 0) * (f.precioLitroUSD || 0)));
@@ -1208,16 +1236,16 @@ export const LiquidacionesPage: React.FC = () => {
                           key={f.fincaId}
                           style={{
                             display: 'inline-block',
-                            background: 'rgba(239, 68, 68, 0.18)',
+                            background: 'rgba(239, 68, 68, 0.14)',
                             padding: '4px 10px',
                             borderRadius: '8px',
-                            border: '1.5px solid #ef4444',
-                            fontSize: '12px',
+                            border: '1px solid rgba(239, 68, 68, 0.5)',
+                            fontSize: '11.5px',
                           }}
                         >
                           <strong style={{ color: '#ffffff' }}>{nom}:</strong>{' '}
                           <span style={{ color: '#fca5a5', fontWeight: 800 }}>Bs. 0,00 ($0.00 USD)</span>
-                          <span style={{ color: '#ef4444', fontWeight: 800, display: 'block', fontSize: '10.5px' }}>
+                          <span style={{ color: '#fca5a5', fontWeight: 700, display: 'block', fontSize: '10px' }}>
                             <i className="fa-solid fa-circle-minus"></i> Adelanto: -${adUSD.toFixed(2)} USD (-Bs. {adBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
                           </span>
                           <small style={{ color: '#f87171', fontWeight: 800, display: 'block', fontSize: '10px' }}>
@@ -1231,21 +1259,21 @@ export const LiquidacionesPage: React.FC = () => {
                           key={f.fincaId}
                           style={{
                             display: 'inline-block',
-                            background: 'rgba(15, 23, 42, 0.85)',
+                            background: 'rgba(30, 41, 59, 0.75)',
                             padding: '4px 10px',
                             borderRadius: '8px',
-                            border: '1.5px solid #3b82f6',
-                            fontSize: '12px',
+                            border: '1px solid rgba(59, 130, 246, 0.45)',
+                            fontSize: '11.5px',
                           }}
                         >
-                          <strong style={{ color: '#ffffff' }}>{nom}:</strong>{' '}
+                          <strong style={{ color: '#f8fafc' }}>{nom}:</strong>{' '}
                           <span style={{ color: '#34d399', fontWeight: 800 }}>
                             + Bs. {netoFincaBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                           </span>{' '}
-                          <small style={{ color: '#6ee7b7', fontWeight: 700, fontSize: '11px' }}>
+                          <small style={{ color: '#6ee7b7', fontWeight: 700, fontSize: '10.5px' }}>
                             (${netoFincaUSD.toFixed(2)} USD)
                           </small>
-                          <span style={{ color: '#f87171', fontWeight: 800, display: 'block', fontSize: '10.5px' }}>
+                          <span style={{ color: '#fca5a5', fontWeight: 700, display: 'block', fontSize: '10px' }}>
                             <i className="fa-solid fa-circle-minus"></i> Adelanto: -${adUSD.toFixed(2)} USD (-Bs. {adBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
                           </span>
                         </span>
@@ -1256,18 +1284,18 @@ export const LiquidacionesPage: React.FC = () => {
                           key={f.fincaId}
                           style={{
                             display: 'inline-block',
-                            background: 'rgba(15, 23, 42, 0.85)',
+                            background: 'rgba(16, 185, 129, 0.08)',
                             padding: '4px 10px',
                             borderRadius: '8px',
-                            border: '1.5px solid #10b981',
-                            fontSize: '12px',
+                            border: '1px solid rgba(16, 185, 129, 0.35)',
+                            fontSize: '11.5px',
                           }}
                         >
-                          <strong style={{ color: '#ffffff' }}>{nom}:</strong>{' '}
+                          <strong style={{ color: '#f8fafc' }}>{nom}:</strong>{' '}
                           <span style={{ color: '#34d399', fontWeight: 800 }}>
                             + Bs. {netoFincaBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                           </span>{' '}
-                          <small style={{ color: '#6ee7b7', fontWeight: 700, fontSize: '11px' }}>
+                          <small style={{ color: '#6ee7b7', fontWeight: 700, fontSize: '10.5px' }}>
                             (${netoFincaUSD.toFixed(2)} USD)
                           </small>
                         </span>
@@ -1276,45 +1304,45 @@ export const LiquidacionesPage: React.FC = () => {
                   })}
                 </div>
 
-                {/* Línea de Resumen Total Bruto, Adelantos y Deudas (1:1 V2_3_11_26) */}
+                {/* Línea de Resumen Total Bruto, Adelantos y Deudas */}
                 <div
                   id="detalleFincasUnificarResumen"
                   style={{
-                    fontSize: '12px',
+                    fontSize: '11.5px',
                     color: '#cbd5e1',
                     display: 'flex',
-                    gap: '12px',
+                    gap: '10px',
                     flexWrap: 'wrap',
                     alignItems: 'center',
-                    borderTop: '1px solid rgba(255,255,255,0.1)',
-                    paddingTop: '6px',
+                    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                    paddingTop: '7px',
                   }}
                 >
-                  <span>
+                  <span style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '2px 8px', borderRadius: '6px' }}>
                     Litros: <strong style={{ color: '#38bdf8' }}>{resumenSeleccion.totalLitros.toLocaleString()} Lts</strong>
                   </span>
-                  <span>
-                    Total Bruto:{' '}
+                  <span style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '2px 8px', borderRadius: '6px' }}>
+                    Bruto:{' '}
                     <strong style={{ color: '#38bdf8' }}>
-                      ${resumenSeleccion.totalUSD.toFixed(2)} (Bs. {resumenSeleccion.totalBrutoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
+                      ${resumenSeleccion.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Bs. {resumenSeleccion.totalBrutoBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                     </strong>
                   </span>
                   {resumenSeleccion.totalAdelantosUSD > 0 ? (
                     <span
                       style={{
-                        color: '#ef4444',
+                        color: '#fca5a5',
                         fontWeight: 800,
-                        background: 'rgba(239, 68, 68, 0.15)',
+                        background: 'rgba(239, 68, 68, 0.14)',
                         padding: '2px 8px',
-                        borderRadius: '5px',
-                        border: '1px solid #ef4444',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(239, 68, 68, 0.45)',
                       }}
                     >
-                      <i className="fa-solid fa-circle-minus"></i> Adelantos: -${resumenSeleccion.totalAdelantosUSD.toFixed(2)} (-Bs. {resumenSeleccion.totalAdelantosBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
+                      <i className="fa-solid fa-circle-minus"></i> Adelantos: -${resumenSeleccion.totalAdelantosUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (-Bs. {resumenSeleccion.totalAdelantosBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                     </span>
                   ) : (
-                    <span>
-                      Adelantos: <strong style={{ color: '#94a3b8' }}>$0.00</strong>
+                    <span style={{ color: '#94a3b8' }}>
+                      Adelantos: <strong style={{ color: '#cbd5e1' }}>$0.00</strong>
                     </span>
                   )}
                   {resumenSeleccion.esDeudorTotal && (
@@ -1322,94 +1350,110 @@ export const LiquidacionesPage: React.FC = () => {
                       style={{
                         color: '#fca5a5',
                         fontWeight: 800,
-                        background: 'rgba(239,68,68,0.2)',
+                        background: 'rgba(239, 68, 68, 0.2)',
                         padding: '2px 8px',
-                        borderRadius: '5px',
-                        border: '1px solid #ef4444',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(239, 68, 68, 0.5)',
                       }}
                     >
-                      <i className="fa-solid fa-triangle-exclamation"></i> Sigue Debiendo: -${resumenSeleccion.deudaRestanteUSD.toFixed(2)} USD (-Bs. {resumenSeleccion.deudaRestanteBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })})
+                      <i className="fa-solid fa-triangle-exclamation"></i> Sigue Debiendo: -${resumenSeleccion.deudaRestanteUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD (-Bs. {resumenSeleccion.deudaRestanteBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* Lado derecho: Monto Total y Botones de Acción */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              {/* Lado derecho: Tarjeta de Neto Total y Botones de Acción */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '14px',
+                  flexWrap: 'wrap',
+                  background: 'rgba(2, 6, 23, 0.45)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '12px',
+                  padding: '10px 14px',
+                }}
+              >
                 <div style={{ textAlign: 'right' }}>
-                  <small style={{ color: '#94a3b8', fontSize: '11px', fontWeight: 600, display: 'block' }}>
-                    NETO TOTAL UNIFICADO:
+                  <small style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 700, letterSpacing: '0.06em', display: 'block', textTransform: 'uppercase' }}>
+                    Neto Total Unificado
                   </small>
                   {resumenSeleccion.esDeudorTotal ? (
                     <div>
-                      <span id="montoNetoTotalUnificadoDisplay" style={{ fontSize: '20px', fontWeight: 900, color: '#f87171' }}>
+                      <span id="montoNetoTotalUnificadoDisplay" style={{ fontSize: '21px', fontWeight: 900, color: '#f87171', lineHeight: 1.15 }}>
                         Bs. 0,00
                       </span>
                       <small style={{ fontSize: '11px', fontWeight: 800, color: '#fca5a5', display: 'block' }}>
-                        (Deuda: -${resumenSeleccion.deudaRestanteUSD.toFixed(2)} USD)
+                        (Deuda: -${resumenSeleccion.deudaRestanteUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD)
                       </small>
                     </div>
                   ) : (
                     <div>
-                      <span id="montoNetoTotalUnificadoDisplay" style={{ fontSize: '20px', fontWeight: 900, color: '#34d399' }}>
-                        Bs. {resumenSeleccion.totalNetoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                      <span id="montoNetoTotalUnificadoDisplay" style={{ fontSize: '21px', fontWeight: 900, color: '#34d399', lineHeight: 1.15 }}>
+                        Bs. {resumenSeleccion.totalNetoBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
-                      <small style={{ color: '#6ee7b7', display: 'block', fontSize: '11px', fontWeight: 700 }}>
-                        (${resumenSeleccion.totalNetoUSD.toFixed(2)} USD)
+                      <small style={{ color: '#6ee7b7', display: 'block', fontSize: '11.5px', fontWeight: 700 }}>
+                        (${resumenSeleccion.totalNetoUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD)
                       </small>
                     </div>
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={cancelarSeleccion}
-                  className="btn btn-outline"
-                  style={{
-                    color: '#cbd5e1',
-                    border: '1px solid #475569',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <i className="fa-solid fa-xmark"></i> Desmarcar
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={cancelarSeleccion}
+                    className="btn btn-outline"
+                    style={{
+                      color: '#cbd5e1',
+                      border: '1px solid rgba(148, 163, 184, 0.35)',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      padding: '9px 12px',
+                      borderRadius: '10px',
+                      background: 'rgba(30, 41, 59, 0.6)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <i className="fa-solid fa-xmark"></i> Desmarcar
+                  </button>
 
-                <button
-                  type="button"
-                  id="btnEjecutarPagoUnificado"
-                  onClick={ejecutarPagoUnificado}
-                  disabled={procesandoLote}
-                  className="btn btn-primary"
-                  style={{
-                    background: resumenSeleccion.esDeudorTotal ? '#ef4444' : '#10b981',
-                    border: 'none',
-                    fontSize: '13px',
-                    fontWeight: 800,
-                    padding: '9px 18px',
-                    borderRadius: '8px',
-                    boxShadow: resumenSeleccion.esDeudorTotal ? '0 4px 12px rgba(239, 68, 68, 0.3)' : '0 4px 12px rgba(16, 185, 129, 0.3)',
-                    cursor: procesandoLote ? 'wait' : 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    color: '#ffffff',
-                  }}
-                >
-                  <i className={procesandoLote ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-credit-card'}></i>{' '}
-                  {procesandoLote
-                    ? 'Procesando...'
-                    : resumenSeleccion.esDeudorTotal
-                    ? `Compensar y Registrar Adelanto (${fincasSeleccionadasObjetos.length} Fincas)`
-                    : `Realizar Pago Unificado (${fincasSeleccionadasObjetos.length} Fincas)`}
-                </button>
+                  <button
+                    type="button"
+                    id="btnEjecutarPagoUnificado"
+                    onClick={ejecutarPagoUnificado}
+                    disabled={procesandoLote}
+                    className="btn btn-primary"
+                    style={{
+                      background: resumenSeleccion.esDeudorTotal
+                        ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                        : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      border: 'none',
+                      fontSize: '12.5px',
+                      fontWeight: 800,
+                      padding: '10px 16px',
+                      borderRadius: '10px',
+                      boxShadow: resumenSeleccion.esDeudorTotal ? '0 4px 14px rgba(239, 68, 68, 0.35)' : '0 4px 14px rgba(16, 185, 129, 0.35)',
+                      cursor: procesandoLote ? 'wait' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      color: '#ffffff',
+                    }}
+                  >
+                    <i className={procesandoLote ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-credit-card'}></i>{' '}
+                    {procesandoLote
+                      ? 'Procesando...'
+                      : resumenSeleccion.esDeudorTotal
+                      ? `Compensar y Registrar Adelanto (${fincasSeleccionadasObjetos.length} Finca${fincasSeleccionadasObjetos.length === 1 ? '' : 's'})`
+                      : `Realizar Pago Unificado (${fincasSeleccionadasObjetos.length} Finca${fincasSeleccionadasObjetos.length === 1 ? '' : 's'})`}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
+          </>
         )}
       </div>
 

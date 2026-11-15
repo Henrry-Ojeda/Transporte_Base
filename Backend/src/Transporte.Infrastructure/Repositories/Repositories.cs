@@ -9268,8 +9268,13 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             var control = await connection.QueryFirstOrDefaultAsync<dynamic>("SELECT * FROM TB_CONTROL_RUTAS WHERE Id = @id", new { id });
             if (control == null) return false;
 
-            if (rol == "CHOFER" && (int)control.UsuarioId != usuarioId)
-                throw new UnauthorizedAccessException("No tienes permiso para editar controles de otros conductores.");
+            if (rol.Equals("CHOFER", StringComparison.OrdinalIgnoreCase))
+            {
+                if ((int)control.UsuarioId != usuarioId)
+                    throw new UnauthorizedAccessException("No tienes permiso para editar controles de otros conductores.");
+                if ((int)(control.ProcesoActualId ?? 1) != 1)
+                    throw new InvalidOperationException("Solo puedes modificar el ticket mientras esté ABIERTO en recolección.");
+            }
 
             DateTime fecha = dto.Fecha ?? (DateTime)control.Fecha;
             int usuarioIdControl = dto.UsuarioId ?? (int)control.UsuarioId;
@@ -9304,8 +9309,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     LitrosCargadosAdicional = ISNULL(@litrosCargadosAdicional, LitrosCargadosAdicional),
                     CompaniaDestinoId = ISNULL(@companiaDestinoId, CompaniaDestinoId),
                     LitrosEntregadosCompania = ISNULL(@litrosEntregadosCompania, LitrosEntregadosCompania),
-                    RutaLogisticaId = ISNULL(@rutaLogisticaId, RutaLogisticaId),
-                    Observacion = @observacion, 
+                    RutaLogisticaId = CASE WHEN @rutaLogisticaId = 0 THEN NULL ELSE ISNULL(@rutaLogisticaId, RutaLogisticaId) END,
+                    Observacion = COALESCE(@observacion, Observacion), 
                     ModifiedAt = GETDATE(), 
                     ModifiedBy = @usuarioId
                 WHERE Id = @id",

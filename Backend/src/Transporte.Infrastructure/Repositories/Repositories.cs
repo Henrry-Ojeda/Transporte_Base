@@ -9760,7 +9760,42 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 conductorEfectivo = usuarioId;
             }
 
-            // Los choferes inician sus turnos libremente: ya NO existe validación de permiso para crear tickets.
+            // Regla para CHOFER: No puede crear un segundo ticket mientras tenga uno ABIERTO en recolección (ProcesoActualId = 1)
+            bool esAdminOSuperCrear = rol.Contains("ADMIN", StringComparison.OrdinalIgnoreCase) || rol.Equals("SUPERVISOR", StringComparison.OrdinalIgnoreCase);
+            if (!esAdminOSuperCrear)
+            {
+                var abiertoEnRuta = await connection.QueryFirstOrDefaultAsync<dynamic>(@"
+                    SELECT TOP 1 cr.Id, cr.TotalLitrosFinca,
+                           (SELECT COUNT(1) FROM TB_RUTAS_RECOLECCION r WHERE r.ControlRutaId = cr.Id) AS TotalParadas
+                    FROM TB_CONTROL_RUTAS cr
+                    WHERE cr.UsuarioId = @conductorEfectivo
+                      AND CAST(cr.Fecha AS DATE) = @fecha
+                      AND ISNULL(cr.ProcesoActualId, 1) = 1
+                      AND UPPER(ISNULL(cr.Estado, '')) NOT IN ('FINALIZADO', 'CERRADO')
+                    ORDER BY cr.Id DESC",
+                    new { conductorEfectivo, fecha });
+
+                if (abiertoEnRuta != null)
+                {
+                    long idAbierto = (long)abiertoEnRuta.Id;
+                    int totalParadas = (int)abiertoEnRuta.TotalParadas;
+                    decimal totalLitros = (decimal)(abiertoEnRuta.TotalLitrosFinca ?? 0m);
+
+                    if (totalParadas == 0 && totalLitros == 0)
+                    {
+                        // Reutilizar el ticket vacío abierto en lugar de duplicar tickets en 0 L
+                        if (dto.RutaLogisticaId.HasValue && dto.RutaLogisticaId.Value > 0)
+                        {
+                            await connection.ExecuteAsync(
+                                "UPDATE TB_CONTROL_RUTAS SET RutaLogisticaId = COALESCE(RutaLogisticaId, @rutaId), ModifiedAt = GETDATE() WHERE Id = @id",
+                                new { rutaId = dto.RutaLogisticaId.Value, id = idAbierto });
+                        }
+                        return idAbierto;
+                    }
+
+                    throw new InvalidOperationException($"Ya tienes el Ticket #{idAbierto} abierto en recolección. Debes enviarlo a Receptoría/Planta antes de iniciar uno nuevo.");
+                }
+            }
 
             // Validar si el ciclo operativo correspondiente a la fecha está cerrado
             var cicloFecha = await connection.QueryFirstOrDefaultAsync<dynamic>(

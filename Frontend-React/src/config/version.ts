@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 23,
+  minor: 24,
   patch: 1,
-  tag: 'v3.23.1',
+  tag: 'v3.24.1',
   ultimaActualizacion: '2026-11-15',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil y Backend v3.23.1: Bloqueo estricto en Backend y App Móvil para impedir que un chofer cree un segundo ticket mientras tenga uno ABIERTO en recolección (reutiliza el ticket vacío en 0 L si existiera, o exige enviarlo a Planta/Receptoría antes de crear otro).',
+  descripcion: 'App Móvil y Backend v3.24.1: Muestra la fecha del ticket en las tarjetas de la App Móvil y habilita al chofer modificar su ticket abierto (fecha, ruta/modo libre y observación) online y offline.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

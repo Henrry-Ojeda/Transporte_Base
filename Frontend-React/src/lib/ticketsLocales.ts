@@ -106,6 +106,34 @@ export const ticketsLocales = {
     escribir(KEY_PENDIENTES, lista);
   },
 
+  actualizarPaquete: (localId: number, datos: { fecha?: string; rutaLogisticaId?: number | null; rutaNombre?: string; observacion?: string }) => {
+    if (localId >= 0) return;
+    const lista = ticketsLocales.listarPendientes();
+    const idx = lista.findIndex((t) => t.localId === localId);
+    if (idx < 0) return;
+    const actual = lista[idx];
+    const rutaIdEfectivo = datos.rutaLogisticaId && datos.rutaLogisticaId > 0 ? datos.rutaLogisticaId : undefined;
+    lista[idx] = {
+      ...actual,
+      modo: rutaIdEfectivo ? 'RUTA' : 'LIBRE',
+      payload: {
+        ...actual.payload,
+        fecha: datos.fecha || actual.payload.fecha,
+        rutaLogisticaId: rutaIdEfectivo,
+        observaciones: datos.observacion !== undefined ? datos.observacion : actual.payload.observaciones,
+      },
+      ticket: {
+        ...actual.ticket,
+        fecha: datos.fecha || actual.ticket?.fecha,
+        rutaLogisticaId: rutaIdEfectivo,
+        rutaLogisticaNombre: rutaIdEfectivo ? (datos.rutaNombre || actual.ticket?.rutaLogisticaNombre) : undefined,
+        rutaNombre: rutaIdEfectivo ? (datos.rutaNombre || actual.ticket?.rutaNombre) : undefined,
+        observacion: datos.observacion !== undefined ? datos.observacion : actual.ticket?.observacion,
+      },
+    };
+    escribir(KEY_PENDIENTES, lista);
+  },
+
   marcarSincronizado: (localId: number, serverId: number) => {
     const lista = ticketsLocales.listarPendientes().filter((t) => t.localId !== localId);
     escribir(KEY_PENDIENTES, lista);

@@ -1558,6 +1558,7 @@ namespace Transporte.Core.DTOs
     public class AgregarFincaViajeDto
     {
         public long ControlRutaId { get; set; }
+        public int? ChoferId { get; set; }
         public int FincaId { get; set; }
         public int Litros { get; set; }
         public bool EsAcida { get; set; } = false;
@@ -1568,6 +1569,41 @@ namespace Transporte.Core.DTOs
         public int? NumeroCompartimiento { get; set; }
         public string? Observacion { get; set; }
         public string? FotoComprobante { get; set; }
+    }
+
+    public class FincaPaqueteSyncDto
+    {
+        public int FincaId { get; set; }
+        public int Litros { get; set; }
+        public bool EsAcida { get; set; } = false;
+        public string? TipoLeche { get; set; } = "VACA";
+        public bool EsDiferido { get; set; } = false;
+        public DateTime? Fecha { get; set; }
+        public string? Hora { get; set; }
+        public decimal? Temperatura { get; set; }
+        public string? Observacion { get; set; }
+        public string? FotoComprobante { get; set; }
+    }
+
+    public class SincronizarPaqueteTicketDto
+    {
+        public long? TicketId { get; set; }
+        public string? LocalUuid { get; set; }
+        public DateTime Fecha { get; set; }
+        public int ChoferId { get; set; }
+        public int? CamionId { get; set; }
+        public string Modo { get; set; } = "LIBRE"; // "RUTA" | "LIBRE"
+        public int? RutaLogisticaId { get; set; }
+        public string? Observacion { get; set; }
+        public List<FincaPaqueteSyncDto> Fincas { get; set; } = new();
+    }
+
+    public class ResultadoSyncPaqueteDto
+    {
+        public long TicketId { get; set; }
+        public int FincasSincronizadas { get; set; }
+        public bool CreadoNuevo { get; set; }
+        public string Mensaje { get; set; } = string.Empty;
     }
 
     // =====================================================================

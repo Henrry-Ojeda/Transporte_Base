@@ -10,10 +10,26 @@
 const KEY_PENDIENTES = 'movil_tickets_locales_pendientes';
 const KEY_MAPA = 'movil_tickets_locales_map';
 
+export interface FincaPaqueteLocal {
+  fincaId: number;
+  litros: number;
+  esAcida?: boolean;
+  tipoLeche?: string;
+  esDiferido?: boolean;
+  fecha?: string;
+  hora?: string;
+  temperatura?: number;
+  observacion?: string;
+  fotoComprobante?: string;
+}
+
 export interface TicketLocalPendiente {
   /** ID temporal negativo del ticket local */
   localId: number;
   creadoEn: string;
+  localUuid?: string;
+  modo?: 'RUTA' | 'LIBRE';
+  fincas?: FincaPaqueteLocal[];
   /** Payload exacto que se enviará a /control-rutas/iniciar-viaje */
   payload: {
     fecha?: string;
@@ -65,7 +81,28 @@ export const ticketsLocales = {
 
   agregar: (t: TicketLocalPendiente) => {
     const lista = ticketsLocales.listarPendientes();
-    lista.push(t);
+    lista.push({
+      ...t,
+      modo: t.modo || (t.payload?.rutaLogisticaId ? 'RUTA' : 'LIBRE'),
+      fincas: Array.isArray(t.fincas) ? t.fincas : [],
+    });
+    escribir(KEY_PENDIENTES, lista);
+  },
+
+  upsertFincaEnPaquete: (localId: number, finca: FincaPaqueteLocal) => {
+    if (localId >= 0) return;
+    const lista = ticketsLocales.listarPendientes();
+    const idx = lista.findIndex((t) => t.localId === localId);
+    if (idx < 0) return;
+    const actual = lista[idx];
+    const fincas = Array.isArray(actual.fincas) ? [...actual.fincas] : [];
+    const fIdx = fincas.findIndex((f) => Number(f.fincaId) === Number(finca.fincaId));
+    if (fIdx >= 0) {
+      fincas[fIdx] = { ...fincas[fIdx], ...finca };
+    } else {
+      fincas.push(finca);
+    }
+    lista[idx] = { ...actual, fincas };
     escribir(KEY_PENDIENTES, lista);
   },
 

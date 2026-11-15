@@ -8859,6 +8859,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
         Task<ControlRutaDto?> ObtenerViajeActivoChoferAsync(int choferId);
         Task<IEnumerable<ControlRutaDto>> ObtenerViajesActivosChoferAsync(int choferId, DateTime? fecha = null);
         Task<long> CrearNuevoViajeAsync(CrearViajeDto dto, int usuarioId, string rol);
+        Task<ResultadoSyncPaqueteDto> SincronizarPaqueteTicketAsync(SincronizarPaqueteTicketDto dto, int usuarioId, string rol);
         Task<long> AgregarFincaAViajeAsync(AgregarFincaViajeDto dto, int usuarioId, string rol);
         Task<IEnumerable<RutaItemDto>> ObtenerFincasDeViajeAsync(long controlRutaId, bool soloConLitros = false);
         Task<bool> EnviarAReceptoriaAsync(long controlRutaId, int usuarioId, string? observacion);
@@ -9052,9 +9053,6 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     cr.LitrosEntregadosCompania,
                     cr.DiferenciaCompania,
                     cr.MermaTotalLitros,
-                    cr.FechaLlegadaReceptoria,
-                    cr.FechaEntregaCompania,
-                    cr.CerradoPor,
                     uc.NombreCompleto AS NombreCerradoPor,
                     (SELECT COUNT(*) FROM TB_RUTAS_RECOLECCION r WHERE r.ControlRutaId = cr.Id OR (r.ControlRutaId IS NULL AND r.UsuarioId = cr.UsuarioId AND CAST(r.Fecha AS DATE) = CAST(cr.Fecha AS DATE))) AS TotalFincas
                 FROM TB_CONTROL_RUTAS cr
@@ -9934,6 +9932,154 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             return nuevoId;
         }
 
+        public async Task<ResultadoSyncPaqueteDto> SincronizarPaqueteTicketAsync(SincronizarPaqueteTicketDto dto, int usuarioId, string rol)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await EnsureTableNotificacionesExistsAsync(connection);
+
+            bool esAdminOSuper = rol.Contains("ADMIN", StringComparison.OrdinalIgnoreCase) ||
+                                 rol.Equals("SUPERVISOR", StringComparison.OrdinalIgnoreCase) ||
+                                 rol.Equals("GERENTE", StringComparison.OrdinalIgnoreCase);
+
+            int choferEfectivo = (esAdminOSuper && dto.ChoferId > 0) ? dto.ChoferId : usuarioId;
+            if (!esAdminOSuper && dto.ChoferId > 0 && dto.ChoferId != usuarioId)
+            {
+                throw new UnauthorizedAccessException("No tienes permiso para sincronizar un paquete de otro chofer.");
+            }
+
+            var fechaPaquete = dto.Fecha.Date;
+            long ticketId = 0;
+            bool creadoNuevo = false;
+
+            // CASO 1: El paquete trae un TicketId real (#111111) -> buscarlo y validar estrictamente Chofer + Fecha
+            if (dto.TicketId.HasValue && dto.TicketId.Value > 0)
+            {
+                var viaje = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT Id, UsuarioId, Fecha, ProcesoActualId, RutaLogisticaId FROM TB_CONTROL_RUTAS WHERE Id = @id",
+                    new { id = dto.TicketId.Value });
+
+                if (viaje == null)
+                    throw new InvalidOperationException($"El Ticket #{dto.TicketId.Value} no existe en la base de datos.");
+
+                if ((int)viaje.UsuarioId != choferEfectivo)
+                    throw new InvalidOperationException($"El Ticket #{dto.TicketId.Value} pertenece a otro chofer.");
+
+                if (((DateTime)viaje.Fecha).Date != fechaPaquete)
+                    throw new InvalidOperationException($"La fecha del Ticket #{dto.TicketId.Value} ({((DateTime)viaje.Fecha):dd/MM/yyyy}) no coincide con la fecha del paquete ({fechaPaquete:dd/MM/yyyy}).");
+
+                if ((int)viaje.ProcesoActualId != 1)
+                    throw new InvalidOperationException($"El Ticket #{dto.TicketId.Value} ya no está ABIERTO.");
+
+                ticketId = (long)viaje.Id;
+
+                if (string.Equals(dto.Modo, "RUTA", StringComparison.OrdinalIgnoreCase) && dto.RutaLogisticaId.HasValue && dto.RutaLogisticaId.Value > 0 && viaje.RutaLogisticaId == null)
+                {
+                    await connection.ExecuteAsync(
+                        "UPDATE TB_CONTROL_RUTAS SET RutaLogisticaId = @rutaId, ModifiedAt = GETDATE(), ModifiedBy = @usuarioId WHERE Id = @ticketId",
+                        new { rutaId = dto.RutaLogisticaId.Value, usuarioId, ticketId });
+                }
+            }
+            else
+            {
+                // CASO 2: Ticket creado sin internet (sin #TicketId real)
+                // 2.1 Idempotencia por marca [LOCAL:uuid]
+                if (!string.IsNullOrWhiteSpace(dto.LocalUuid))
+                {
+                    var marca = dto.LocalUuid.StartsWith("[LOCAL:") ? dto.LocalUuid : $"[LOCAL:{dto.LocalUuid}]";
+                    var existentePorUuid = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                        "SELECT TOP 1 Id, UsuarioId, Fecha, ProcesoActualId FROM TB_CONTROL_RUTAS WHERE CHARINDEX(@marca, Observacion) > 0 ORDER BY Id",
+                        new { marca });
+
+                    if (existentePorUuid != null)
+                    {
+                        if ((int)existentePorUuid.UsuarioId != choferEfectivo || ((DateTime)existentePorUuid.Fecha).Date != fechaPaquete)
+                            throw new InvalidOperationException("El identificador local corresponde a un ticket de otro chofer o fecha.");
+
+                        ticketId = (long)existentePorUuid.Id;
+                    }
+                }
+
+                // 2.2 Validación previa: si no hay TicketId pero ya existe un ticket abierto para el mismo Chofer + Fecha con alguna de estas Fincas
+                if (ticketId <= 0 && dto.Fincas != null && dto.Fincas.Any())
+                {
+                    var fincaIds = dto.Fincas.Select(f => f.FincaId).Where(id => id > 0).Distinct().ToList();
+                    if (fincaIds.Any())
+                    {
+                        var existentePorFincas = await connection.ExecuteScalarAsync<long?>(@"
+                            SELECT TOP 1 cr.Id
+                            FROM TB_CONTROL_RUTAS cr
+                            INNER JOIN TB_RUTAS_RECOLECCION r ON r.ControlRutaId = cr.Id
+                            WHERE cr.UsuarioId = @choferEfectivo
+                              AND CAST(cr.Fecha AS DATE) = @fechaPaquete
+                              AND cr.ProcesoActualId = 1
+                              AND r.FincaId IN @fincaIds
+                            ORDER BY cr.Id DESC",
+                            new { choferEfectivo, fechaPaquete, fincaIds });
+
+                        if (existentePorFincas.HasValue && existentePorFincas.Value > 0)
+                        {
+                            ticketId = existentePorFincas.Value;
+                        }
+                    }
+                }
+
+                // 2.3 Si no existía, crear el ticket completo ahora
+                if (ticketId <= 0)
+                {
+                    var obsMarca = !string.IsNullOrWhiteSpace(dto.LocalUuid)
+                        ? (dto.LocalUuid.StartsWith("[LOCAL:") ? dto.LocalUuid : $"[LOCAL:{dto.LocalUuid}]")
+                        : string.Empty;
+                    var obsCompleta = $"{obsMarca} {dto.Observacion ?? "Viaje sincronizado desde App Móvil"}".Trim();
+
+                    var crearDto = new CrearViajeDto
+                    {
+                        Fecha = fechaPaquete,
+                        ConductorId = choferEfectivo,
+                        CamionId = dto.CamionId,
+                        RutaLogisticaId = string.Equals(dto.Modo, "RUTA", StringComparison.OrdinalIgnoreCase) ? dto.RutaLogisticaId : null,
+                        Observacion = obsCompleta
+                    };
+                    ticketId = await CrearNuevoViajeAsync(crearDto, usuarioId, rol);
+                    creadoNuevo = true;
+                }
+            }
+
+            int fincasSincronizadas = 0;
+            if (ticketId > 0 && dto.Fincas != null && dto.Fincas.Any())
+            {
+                foreach (var f in dto.Fincas)
+                {
+                    if (f.FincaId <= 0) continue;
+                    var fincaDto = new AgregarFincaViajeDto
+                    {
+                        ControlRutaId = ticketId,
+                        ChoferId = choferEfectivo,
+                        FincaId = f.FincaId,
+                        Litros = f.Litros,
+                        EsAcida = f.EsAcida,
+                        TipoLeche = f.TipoLeche,
+                        EsDiferido = f.EsDiferido,
+                        Fecha = fechaPaquete,
+                        Hora = f.Hora,
+                        Observacion = f.Observacion,
+                        FotoComprobante = f.FotoComprobante
+                    };
+                    await AgregarFincaAViajeAsync(fincaDto, usuarioId, rol);
+                    fincasSincronizadas++;
+                }
+            }
+
+            return new ResultadoSyncPaqueteDto
+            {
+                TicketId = ticketId,
+                FincasSincronizadas = fincasSincronizadas,
+                CreadoNuevo = creadoNuevo,
+                Mensaje = creadoNuevo
+                    ? $"Ticket #{ticketId} creado y sincronizado con {fincasSincronizadas} finca(s)."
+                    : $"Ticket #{ticketId} validado y actualizado con {fincasSincronizadas} finca(s)."
+            };
+        }
+
         public async Task<long> AgregarFincaAViajeAsync(AgregarFincaViajeDto dto, int usuarioId, string rol)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -9948,6 +10094,12 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
             if (!esAdminOSuper && rol.Equals("CHOFER", StringComparison.OrdinalIgnoreCase) && (int)viaje.UsuarioId != usuarioId)
                 throw new UnauthorizedAccessException("No tienes permiso para agregar fincas a viajes de otro chofer.");
+
+            if (dto.ChoferId.HasValue && dto.ChoferId.Value > 0 && (int)viaje.UsuarioId != dto.ChoferId.Value)
+                throw new InvalidOperationException($"El Ticket #{dto.ControlRutaId} pertenece a otro chofer y no coincide con el paquete.");
+
+            if (dto.Fecha.HasValue && ((DateTime)viaje.Fecha).Date != dto.Fecha.Value.Date)
+                throw new InvalidOperationException($"La fecha del registro ({dto.Fecha.Value:dd/MM/yyyy}) no coincide con la fecha del Ticket #{dto.ControlRutaId} ({((DateTime)viaje.Fecha):dd/MM/yyyy}).");
 
             if ((int)viaje.ProcesoActualId != 1)
                 throw new InvalidOperationException("El viaje no está en estado ABIERTO. No se pueden agregar más fincas.");

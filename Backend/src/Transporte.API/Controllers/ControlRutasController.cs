@@ -270,6 +270,31 @@ namespace Transporte.API.Controllers
         }
 
         /// <summary>
+        /// Sincroniza un paquete completo de ticket (Fecha, Chofer, Modo RUTA/LIBRE, Fincas y su información)
+        /// validando estrictamente TicketId + Chofer + Fecha antes de actualizar o crear.
+        /// </summary>
+        [HttpPost("sincronizar-paquete")]
+        public async Task<IActionResult> SincronizarPaquete([FromBody] SincronizarPaqueteTicketDto dto)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var rol = User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER";
+
+            try
+            {
+                var resultado = await _controlRutasRepository.SincronizarPaqueteTicketAsync(dto, userId, rol);
+                return Ok(resultado);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Registra una finca visitada dentro del viaje actual.
         /// </summary>
         [HttpPost("{id:long}/fincas")]

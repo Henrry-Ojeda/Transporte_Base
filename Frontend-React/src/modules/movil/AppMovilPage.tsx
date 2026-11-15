@@ -2727,6 +2727,9 @@ export const AppMovilPage: React.FC = () => {
       ticketsLocales.agregar({
         localId,
         creadoEn: ticketLocal.createdAt,
+        localUuid: uuidViaje,
+        modo: rutaNuevoViajeId ? 'RUTA' : 'LIBRE',
+        fincas: [],
         payload: payloadViaje,
         ticket: ticketLocal,
       });
@@ -5242,6 +5245,7 @@ export const AppMovilPage: React.FC = () => {
       try {
         const obsConOrigen = `${formCarga.observacion ? formCarga.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim();
         await operacionesApi.agregarFincaViaje(ticketIdEfectivo, {
+          choferId: choferEfectivoId || undefined,
           fincaId: Number(formCarga.fincaId),
           litros: litrosNum,
           esAcida: formCarga.esAcida,
@@ -5259,6 +5263,21 @@ export const AppMovilPage: React.FC = () => {
         const errMsg = errApi?.response?.data?.message || errApi?.message || 'Error de conexión con la central';
         toast.warning(`Guardado en el teléfono. Pendiente de sincronizar: ${errMsg}`);
       }
+    }
+
+    if (ticketIdEfectivo < 0) {
+      ticketsLocales.upsertFincaEnPaquete(ticketIdEfectivo, {
+        fincaId: Number(formCarga.fincaId),
+        litros: litrosNum,
+        esAcida: formCarga.esAcida,
+        tipoLeche: formCarga.tipoLeche,
+        esDiferido: formCarga.esDiferido,
+        fecha: fechaAUsar,
+        hora: horaStr,
+        temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
+        observacion: `${formCarga.observacion ? formCarga.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim(),
+        fotoComprobante: formCarga.fotoRecibo || undefined,
+      });
     }
 
     const nuevaCarga: CargaOffline = {

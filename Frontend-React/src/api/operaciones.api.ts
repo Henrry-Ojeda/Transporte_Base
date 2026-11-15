@@ -170,9 +170,10 @@ export const operacionesApi = {
     return res.data;
   },
 
-  agregarFincaViaje: async (id: number, dto: { fincaId: number; litrosLeche?: number; litros?: number; esAcida?: boolean; esDiferido?: boolean; fecha?: string; hora?: string; tipoLeche?: string; observacion?: string; temperatura?: number; fotoComprobante?: string }): Promise<{ success: boolean; message: string }> => {
+  agregarFincaViaje: async (id: number, dto: { choferId?: number; fincaId: number; litrosLeche?: number; litros?: number; esAcida?: boolean; esDiferido?: boolean; fecha?: string; hora?: string; tipoLeche?: string; observacion?: string; temperatura?: number; fotoComprobante?: string }): Promise<{ success: boolean; message: string }> => {
     const payload = {
       controlRutaId: id,
+      choferId: dto.choferId || undefined,
       fincaId: dto.fincaId,
       litros: dto.litros ?? dto.litrosLeche ?? 0,
       esAcida: Boolean(dto.esAcida),
@@ -185,6 +186,32 @@ export const operacionesApi = {
       fotoComprobante: dto.fotoComprobante,
     };
     const res = await apiClient.post(`/control-rutas/${id}/fincas`, payload);
+    return res.data;
+  },
+
+  sincronizarPaqueteTicket: async (dto: {
+    ticketId?: number | null;
+    localUuid?: string;
+    fecha: string;
+    choferId: number;
+    camionId?: number;
+    modo: 'RUTA' | 'LIBRE';
+    rutaLogisticaId?: number;
+    observacion?: string;
+    fincas: Array<{
+      fincaId: number;
+      litros: number;
+      esAcida?: boolean;
+      tipoLeche?: string;
+      esDiferido?: boolean;
+      fecha?: string;
+      hora?: string;
+      temperatura?: number;
+      observacion?: string;
+      fotoComprobante?: string;
+    }>;
+  }): Promise<{ ticketId: number; fincasSincronizadas: number; creadoNuevo: boolean; message?: string; mensaje?: string }> => {
+    const res = await apiClient.post('/control-rutas/sincronizar-paquete', dto);
     return res.data;
   },
 

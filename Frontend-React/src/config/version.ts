@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 21,
+  minor: 22,
   patch: 1,
-  tag: 'v3.21.1',
-  ultimaActualizacion: '2026-11-14',
+  tag: 'v3.22.1',
+  ultimaActualizacion: '2026-11-15',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil y Backend v3.20.1: Separación estricta de Entradas (ControlRuta) y Salidas (DespachoCompania) en Entregas del Chofer, resolución de controlRutaId en Timelapse evitando fincas en 0 L, código #<ControlRutaId>-<N> en despachos vinculados y resumen de litros en tarjeta de Receptoría.',
+  descripcion: 'App Móvil y Backend v3.22.1: Paquete atómico por ticket (/control-rutas/sincronizar-paquete) con Fecha, Chofer, Modo (RUTA/LIBRE) y Fincas, validación estricta de TicketId+Chofer+Fecha en Backend, pre-validación por Chofer+Fecha+Fincas para tickets offline y bloqueo de reasignación cruzada en SyncEngine.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

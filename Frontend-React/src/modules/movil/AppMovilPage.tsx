@@ -893,6 +893,8 @@ export const AppMovilPage: React.FC = () => {
 
   // Filtro en vista Supervisar Chofer: 'activos' (solo con viaje activo) o 'todos'
   const [filtroChoferSupervisar, setFiltroChoferSupervisar] = useState<'activos' | 'todos'>('activos');
+  const adminSeleccionManualRef = useRef(false);
+  const cargaViajeSeqRef = useRef(0);
 
   // Chofer seleccionado para supervisar/auditar (cuando el usuario es Administrador/SuperAdmin)
   const [choferSimuladoId, setChoferSimuladoId] = useState<number>(() => {
@@ -1634,6 +1636,67 @@ export const AppMovilPage: React.FC = () => {
     setModalNuevoViajeChofer(true);
   };
 
+  const [modalEditarTicketChofer, setModalEditarTicketChofer] = useState(false);
+  const [guardandoEditarTicket, setGuardandoEditarTicket] = useState(false);
+  const [editTicketForm, setEditTicketForm] = useState<{ fecha: string; rutaLogisticaId: number; observacion: string }>({
+    fecha: hoyStr,
+    rutaLogisticaId: 0,
+    observacion: '',
+  });
+
+  const abrirModalEditarTicket = () => {
+    if (!viajeActivo || !esTicketAbiertoEnRuta(viajeActivo)) return;
+    setEditTicketForm({
+      fecha: viajeActivo.fecha ? String(viajeActivo.fecha).split('T')[0] : hoyStr,
+      rutaLogisticaId: Number(viajeActivo.rutaLogisticaId || 0),
+      observacion: String(viajeActivo.observacion || '').replace(/\[LOCAL:[A-Za-z0-9\-]+\]\s*/g, '').trim(),
+    });
+    setModalEditarTicketChofer(true);
+  };
+
+  const handleGuardarEditarTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!viajeActivo || guardandoEditarTicket) return;
+    setGuardandoEditarTicket(true);
+    try {
+      const rutaObj = rutasLogisticas.find((r) => r.id === Number(editTicketForm.rutaLogisticaId));
+      if (viajeActivo.id < 0) {
+        ticketsLocales.actualizarPaquete(viajeActivo.id, {
+          fecha: editTicketForm.fecha,
+          rutaLogisticaId: editTicketForm.rutaLogisticaId > 0 ? editTicketForm.rutaLogisticaId : null,
+          rutaNombre: rutaObj?.nombre,
+          observacion: editTicketForm.observacion,
+        });
+        setViajeActivo((prev) =>
+          prev
+            ? {
+                ...prev,
+                fecha: editTicketForm.fecha,
+                rutaLogisticaId: editTicketForm.rutaLogisticaId > 0 ? editTicketForm.rutaLogisticaId : undefined,
+                rutaLogisticaNombre: rutaObj?.nombre,
+                observacion: editTicketForm.observacion,
+              }
+            : prev
+        );
+        toast.success('Ticket local actualizado');
+        setModalEditarTicketChofer(false);
+      } else {
+        await operacionesApi.editarControl(viajeActivo.id, {
+          fecha: editTicketForm.fecha,
+          rutaLogisticaId: Number(editTicketForm.rutaLogisticaId || 0),
+          observacion: editTicketForm.observacion,
+        });
+        toast.success(`Ticket #${viajeActivo.codigoTicket || viajeActivo.id} actualizado`);
+        setModalEditarTicketChofer(false);
+        await cargarViajeActivo(choferEfectivoId, viajeActivo.id);
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Error al modificar el ticket');
+    } finally {
+      setGuardandoEditarTicket(false);
+    }
+  };
+
   const cargarChoferesPermisos = async () => {
     setCargandoPermisosChoferes(true);
     try {
@@ -1716,11 +1779,11 @@ export const AppMovilPage: React.FC = () => {
     return mapActivos;
   }, [viajesEnVivo, choferesLista]);
 
-  // Si el Admin entra a vista Chofer y el chofer seleccionado no tiene viaje activo pero otros sí, auto-seleccionar el primer activo
+  // Si el Admin entra a vista Chofer y aún no hay ningún chofer seleccionado, auto-seleccionar el primero activo (sin sobreescribir selección manual)
   useEffect(() => {
-    if (esAdminReal && choferesConViajeActivo.size > 0) {
-      const tieneActivo = choferesConViajeActivo.has(choferSimuladoId);
-      if (!tieneActivo) {
+    if (esAdminReal && choferesConViajeActivo.size > 0 && !adminSeleccionManualRef.current) {
+      const tieneActivo = choferSimuladoId > 0 && choferesConViajeActivo.has(choferSimuladoId);
+      if (!tieneActivo && choferSimuladoId <= 0) {
         const primerId = Array.from(choferesConViajeActivo.keys())[0];
         if (primerId) {
           setChoferSimuladoId(primerId);
@@ -1733,7 +1796,7 @@ export const AppMovilPage: React.FC = () => {
         }
       }
     }
-  }, [esAdminReal, choferesConViajeActivo]);
+  }, [esAdminReal, choferesConViajeActivo, choferSimuladoId]);
   const [cargandoViajesEnVivo, setCargandoViajesEnVivo] = useState(false);
 
   // Estados para Módulo Administrador - Logística Móvil
@@ -2840,6 +2903,7 @@ export const AppMovilPage: React.FC = () => {
   const cargarViajeActivo = async (idTarget?: number, forzarId?: number) => {
     const idBusqueda = idTarget || choferEfectivoId;
     if (!idBusqueda) return;
+    const seq = ++cargaViajeSeqRef.current;
     const esModoSupervision = esAdminReal && (Boolean(idTarget) || Boolean(choferSimuladoId));
     const coincideChofer = (t: any) => {
       if (!t) return false;
@@ -7284,6 +7348,7 @@ export const AppMovilPage: React.FC = () => {
                 const esTicketHoySel = fechaViajeSel === hoyStr;
 
                 const seleccionarChofer = (nuevoId: number) => {
+                  adminSeleccionManualRef.current = true;
                   setChoferSimuladoId(nuevoId);
                   setDropdownChoferSupervisarAbierto(false);
                   // Limpiar inmediatamente estado y caché global del chofer anterior para evitar mezcla de información
@@ -7399,7 +7464,9 @@ export const AppMovilPage: React.FC = () => {
                             <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginTop: '2px' }}>
                               {viajeDelSeleccionado ? (
                                 <span style={{ color: '#15803d', fontWeight: 800 }}>
-                                  Ticket #{viajeDelSeleccionado.codigoTicket || viajeDelSeleccionado.id} • {ltsSeleccionado.toLocaleString()} L
+                                  Ticket #{viajeDelSeleccionado.codigoTicket || viajeDelSeleccionado.id}
+                                  {viajeDelSeleccionado.fecha ? ` • 📅 ${String(viajeDelSeleccionado.fecha).split('T')[0]}` : ''}
+                                  {' • '}{ltsSeleccionado.toLocaleString()} L
                                   {viajeDelSeleccionado.camionPlaca ? ` • 🚛 ${viajeDelSeleccionado.camionPlaca}` : ''}
                                 </span>
                               ) : (
@@ -7681,9 +7748,45 @@ export const AppMovilPage: React.FC = () => {
                       >
                         ● {viajeActivo.estado || 'EN RUTA'}
                       </span>
+                      {viajeActivo.fecha && (
+                        <span
+                          style={{
+                            background: '#eff6ff',
+                            color: '#1d4ed8',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            padding: '2px 7px',
+                            borderRadius: '6px',
+                            border: '1px solid #bfdbfe',
+                          }}
+                        >
+                          📅 {String(viajeActivo.fecha).split('T')[0]}
+                        </span>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <button
+                        type="button"
+                        onClick={abrirModalEditarTicket}
+                        style={{
+                          background: '#eff6ff',
+                          border: '1.5px solid #bfdbfe',
+                          color: '#1d4ed8',
+                          borderRadius: '8px',
+                          padding: '4px 9px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                        title="Modificar fecha, ruta o nota de este ticket"
+                      >
+                        <i className="fa-solid fa-pen-to-square"></i>
+                        <span>Editar</span>
+                      </button>
                       {tienePermisoCrearRuta && (
                         <button
                           type="button"
@@ -8505,7 +8608,7 @@ export const AppMovilPage: React.FC = () => {
                           {info.tituloTurno}
                         </div>
                         <div style={{ fontSize: '10.5px', opacity: esSel ? 0.95 : 0.8, marginTop: '2px' }}>
-                          Ticket #{v.codigoTicket || v.id} • {(v.totalLitrosFinca || 0).toLocaleString()} L
+                          Ticket #{v.codigoTicket || v.id}{v.fecha ? ` • 📅 ${String(v.fecha).split('T')[0]}` : ''} • {(v.totalLitrosFinca || 0).toLocaleString()} L
                         </div>
                       </button>
                     );
@@ -8534,6 +8637,21 @@ export const AppMovilPage: React.FC = () => {
                     <span style={{ fontSize: '15px', fontWeight: 900, color: '#166534' }}>
                       <i className="fa-solid fa-ticket mr-1"></i> Ticket #{viajeActivo.codigoTicket || viajeActivo.id}
                     </span>
+                    {viajeActivo.fecha && (
+                      <span
+                        style={{
+                          background: '#eff6ff',
+                          color: '#1d4ed8',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          padding: '1px 6px',
+                          borderRadius: '5px',
+                          border: '1px solid #bfdbfe',
+                        }}
+                      >
+                        📅 {String(viajeActivo.fecha).split('T')[0]}
+                      </span>
+                    )}
                     <span
                       style={{
                         background: '#dcfce7',
@@ -19468,6 +19586,113 @@ export const AppMovilPage: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* MODAL PARA MODIFICAR TICKET ACTIVO DEL CHOFER */}
+      {modalEditarTicketChofer && viajeActivo && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+          onClick={() => setModalEditarTicketChofer(false)}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '22px',
+              width: '100%',
+              maxWidth: '420px',
+              overflow: 'hidden',
+              boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)', padding: '16px 20px', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 900 }}>
+                  ✏️ Modificar Ticket #{viajeActivo.codigoTicket || viajeActivo.id}
+                </h4>
+                <div style={{ fontSize: '11.5px', opacity: 0.9, marginTop: '2px' }}>
+                  Ajusta la fecha, ruta o nota del viaje abierto
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalEditarTicketChofer(false)}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '8px', width: '32px', height: '32px', color: '#ffffff', cursor: 'pointer', fontWeight: 800 }}
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleGuardarEditarTicket} style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                  Fecha Operativa del Ticket
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={editTicketForm.fecha}
+                  onChange={(e) => setEditTicketForm((f) => ({ ...f, fecha: e.target.value }))}
+                  style={{ width: '100%', height: '42px', borderRadius: '12px', border: '1.5px solid #cbd5e1', padding: '0 12px', fontSize: '13.5px', fontWeight: 700, color: '#0f172a' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                  Ruta / Modo de Recolección
+                </label>
+                <select
+                  value={editTicketForm.rutaLogisticaId}
+                  onChange={(e) => setEditTicketForm((f) => ({ ...f, rutaLogisticaId: Number(e.target.value) }))}
+                  style={{ width: '100%', height: '42px', borderRadius: '12px', border: '1.5px solid #cbd5e1', padding: '0 12px', fontSize: '13px', fontWeight: 700, color: '#0f172a', background: '#ffffff' }}
+                >
+                  <option value={0}>🥛 Modo Libre (Sin Ruta Fija)</option>
+                  {rutasLogisticas.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      📍 {r.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                  Observación (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={editTicketForm.observacion}
+                  onChange={(e) => setEditTicketForm((f) => ({ ...f, observacion: e.target.value }))}
+                  placeholder="Nota del ticket..."
+                  style={{ width: '100%', height: '42px', borderRadius: '12px', border: '1.5px solid #cbd5e1', padding: '0 12px', fontSize: '13px', fontWeight: 600, color: '#0f172a' }}
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '10px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalEditarTicketChofer(false)}
+                  style={{ height: '44px', borderRadius: '12px', fontWeight: 700, border: '1.5px solid #cbd5e1', background: '#ffffff', color: '#475569', cursor: 'pointer', fontSize: '13px' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoEditarTicket}
+                  style={{ background: guardandoEditarTicket ? '#94a3b8' : 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)', border: 'none', fontWeight: 900, height: '44px', color: '#ffffff', borderRadius: '12px', cursor: guardandoEditarTicket ? 'not-allowed' : 'pointer', fontSize: '13.5px' }}
+                >
+                  {guardandoEditarTicket ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE AUTORIZACIONES PARA CREAR RUTA (SOLO ADMIN Y SUPERADMIN) */}
       {modalAutorizacionesChoferes && (

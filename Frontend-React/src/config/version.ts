@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 22,
+  minor: 23,
   patch: 1,
-  tag: 'v3.22.1',
+  tag: 'v3.23.1',
   ultimaActualizacion: '2026-11-15',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil y Backend v3.22.1: Paquete atómico por ticket (/control-rutas/sincronizar-paquete) con Fecha, Chofer, Modo (RUTA/LIBRE) y Fincas, validación estricta de TicketId+Chofer+Fecha en Backend, pre-validación por Chofer+Fecha+Fincas para tickets offline y bloqueo de reasignación cruzada en SyncEngine.',
+  descripcion: 'App Móvil y Backend v3.23.1: Bloqueo estricto en Backend y App Móvil para impedir que un chofer cree un segundo ticket mientras tenga uno ABIERTO en recolección (reutiliza el ticket vacío en 0 L si existiera, o exige enviarlo a Planta/Receptoría antes de crear otro).',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

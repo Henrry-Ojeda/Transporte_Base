@@ -2674,6 +2674,11 @@ export const AppMovilPage: React.FC = () => {
   const handleIniciarNuevoViajeChofer = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (iniciandoViajeChofer) return;
+    if (choferTieneTicketEnRutaActivo && !esAdminReal) {
+      toast.warning('Ya tienes un ticket abierto en ruta. Envíalo a Receptoría/Planta antes de iniciar uno nuevo.');
+      setModalNuevoViajeChofer(false);
+      return;
+    }
     if (!choferEfectivoId) {
       toast.error('No se ha detectado el conductor asignado');
       return;

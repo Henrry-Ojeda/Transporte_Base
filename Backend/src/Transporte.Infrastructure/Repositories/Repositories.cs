@@ -10215,10 +10215,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         ModifiedBy = @usuarioId
                     WHERE Id = @paradaExistenteId;
 
-                    -- Limpieza preventiva de duplicados accidentales de la misma finca en el ticket
+                    -- Limpieza preventiva de duplicados accidentales de la misma finca y MISMO tipo de leche en el ticket
                     DELETE FROM TB_RUTAS_RECOLECCION 
                     WHERE ControlRutaId = @controlRutaId 
                       AND FincaId = @fincaId 
+                      AND UPPER(ISNULL(TipoLeche, 'VACA')) = @tipoLeche
                       AND Id != @paradaExistenteId;";
 
                 await connection.ExecuteAsync(sqlUpdateRuta, new

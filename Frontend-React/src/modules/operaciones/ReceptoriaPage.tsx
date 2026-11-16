@@ -833,8 +833,11 @@ export const ReceptoriaPage: React.FC = () => {
 
   const esEntradaReceptoriaValida = (v: any): boolean => {
     if (!esTicketVisibleEnReceptoria(v)) return false;
+    const tienePorcionReceptoria = despachosCompanias.some(
+      (d: any) => Number(d.controlRutaId) === Number(v.id) && esDespachoReceptoria(d)
+    );
     const tipoDest = String(v.tipoDestino || '').toUpperCase().trim();
-    if (tipoDest === 'COMPANIA_DIRECTA') return false;
+    if (tipoDest === 'COMPANIA_DIRECTA' && !tienePorcionReceptoria) return false;
     const totalDespachadoDirecto = despachosCompanias
       .filter((d: any) => Number(d.controlRutaId) === Number(v.id) && !esDespachoReceptoria(d))
       .reduce((acc: number, d: any) => acc + Number(d.litrosDespachados || 0), 0);

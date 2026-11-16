@@ -10171,12 +10171,15 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
 
             int efectivoChoferId = (int?)viaje.UsuarioId ?? usuarioId;
 
-            // Unificación Anti-Duplicados: Si la finca ya existe en este viaje/ticket (tenga 0 litros o litros previos), se actualiza
+            // Unificación Anti-Duplicados por (Ticket + Finca + TipoLeche):
+            // Si la parada está en 0 litros (planificada) o ya existe con el MISMO TipoLeche (VACA/BUFALA), se actualiza;
+            // si es de distinto TipoLeche (ej. ya tiene BUFALA y se agrega VACA), se inserta un registro separado en el mismo ticket.
             var paradaExistenteId = await connection.ExecuteScalarAsync<long?>(@"
                 SELECT TOP 1 Id FROM TB_RUTAS_RECOLECCION 
-                WHERE ControlRutaId = @controlRutaId AND FincaId = @fincaId 
+                WHERE ControlRutaId = @controlRutaId AND FincaId = @fincaId
+                  AND (Litros = 0 OR Litros IS NULL OR UPPER(ISNULL(TipoLeche, 'VACA')) = @tipoLeche)
                 ORDER BY CASE WHEN Litros = 0 OR Litros IS NULL THEN 0 ELSE 1 END ASC, Id DESC", 
-                new { controlRutaId = dto.ControlRutaId, fincaId = dto.FincaId });
+                new { controlRutaId = dto.ControlRutaId, fincaId = dto.FincaId, tipoLeche = tipoLecheEfectivo });
 
             long nuevaRutaId;
             DateTime createdAtEfectivo = DateTime.UtcNow.AddHours(-4);

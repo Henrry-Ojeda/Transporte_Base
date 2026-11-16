@@ -132,6 +132,11 @@ export const ReceptoriaPage: React.FC = () => {
     queryFn: () => catalogosApi.getCompanias(true),
   });
 
+  const { data: fincasCatalogo = [] } = useQuery<any[]>({
+    queryKey: ['fincas-receptoria-catalogo'],
+    queryFn: () => catalogosApi.getFincas(),
+  });
+
   const { data: camiones = [] } = useQuery<CamionDto[]>({
     queryKey: ['camiones-receptoria'],
     queryFn: () => catalogosApi.getCamiones(true),
@@ -421,7 +426,7 @@ export const ReceptoriaPage: React.FC = () => {
     },
   });
 
-  const abrirModalValidarFincas = (viaje: any) => {
+  const abrirModalValidarFincas = (viaje: any, companiaIdFiltro?: number, despachoRef?: any) => {
     // REGLA OBLIGATORIA: Los procesos se respetan (incluso para ADMIN y SUPER ADMIN)
     if (!viajeEstaEnviadoAReceptoria(viaje)) {
       Swal.fire({
@@ -462,8 +467,33 @@ export const ReceptoriaPage: React.FC = () => {
         .then((fincas) => {
           const list = Array.isArray(fincas) ? fincas : [];
           // En validación de Receptoría: Solo mostrar fincas que tienen litros recolectados (> 0)
-          // Las fincas que no tienen litros ni nada NO se visualizan en la validación
-          const fincasConLitros = list.filter((f: any) => Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0) > 0);
+          let fincasConLitros = list.filter((f: any) => Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0) > 0);
+
+          // En 2. SALIDAS: si viene de un despacho a compañía (ej. COLONA), filtrar SOLO las fincas de esa compañía.
+          // Si esa compañía no tiene fincas en este ticket (ej. quesera externa), no se valida finca: ir directo a litros despachados y recibo.
+          if (companiaIdFiltro && companiaIdFiltro > 0) {
+            const idsDeCompania = new Set(
+              (fincasCatalogo || [])
+                .filter((fc: any) => Number(fc.companiaId) === Number(companiaIdFiltro))
+                .map((fc: any) => Number(fc.id))
+            );
+            const fincasCompania = fincasConLitros.filter((f: any) => idsDeCompania.has(Number(f.fincaId || f.id)));
+            if (fincasCompania.length === 0) {
+              setModalValidarFincasTicket(false);
+              setTicketsFincasValidadas((prev) => new Set(prev).add(viaje.id));
+              if (despachoRef) {
+                setDespachoSeleccionado(despachoRef);
+                setLitrosConfirmadosInput(Number(despachoRef.litrosDespachados || despachoRef.LitrosDespachados || 0));
+                setObsConfirmacionInput('');
+                setModalConfirmar(true);
+              }
+              return;
+            }
+            fincasConLitros = fincasCompania;
+            const totalFiltrado = fincasCompania.reduce((acc: number, f: any) => acc + Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0), 0);
+            setViajeParaRecibir((prev: any) => prev ? { ...prev, totalLitrosRecogidos: totalFiltrado, totalLitrosFinca: totalFiltrado } : prev);
+          }
+
           setFincasViajeVerificar(fincasConLitros);
           if (ticketsFincasValidadas.has(viaje.id)) {
             setFincasVerificadasIds(new Set(fincasConLitros.map((f: any, idx: number) => Number(f.id || f.fincaId || idx))));
@@ -533,16 +563,20 @@ export const ReceptoriaPage: React.FC = () => {
       toast.error('Este despacho no tiene ticket de recolección de ruta vinculado.');
       return;
     }
-    const viajeCorrespondiente = viajesActivos.find((v) => v.id === cRutaId) || {
-      id: cRutaId,
-      camionPlaca: despacho.camionPlaca,
-      choferNombre: despacho.nombreConductor || (despacho as any).conductorNombre,
-      totalLitrosRecogidos: despacho.litrosDespachados,
-      procesoActualId: 3,
-      estado: 'RECEPCIONADO',
+    const companiaIdDesp = Number(despacho.companiaId || 0);
+    const viajeCorrespondiente = {
+      ...(viajesActivos.find((v) => v.id === cRutaId) || {
+        id: cRutaId,
+        camionPlaca: despacho.camionPlaca,
+        choferNombre: despacho.nombreConductor || (despacho as any).conductorNombre,
+        totalLitrosRecogidos: despacho.litrosDespachados,
+        procesoActualId: 3,
+        estado: 'RECEPCIONADO',
+        nombreCompaniaDestino: despacho.nombreCompania || (despacho as any).companiaNombre,
+      }),
       nombreCompaniaDestino: despacho.nombreCompania || (despacho as any).companiaNombre,
     };
-    abrirModalValidarFincas(viajeCorrespondiente);
+    abrirModalValidarFincas(viajeCorrespondiente, companiaIdDesp, despacho);
   };
 
   const abrirModalVerificarViaje = (viaje: any) => {
@@ -1964,7 +1998,7 @@ export const ReceptoriaPage: React.FC = () => {
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {d.controlRutaId && (
+                        {d.controlRutaId && (fincasCatalogo || []).some((fc: any) => Number(fc.companiaId) === Number(d.companiaId)) && (
                           <button
                             type="button"
                             className="btn btn-sm"
@@ -1999,7 +2033,11 @@ export const ReceptoriaPage: React.FC = () => {
                             setDespachoSeleccionado(d);
                             setLitrosConfirmadosInput(Number(d.litrosDespachados || (d as any).LitrosDespachados || 0));
                             setObsConfirmacionInput('');
-                            if (d.controlRutaId && !ticketsFincasValidadas.has(Number(d.controlRutaId))) {
+                            if (
+                              d.controlRutaId &&
+                              !ticketsFincasValidadas.has(Number(d.controlRutaId)) &&
+                              (fincasCatalogo || []).some((fc: any) => Number(fc.companiaId) === Number(d.companiaId))
+                            ) {
                               abrirModalValidarFincasDesdeDespacho(d);
                             } else {
                               setModalConfirmar(true);

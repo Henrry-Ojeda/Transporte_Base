@@ -5411,8 +5411,11 @@ export const AppMovilPage: React.FC = () => {
       temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
       observacion: formCarga.observacion,
       fotoRecibo: formCarga.fotoRecibo || undefined,
+      latitud: gpsCaptura?.latitud,
+      longitud: gpsCaptura?.longitud,
+      precisionMetros: gpsCaptura?.precisionMetros,
       synced: sincronizadoOnline,
-    };
+    } as any;
 
     // 7.- Si ya existe una carga local para ESTA finca en ESTE MISMO ticket, actualizarla sin tocar los demás tickets
     const idxExistente = cargas.findIndex((c) => {
@@ -5433,8 +5436,11 @@ export const AppMovilPage: React.FC = () => {
         temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
         observacion: formCarga.observacion,
         fotoRecibo: formCarga.fotoRecibo || nuevasCargas[idxExistente].fotoRecibo,
+        latitud: gpsCaptura?.latitud ?? (nuevasCargas[idxExistente] as any).latitud,
+        longitud: gpsCaptura?.longitud ?? (nuevasCargas[idxExistente] as any).longitud,
+        precisionMetros: gpsCaptura?.precisionMetros ?? (nuevasCargas[idxExistente] as any).precisionMetros,
         synced: sincronizadoOnline,
-      };
+      } as any;
     } else {
       nuevasCargas = [nuevaCarga, ...cargas];
     }
@@ -5460,6 +5466,9 @@ export const AppMovilPage: React.FC = () => {
       foto: formCarga.fotoRecibo || null,
       observaciones: formCarga.observacion,
       fechaRegistro: new Date().toISOString(),
+      latitud: gpsCaptura?.latitud ?? null,
+      longitud: gpsCaptura?.longitud ?? null,
+      precisionMetros: gpsCaptura?.precisionMetros ?? null,
       estadoSync: sincronizadoOnline ? 'SINCRONIZADO' : 'PENDIENTE',
     }).then((nuevoIdLocal) => {
       if (nuevoIdLocal) {

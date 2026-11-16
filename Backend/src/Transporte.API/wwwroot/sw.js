@@ -1,5 +1,5 @@
 // Service Worker para Rutas Móvil (Offline-First / PWA Ultra-Resiliente)
-const CACHE_NAME = 'rutas-movil-v3.32.1';
+const CACHE_NAME = 'rutas-movil-v3.33.1';
 const STATIC_ASSETS = [
   "/",
   "/app",
@@ -9,13 +9,13 @@ const STATIC_ASSETS = [
   "/manifest.json",
   "/favicon.svg",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css",
-  "/assets/index-34MVrnQu.css",
-  "/assets/index-D8ecnBEa.js",
+  "/assets/index-BlTVJSD1.js",
+  "/assets/index-Ca_q23gi.css",
   "/assets/rolldown-runtime-XKyaHtl9.js",
   "/assets/vendor-excel-D_lWTlWp.js",
   "/assets/vendor-query-DagBFWEK.js",
-  "/assets/vendor-react-BnStMptl.js",
-  "/assets/vendor-ui-BmSiQIWA.js"
+  "/assets/vendor-react-bhXAq7P0.js",
+  "/assets/vendor-ui-CGThOhHL.js"
 ];
 
 self.addEventListener('install', (event) => {

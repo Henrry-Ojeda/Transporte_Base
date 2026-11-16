@@ -828,14 +828,26 @@ export const ReceptoriaPage: React.FC = () => {
     ...companiasUnicasHoy.map((cp) => ({ value: cp, label: cp }))
   ], [companiasUnicasHoy]);
 
-  // Conteos globales reactivos para badges y filtros (excluye tickets abiertos en ruta)
+  const esEntradaReceptoriaValida = (v: any): boolean => {
+    if (!esTicketVisibleEnReceptoria(v)) return false;
+    const tipoDest = String(v.tipoDestino || '').toUpperCase().trim();
+    if (tipoDest === 'COMPANIA_DIRECTA') return false;
+    const totalDespachadoDirecto = despachosCompanias
+      .filter((d: any) => Number(d.controlRutaId) === Number(v.id))
+      .reduce((acc: number, d: any) => acc + Number(d.litrosDespachados || 0), 0);
+    const litrosFinca = Number(v.totalLitrosFinca || 0);
+    if (litrosFinca > 0 && totalDespachadoDirecto >= litrosFinca) return false;
+    return true;
+  };
+
+  // Conteos globales reactivos para badges y filtros (excluye tickets abiertos en ruta y entregas directas a compañía)
   const conteosEntradas = useMemo(() => {
     let total = 0;
     let enSilos = 0;
     let recepcionadas = 0;
 
     viajesActivos.forEach((v: any) => {
-      if (!esTicketVisibleEnReceptoria(v)) return;
+      if (!esEntradaReceptoriaValida(v)) return;
       if (filtroFecha) {
         const fechaTicket = v.fecha ? v.fecha.split('T')[0] : (v.createdAt ? v.createdAt.split('T')[0] : '');
         if (fechaTicket && fechaTicket !== filtroFecha) return;
@@ -852,7 +864,7 @@ export const ReceptoriaPage: React.FC = () => {
     });
 
     return { total, enSilos, recepcionadas };
-  }, [viajesActivos, filtroFecha]);
+  }, [viajesActivos, despachosCompanias, filtroFecha]);
 
   const conteosSalidas = useMemo(() => {
     let total = 0;
@@ -877,12 +889,12 @@ export const ReceptoriaPage: React.FC = () => {
     return { total, enTransito, finalizadas };
   }, [despachosCompanias, filtroFecha]);
 
-  // Bandeja 1: Camiones en espera (Entradas a Planta / Receptoría — solo tickets enviados a receptoría)
+  // Bandeja 1: Camiones en espera (Entradas a Planta / Receptoría — solo tickets enviados a receptoría, excluyendo entregas 100% directas a compañía)
   const camionesEnEspera = useMemo(() => {
     return viajesActivos
       .filter((v: any) => {
-        // 0. Excluir estrictamente tickets abiertos en ruta (aún no enviados a receptoría)
-        if (!esTicketVisibleEnReceptoria(v)) {
+        // 0. Excluir estrictamente tickets abiertos en ruta o 100% entregados directo a compañía
+        if (!esEntradaReceptoriaValida(v)) {
           return false;
         }
 

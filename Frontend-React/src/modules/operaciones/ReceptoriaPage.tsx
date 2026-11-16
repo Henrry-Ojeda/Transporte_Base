@@ -828,12 +828,15 @@ export const ReceptoriaPage: React.FC = () => {
     ...companiasUnicasHoy.map((cp) => ({ value: cp, label: cp }))
   ], [companiasUnicasHoy]);
 
+  const esDespachoReceptoria = (d: any): boolean =>
+    esReceptoriaPrincipal(d?.companiaNombre || d?.nombreCompania || d?.destino || '');
+
   const esEntradaReceptoriaValida = (v: any): boolean => {
     if (!esTicketVisibleEnReceptoria(v)) return false;
     const tipoDest = String(v.tipoDestino || '').toUpperCase().trim();
     if (tipoDest === 'COMPANIA_DIRECTA') return false;
     const totalDespachadoDirecto = despachosCompanias
-      .filter((d: any) => Number(d.controlRutaId) === Number(v.id))
+      .filter((d: any) => Number(d.controlRutaId) === Number(v.id) && !esDespachoReceptoria(d))
       .reduce((acc: number, d: any) => acc + Number(d.litrosDespachados || 0), 0);
     const litrosFinca = Number(v.totalLitrosFinca || 0);
     if (litrosFinca > 0 && totalDespachadoDirecto >= litrosFinca) return false;
@@ -872,6 +875,7 @@ export const ReceptoriaPage: React.FC = () => {
     let finalizadas = 0;
 
     despachosCompanias.forEach((d: any) => {
+      if (esDespachoReceptoria(d)) return;
       if (filtroFecha) {
         const fechaDesp = d.fecha ? d.fecha.split('T')[0] : (d.createdAt ? d.createdAt.split('T')[0] : '');
         if (fechaDesp && fechaDesp !== filtroFecha) return;
@@ -957,6 +961,7 @@ export const ReceptoriaPage: React.FC = () => {
     if (subFiltroSalidas === 'FINALIZADAS') return [];
 
     return despachosCompanias.filter((d) => {
+      if (esDespachoReceptoria(d)) return false;
       // 1. Filtro estricto de Fecha
       if (filtroFecha) {
         const fechaDesp = d.fecha ? d.fecha.split('T')[0] : (d.createdAt ? d.createdAt.split('T')[0] : '');
@@ -1004,6 +1009,7 @@ export const ReceptoriaPage: React.FC = () => {
     if (subFiltroSalidas === 'EN_TRANSITO') return [];
 
     return despachosCompanias.filter((d) => {
+      if (esDespachoReceptoria(d)) return false;
       // 1. Filtro estricto de Fecha
       if (filtroFecha) {
         const fechaDesp = d.fecha ? d.fecha.split('T')[0] : (d.createdAt ? d.createdAt.split('T')[0] : '');

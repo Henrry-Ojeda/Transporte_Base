@@ -1395,7 +1395,7 @@ const RenderReporteReceptorias: React.FC<{
                     <tr key={dIdx}>
                       <td>{formatearFechaLocal(d.fecha)}</td>
                       <td style={{ fontWeight: 800 }}>{formatearNumero(d.litros)}</td>
-                      <td className="text-left">{(d.observacion || '').replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '').trim() || '-'}</td>
+                      <td className="text-left">{(d.observacion || '').replace(/Asignada en inicio de ruta\s*\[ORIGEN_PLANIFICACION\]/gi, '').replace(/\[ORIGEN_(M[OÓ]VIL|PLANIFICACION)\]/gi, '').trim() || '-'}</td>
                     </tr>
                   ))
                 )}
@@ -1855,7 +1855,8 @@ const RenderReporteFincas: React.FC<{
                         const obs = (d.observacion || d.Observacion || '').toUpperCase();
                         const isAcida = Boolean(d.esAcida) || obs.includes('ACID') || obs.includes('MALA') || String(d.tipoLeche || '').includes('ACID');
                         let obsLimpia = (d.observacion || d.Observacion || '')
-                          .replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '')
+                          .replace(/Asignada en inicio de ruta\s*\[ORIGEN_PLANIFICACION\]/gi, '')
+                          .replace(/\[ORIGEN_(M[OÓ]VIL|PLANIFICACION)\]/gi, '')
                           .replace(/\[\s*BUFAL[AO]\s*\]/gi, '')
                           .replace(/\bBUFAL[AO]\b/gi, '')
                           .trim();

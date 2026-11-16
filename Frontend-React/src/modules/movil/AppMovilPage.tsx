@@ -8,6 +8,8 @@ import { operacionesApi } from '@/api/operaciones.api';
 import { sistemaApi } from '@/api/sistema.api';
 import { mantenimientoApi } from '@/api/mantenimiento.api';
 import { combustibleApi } from '@/api/combustible.api';
+import { mapaRutasApi } from '@/api/mapaRutas.api';
+import { capturarGpsSilencioso, esTicketAbiertoGps } from '@/utils/gpsPrivacidad';
 import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.api';
 import { finanzasApi } from '@/api/finanzas.api';
 import { useAuthStore } from '@/stores/authStore';
@@ -1459,7 +1461,40 @@ export const AppMovilPage: React.FC = () => {
   const hasTenantModule = useAuthStore((s) => s.hasTenantModule);
   const syncModulosTenant = useAuthStore((s) => s.syncModulosTenant);
   const tieneModuloBufala = hasTenantModule('MOD_LECHE_BUFALA');
+  const tieneModuloMapaRutas = hasTenantModule('MOD_MAPA_RUTAS');
+  const gpsEntradaEnviadoRef = useRef<number | null>(null);
   const authEmpresa = authUser?.empresaNombre;
+
+  // Privacidad GPS: al entrar a la app, solo capturar ubicación si MOD_MAPA_RUTAS está activo Y el ticket está ABIERTO
+  useEffect(() => {
+    const ticketId = viajeActivo?.id;
+    if (
+      !tieneModuloMapaRutas ||
+      !ticketId ||
+      ticketId <= 0 ||
+      !esTicketAbiertoGps(viajeActivo) ||
+      gpsEntradaEnviadoRef.current === ticketId ||
+      typeof navigator === 'undefined' ||
+      !navigator.onLine
+    ) {
+      return;
+    }
+
+    gpsEntradaEnviadoRef.current = ticketId;
+    capturarGpsSilencioso(4000).then((gps) => {
+      if (!gps) return;
+      mapaRutasApi
+        .registrarPuntoGps({
+          controlRutaId: ticketId,
+          latitud: gps.latitud,
+          longitud: gps.longitud,
+          precisionMetros: gps.precisionMetros,
+          evento: 'ENTRADA_APP',
+          fechaHoraDispositivo: new Date().toISOString(),
+        })
+        .catch(() => {});
+    });
+  }, [tieneModuloMapaRutas, viajeActivo?.id, viajeActivo?.procesoActualId]);
 
   // Auto-sintetizar dispositivo si el usuario ya inició sesión en la plataforma
   useEffect(() => {
@@ -5308,6 +5343,12 @@ export const AppMovilPage: React.FC = () => {
     const rawTicketId = viajeActivo?.id || viajeSeleccionadoId || (viajesChofer.length > 0 ? viajesChofer[0].id : 0);
     const ticketIdEfectivo = ticketsLocales.resolverId(rawTicketId) || rawTicketId;
 
+    // Privacidad GPS: solo capturar ubicación si el módulo está activo y el ticket está ABIERTO
+    const gpsCaptura =
+      tieneModuloMapaRutas && esTicketAbiertoGps(viajeActivo)
+        ? await capturarGpsSilencioso(2500)
+        : null;
+
     // Intento de guardado directo y síncrono si el dispositivo está online y el ticket ya existe en servidor
     let sincronizadoOnline = false;
     if (isOnline && navigator.onLine && ticketIdEfectivo > 0) {
@@ -5325,7 +5366,10 @@ export const AppMovilPage: React.FC = () => {
           observacion: obsConOrigen,
           temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
           fotoComprobante: formCarga.fotoRecibo || undefined,
-        });
+          latitud: gpsCaptura?.latitud,
+          longitud: gpsCaptura?.longitud,
+          precisionMetros: gpsCaptura?.precisionMetros,
+        } as any);
         sincronizadoOnline = true;
       } catch (errApi: any) {
         console.warn('Error al enviar carga directamente al servidor, se guardará en cola local:', errApi);
@@ -5346,7 +5390,10 @@ export const AppMovilPage: React.FC = () => {
         temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
         observacion: `${formCarga.observacion ? formCarga.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim(),
         fotoComprobante: formCarga.fotoRecibo || undefined,
-      });
+        latitud: gpsCaptura?.latitud,
+        longitud: gpsCaptura?.longitud,
+        precisionMetros: gpsCaptura?.precisionMetros,
+      } as any);
     }
 
     const nuevaCarga: CargaOffline = {

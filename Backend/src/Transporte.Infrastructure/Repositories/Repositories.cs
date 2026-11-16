@@ -1249,6 +1249,7 @@ namespace Transporte.Infrastructure.Repositories
                     f.PrecioLitroUSD, f.PrecioLitroAcidaUSD, 
                     ISNULL(f.TieneDosTiposLeche, 0) AS TieneDosTiposLeche,
                     ISNULL(f.PrecioBufalaLitroUSD, 0) AS PrecioBufalaLitroUSD,
+                    f.Latitud, f.Longitud,
                     ISNULL((SELECT CAST(ROUND(AVG(CAST(r.Litros AS FLOAT)), 0) AS INT) FROM TB_RUTAS_RECOLECCION r WHERE r.FincaId = f.Id AND r.Fecha >= DATEADD(day, -60, GETDATE())), ISNULL((SELECT CAST(ROUND(AVG(CAST(sub.Litros AS FLOAT)), 0) AS INT) FROM (SELECT TOP 15 r2.Litros FROM TB_RUTAS_RECOLECCION r2 WHERE r2.FincaId = f.Id ORDER BY r2.Fecha DESC) sub), 0)) AS PromedioLitrosDiarios,
                     ISNULL((SELECT TOP 1 r.Litros FROM TB_RUTAS_RECOLECCION r WHERE r.FincaId = f.Id ORDER BY r.Fecha DESC), 0) AS UltimoLitros,
                     f.Activo, f.IsDeleted, f.CreatedAt
@@ -1300,6 +1301,7 @@ namespace Transporte.Infrastructure.Repositories
                     f.PrecioLitroUSD, f.PrecioLitroAcidaUSD, 
                     ISNULL(f.TieneDosTiposLeche, 0) AS TieneDosTiposLeche,
                     ISNULL(f.PrecioBufalaLitroUSD, 0) AS PrecioBufalaLitroUSD,
+                    f.Latitud, f.Longitud,
                     ISNULL((SELECT CAST(ROUND(AVG(CAST(r.Litros AS FLOAT)), 0) AS INT) FROM TB_RUTAS_RECOLECCION r WHERE r.FincaId = f.Id AND r.Fecha >= DATEADD(day, -30, GETDATE())), 0) AS PromedioLitrosDiarios,
                     ISNULL((SELECT TOP 1 r.Litros FROM TB_RUTAS_RECOLECCION r WHERE r.FincaId = f.Id ORDER BY r.Fecha DESC), 0) AS UltimoLitros,
                     f.Activo, f.IsDeleted, f.CreatedAt
@@ -1345,9 +1347,9 @@ namespace Transporte.Infrastructure.Repositories
             var sql = @"
                 DECLARE @InsertedId INT;
                 INSERT INTO TB_FINCAS 
-                (Codigo, Nombre, PropietarioId, Propietario, CedulaRIF, Telefono, BancoId, NumeroCuenta, TipoServicioId, CompaniaId, RutaId, PrecioLitroUSD, PrecioLitroAcidaUSD, TieneDosTiposLeche, PrecioBufalaLitroUSD, Activo, IsDeleted, CreatedAt)
+                (Codigo, Nombre, PropietarioId, Propietario, CedulaRIF, Telefono, BancoId, NumeroCuenta, TipoServicioId, CompaniaId, RutaId, PrecioLitroUSD, PrecioLitroAcidaUSD, TieneDosTiposLeche, PrecioBufalaLitroUSD, Latitud, Longitud, Activo, IsDeleted, CreatedAt)
                 VALUES 
-                ('', @Nombre, @PropietarioId, @Propietario, @CedulaRIF, @Telefono, @BancoId, @NumeroCuenta, @TipoServicioId, @CompaniaId, @RutaId, @PrecioLitroUSD, @PrecioLitroAcidaUSD, @TieneDosTiposLeche, @PrecioBufalaLitroUSD, @Activo, 0, GETDATE());
+                ('', @Nombre, @PropietarioId, @Propietario, @CedulaRIF, @Telefono, @BancoId, @NumeroCuenta, @TipoServicioId, @CompaniaId, @RutaId, @PrecioLitroUSD, @PrecioLitroAcidaUSD, @TieneDosTiposLeche, @PrecioBufalaLitroUSD, @Latitud, @Longitud, @Activo, 0, GETDATE());
                 SET @InsertedId = SCOPE_IDENTITY();
                 
                 UPDATE TB_FINCAS 
@@ -1447,6 +1449,8 @@ namespace Transporte.Infrastructure.Repositories
                     PrecioLitroAcidaUSD = COALESCE(@PrecioLitroAcidaUSD, PrecioLitroAcidaUSD),
                     TieneDosTiposLeche = COALESCE(@TieneDosTiposLeche, TieneDosTiposLeche),
                     PrecioBufalaLitroUSD = COALESCE(@PrecioBufalaLitroUSD, PrecioBufalaLitroUSD),
+                    Latitud = COALESCE(@Latitud, Latitud),
+                    Longitud = COALESCE(@Longitud, Longitud),
                     Activo = COALESCE(@Activo, Activo)
                 WHERE Id = @id AND IsDeleted = 0";
 
@@ -1465,6 +1469,8 @@ namespace Transporte.Infrastructure.Repositories
                 dto.PrecioLitroAcidaUSD,
                 dto.TieneDosTiposLeche,
                 dto.PrecioBufalaLitroUSD,
+                dto.Latitud,
+                dto.Longitud,
                 dto.Activo
             });
 
@@ -10102,7 +10108,10 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         Fecha = fechaPaquete,
                         Hora = f.Hora,
                         Observacion = f.Observacion,
-                        FotoComprobante = f.FotoComprobante
+                        FotoComprobante = f.FotoComprobante,
+                        Latitud = f.Latitud,
+                        Longitud = f.Longitud,
+                        PrecisionMetros = f.PrecisionMetros
                     };
                     await AgregarFincaAViajeAsync(fincaDto, usuarioId, rol);
                     fincasSincronizadas++;
@@ -10271,6 +10280,34 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     ModifiedBy = @usuarioId
                 WHERE Id = @controlRutaId",
                 new { dto.ControlRutaId, usuarioId });
+
+            // Privacidad GPS: solo registrar coordenadas si el ticket está ABIERTO (ProcesoActualId = 1)
+            if (dto.Latitud.HasValue && dto.Longitud.HasValue && (int)viaje.ProcesoActualId == 1)
+            {
+                try
+                {
+                    await connection.ExecuteAsync(@"
+                        UPDATE TB_RUTAS_RECOLECCION
+                        SET Latitud = @lat, Longitud = @lng, GpsCapturadoAt = @gpsAt
+                        WHERE Id = @nuevaRutaId;
+
+                        INSERT INTO TB_GPS_PUNTOS_VIAJE (ControlRutaId, UsuarioId, CamionId, FincaId, Latitud, Longitud, PrecisionMetros, Evento, FechaHoraDispositivo, CreatedAt)
+                        VALUES (@controlRutaId, @choferId, @camionId, @fincaId, @lat, @lng, @precision, 'REGISTRO_LITROS', @gpsAt, GETDATE());",
+                        new
+                        {
+                            lat = dto.Latitud.Value,
+                            lng = dto.Longitud.Value,
+                            precision = dto.PrecisionMetros,
+                            gpsAt = createdAtEfectivo,
+                            nuevaRutaId,
+                            controlRutaId = dto.ControlRutaId,
+                            choferId = (int)viaje.UsuarioId,
+                            camionId = (int?)viaje.CamionId,
+                            fincaId = dto.FincaId
+                        });
+                }
+                catch { /* No bloquear guardado de litros si falla registro GPS */ }
+            }
 
             // Notificar a supervisores y administradores que se agregó una finca a este ticket
             try

@@ -25,6 +25,8 @@ export interface FincaDto {
   tipoServicioNombre?: string;
   companiaId?: number;
   companiaNombre?: string;
+  latitud?: number | null;
+  longitud?: number | null;
 }
 
 export interface GuardarFincaDto {
@@ -41,6 +43,8 @@ export interface GuardarFincaDto {
   tipoLeche?: string;
   telefono?: string;
   ubicacion?: string;
+  latitud?: number | null;
+  longitud?: number | null;
   activo: boolean;
 }
 

@@ -7,11 +7,13 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { PropietarioSelect, CompaniaSelect } from '@/components/selectors';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import { useAuthStore } from '@/stores/authStore';
+import { LeafletMapPicker } from '@/components/maps/LeafletMapPicker';
 import type { FincaDto, GuardarFincaDto, PropietarioDto } from '@/types';
 
 export const FincasPage: React.FC = () => {
   const queryClient = useQueryClient();
   const hasBufala = useAuthStore((state) => state.hasTenantModule('MOD_LECHE_BUFALA'));
+  const hasMapaRutas = useAuthStore((state) => state.hasTenantModule('MOD_MAPA_RUTAS'));
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalPrecioMasivo, setModalPrecioMasivo] = useState(false);
@@ -32,6 +34,8 @@ export const FincasPage: React.FC = () => {
     tipoLeche: 'VACA',
     telefono: '',
     ubicacion: '',
+    latitud: null,
+    longitud: null,
     activo: true,
   };
   const [form, setForm] = useState<GuardarFincaDto>(initialForm);
@@ -146,6 +150,8 @@ export const FincasPage: React.FC = () => {
       tipoLeche: item.tieneDosTiposLeche ? 'AMBOS' : (item.tipoLeche || 'VACA'),
       telefono: item.telefono || '',
       ubicacion: item.ubicacion || '',
+      latitud: item.latitud ?? null,
+      longitud: item.longitud ?? null,
       activo: item.activo !== false,
     });
     setModalAbierto(true);
@@ -1143,6 +1149,41 @@ export const FincasPage: React.FC = () => {
                     }}
                   />
                 </div>
+
+                {hasMapaRutas && (
+                  <div style={{ padding: '12px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#f8fafc' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Latitud (GPS)</label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          value={form.latitud ?? ''}
+                          onChange={(e) => setForm({ ...form, latitud: e.target.value ? Number(e.target.value) : null })}
+                          placeholder="Ej: 8.620000"
+                          style={{ width: '100%', height: '38px', fontSize: '13px', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 10px', background: '#fff' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Longitud (GPS)</label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          value={form.longitud ?? ''}
+                          onChange={(e) => setForm({ ...form, longitud: e.target.value ? Number(e.target.value) : null })}
+                          placeholder="Ej: -71.150000"
+                          style={{ width: '100%', height: '38px', fontSize: '13px', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0 10px', background: '#fff' }}
+                        />
+                      </div>
+                    </div>
+                    <LeafletMapPicker
+                      latitud={form.latitud}
+                      longitud={form.longitud}
+                      onChange={(lat, lng) => setForm((prev) => ({ ...prev, latitud: lat, longitud: lng }))}
+                      height="220px"
+                    />
+                  </div>
+                )}
 
                 {/* 6. Checkbox Finca Activa */}
                 <div

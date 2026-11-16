@@ -143,7 +143,13 @@ const unificarParadasConCargasLocales = (ticketId: number, paradasBase: any[] | 
           const fIdPrev = Number(pPrev.fincaId || pPrev.FincaId || 0);
           const ltsPrev = Number(pPrev.litros ?? pPrev.Litros ?? 0);
           if (fIdPrev > 0 && ltsPrev > 0 && pPrev.origen === 'Teléfono') {
-            const idx = lista.findIndex((p) => Number(p.fincaId || p.FincaId || 0) === fIdPrev);
+            const tipoPrev = String(pPrev.tipoLeche || pPrev.TipoLeche || 'VACA').toUpperCase();
+            const idx = lista.findIndex((p) => {
+              if (Number(p.fincaId || p.FincaId || 0) !== fIdPrev) return false;
+              const pLts = Number(p.litros ?? p.Litros ?? 0);
+              const pTipo = String(p.tipoLeche || p.TipoLeche || 'VACA').toUpperCase();
+              return pLts === 0 || pTipo === tipoPrev;
+            });
             if (idx >= 0 && Number(lista[idx].litros ?? lista[idx].Litros ?? 0) === 0) {
               lista[idx] = { ...lista[idx], ...pPrev, litros: ltsPrev, Litros: ltsPrev };
             } else if (idx < 0) {
@@ -166,7 +172,13 @@ const unificarParadasConCargasLocales = (ticketId: number, paradasBase: any[] | 
   for (const c of cargasTicket) {
     const fId = Number(c.fincaId || 0);
     if (fId <= 0) continue;
-    const idx = lista.findIndex((p) => Number(p.fincaId || p.FincaId || 0) === fId);
+    const cTipo = String(c.tipoLeche || 'VACA').toUpperCase();
+    const idx = lista.findIndex((p) => {
+      if (Number(p.fincaId || p.FincaId || 0) !== fId) return false;
+      const pLts = Number(p.litros ?? p.Litros ?? 0);
+      const pTipo = String(p.tipoLeche || p.TipoLeche || 'VACA').toUpperCase();
+      return pLts === 0 || pTipo === cTipo;
+    });
     if (idx >= 0) {
       const ltsActual = Number(lista[idx].litros ?? lista[idx].Litros ?? 0);
       if (!c.synced || ltsActual === 0) {

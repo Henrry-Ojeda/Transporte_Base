@@ -5976,10 +5976,12 @@ export const RecoleccionRutasPage: React.FC = () => {
                   return;
                 }
 
-                // REGLA: Si dos choferes tienen o intentan confirmar la misma finca, se requiere confirmación explícita
+                // REGLA: Si dos choferes tienen o intentan confirmar la misma finca y MISMO tipo de leche, se requiere confirmación explícita
                 const fechaTarget = (viajeActivo.fecha ? viajeActivo.fecha.split('T')[0] : (formFinca.fecha || hoyStr));
+                const tipoTarget = (formFinca.tipoLeche || 'VACA').toUpperCase();
                 const fincaYaConfirmada = recolecciones.find((r) =>
                   Number(r.fincaId) === Number(formFinca.fincaId) &&
+                  String((r as any).tipoLeche || (r as any).TipoLeche || 'VACA').toUpperCase() === tipoTarget &&
                   Number(r.litros || (r as any).Litros || 0) > 0 &&
                   (r.fecha || '').split('T')[0] === fechaTarget &&
                   Number(r.controlRutaId) !== Number(viajeActivo.id)

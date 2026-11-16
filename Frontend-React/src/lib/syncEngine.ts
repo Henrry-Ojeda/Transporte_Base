@@ -15,6 +15,7 @@ import { mantenimientoApi } from '@/api/mantenimiento.api';
 import { notificacionesApi } from '@/api/notificaciones.api';
 import { catalogosApi } from '@/api/catalogos.api';
 import { ticketsLocales } from './ticketsLocales';
+import { movilAuditLog } from './movilAuditLog';
 
 export interface SyncStatusEvent {
   sincronizando: boolean;
@@ -375,11 +376,25 @@ class SyncEngine {
           subidosDbId.add(carga.idLocal);
           subidosClave.add(`${ticketId}_${Number(carga.fincaId)}`);
           exitosas++;
+          movilAuditLog.registrar({
+            tipo: 'SYNC_OK',
+            ticketId,
+            fincaId: Number(carga.fincaId),
+            litros: Number(carga.litros),
+            detalle: `Sincronizada recolección desde IndexedDB (idLocal=${carga.idLocal}, hora=${payloadEnvio.hora || 'N/A'})`,
+          });
         }
       } catch (err: any) {
         huboFalloRed = true;
         console.error(`[SyncEngine] Error subiendo recolección #${carga.idLocal}:`, err);
         await dbLocal.marcarRecoleccionError(carga.idLocal, err?.message || 'Error al conectar con servidor').catch(() => {});
+        movilAuditLog.registrar({
+          tipo: 'SYNC_ERROR',
+          ticketId: carga.ticketId,
+          fincaId: Number(carga.fincaId),
+          litros: Number(carga.litros),
+          detalle: `Error subiendo IndexedDB (idLocal=${carga.idLocal}): ${err?.response?.data?.message || err?.message || 'Error de red'}`,
+        });
       }
     }
 
@@ -459,10 +474,26 @@ class SyncEngine {
                       subidosClave.add(`${tReal}_${fId}`);
                       huboCambiosCargas = true;
                       exitosas++;
+                      movilAuditLog.registrar({
+                        tipo: 'SYNC_OK',
+                        ticketId: tReal,
+                        fincaId: fId,
+                        fincaNombre: c.fincaNombre,
+                        litros: Number(c.litros),
+                        detalle: `Sincronizada carga local en reintento (hora=${payloadEnvio.hora || 'N/A'})`,
+                      });
                     }
-                  } catch (errCarga) {
+                  } catch (errCarga: any) {
                     huboFalloRed = true;
                     console.warn(`[SyncEngine] Pendiente reintento de carga local finca #${fId} en ticket #${tReal}:`, errCarga);
+                    movilAuditLog.registrar({
+                      tipo: 'SYNC_ERROR',
+                      ticketId: tReal,
+                      fincaId: fId,
+                      fincaNombre: c.fincaNombre,
+                      litros: Number(c.litros),
+                      detalle: `Fallo reintento carga local: ${errCarga?.response?.data?.message || errCarga?.message || 'Error de red'}`,
+                    });
                   }
                 }
               } else if (tOrig < 0 && tReal <= 0) {

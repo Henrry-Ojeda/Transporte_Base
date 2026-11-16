@@ -13137,7 +13137,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 WHERE Id = @id",
                 new { targetComp, recibidos, diferencia, porcentaje, tipoFinal, obsFinal, fotoReciboUrl = dto.FotoReciboUrl, modificadoPor, id });
 
-            if (control.ControlRutaId != null)
+            var compDestino = await connection.ExecuteScalarAsync<string>("SELECT Nombre FROM TB_COMPANIAS WHERE Id = @companiaId", new { companiaId = targetComp }) ?? "Compañía";
+            var compDestinoUpper = compDestino.Trim().ToUpperInvariant();
+            bool esDestinoReceptoria = compDestinoUpper.Contains("RECEPTORIA") || compDestinoUpper.Contains("RECEPTORÍA") || compDestinoUpper.Contains("PLANTA PRINCIPAL");
+
+            if (control.ControlRutaId != null && esDestinoReceptoria)
             {
                 try
                 {
@@ -13166,7 +13170,6 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             {
                 try
                 {
-                    var compDestino = await connection.ExecuteScalarAsync<string>("SELECT Nombre FROM TB_COMPANIAS WHERE Id = @companiaId", new { companiaId = targetComp }) ?? "Compañía";
                     
                     // 1. Entrada a Compañía / Quesera (Positivo) con vinculación a ControlRutaId si aplica
                     var entregaExistenteId = await connection.ExecuteScalarAsync<long?>(

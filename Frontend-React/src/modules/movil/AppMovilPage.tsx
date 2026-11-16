@@ -2102,6 +2102,7 @@ export const AppMovilPage: React.FC = () => {
 
   // Estado para el modal de Registro de Carga
   const [modalRegistro, setModalRegistro] = useState(false);
+  const [guardandoCarga, setGuardandoCarga] = useState(false);
   const [fincaFijadaParaModal, setFincaFijadaParaModal] = useState<any>(null);
   const [formCarga, setFormCarga] = useState({
     fecha: hoyStr,
@@ -5376,9 +5377,10 @@ export const AppMovilPage: React.FC = () => {
     setModalRegistro(true);
   };
 
-  // Guardar nueva carga en local y sincronizar con el ticket seleccionado
+  // Guardar nueva carga SIEMPRE primero en local y luego intentar sincronizar (bloqueando botones hasta completar/vencer timeout)
   const handleGuardarCarga = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (guardandoCarga) return;
     if (!formCarga.fincaId) {
       toast.error('Selecciona una finca de la lista');
       return;
@@ -5389,117 +5391,50 @@ export const AppMovilPage: React.FC = () => {
       return;
     }
 
-    const fincaSel = fincas.find((f) => f.id === Number(formCarga.fincaId)) || fincaFijadaParaModal;
+    setGuardandoCarga(true);
+    try {
+      const fincaSel = fincas.find((f) => f.id === Number(formCarga.fincaId)) || fincaFijadaParaModal;
+      const now = new Date();
+      const horaStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : (formCarga.fecha || hoyStr);
+      const litrosDiferirNum = formCarga.esDiferido ? Number(formCarga.litrosDiferir || formCarga.litros) : undefined;
+      const rawTicketId = viajeActivo?.id || viajeSeleccionadoId || (viajesChofer.length > 0 ? viajesChofer[0].id : 0);
+      const ticketIdEfectivo = ticketsLocales.resolverId(rawTicketId) || rawTicketId;
 
-    const now = new Date();
-    const horaStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      // Privacidad GPS: solo capturar ubicación si el módulo está activo y el ticket está ABIERTO
+      const gpsCaptura =
+        tieneModuloMapaRutas && esTicketAbiertoGps(viajeActivo)
+          ? await capturarGpsSilencioso(2000)
+          : null;
 
-    const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : (formCarga.fecha || hoyStr);
-    const litrosDiferirNum = formCarga.esDiferido ? Number(formCarga.litrosDiferir || formCarga.litros) : undefined;
-    const rawTicketId = viajeActivo?.id || viajeSeleccionadoId || (viajesChofer.length > 0 ? viajesChofer[0].id : 0);
-    const ticketIdEfectivo = ticketsLocales.resolverId(rawTicketId) || rawTicketId;
-
-    // Privacidad GPS: solo capturar ubicación si el módulo está activo y el ticket está ABIERTO
-    const gpsCaptura =
-      tieneModuloMapaRutas && esTicketAbiertoGps(viajeActivo)
-        ? await capturarGpsSilencioso(2500)
-        : null;
-
-    // Intento de guardado directo y síncrono si el dispositivo está online y el ticket ya existe en servidor
-    let sincronizadoOnline = false;
-    if (isOnline && navigator.onLine && ticketIdEfectivo > 0) {
-      try {
-        const obsLimpia = (formCarga.observacion || '').trim();
-        await operacionesApi.agregarFincaViaje(ticketIdEfectivo, {
-          choferId: choferEfectivoId || undefined,
+      // =========================================================================
+      // 1.- GUARDADO LOCAL-FIRST INMEDIATO (antes de cualquier llamada a red)
+      // =========================================================================
+      if (ticketIdEfectivo < 0) {
+        ticketsLocales.upsertFincaEnPaquete(ticketIdEfectivo, {
           fincaId: Number(formCarga.fincaId),
           litros: litrosNum,
           esAcida: formCarga.esAcida,
+          tipoLeche: formCarga.tipoLeche,
           esDiferido: formCarga.esDiferido,
           fecha: fechaAUsar,
           hora: horaStr,
-          tipoLeche: formCarga.tipoLeche,
-          observacion: obsLimpia || undefined,
           temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
+          observacion: (formCarga.observacion || '').trim() || undefined,
           fotoComprobante: formCarga.fotoRecibo || undefined,
           latitud: gpsCaptura?.latitud,
           longitud: gpsCaptura?.longitud,
           precisionMetros: gpsCaptura?.precisionMetros,
         } as any);
-        sincronizadoOnline = true;
-        movilAuditLog.registrar({
-          tipo: 'SYNC_OK',
-          ticketId: ticketIdEfectivo,
-          fincaId: Number(formCarga.fincaId),
-          fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
-          litros: litrosNum,
-          detalle: `Envío directo en línea OK (hora=${horaStr}, gps=${gpsCaptura ? `${gpsCaptura.latitud.toFixed(5)},${gpsCaptura.longitud.toFixed(5)}` : 'SIN_GPS'})`,
-        });
-      } catch (errApi: any) {
-        console.warn('Error al enviar carga directamente al servidor, se guardará en cola local:', errApi);
-        const errMsg = errApi?.response?.data?.message || errApi?.message || 'Error de conexión con la central';
-        movilAuditLog.registrar({
-          tipo: 'SYNC_ERROR',
-          ticketId: ticketIdEfectivo,
-          fincaId: Number(formCarga.fincaId),
-          fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
-          litros: litrosNum,
-          detalle: `Fallo envío directo online (quedó en cola local): ${errMsg}`,
-        });
-        toast.warning(`Guardado en el teléfono. Pendiente de sincronizar: ${errMsg}`);
       }
-    }
 
-    if (ticketIdEfectivo < 0) {
-      ticketsLocales.upsertFincaEnPaquete(ticketIdEfectivo, {
-        fincaId: Number(formCarga.fincaId),
-        litros: litrosNum,
-        esAcida: formCarga.esAcida,
-        tipoLeche: formCarga.tipoLeche,
-        esDiferido: formCarga.esDiferido,
+      const nuevaCarga: CargaOffline = {
+        localId: `local_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        serverTicketId: ticketIdEfectivo || undefined,
         fecha: fechaAUsar,
         hora: horaStr,
-        temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
-        observacion: (formCarga.observacion || '').trim() || undefined,
-        fotoComprobante: formCarga.fotoRecibo || undefined,
-        latitud: gpsCaptura?.latitud,
-        longitud: gpsCaptura?.longitud,
-        precisionMetros: gpsCaptura?.precisionMetros,
-      } as any);
-    }
-
-    const nuevaCarga: CargaOffline = {
-      localId: `local_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      serverTicketId: ticketIdEfectivo || undefined,
-      fecha: fechaAUsar,
-      hora: horaStr,
-      fincaId: Number(formCarga.fincaId),
-      fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
-      litros: litrosNum,
-      tipoLeche: formCarga.tipoLeche,
-      esAcida: formCarga.esAcida,
-      esDiferido: formCarga.esDiferido,
-      litrosDiferir: litrosDiferirNum,
-      temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
-      observacion: formCarga.observacion,
-      fotoRecibo: formCarga.fotoRecibo || undefined,
-      latitud: gpsCaptura?.latitud,
-      longitud: gpsCaptura?.longitud,
-      precisionMetros: gpsCaptura?.precisionMetros,
-      synced: sincronizadoOnline,
-    } as any;
-
-    // 7.- Si ya existe una carga local para ESTA finca en ESTE MISMO ticket, actualizarla sin tocar los demás tickets
-    const idxExistente = cargas.findIndex((c) => {
-      const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
-      return Number(c.fincaId) === Number(formCarga.fincaId) && cTicket === Number(ticketIdEfectivo);
-    });
-    let nuevasCargas: CargaOffline[];
-    if (idxExistente >= 0) {
-      nuevasCargas = [...cargas];
-      nuevasCargas[idxExistente] = {
-        ...nuevasCargas[idxExistente],
-        serverTicketId: ticketIdEfectivo || nuevasCargas[idxExistente].serverTicketId,
+        fincaId: Number(formCarga.fincaId),
+        fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
         litros: litrosNum,
         tipoLeche: formCarga.tipoLeche,
         esAcida: formCarga.esAcida,
@@ -5507,154 +5442,246 @@ export const AppMovilPage: React.FC = () => {
         litrosDiferir: litrosDiferirNum,
         temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
         observacion: formCarga.observacion,
-        fotoRecibo: formCarga.fotoRecibo || nuevasCargas[idxExistente].fotoRecibo,
-        latitud: gpsCaptura?.latitud ?? (nuevasCargas[idxExistente] as any).latitud,
-        longitud: gpsCaptura?.longitud ?? (nuevasCargas[idxExistente] as any).longitud,
-        precisionMetros: gpsCaptura?.precisionMetros ?? (nuevasCargas[idxExistente] as any).precisionMetros,
-        synced: sincronizadoOnline,
+        fotoRecibo: formCarga.fotoRecibo || undefined,
+        latitud: gpsCaptura?.latitud,
+        longitud: gpsCaptura?.longitud,
+        precisionMetros: gpsCaptura?.precisionMetros,
+        synced: false,
       } as any;
-    } else {
-      nuevasCargas = [nuevaCarga, ...cargas];
-    }
-    setCargas(nuevasCargas);
-    guardarCargasLocalSeguro(nuevasCargas);
 
-    movilAuditLog.registrar({
-      tipo: idxExistente >= 0 ? 'REGISTRO_EDITADO' : 'REGISTRO_CREADO',
-      ticketId: ticketIdEfectivo || undefined,
-      fincaId: Number(formCarga.fincaId),
-      fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
-      litros: litrosNum,
-      detalle: `${idxExistente >= 0 ? 'Actualizado' : 'Guardado'} en teléfono (hora=${horaStr}, sync=${sincronizadoOnline ? 'SI' : 'PENDIENTE'}, gps=${gpsCaptura ? 'OK' : 'NO'})`,
-    });
-
-    // Persistencia Robusta en IndexedDB Local (por ticket + finca)
-    const codEmpresa = dispositivo?.empresaCodigo || 'EMPRESA';
-    const idLocalPrevio = idxExistente >= 0 ? cargas[idxExistente]?.dbLocalId : undefined;
-    const localIdRef = idxExistente >= 0 ? nuevasCargas[idxExistente].localId : nuevaCarga.localId;
-    dbLocal.guardarRecoleccion({
-      idLocal: idLocalPrevio,
-      empresaCodigo: codEmpresa,
-      ticketId: ticketIdEfectivo || 0,
-      fincaId: Number(formCarga.fincaId),
-      fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
-      productorNombre: fincaSel?.productor || '',
-      litros: litrosNum,
-      tipoLeche: formCarga.tipoLeche === 'BUFALA' ? 'BUFALA' : 'VACA',
-      esDiferida: Boolean(formCarga.esDiferido),
-      esAcida: formCarga.esAcida,
-      temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : null,
-      foto: formCarga.fotoRecibo || null,
-      observaciones: formCarga.observacion,
-      fechaRegistro: new Date().toISOString(),
-      latitud: gpsCaptura?.latitud ?? null,
-      longitud: gpsCaptura?.longitud ?? null,
-      precisionMetros: gpsCaptura?.precisionMetros ?? null,
-      estadoSync: sincronizadoOnline ? 'SINCRONIZADO' : 'PENDIENTE',
-    }).then((nuevoIdLocal) => {
-      if (nuevoIdLocal) {
-        setCargas((prev) => {
-          const upd = prev.map((c) => (c.localId === localIdRef ? { ...c, dbLocalId: nuevoIdLocal } : c));
-          guardarCargasLocalSeguro(upd);
-          return upd;
-        });
-      }
-    }).catch((err) => console.warn('Error guardando en IndexedDB (tolerante):', err));
-
-    // 6.- Actualizar inmediatamente las paradas locales de ESTE ticket y el resumen en viajesChofer
-    setParadasViajeActivo((prev) => {
-      const list = Array.isArray(prev) ? [...prev] : [];
-      const idxP = list.findIndex((p) => Number(p.fincaId || p.FincaId) === Number(formCarga.fincaId));
-      if (idxP >= 0) {
-        list[idxP] = {
-          ...list[idxP],
+      const idxExistente = cargas.findIndex((c) => {
+        const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
+        return Number(c.fincaId) === Number(formCarga.fincaId) && cTicket === Number(ticketIdEfectivo);
+      });
+      let nuevasCargas: CargaOffline[];
+      if (idxExistente >= 0) {
+        nuevasCargas = [...cargas];
+        nuevasCargas[idxExistente] = {
+          ...nuevasCargas[idxExistente],
+          serverTicketId: ticketIdEfectivo || nuevasCargas[idxExistente].serverTicketId,
           litros: litrosNum,
-          Litros: litrosNum,
           tipoLeche: formCarga.tipoLeche,
           esAcida: formCarga.esAcida,
           esDiferido: formCarga.esDiferido,
           litrosDiferir: litrosDiferirNum,
-          origen: sincronizadoOnline ? 'Servidor' : 'Teléfono',
-        };
+          temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
+          observacion: formCarga.observacion,
+          fotoRecibo: formCarga.fotoRecibo || nuevasCargas[idxExistente].fotoRecibo,
+          latitud: gpsCaptura?.latitud ?? (nuevasCargas[idxExistente] as any).latitud,
+          longitud: gpsCaptura?.longitud ?? (nuevasCargas[idxExistente] as any).longitud,
+          precisionMetros: gpsCaptura?.precisionMetros ?? (nuevasCargas[idxExistente] as any).precisionMetros,
+          synced: false,
+        } as any;
       } else {
-        list.push({
-          id: Date.now(),
-          fincaId: Number(formCarga.fincaId),
-          fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
-          litros: litrosNum,
-          Litros: litrosNum,
-          tipoLeche: formCarga.tipoLeche,
-          esAcida: formCarga.esAcida,
-          esDiferido: formCarga.esDiferido,
-          litrosDiferir: litrosDiferirNum,
-          createdAt: new Date().toISOString(),
-          origen: sincronizadoOnline ? 'Servidor' : 'Teléfono',
-        });
+        nuevasCargas = [nuevaCarga, ...cargas];
       }
-      const unificadas = guardarParadasTicketLocal(rawTicketId || ticketIdEfectivo, list, nuevasCargas);
-      if (ticketIdEfectivo && ticketIdEfectivo !== rawTicketId) {
-        guardarParadasTicketLocal(ticketIdEfectivo, list, nuevasCargas);
-      }
-      try {
-        localStorage.setItem('movil_paradas_activo', JSON.stringify(unificadas));
-        const fincasParaVerif = unificadas.map((p: any, idx: number) => ({
-          id: p.id || p.fincaId || idx + 1,
-          fincaId: p.fincaId,
-          fincaNombre: p.fincaNombre || p.nombreFinca || p.nombre || `Finca #${p.fincaId}`,
-          litros: Number(p.litros ?? p.Litros ?? p.litrosLeche ?? 0),
-          fotoComprobante: p.fotoComprobante || p.fotoReciboUrl || p.fotoRecibo || p.fotoTicket,
-          fotoReciboUrl: p.fotoReciboUrl || p.fotoComprobante || p.fotoRecibo || p.fotoTicket,
-          hora: p.hora || p.horaRecoleccion,
-        }));
-        if (rawTicketId) localStorage.setItem(`movil_fincas_verificar_${rawTicketId}`, JSON.stringify(fincasParaVerif));
-        if (ticketIdEfectivo) localStorage.setItem(`movil_fincas_verificar_${ticketIdEfectivo}`, JSON.stringify(fincasParaVerif));
-      } catch {}
+      setCargas(nuevasCargas);
+      guardarCargasLocalSeguro(nuevasCargas);
 
-      // Actualizar litros y paradas en la tarjeta del ticket en viajesChofer (para ver ambos tickets actualizados al cambiar entre ellos)
-      const nuevoTotalLitrosTicket = unificadas.reduce((acc, p) => acc + Number(p.litros ?? p.Litros ?? 0), 0);
-      const nuevoTotalFincasTicket = unificadas.filter((p) => Number(p.litros ?? p.Litros ?? 0) > 0).length || unificadas.length;
-      setViajesChofer((prevViajes) => {
-        const nuevaLista = prevViajes.map((v) =>
-          v.id === rawTicketId || v.id === ticketIdEfectivo
-            ? { ...v, totalLitrosFinca: nuevoTotalLitrosTicket, totalFincas: nuevoTotalFincasTicket }
-            : v
-        );
-        try {
-          localStorage.setItem('movil_viajes_chofer', JSON.stringify(nuevaLista));
-          if (choferEfectivoId) {
-            localStorage.setItem(`movil_viajes_chofer_${choferEfectivoId}`, JSON.stringify(nuevaLista));
-          }
-        } catch {}
-        return nuevaLista;
+      movilAuditLog.registrar({
+        tipo: idxExistente >= 0 ? 'REGISTRO_EDITADO' : 'REGISTRO_CREADO',
+        ticketId: ticketIdEfectivo || undefined,
+        fincaId: Number(formCarga.fincaId),
+        fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
+        litros: litrosNum,
+        detalle: `${idxExistente >= 0 ? 'Actualizado' : 'Guardado'} en teléfono (local-first, hora=${horaStr}, gps=${gpsCaptura ? 'OK' : 'NO'})`,
       });
 
-      return unificadas;
-    });
-
-    setModalRegistro(false);
-    setFincaFijadaParaModal(null);
-    setFormCarga({
-      fecha: viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr,
-      fincaId: 0,
-      litros: '',
-      tipoLeche: 'VACA',
-      esAcida: false,
-      esDiferido: false,
-      litrosDiferir: '',
-      temperatura: '',
-      observacion: '',
-      fotoRecibo: '',
-    });
-    setBusquedaFinca('');
-
-    // Notificación clara al usuario
-    if (sincronizadoOnline) {
-      toast.success(`¡Carga de ${litrosNum.toLocaleString()} L guardada y sincronizada con el servidor!`);
-    } else {
-      toast.info(`Carga de ${litrosNum.toLocaleString()} L guardada en el teléfono (modo offline).`);
-      if (isOnline && navigator.onLine) {
-        setTimeout(() => sincronizarCargas(), 1000);
+      const codEmpresa = dispositivo?.empresaCodigo || 'EMPRESA';
+      const idLocalPrevio = idxExistente >= 0 ? cargas[idxExistente]?.dbLocalId : undefined;
+      const localIdRef = idxExistente >= 0 ? nuevasCargas[idxExistente].localId : nuevaCarga.localId;
+      let dbIdGuardado = idLocalPrevio;
+      try {
+        const nuevoIdLocal = await dbLocal.guardarRecoleccion({
+          idLocal: idLocalPrevio,
+          empresaCodigo: codEmpresa,
+          ticketId: ticketIdEfectivo || 0,
+          fincaId: Number(formCarga.fincaId),
+          fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
+          productorNombre: fincaSel?.productor || '',
+          litros: litrosNum,
+          tipoLeche: formCarga.tipoLeche === 'BUFALA' ? 'BUFALA' : 'VACA',
+          esDiferida: Boolean(formCarga.esDiferido),
+          esAcida: formCarga.esAcida,
+          temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : null,
+          foto: formCarga.fotoRecibo || null,
+          observaciones: formCarga.observacion,
+          fechaRegistro: new Date().toISOString(),
+          latitud: gpsCaptura?.latitud ?? null,
+          longitud: gpsCaptura?.longitud ?? null,
+          precisionMetros: gpsCaptura?.precisionMetros ?? null,
+          estadoSync: 'PENDIENTE',
+        });
+        if (nuevoIdLocal) {
+          dbIdGuardado = nuevoIdLocal;
+          setCargas((prev) => {
+            const upd = prev.map((c) => (c.localId === localIdRef ? { ...c, dbLocalId: nuevoIdLocal } : c));
+            guardarCargasLocalSeguro(upd);
+            return upd;
+          });
+        }
+      } catch (errDb) {
+        console.warn('Error guardando en IndexedDB (tolerante):', errDb);
       }
+
+      const actualizarParadasYResumen = (origenParada: 'Servidor' | 'Teléfono') => {
+        setParadasViajeActivo((prev) => {
+          const list = Array.isArray(prev) ? [...prev] : [];
+          const idxP = list.findIndex((p) => Number(p.fincaId || p.FincaId) === Number(formCarga.fincaId));
+          if (idxP >= 0) {
+            list[idxP] = {
+              ...list[idxP],
+              litros: litrosNum,
+              Litros: litrosNum,
+              tipoLeche: formCarga.tipoLeche,
+              esAcida: formCarga.esAcida,
+              esDiferido: formCarga.esDiferido,
+              litrosDiferir: litrosDiferirNum,
+              origen: origenParada,
+            };
+          } else {
+            list.push({
+              id: Date.now(),
+              fincaId: Number(formCarga.fincaId),
+              fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
+              litros: litrosNum,
+              Litros: litrosNum,
+              tipoLeche: formCarga.tipoLeche,
+              esAcida: formCarga.esAcida,
+              esDiferido: formCarga.esDiferido,
+              litrosDiferir: litrosDiferirNum,
+              createdAt: new Date().toISOString(),
+              origen: origenParada,
+            });
+          }
+          const unificadas = guardarParadasTicketLocal(rawTicketId || ticketIdEfectivo, list, nuevasCargas);
+          if (ticketIdEfectivo && ticketIdEfectivo !== rawTicketId) {
+            guardarParadasTicketLocal(ticketIdEfectivo, list, nuevasCargas);
+          }
+          try {
+            localStorage.setItem('movil_paradas_activo', JSON.stringify(unificadas));
+            const fincasParaVerif = unificadas.map((p: any, idx: number) => ({
+              id: p.id || p.fincaId || idx + 1,
+              fincaId: p.fincaId,
+              fincaNombre: p.fincaNombre || p.nombreFinca || p.nombre || `Finca #${p.fincaId}`,
+              litros: Number(p.litros ?? p.Litros ?? p.litrosLeche ?? 0),
+              fotoComprobante: p.fotoComprobante || p.fotoReciboUrl || p.fotoRecibo || p.fotoTicket,
+              fotoReciboUrl: p.fotoReciboUrl || p.fotoComprobante || p.fotoRecibo || p.fotoTicket,
+              hora: p.hora || p.horaRecoleccion,
+            }));
+            if (rawTicketId) localStorage.setItem(`movil_fincas_verificar_${rawTicketId}`, JSON.stringify(fincasParaVerif));
+            if (ticketIdEfectivo) localStorage.setItem(`movil_fincas_verificar_${ticketIdEfectivo}`, JSON.stringify(fincasParaVerif));
+          } catch {}
+
+          const nuevoTotalLitrosTicket = unificadas.reduce((acc, p) => acc + Number(p.litros ?? p.Litros ?? 0), 0);
+          const nuevoTotalFincasTicket = unificadas.filter((p) => Number(p.litros ?? p.Litros ?? 0) > 0).length || unificadas.length;
+          setViajesChofer((prevViajes) => {
+            const nuevaLista = prevViajes.map((v) =>
+              v.id === rawTicketId || v.id === ticketIdEfectivo
+                ? { ...v, totalLitrosFinca: nuevoTotalLitrosTicket, totalFincas: nuevoTotalFincasTicket }
+                : v
+            );
+            try {
+              localStorage.setItem('movil_viajes_chofer', JSON.stringify(nuevaLista));
+              if (choferEfectivoId) {
+                localStorage.setItem(`movil_viajes_chofer_${choferEfectivoId}`, JSON.stringify(nuevaLista));
+              }
+            } catch {}
+            return nuevaLista;
+          });
+
+          return unificadas;
+        });
+      };
+
+      // Reflejar inmediatamente en pantalla antes de intentar la red
+      actualizarParadasYResumen('Teléfono');
+
+      // =========================================================================
+      // 2.- INTENTO DE SINCRONIZACIÓN CON LA CENTRAL (botones bloqueados hasta 30s)
+      // =========================================================================
+      let sincronizadoOnline = false;
+      if (isOnline && navigator.onLine && ticketIdEfectivo > 0) {
+        try {
+          const obsLimpia = (formCarga.observacion || '').trim();
+          await operacionesApi.agregarFincaViaje(ticketIdEfectivo, {
+            choferId: choferEfectivoId || undefined,
+            fincaId: Number(formCarga.fincaId),
+            litros: litrosNum,
+            esAcida: formCarga.esAcida,
+            esDiferido: formCarga.esDiferido,
+            fecha: fechaAUsar,
+            hora: horaStr,
+            tipoLeche: formCarga.tipoLeche,
+            observacion: obsLimpia || undefined,
+            temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
+            fotoComprobante: formCarga.fotoRecibo || undefined,
+            latitud: gpsCaptura?.latitud,
+            longitud: gpsCaptura?.longitud,
+            precisionMetros: gpsCaptura?.precisionMetros,
+          } as any);
+          sincronizadoOnline = true;
+
+          // Marcar como sincronizado en localStorage, IndexedDB y UI
+          setCargas((prev) => {
+            const upd = prev.map((c) => (c.localId === localIdRef ? { ...c, synced: true } : c));
+            guardarCargasLocalSeguro(upd);
+            return upd;
+          });
+          if (dbIdGuardado) {
+            await dbLocal.marcarRecoleccionSincronizada(dbIdGuardado).catch(() => {});
+          }
+          actualizarParadasYResumen('Servidor');
+
+          movilAuditLog.registrar({
+            tipo: 'SYNC_OK',
+            ticketId: ticketIdEfectivo,
+            fincaId: Number(formCarga.fincaId),
+            fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
+            litros: litrosNum,
+            detalle: `Envío directo en línea OK (hora=${horaStr}, gps=${gpsCaptura ? `${gpsCaptura.latitud.toFixed(5)},${gpsCaptura.longitud.toFixed(5)}` : 'SIN_GPS'})`,
+          });
+        } catch (errApi: any) {
+          console.warn('Error al enviar carga directamente al servidor, ya quedó respaldada en local:', errApi);
+          const errMsg = errApi?.response?.data?.message || errApi?.message || 'Error de conexión con la central';
+          movilAuditLog.registrar({
+            tipo: 'SYNC_ERROR',
+            ticketId: ticketIdEfectivo,
+            fincaId: Number(formCarga.fincaId),
+            fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
+            litros: litrosNum,
+            detalle: `Fallo envío directo online (respaldado en teléfono): ${errMsg}`,
+          });
+          toast.warning(`Guardado en el teléfono. Pendiente de sincronizar: ${errMsg}`);
+        }
+      }
+
+      setModalRegistro(false);
+      setFincaFijadaParaModal(null);
+      setFormCarga({
+        fecha: viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : hoyStr,
+        fincaId: 0,
+        litros: '',
+        tipoLeche: 'VACA',
+        esAcida: false,
+        esDiferido: false,
+        litrosDiferir: '',
+        temperatura: '',
+        observacion: '',
+        fotoRecibo: '',
+      });
+      setBusquedaFinca('');
+
+      if (sincronizadoOnline) {
+        toast.success(`¡Carga de ${litrosNum.toLocaleString()} L guardada y sincronizada con el servidor!`);
+      } else {
+        toast.info(`Carga de ${litrosNum.toLocaleString()} L guardada en el teléfono (modo offline).`);
+        if (isOnline && navigator.onLine) {
+          setTimeout(() => sincronizarCargas(), 1000);
+        }
+      }
+    } finally {
+      setGuardandoCarga(false);
     }
   };
 
@@ -15687,10 +15714,33 @@ export const AppMovilPage: React.FC = () => {
                 )}
               </div>
 
+              {guardandoCarga && (
+                <div
+                  style={{
+                    marginTop: '14px',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    color: '#1d4ed8',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <i className="fa-solid fa-spinner fa-spin"></i>
+                  <span>Guardado en el teléfono. Conectando con la central (máx. 30s)... No cierres ni agregues otra finca aún.</span>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
                 <button
                   type="button"
+                  disabled={guardandoCarga}
                   onClick={() => {
+                    if (guardandoCarga) return;
                     setModalRegistro(false);
                     setFincaFijadaParaModal(null);
                   }}
@@ -15702,7 +15752,8 @@ export const AppMovilPage: React.FC = () => {
                     border: 'none',
                     color: '#64748b',
                     fontWeight: 800,
-                    cursor: 'pointer',
+                    cursor: guardandoCarga ? 'not-allowed' : 'pointer',
+                    opacity: guardandoCarga ? 0.5 : 1,
                   }}
                 >
                   Cancelar
@@ -15710,6 +15761,7 @@ export const AppMovilPage: React.FC = () => {
                 {fincaFijadaParaModal?.soloLectura ? (
                   <button
                     type="button"
+                    disabled={guardandoCarga}
                     onClick={() => {
                       const fItem = fincaFijadaParaModal;
                       setModalRegistro(false);
@@ -15726,7 +15778,8 @@ export const AppMovilPage: React.FC = () => {
                       fontWeight: 900,
                       fontSize: '14px',
                       boxShadow: '0 4px 15px rgba(217, 119, 6, 0.4)',
-                      cursor: 'pointer',
+                      cursor: guardandoCarga ? 'not-allowed' : 'pointer',
+                      opacity: guardandoCarga ? 0.6 : 1,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -15738,20 +15791,23 @@ export const AppMovilPage: React.FC = () => {
                 ) : (
                   <button
                     type="submit"
+                    disabled={guardandoCarga}
                     style={{
                       flex: 2,
                       height: '48px',
                       borderRadius: '12px',
-                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      background: guardandoCarga
+                        ? 'linear-gradient(135deg, #94a3b8 0%, #64748b 100%)'
+                        : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                       border: 'none',
                       color: '#ffffff',
                       fontWeight: 900,
                       fontSize: '15px',
-                      boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)',
-                      cursor: 'pointer',
+                      boxShadow: guardandoCarga ? 'none' : '0 4px 15px rgba(16, 185, 129, 0.4)',
+                      cursor: guardandoCarga ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    Guardar Carga
+                    {guardandoCarga ? 'Sincronizando...' : 'Guardar Carga'}
                   </button>
                 )}
               </div>

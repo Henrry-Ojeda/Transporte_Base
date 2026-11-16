@@ -231,7 +231,11 @@ export const finanzasApi = {
     return res.data;
   },
   amortizarAdelanto: async (id: number, montoUSD: number): Promise<{ success: boolean; message: string }> => {
-    const res = await apiClient.post(`/adelantos/${id}/amortizar`, { montoUSD });
+    const res = await apiClient.post('/adelantos/abonos/directo', {
+      adelantoId: id,
+      montoAbonoUSD: montoUSD,
+      notas: 'Amortización directa desde módulo de Adelantos',
+    });
     return res.data;
   },
   eliminarAdelanto: async (id: number): Promise<{ success: boolean; message: string }> => {

@@ -43,8 +43,11 @@ namespace Transporte.Infrastructure.Repositories
             using var connection = CreateConnection();
 
             // PRIVACIDAD ESTRICTA: Solo capturar ubicación si el ticket existe y está ABIERTO (ProcesoActualId = 1)
-            var ticket = await connection.QueryFirstOrDefaultAsync<dynamic>(
-                "SELECT Id, UsuarioId, CamionId, ProcesoActualId FROM TB_CONTROL_RUTAS WHERE Id = @ControlRutaId",
+            var ticket = await connection.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT cr.Id, cr.UsuarioId, u.CamionId, cr.ProcesoActualId
+                FROM TB_CONTROL_RUTAS cr
+                LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
+                WHERE cr.Id = @ControlRutaId",
                 new { dto.ControlRutaId });
 
             if (ticket == null || (int)ticket.ProcesoActualId != 1)
@@ -117,7 +120,7 @@ namespace Transporte.Infrastructure.Repositories
                     cr.Fecha,
                     cr.UsuarioId,
                     ISNULL(u.NombreCompleto, 'Conductor') AS ChoferNombre,
-                    cr.CamionId,
+                    u.CamionId,
                     c.Placa AS CamionPlaca,
                     cr.RutaLogisticaId,
                     rl.Nombre AS RutaNombre,
@@ -127,12 +130,12 @@ namespace Transporte.Infrastructure.Repositories
                     cr.TotalLitrosFinca
                 FROM TB_CONTROL_RUTAS cr
                 LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
-                LEFT JOIN TB_CAMIONES c ON cr.CamionId = c.Id
+                LEFT JOIN TB_CAMIONES c ON u.CamionId = c.Id
                 LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
                 WHERE CAST(cr.Fecha AS DATE) >= CAST(@fechaDesde AS DATE)
                   AND CAST(cr.Fecha AS DATE) <= CAST(@fechaHasta AS DATE)
                   AND (@rutaId IS NULL OR @rutaId = 0 OR cr.RutaLogisticaId = @rutaId)
-                  AND (@camionId IS NULL OR @camionId = 0 OR cr.CamionId = @camionId)
+                  AND (@camionId IS NULL OR @camionId = 0 OR u.CamionId = @camionId)
                   AND (@choferId IS NULL OR @choferId = 0 OR cr.UsuarioId = @choferId)
                 ORDER BY cr.Fecha DESC, cr.Id DESC";
 

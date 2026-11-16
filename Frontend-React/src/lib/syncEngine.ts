@@ -355,6 +355,9 @@ class SyncEngine {
             observacion: obsLimpia || undefined,
             temperatura: carga.temperatura ?? undefined,
             fotoComprobante: carga.foto && carga.foto !== '[EN_INDEXEDDB]' ? carga.foto : undefined,
+            latitud: carga.latitud ?? undefined,
+            longitud: carga.longitud ?? undefined,
+            precisionMetros: carga.precisionMetros ?? undefined,
           };
 
           await operacionesApi.agregarFincaViaje(ticketId, payloadEnvio);
@@ -428,6 +431,9 @@ class SyncEngine {
                       observacion: obsLimpia || undefined,
                       temperatura: c.temperatura ? Number(c.temperatura) : undefined,
                       fotoComprobante,
+                      latitud: c.latitud ?? undefined,
+                      longitud: c.longitud ?? undefined,
+                      precisionMetros: c.precisionMetros ?? undefined,
                     };
 
                     await operacionesApi.agregarFincaViaje(tReal, payloadEnvio);

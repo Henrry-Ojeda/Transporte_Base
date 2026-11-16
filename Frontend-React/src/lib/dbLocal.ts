@@ -22,6 +22,9 @@ export interface RecoleccionLocal {
   observaciones?: string;
   fechaRegistro: string;
   odometroKm?: number | null;
+  latitud?: number | null;
+  longitud?: number | null;
+  precisionMetros?: number | null;
   estadoSync: 'PENDIENTE' | 'SINCRONIZADO' | 'ERROR';
   fechaSync?: string | null;
   errorSync?: string | null;

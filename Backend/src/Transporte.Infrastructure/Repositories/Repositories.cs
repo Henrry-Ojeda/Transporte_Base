@@ -10281,7 +10281,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         WHERE Id = @nuevaRutaId;
 
                         INSERT INTO TB_GPS_PUNTOS_VIAJE (ControlRutaId, UsuarioId, CamionId, FincaId, Latitud, Longitud, PrecisionMetros, Evento, FechaHoraDispositivo, CreatedAt)
-                        VALUES (@controlRutaId, @choferId, @camionId, @fincaId, @lat, @lng, @precision, 'REGISTRO_LITROS', @gpsAt, GETDATE());",
+                        VALUES (@controlRutaId, @choferId, (SELECT TOP 1 CamionId FROM TB_USUARIOS WHERE Id = @choferId), @fincaId, @lat, @lng, @precision, 'REGISTRO_LITROS', @gpsAt, GETDATE());",
                         new
                         {
                             lat = dto.Latitud.Value,
@@ -10291,7 +10291,6 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                             nuevaRutaId,
                             controlRutaId = dto.ControlRutaId,
                             choferId = (int)viaje.UsuarioId,
-                            camionId = (int?)viaje.CamionId,
                             fincaId = dto.FincaId
                         });
                 }

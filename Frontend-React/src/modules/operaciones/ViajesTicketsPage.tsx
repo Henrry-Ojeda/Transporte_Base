@@ -369,8 +369,13 @@ export const ViajesTicketsPage: React.FC = () => {
     const listRutas = (viajesRutas || []).map((r) => {
       const pId = Number(r.procesoActualId || (r.estadoProceso === 'CERRADO' || r.estado === 'FINALIZADO' ? 4 : 1));
       const ltsFinca = Number(r.totalLitrosFinca ?? r.totalLitrosRecogidos ?? 0);
-      const ltsRec = Number(r.totalLitrosReceptoria ?? (r as any).litrosRecibidosReceptoria ?? r.litrosEntregadosCompania ?? ltsFinca);
-      const dif = Number(r.diferenciaLitros ?? (r as any).diferenciaReceptoria ?? (ltsRec - ltsFinca));
+      const tieneRecepReal = (r as any).litrosRecibidosReceptoria != null || Number(r.totalLitrosReceptoria ?? 0) > 0 || Number(r.litrosEntregadosCompania ?? 0) > 0 || pId >= 2;
+      const ltsRec = tieneRecepReal
+        ? Number(r.totalLitrosReceptoria ?? (r as any).litrosRecibidosReceptoria ?? r.litrosEntregadosCompania ?? 0)
+        : 0;
+      const dif = tieneRecepReal
+        ? Number(r.diferenciaLitros ?? (r as any).diferenciaReceptoria ?? (ltsRec - ltsFinca))
+        : 0;
       const pct = ltsFinca > 0 ? (Math.abs(dif) / ltsFinca) * 100 : 0;
 
       return {
@@ -814,7 +819,9 @@ export const ViajesTicketsPage: React.FC = () => {
       fechaEdit: (ticket.fecha || '').split('T')[0],
       choferEditId: ticket.usuarioId || ticket.conductorId || 0,
       estadoEdit: ticket.estado || 'ABIERTO',
-      litrosRecibidosEdit: ticket.litrosRecibidosReceptoria != null ? ticket.litrosRecibidosReceptoria : (ticket.totalLitrosReceptoria || ticket.totalLitrosFinca || 0),
+      litrosRecibidosEdit: ticket.litrosRecibidosReceptoria != null
+        ? ticket.litrosRecibidosReceptoria
+        : (Number(ticket.procesoActualId || 1) >= 2 ? (ticket.totalLitrosReceptoria || 0) : 0),
       observacionEdit: ticket.observacion || '',
     });
     setModalEditar(true);
@@ -825,14 +832,30 @@ export const ViajesTicketsPage: React.FC = () => {
     if (!ticketParaEditar) return;
 
     try {
+      const esAbierto = ticketParaEditar.estadoEdit === 'ABIERTO';
+      const procesoTarget =
+        esAbierto
+          ? 1
+          : ticketParaEditar.estadoEdit === 'FINALIZADO'
+          ? 4
+          : ticketParaEditar.estadoEdit === 'CAMINO_COMPANIA'
+          ? 3
+          : ticketParaEditar.estadoEdit === 'RECEPCIONADO'
+          ? 2
+          : (ticketParaEditar.procesoActualId || 1);
+
       const payload: any = {
         fecha: ticketParaEditar.fechaEdit,
         usuarioId: Number(ticketParaEditar.choferEditId),
         estado: ticketParaEditar.estadoEdit,
-        procesoActualId: ticketParaEditar.estadoEdit === 'ABIERTO' ? 1 : ticketParaEditar.estadoEdit === 'FINALIZADO' ? 4 : 2,
+        procesoActualId: procesoTarget,
         observacion: ticketParaEditar.observacionEdit,
-        litrosRecibidosReceptoria: Number(ticketParaEditar.litrosRecibidosEdit),
-        totalLitrosReceptoria: Number(ticketParaEditar.litrosRecibidosEdit),
+        ...(esAbierto
+          ? {}
+          : {
+              litrosRecibidosReceptoria: Number(ticketParaEditar.litrosRecibidosEdit),
+              totalLitrosReceptoria: Number(ticketParaEditar.litrosRecibidosEdit),
+            }),
       };
 
       if (ticketParaEditar._origen === 'RUTA') {

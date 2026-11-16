@@ -284,17 +284,56 @@ class SyncEngine {
           if (res && res.ticketId) {
             ticketsLocales.marcarSincronizado(t.localId, res.ticketId);
             exitosos++;
+            movilAuditLog.registrar({
+              tipo: 'SYNC_OK',
+              ticketId: res.ticketId,
+              detalle: `Ticket local ${t.localId} sincronizado como Ticket #${res.ticketId} (${Array.isArray(t.fincas) ? t.fincas.length : 0} fincas en paquete)`,
+            });
           }
         } catch (err: any) {
           const status = err?.response?.status;
-          // Sin red / servidor caído: reintentar luego. La central reconoce el turno por su [LOCAL:uuid],
-          // así que reintentar nunca duplica el ticket.
-          console.warn(`[SyncEngine] No se pudo crear el ticket local ${t.localId} (status ${status ?? 'sin respuesta'}):`, err?.message);
-          ticketsLocales.registrarError(
-            t.localId,
-            err?.response?.data?.message || (status ? `Error ${status} de la central` : 'Sin conexión con la central')
-          );
-          break; // respetar el orden de creación
+          const errMsg = err?.response?.data?.message || (status ? `Error ${status} de la central` : 'Sin conexión con la central');
+          console.warn(`[SyncEngine] Error en sincronizarPaqueteTicket para ${t.localId} (status ${status ?? 'sin respuesta'}):`, err?.message);
+          movilAuditLog.registrar({
+            tipo: 'SYNC_ERROR',
+            ticketId: t.localId,
+            detalle: `Fallo sincronizar-paquete ticket ${t.localId}: ${errMsg}`,
+          });
+
+          // Fallback: si falló el paquete completo (ej. foto muy pesada o validación de una finca),
+          // intentar crear primero el ticket vacío para que las fincas se suban una a una en sincronizarRecolecciones.
+          if (status && status >= 400 && status < 500) {
+            try {
+              const resSolo = await operacionesApi.iniciarViaje({
+                fecha: t.payload?.fecha,
+                choferId: Number(t.payload?.choferId || t.payload?.conductorId || t.ticket?.usuarioId || 0),
+                conductorId: Number(t.payload?.conductorId || t.payload?.choferId || t.ticket?.usuarioId || 0),
+                camionId: t.payload?.camionId,
+                rutaLogisticaId: t.payload?.rutaLogisticaId,
+                observaciones: t.payload?.observaciones,
+              } as any);
+              if (resSolo && resSolo.id) {
+                ticketsLocales.marcarSincronizado(t.localId, resSolo.id);
+                exitosos++;
+                movilAuditLog.registrar({
+                  tipo: 'SYNC_OK',
+                  ticketId: resSolo.id,
+                  detalle: `Rescate ticket local ${t.localId} -> Ticket #${resSolo.id} (fincas se subirán individualmente)`,
+                });
+                continue;
+              }
+            } catch (errFallback: any) {
+              movilAuditLog.registrar({
+                tipo: 'SYNC_ERROR',
+                ticketId: t.localId,
+                detalle: `Fallo rescate iniciarViaje ${t.localId}: ${errFallback?.response?.data?.message || errFallback?.message || 'Error'}`,
+              });
+            }
+          }
+
+          ticketsLocales.registrarError(t.localId, errMsg);
+          // No hacer break: permitir que otros tickets/cargas pendientes sigan intentando sincronizar
+          continue;
         }
       }
     } finally {

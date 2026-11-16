@@ -10480,7 +10480,17 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 "SELECT * FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId", new { controlRutaId });
             if (viaje == null) return false;
 
-            int totalFinca = Convert.ToInt32(viaje.TotalLitrosFinca ?? 0);
+            int totalFincaBruto = Convert.ToInt32(viaje.TotalLitrosFinca ?? 0);
+            int totalDespachadoExterno = await connection.ExecuteScalarAsync<int>(@"
+                SELECT ISNULL(SUM(cc.LitrosDespachados), 0)
+                FROM TB_CONTROL_COMPANIAS cc
+                INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
+                WHERE cc.ControlRutaId = @controlRutaId
+                  AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%RECEPTORIA%'
+                  AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%RECEPTORÍA%'
+                  AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%PLANTA PRINCIPAL%';",
+                new { controlRutaId });
+            int totalFinca = totalDespachadoExterno > 0 ? Math.Max(0, totalFincaBruto - totalDespachadoExterno) : totalFincaBruto;
             int diferenciaRec = totalFinca - dto.LitrosRecibidos;
             decimal porcentajeRec = totalFinca > 0 ? Math.Round((Math.Abs(diferenciaRec) * 100.0m) / totalFinca, 2) : 0;
 

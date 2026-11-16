@@ -497,9 +497,10 @@ export const ReceptoriaPage: React.FC = () => {
             // Si el ticket tiene despachos separados a compañías externas (no unificados todos a Receptoría),
             // validar SOLO las fincas de RUTA (TipoServicioId === 1 / sin companiaId).
             // Si se envió TODO unificado a Receptoría (sin despachos externos), validar RUTA + TRANSPORTE.
-            const tieneDespachosExternos = despachosCompanias.some(
+            const despachosExternos = despachosCompanias.filter(
               (d: any) => Number(d.controlRutaId) === Number(viaje.id) && !esDespachoReceptoria(d)
             );
+            const tieneDespachosExternos = despachosExternos.length > 0;
             if (tieneDespachosExternos) {
               const idsRuta = new Set(
                 (fincasCatalogo || [])
@@ -509,11 +510,17 @@ export const ReceptoriaPage: React.FC = () => {
               const fincasRuta = fincasConLitros.filter((f: any) => idsRuta.has(Number(f.fincaId || f.id)));
               if (fincasRuta.length > 0) {
                 fincasConLitros = fincasRuta;
-                const totalRuta = fincasRuta.reduce((acc: number, f: any) => acc + Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0), 0);
-                setViajeParaRecibir((prev: any) => prev ? { ...prev, totalLitrosRecogidos: totalRuta, totalLitrosFinca: totalRuta } : prev);
-                setLitrosRecibidosInput(totalRuta);
-                setDestinosRecarga([{ id: '1', companiaId: 0, litrosDespachados: totalRuta, tipoLeche: 'VACA', numeroGuiaSADA: '', observacion: '' }]);
               }
+              const totalBruto = fincasConLitros.length > 0
+                ? list.reduce((acc: number, f: any) => acc + Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0), 0)
+                : Number(viaje.totalLitrosFinca || 0);
+              const totalDespachadoExterno = despachosExternos.reduce(
+                (acc: number, d: any) => acc + Number(d.litrosDespachados || 0), 0
+              );
+              const totalNetoReceptoria = Math.max(0, totalBruto - totalDespachadoExterno);
+              setViajeParaRecibir((prev: any) => prev ? { ...prev, totalLitrosRecogidos: totalNetoReceptoria, totalLitrosFinca: totalNetoReceptoria } : prev);
+              setLitrosRecibidosInput(totalNetoReceptoria);
+              setDestinosRecarga([{ id: '1', companiaId: 0, litrosDespachados: totalNetoReceptoria, tipoLeche: 'VACA', numeroGuiaSADA: '', observacion: '' }]);
             }
           }
 
@@ -2181,13 +2188,31 @@ export const ReceptoriaPage: React.FC = () => {
                           boxShadow: '0 1px 4px rgba(0,0,0,0.03)',
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', marginBottom: '6px', flexWrap: 'wrap' }}>
                           <strong style={{ color: '#0f172a', fontSize: '13.5px' }}>
                             Ticket #{f.id} • {f.nombreCompania || f.companiaNombre || compObj?.nombre || 'Planta'}
                           </strong>
-                          <span className="badge" style={{ background: '#ecfdf5', color: '#047857', fontWeight: 800, fontSize: '10.5px' }}>
-                            FINALIZADO
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            {(hasBufala || f.tipoLeche || (f.observacion || '').toUpperCase().includes('[BUFAL') || (f.observacion || '').toUpperCase().includes('[VACA]')) && (
+                              <span
+                                className="badge"
+                                style={{
+                                  background: ((f.tipoLeche || f.observacion || '').toUpperCase().includes('BUFAL')) ? '#f3e8ff' : '#e0f2fe',
+                                  color: ((f.tipoLeche || f.observacion || '').toUpperCase().includes('BUFAL')) ? '#7e22ce' : '#0369a1',
+                                  border: `1px solid ${((f.tipoLeche || f.observacion || '').toUpperCase().includes('BUFAL')) ? '#d8b4fe' : '#bae6fd'}`,
+                                  fontWeight: 800,
+                                  fontSize: '10px',
+                                  padding: '2px 7px',
+                                  borderRadius: '6px',
+                                }}
+                              >
+                                {((f.tipoLeche || f.observacion || '').toUpperCase().includes('BUFAL')) ? '🐃 BÚFALA' : '🥛 VACA'}
+                              </span>
+                            )}
+                            <span className="badge" style={{ background: '#ecfdf5', color: '#047857', fontWeight: 800, fontSize: '10.5px' }}>
+                              FINALIZADO
+                            </span>
+                          </div>
                         </div>
 
                         <div style={{ fontSize: '12px', color: '#475569', marginBottom: '8px' }}>

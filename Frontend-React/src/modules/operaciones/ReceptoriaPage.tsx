@@ -492,6 +492,27 @@ export const ReceptoriaPage: React.FC = () => {
             fincasConLitros = fincasCompania;
             const totalFiltrado = fincasCompania.reduce((acc: number, f: any) => acc + Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0), 0);
             setViajeParaRecibir((prev: any) => prev ? { ...prev, totalLitrosRecogidos: totalFiltrado, totalLitrosFinca: totalFiltrado } : prev);
+          } else {
+            // En 1. ENTRADAS (Receptoría):
+            // Si el ticket tiene despachos separados a compañías externas (no unificados todos a Receptoría),
+            // validar SOLO las fincas de RUTA (TipoServicioId === 1 / sin companiaId).
+            // Si se envió TODO unificado a Receptoría (sin despachos externos), validar RUTA + TRANSPORTE.
+            const tieneDespachosExternos = despachosCompanias.some(
+              (d: any) => Number(d.controlRutaId) === Number(viaje.id) && !esDespachoReceptoria(d)
+            );
+            if (tieneDespachosExternos) {
+              const idsRuta = new Set(
+                (fincasCatalogo || [])
+                  .filter((fc: any) => Number(fc.tipoServicioId || 1) === 1 && !fc.companiaId)
+                  .map((fc: any) => Number(fc.id))
+              );
+              const fincasRuta = fincasConLitros.filter((f: any) => idsRuta.has(Number(f.fincaId || f.id)));
+              if (fincasRuta.length > 0) {
+                fincasConLitros = fincasRuta;
+                const totalRuta = fincasRuta.reduce((acc: number, f: any) => acc + Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0), 0);
+                setViajeParaRecibir((prev: any) => prev ? { ...prev, totalLitrosRecogidos: totalRuta, totalLitrosFinca: totalRuta } : prev);
+              }
+            }
           }
 
           setFincasViajeVerificar(fincasConLitros);

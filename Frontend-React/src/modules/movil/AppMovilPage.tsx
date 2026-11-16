@@ -10,6 +10,7 @@ import { mantenimientoApi } from '@/api/mantenimiento.api';
 import { combustibleApi } from '@/api/combustible.api';
 import { mapaRutasApi } from '@/api/mapaRutas.api';
 import { capturarGpsSilencioso, esTicketAbiertoGps } from '@/utils/gpsPrivacidad';
+import { movilAuditLog, type MovilAuditLogEntry } from '@/lib/movilAuditLog';
 import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.api';
 import { finanzasApi } from '@/api/finanzas.api';
 import { useAuthStore } from '@/stores/authStore';
@@ -275,6 +276,14 @@ export const esTicketAbiertoEnRuta = (x: ControlRutaDto | null | undefined): boo
 export const AppMovilPage: React.FC = () => {
   // Navegación de Pestañas Móviles
   const [tabActiva, setTabActiva] = useState<TabMovil>('principal');
+  const [auditLogs, setAuditLogs] = useState<MovilAuditLogEntry[]>(() => movilAuditLog.listar());
+  const [auditLogFiltro, setAuditLogFiltro] = useState<'TODOS' | 'ERRORES' | 'ELIMINADOS' | 'CREADOS' | 'SYNC'>('TODOS');
+
+  useEffect(() => {
+    if (tabActiva === 'perfil') {
+      setAuditLogs(movilAuditLog.listar());
+    }
+  }, [tabActiva]);
 
   // Redirigir siempre a principal si se invoca recolección antigua
   useEffect(() => {
@@ -1383,6 +1392,10 @@ export const AppMovilPage: React.FC = () => {
           const dIsVergel = (d.empresaCodigo || '').toUpperCase().includes('VERGEL') || (d.empresaNombre || '').toLowerCase().includes('vergel');
           const dIsCampo = (d.empresaCodigo || '').toUpperCase().includes('CAMPO') || (d.empresaNombre || '').toLowerCase().includes('campo');
           if ((isCampoVerde && dIsVergel) || (isVergel && dIsCampo)) {
+            movilAuditLog.registrar({
+              tipo: 'REGISTRO_ELIMINADO',
+              detalle: `Limpieza por cambio de empresa (${d.empresaCodigo || 'anterior'} -> ${currentTenant})`,
+            });
             localStorage.removeItem('movil_device_info');
             localStorage.removeItem('movil_viaje_activo');
             localStorage.removeItem('movil_paradas_activo');
@@ -3186,7 +3199,18 @@ export const AppMovilPage: React.FC = () => {
               .filter((c) => {
                 const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
                 if (cTicket === targetV!.id) {
-                  return !(c.synced && fIdsConfirmadosServidor.has(Number(c.fincaId)));
+                  const eliminar = Boolean(c.synced && fIdsConfirmadosServidor.has(Number(c.fincaId)));
+                  if (eliminar) {
+                    movilAuditLog.registrar({
+                      tipo: 'REGISTRO_ELIMINADO',
+                      ticketId: cTicket,
+                      fincaId: Number(c.fincaId),
+                      fincaNombre: c.fincaNombre,
+                      litros: Number(c.litros),
+                      detalle: 'Depuración automática: ya confirmado y sincronizado en servidor',
+                    });
+                  }
+                  return !eliminar;
                 }
                 // Conservar intactas las cargas de los demás tickets del chofer
                 return true;
@@ -3223,7 +3247,18 @@ export const AppMovilPage: React.FC = () => {
                     .filter((c) => {
                       const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
                       if (cTicket === t.id) {
-                        return !(c.synced && confirmadosOtro.has(Number(c.fincaId)));
+                        const eliminar = Boolean(c.synced && confirmadosOtro.has(Number(c.fincaId)));
+                        if (eliminar) {
+                          movilAuditLog.registrar({
+                            tipo: 'REGISTRO_ELIMINADO',
+                            ticketId: cTicket,
+                            fincaId: Number(c.fincaId),
+                            fincaNombre: c.fincaNombre,
+                            litros: Number(c.litros),
+                            detalle: 'Depuración automática (ticket secundario): confirmado en servidor',
+                          });
+                        }
+                        return !eliminar;
                       }
                       return true;
                     });
@@ -5371,9 +5406,25 @@ export const AppMovilPage: React.FC = () => {
           precisionMetros: gpsCaptura?.precisionMetros,
         } as any);
         sincronizadoOnline = true;
+        movilAuditLog.registrar({
+          tipo: 'SYNC_OK',
+          ticketId: ticketIdEfectivo,
+          fincaId: Number(formCarga.fincaId),
+          fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
+          litros: litrosNum,
+          detalle: `Envío directo en línea OK (hora=${horaStr}, gps=${gpsCaptura ? `${gpsCaptura.latitud.toFixed(5)},${gpsCaptura.longitud.toFixed(5)}` : 'SIN_GPS'})`,
+        });
       } catch (errApi: any) {
         console.warn('Error al enviar carga directamente al servidor, se guardará en cola local:', errApi);
         const errMsg = errApi?.response?.data?.message || errApi?.message || 'Error de conexión con la central';
+        movilAuditLog.registrar({
+          tipo: 'SYNC_ERROR',
+          ticketId: ticketIdEfectivo,
+          fincaId: Number(formCarga.fincaId),
+          fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
+          litros: litrosNum,
+          detalle: `Fallo envío directo online (quedó en cola local): ${errMsg}`,
+        });
         toast.warning(`Guardado en el teléfono. Pendiente de sincronizar: ${errMsg}`);
       }
     }
@@ -5446,6 +5497,15 @@ export const AppMovilPage: React.FC = () => {
     }
     setCargas(nuevasCargas);
     guardarCargasLocalSeguro(nuevasCargas);
+
+    movilAuditLog.registrar({
+      tipo: idxExistente >= 0 ? 'REGISTRO_EDITADO' : 'REGISTRO_CREADO',
+      ticketId: ticketIdEfectivo || undefined,
+      fincaId: Number(formCarga.fincaId),
+      fincaNombre: fincaSel ? fincaSel.nombre : `Finca #${formCarga.fincaId}`,
+      litros: litrosNum,
+      detalle: `${idxExistente >= 0 ? 'Actualizado' : 'Guardado'} en teléfono (hora=${horaStr}, sync=${sincronizadoOnline ? 'SI' : 'PENDIENTE'}, gps=${gpsCaptura ? 'OK' : 'NO'})`,
+    });
 
     // Persistencia Robusta en IndexedDB Local (por ticket + finca)
     const codEmpresa = dispositivo?.empresaCodigo || 'EMPRESA';
@@ -11338,6 +11398,172 @@ export const AppMovilPage: React.FC = () => {
                 <i className="fa-solid fa-arrows-rotate"></i>
                 Actualizar
               </button>
+            </div>
+
+            {/* Logs de Auditoría Móvil */}
+            <div
+              style={{
+                background: '#ffffff',
+                borderRadius: '14px',
+                padding: '14px',
+                border: '1px solid #e2e8f0',
+                marginTop: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <i className="fa-solid fa-clipboard-list text-sky-600"></i>
+                    Logs de Auditoría Móvil ({auditLogs.length})
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>
+                    Historial de creaciones, ediciones, eliminaciones y sincronizaciones
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAuditLogs(movilAuditLog.listar())}
+                    style={{
+                      background: '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      color: '#334155',
+                      borderRadius: '8px',
+                      padding: '5px 9px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <i className="fa-solid fa-rotate mr-1"></i>Refrescar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const texto = auditLogs
+                        .slice(0, 120)
+                        .map((l) => `[${l.fechaHora}] [${l.tipo}]${l.ticketId ? ` Ticket:${l.ticketId}` : ''}${l.fincaNombre || l.fincaId ? ` Finca:${l.fincaNombre || l.fincaId}` : ''}${l.litros != null ? ` ${l.litros}L` : ''} - ${l.detalle}`)
+                        .join('\n');
+                      try {
+                        await navigator.clipboard.writeText(texto || 'Sin registros');
+                        toast.success('Logs copiados al portapapeles');
+                      } catch {
+                        toast.error('No se pudo copiar los logs');
+                      }
+                    }}
+                    style={{
+                      background: '#e0f2fe',
+                      border: '1px solid #bae6fd',
+                      color: '#0369a1',
+                      borderRadius: '8px',
+                      padding: '5px 9px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <i className="fa-solid fa-copy mr-1"></i>Copiar
+                  </button>
+                </div>
+              </div>
+
+              {/* Filtros rápidos */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                {([
+                  { id: 'TODOS', label: 'Todos' },
+                  { id: 'ERRORES', label: 'Errores' },
+                  { id: 'ELIMINADOS', label: 'Eliminados' },
+                  { id: 'CREADOS', label: 'Creados/Edit' },
+                  { id: 'SYNC', label: 'Sync OK' },
+                ] as const).map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setAuditLogFiltro(f.id)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '999px',
+                      fontSize: '10.5px',
+                      fontWeight: 800,
+                      border: auditLogFiltro === f.id ? '1px solid #0284c7' : '1px solid #e2e8f0',
+                      background: auditLogFiltro === f.id ? '#0284c7' : '#f8fafc',
+                      color: auditLogFiltro === f.id ? '#ffffff' : '#475569',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ maxHeight: '260px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {(() => {
+                  const filtrados = auditLogs.filter((l) => {
+                    if (auditLogFiltro === 'ERRORES') return l.tipo === 'SYNC_ERROR';
+                    if (auditLogFiltro === 'ELIMINADOS') return l.tipo === 'REGISTRO_ELIMINADO';
+                    if (auditLogFiltro === 'CREADOS') return l.tipo === 'REGISTRO_CREADO' || l.tipo === 'REGISTRO_EDITADO';
+                    if (auditLogFiltro === 'SYNC') return l.tipo === 'SYNC_OK';
+                    return true;
+                  });
+                  if (filtrados.length === 0) {
+                    return (
+                      <div style={{ fontSize: '12px', color: '#94a3b8', textAlign: 'center', padding: '14px' }}>
+                        No hay eventos registrados en esta categoría.
+                      </div>
+                    );
+                  }
+                  return filtrados.slice(0, 80).map((log) => {
+                    const badgeColor =
+                      log.tipo === 'SYNC_ERROR'
+                        ? { bg: '#fee2e2', fg: '#b91c1c' }
+                        : log.tipo === 'REGISTRO_ELIMINADO'
+                        ? { bg: '#ffedd5', fg: '#c2410c' }
+                        : log.tipo === 'SYNC_OK'
+                        ? { bg: '#dcfce7', fg: '#15803d' }
+                        : log.tipo === 'REGISTRO_EDITADO'
+                        ? { bg: '#fef9c3', fg: '#a16207' }
+                        : { bg: '#e0f2fe', fg: '#0369a1' };
+                    return (
+                      <div
+                        key={log.id}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: '10px',
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          fontSize: '11px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '3px' }}>
+                          <span
+                            style={{
+                              background: badgeColor.bg,
+                              color: badgeColor.fg,
+                              fontWeight: 900,
+                              fontSize: '9.5px',
+                              padding: '2px 7px',
+                              borderRadius: '6px',
+                            }}
+                          >
+                            {log.tipo}
+                          </span>
+                          <span style={{ color: '#64748b', fontSize: '10px', fontWeight: 600 }}>
+                            {new Date(log.fechaHora).toLocaleString()}
+                          </span>
+                        </div>
+                        <div style={{ color: '#0f172a', fontWeight: 700 }}>
+                          {log.ticketId ? `Ticket #${log.ticketId} • ` : ''}
+                          {log.fincaNombre || (log.fincaId ? `Finca #${log.fincaId}` : '')}
+                          {log.litros != null ? ` (${log.litros} L)` : ''}
+                        </div>
+                        <div style={{ color: '#475569', marginTop: '2px', wordBreak: 'break-word' }}>
+                          {log.detalle}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
             </div>
 
             {/* Acciones de Sesión y Dispositivo */}

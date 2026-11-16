@@ -1017,19 +1017,32 @@ export const ReceptoriaPage: React.FC = () => {
         const fincasT = fincasTicketsMap[v.id] || [];
         const ltsFincas = fincasT.reduce((acc: number, f: any) => acc + Number(f.litros || f.Litros || f.litrosLeche || 0), 0);
         const ltsBackend = Number(v.totalLitrosFinca ?? v.totalLitrosRecogidos ?? (v as any).totalLitros ?? 0);
-        const litrosRecogidos = ltsBackend > 0 ? ltsBackend : ltsFincas;
+        const totalBrutoTicket = ltsBackend > 0 ? ltsBackend : ltsFincas;
+        const despachosExternosTicket = despachosCompanias
+          .filter((d: any) => Number(d.controlRutaId) === Number(v.id) && !esDespachoReceptoria(d));
+        const totalDespachadoExterno = despachosExternosTicket
+          .reduce((acc: number, d: any) => acc + Number(d.litrosDespachados || 0), 0);
+        const litrosRecogidos = totalDespachadoExterno > 0
+          ? Math.max(0, totalBrutoTicket - totalDespachadoExterno)
+          : totalBrutoTicket;
 
         const choferObj = conductores.find((ch: any) => ch.id === (v.choferId || v.usuarioId) || (ch.nombre && v.nombreConductor && ch.nombre.trim().toUpperCase() === v.nombreConductor.trim().toUpperCase()));
         const choferNombre = v.nombreConductor || v.choferNombre || (v as any).conductorNombre || choferObj?.nombre || usuarios.find(u => u.id === (v.usuarioId || v.choferId))?.nombreCompleto || 'Elvis Macias';
 
-        const totalParadas = fincasT.length > 0 ? fincasT.length : Number((v as any).totalFincas || v.fincasPlanificadasIds?.length || 0);
+        const fincasSoloRuta = totalDespachadoExterno > 0
+          ? fincasT.filter((f: any) => {
+              const fc = (fincasCatalogo || []).find((x: any) => Number(x.id) === Number(f.fincaId || f.id));
+              return !fc || (Number(fc.tipoServicioId || 1) === 1 && !fc.companiaId);
+            })
+          : fincasT;
+        const totalParadas = fincasSoloRuta.length > 0 ? fincasSoloRuta.length : Number((v as any).totalFincas || v.fincasPlanificadasIds?.length || 0);
 
         return {
           ...v,
           _litrosRecogidos: litrosRecogidos,
           _choferNombre: choferNombre,
           _totalParadas: totalParadas,
-          _fincas: fincasT,
+          _fincas: fincasSoloRuta,
         };
       });
   }, [viajesActivos, filtroFecha, subFiltroEntradas, busquedaBandeja, fincasTicketsMap, conductores, usuarios]);

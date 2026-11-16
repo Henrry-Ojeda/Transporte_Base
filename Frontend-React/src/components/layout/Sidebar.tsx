@@ -48,6 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     if (item.tabId === 'liquidacion' && !hasTenantModule('MOD_LIQUIDACIONES')) return false;
     if (item.tabId === 'pagos-usuarios' && !hasTenantModule('MOD_PAGOS_PERSONAL')) return false;
     if (item.tabId === 'historial-bcv' && !hasTenantModule('MOD_HISTORIAL_BCV')) return false;
+    if (item.tabId === 'mapa-rutas' && !hasTenantModule('MOD_MAPA_RUTAS')) return false;
     return canAccessTab(item.tabId);
   };
 
@@ -127,6 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           ],
         },
         { name: 'Control de Viajes / Tickets', href: '/viajes', tabId: 'control-rutas', icon: 'fa-solid fa-clipboard-check' },
+        { name: 'Mapa de Rutas & GPS', href: '/mapa-rutas', tabId: 'mapa-rutas', icon: 'fa-solid fa-map-location-dot', color: '#0d9488' },
         { name: 'Trazabilidad Búfala', href: '/bufala', tabId: 'bufala', icon: 'fa-solid fa-gem', color: '#0d9488' },
         { name: 'Evolución Fincas & Flota', href: '/evolucion-fincas', tabId: 'evolucion-fincas', icon: 'fa-solid fa-arrow-trend-up', color: '#10b981' },
         {

@@ -26,6 +26,7 @@ import { PlanificacionRutasPage } from '@/modules/operaciones/PlanificacionRutas
 import { BufalaPage } from '@/modules/operaciones/BufalaPage';
 import { EvolucionFincasPage } from '@/modules/operaciones/EvolucionFincasPage';
 import { ControlTanquesPage } from '@/modules/operaciones/ControlTanquesPage';
+import { MapaRutasPage } from '@/modules/operaciones/MapaRutasPage';
 
 // Catálogos
 import { FincasPage } from '@/modules/catalogos/FincasPage';
@@ -210,6 +211,7 @@ export const App: React.FC = () => {
             <Route path="/control-tanques" element={<ProtectedRoute requiredTenantModule="MOD_CONTROL_TANQUES"><ControlTanquesPage /></ProtectedRoute>} />
             <Route path="/planificacion-rutas" element={<ProtectedRoute requiredTenantModule="MOD_LOGISTICA_RUTAS"><RutasLogisticaPage /></ProtectedRoute>} />
             <Route path="/planificacion-rutas-choferes" element={<ProtectedRoute requiredTenantModule="MOD_LOGISTICA_RUTAS"><PlanificacionRutasChoferesPage /></ProtectedRoute>} />
+            <Route path="/mapa-rutas" element={<ProtectedRoute requiredTenantModule="MOD_MAPA_RUTAS"><MapaRutasPage /></ProtectedRoute>} />
             <Route path="/bufala" element={<ProtectedRoute requiredTenantModule="MOD_LECHE_BUFALA"><BufalaPage /></ProtectedRoute>} />
 
             {/* Catálogos */}

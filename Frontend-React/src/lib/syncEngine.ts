@@ -350,7 +350,17 @@ class SyncEngine {
             esAcida: Boolean(carga.esAcida),
             esDiferido: Boolean(carga.esDiferida),
             fecha: (carga.fechaRegistro || new Date().toISOString()).split('T')[0],
-            hora: (carga as any).hora || (carga.fechaRegistro ? new Date(carga.fechaRegistro).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined),
+            hora: (() => {
+              const rawH = (carga as any).hora;
+              if (rawH && /^\d{2}:\d{2}(:\d{2})?$/.test(String(rawH).trim())) return String(rawH).trim();
+              if (carga.fechaRegistro) {
+                const d = new Date(carga.fechaRegistro);
+                if (!isNaN(d.getTime())) {
+                  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+                }
+              }
+              return rawH ? String(rawH).replace(/a\.\s*m\./gi, 'AM').replace(/p\.\s*m\./gi, 'PM').trim() : undefined;
+            })(),
             tipoLeche: carga.tipoLeche || 'VACA',
             observacion: obsLimpia || undefined,
             temperatura: carga.temperatura ?? undefined,
@@ -426,7 +436,9 @@ class SyncEngine {
                       esAcida: Boolean(c.esAcida),
                       esDiferido: Boolean(c.esDiferido),
                       fecha: (c.fecha || new Date().toISOString()).split('T')[0],
-                      hora: c.hora,
+                      hora: c.hora
+                        ? String(c.hora).replace(/a\.\s*m\./gi, 'AM').replace(/p\.\s*m\./gi, 'PM').trim()
+                        : undefined,
                       tipoLeche: c.tipoLeche || 'VACA',
                       observacion: obsLimpia || undefined,
                       temperatura: c.temperatura ? Number(c.temperatura) : undefined,

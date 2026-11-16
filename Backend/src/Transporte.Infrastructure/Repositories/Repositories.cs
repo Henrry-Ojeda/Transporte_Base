@@ -10182,8 +10182,13 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             DateTime createdAtEfectivo = DateTime.UtcNow.AddHours(-4);
             if (!string.IsNullOrWhiteSpace(dto.Hora))
             {
-                var hStr = dto.Hora.Trim();
-                if (DateTime.TryParse($"{fechaEfectiva:yyyy-MM-dd} {hStr}", out var parsedDt))
+                var hStr = dto.Hora.Trim()
+                    .Replace("a. m.", "AM", StringComparison.OrdinalIgnoreCase)
+                    .Replace("p. m.", "PM", StringComparison.OrdinalIgnoreCase)
+                    .Replace("a.m.", "AM", StringComparison.OrdinalIgnoreCase)
+                    .Replace("p.m.", "PM", StringComparison.OrdinalIgnoreCase);
+                if (DateTime.TryParse($"{fechaEfectiva:yyyy-MM-dd} {hStr}", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedDt) ||
+                    DateTime.TryParse($"{fechaEfectiva:yyyy-MM-dd} {hStr}", out parsedDt))
                 {
                     createdAtEfectivo = parsedDt;
                 }
@@ -10202,7 +10207,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         TasaDolarBsAplicada = @tasaActual,
                         Observacion = @observacion,
                         FotoComprobante = ISNULL(@fotoComprobante, FotoComprobante),
-                        CreatedAt = CASE WHEN CreatedAt IS NULL OR CAST(CreatedAt AS DATE) != CAST(@fechaEfectiva AS DATE) THEN @createdAtEfectivo ELSE CreatedAt END,
+                        CreatedAt = CASE WHEN CreatedAt IS NULL OR ISNULL(Litros, 0) = 0 OR CAST(CreatedAt AS DATE) != CAST(@fechaEfectiva AS DATE) THEN @createdAtEfectivo ELSE CreatedAt END,
                         ModifiedAt = @createdAtEfectivo,
                         ModifiedBy = @usuarioId
                     WHERE Id = @paradaExistenteId;

@@ -1395,7 +1395,7 @@ const RenderReporteReceptorias: React.FC<{
                     <tr key={dIdx}>
                       <td>{formatearFechaLocal(d.fecha)}</td>
                       <td style={{ fontWeight: 800 }}>{formatearNumero(d.litros)}</td>
-                      <td className="text-left">{d.observacion || '-'}</td>
+                      <td className="text-left">{(d.observacion || '').replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '').trim() || '-'}</td>
                     </tr>
                   ))
                 )}
@@ -1855,6 +1855,7 @@ const RenderReporteFincas: React.FC<{
                         const obs = (d.observacion || d.Observacion || '').toUpperCase();
                         const isAcida = Boolean(d.esAcida) || obs.includes('ACID') || obs.includes('MALA') || String(d.tipoLeche || '').includes('ACID');
                         let obsLimpia = (d.observacion || d.Observacion || '')
+                          .replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '')
                           .replace(/\[\s*BUFAL[AO]\s*\]/gi, '')
                           .replace(/\bBUFAL[AO]\b/gi, '')
                           .trim();
@@ -2453,7 +2454,7 @@ const RenderReporteChoferes: React.FC<{
                       <tr key={dIdx}>
                         <td>{formatearFechaLocal(d.fecha)}</td>
                         <td style={{ background: bgCol, color: textCol, fontWeight: 800 }}>{txt}</td>
-                        <td className="text-left">{d.observacion || ''}</td>
+                        <td className="text-left">{(d.observacion || '').replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '').trim()}</td>
                       </tr>
                     );
                   })
@@ -3350,7 +3351,7 @@ const RenderReporteRelacionChoferes: React.FC<{
                           const fNombre = (f.fincaNombre || f.FincaNombre || `Finca #${f.fincaId || f.FincaId || ''}`).toUpperCase();
                           const fProp = (f.propietario || f.Propietario || '').trim();
                           const fTipo = (f.tipoLeche || f.TipoLeche || 'VACA').toUpperCase();
-                          const fObs = (f.observacion || f.Observacion || '').trim();
+                          const fObs = (f.observacion || f.Observacion || '').replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '').trim();
                           const fTicket = f.ticketControlId || f.TicketControlId || '';
 
                           let tipoBadge = (

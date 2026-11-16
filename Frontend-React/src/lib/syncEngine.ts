@@ -342,7 +342,7 @@ class SyncEngine {
         }
 
         if (ticketId && ticketId > 0) {
-          const obsConOrigen = `${carga.observaciones ? carga.observaciones + ' ' : ''}[ORIGEN_MOVIL]`.trim();
+          const obsLimpia = (carga.observaciones || '').trim();
           const payloadEnvio = {
             choferId: choferId || undefined,
             fincaId: Number(carga.fincaId),
@@ -352,7 +352,7 @@ class SyncEngine {
             fecha: (carga.fechaRegistro || new Date().toISOString()).split('T')[0],
             hora: (carga as any).hora || (carga.fechaRegistro ? new Date(carga.fechaRegistro).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined),
             tipoLeche: carga.tipoLeche || 'VACA',
-            observacion: obsConOrigen,
+            observacion: obsLimpia || undefined,
             temperatura: carga.temperatura ?? undefined,
             fotoComprobante: carga.foto && carga.foto !== '[EN_INDEXEDDB]' ? carga.foto : undefined,
           };
@@ -403,7 +403,7 @@ class SyncEngine {
               if (fId > 0 && Number(c.litros) > 0) {
                 if (tReal > 0) {
                   try {
-                    const obsConOrigen = `${c.observacion ? c.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim();
+                    const obsLimpia = (c.observacion || '').trim();
                     let fotoComprobante = c.fotoRecibo && c.fotoRecibo !== '[EN_INDEXEDDB]' ? c.fotoRecibo : undefined;
 
                     // Si la foto estaba en IndexedDB por cuota de localStorage, recuperarla
@@ -425,7 +425,7 @@ class SyncEngine {
                       fecha: (c.fecha || new Date().toISOString()).split('T')[0],
                       hora: c.hora,
                       tipoLeche: c.tipoLeche || 'VACA',
-                      observacion: obsConOrigen,
+                      observacion: obsLimpia || undefined,
                       temperatura: c.temperatura ? Number(c.temperatura) : undefined,
                       fotoComprobante,
                     };

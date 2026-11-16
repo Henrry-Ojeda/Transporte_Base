@@ -5353,7 +5353,7 @@ export const AppMovilPage: React.FC = () => {
     let sincronizadoOnline = false;
     if (isOnline && navigator.onLine && ticketIdEfectivo > 0) {
       try {
-        const obsConOrigen = `${formCarga.observacion ? formCarga.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim();
+        const obsLimpia = (formCarga.observacion || '').trim();
         await operacionesApi.agregarFincaViaje(ticketIdEfectivo, {
           choferId: choferEfectivoId || undefined,
           fincaId: Number(formCarga.fincaId),
@@ -5363,7 +5363,7 @@ export const AppMovilPage: React.FC = () => {
           fecha: fechaAUsar,
           hora: horaStr,
           tipoLeche: formCarga.tipoLeche,
-          observacion: obsConOrigen,
+          observacion: obsLimpia || undefined,
           temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
           fotoComprobante: formCarga.fotoRecibo || undefined,
           latitud: gpsCaptura?.latitud,
@@ -5388,7 +5388,7 @@ export const AppMovilPage: React.FC = () => {
         fecha: fechaAUsar,
         hora: horaStr,
         temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
-        observacion: `${formCarga.observacion ? formCarga.observacion + ' ' : ''}[ORIGEN_MOVIL]`.trim(),
+        observacion: (formCarga.observacion || '').trim() || undefined,
         fotoComprobante: formCarga.fotoRecibo || undefined,
         latitud: gpsCaptura?.latitud,
         longitud: gpsCaptura?.longitud,

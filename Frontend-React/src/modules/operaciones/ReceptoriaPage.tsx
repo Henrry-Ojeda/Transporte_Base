@@ -1403,7 +1403,9 @@ export const ReceptoriaPage: React.FC = () => {
                   const enviadoARecep = viajeEstaEnviadoAReceptoria(c);
                   const procId = Number(c.procesoActualId || 1);
                   const est = String(c.estado || '').toUpperCase().trim();
-                  const isRecepcionado = procId >= 4 || est === 'FINALIZADO' || est === 'RECEPCIONADO' || Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || 0) > 0;
+                  const isConfirmadoFinalizado = procId >= 4 || est === 'FINALIZADO';
+                  const isRecepcionado = isConfirmadoFinalizado || est === 'RECEPCIONADO' || Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || 0) > 0;
+                  const isPendienteConfirmar = isRecepcionado && !isConfirmadoFinalizado;
 
                   // 1. Litros reales y paradas
                   const litrosRecogidos = Number(c._litrosRecogidos || 0);
@@ -1436,7 +1438,7 @@ export const ReceptoriaPage: React.FC = () => {
                       style={{
                         background: '#ffffff',
                         border: '1px solid #e2e8f0',
-                        borderTop: isRecepcionado ? '4px solid #10b981' : (enviadoARecep ? '4px solid #0284c7' : '4px solid #f59e0b'),
+                        borderTop: isConfirmadoFinalizado ? '4px solid #10b981' : (isPendienteConfirmar ? '4px solid #f59e0b' : (enviadoARecep ? '4px solid #0284c7' : '4px solid #f59e0b')),
                         borderRadius: '12px',
                         padding: '14px 16px',
                         display: 'flex',
@@ -1487,16 +1489,16 @@ export const ReceptoriaPage: React.FC = () => {
                             <span
                               className="badge"
                               style={{
-                                background: isRecepcionado ? '#dcfce7' : (enviadoARecep ? '#e0f2fe' : '#fef3c7'),
-                                color: isRecepcionado ? '#15803d' : (enviadoARecep ? '#0284c7' : '#b45309'),
+                                background: isConfirmadoFinalizado ? '#dcfce7' : (isPendienteConfirmar ? '#fef3c7' : (enviadoARecep ? '#e0f2fe' : '#fef3c7')),
+                                color: isConfirmadoFinalizado ? '#15803d' : (isPendienteConfirmar ? '#b45309' : (enviadoARecep ? '#0284c7' : '#b45309')),
                                 fontWeight: 800,
                                 fontSize: '11px',
-                                border: isRecepcionado ? '1px solid #bbf7d0' : (enviadoARecep ? '1px solid #bae6fd' : '1px solid #fde68a'),
+                                border: isConfirmadoFinalizado ? '1px solid #bbf7d0' : (isPendienteConfirmar ? '1px solid #fcd34d' : (enviadoARecep ? '1px solid #bae6fd' : '1px solid #fde68a')),
                                 padding: '3px 7px',
                               }}
                             >
-                              <i className={`fa-solid ${isRecepcionado ? 'fa-circle-check' : (enviadoARecep ? 'fa-building-wheat' : 'fa-clock')} mr-1`}></i>
-                              {isRecepcionado ? 'Recepcionado' : (enviadoARecep ? 'En Planta' : 'En Recolección')}
+                              <i className={`fa-solid ${isConfirmadoFinalizado ? 'fa-circle-check' : (isPendienteConfirmar ? 'fa-hourglass-half' : (enviadoARecep ? 'fa-building-wheat' : 'fa-clock'))} mr-1`}></i>
+                              {isConfirmadoFinalizado ? 'Confirmado / Finalizado' : (isPendienteConfirmar ? 'Recepcionado (Por Confirmar)' : (enviadoARecep ? 'En Planta' : 'En Recolección'))}
                             </span>
                             <span className="badge" style={{ background: '#f1f5f9', color: '#334155', fontWeight: 800, border: '1px solid #cbd5e1' }}>
                               #{c.codigoTicket || c.id}
@@ -1567,9 +1569,9 @@ export const ReceptoriaPage: React.FC = () => {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             <div
                               style={{
-                                background: '#f0fdf4',
-                                border: '1px solid #bbf7d0',
-                                color: '#15803d',
+                                background: isConfirmadoFinalizado ? '#f0fdf4' : '#fffbeb',
+                                border: isConfirmadoFinalizado ? '1px solid #bbf7d0' : '1px solid #fde68a',
+                                color: isConfirmadoFinalizado ? '#15803d' : '#b45309',
                                 borderRadius: '6px',
                                 padding: '6px 10px',
                                 fontSize: '11.5px',
@@ -1581,7 +1583,10 @@ export const ReceptoriaPage: React.FC = () => {
                                 gap: '6px',
                               }}
                             >
-                              <i className="fa-solid fa-circle-check"></i> Descargado en Silos ({Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || litrosRecogidos).toLocaleString()} Lts)
+                              <i className={`fa-solid ${isConfirmadoFinalizado ? 'fa-circle-check' : 'fa-hourglass-half'}`}></i>
+                              {isConfirmadoFinalizado
+                                ? `Confirmado en Silos (${Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || litrosRecogidos).toLocaleString()} Lts)`
+                                : `Descargado en Silos (${Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || litrosRecogidos).toLocaleString()} Lts) — Falta Confirmar`}
                             </div>
                             <button
                               type="button"
@@ -1591,9 +1596,9 @@ export const ReceptoriaPage: React.FC = () => {
                                 fontSize: '11px',
                                 fontWeight: 700,
                                 padding: '5px 8px',
-                                background: '#ffffff',
-                                border: '1px solid #cbd5e1',
-                                color: '#475569',
+                                background: isPendienteConfirmar ? '#fef3c7' : '#ffffff',
+                                border: isPendienteConfirmar ? '1px solid #f59e0b' : '1px solid #cbd5e1',
+                                color: isPendienteConfirmar ? '#92400e' : '#475569',
                                 borderRadius: '6px',
                                 cursor: 'pointer',
                                 display: 'inline-flex',
@@ -1602,7 +1607,8 @@ export const ReceptoriaPage: React.FC = () => {
                                 gap: '5px',
                               }}
                             >
-                              <i className="fa-solid fa-clipboard-list text-sky-600"></i> Ver Auditoría de Fincas ({totalParadas})
+                              <i className={`fa-solid ${isPendienteConfirmar ? 'fa-check-double text-amber-600' : 'fa-clipboard-list text-sky-600'}`}></i>
+                              {isPendienteConfirmar ? `Verificar y Confirmar (${totalParadas})` : `Ver Auditoría de Fincas (${totalParadas})`}
                             </button>
                           </div>
                         ) : enviadoARecep ? (

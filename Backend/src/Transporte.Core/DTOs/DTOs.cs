@@ -746,6 +746,8 @@ namespace Transporte.Core.DTOs
         public decimal PrecioLitroAcidaUSD { get; set; }
         public bool TieneDosTiposLeche { get; set; } = false;
         public decimal? PrecioBufalaLitroUSD { get; set; } = 0.0000m;
+        public decimal? Latitud { get; set; }
+        public decimal? Longitud { get; set; }
         public bool Activo { get; set; } = true;
         public bool IsDeleted { get; set; } = false;
         public int PromedioLitrosDiarios { get; set; } = 0;
@@ -771,6 +773,8 @@ namespace Transporte.Core.DTOs
         public decimal PrecioLitroAcidaUSD { get; set; }
         public bool TieneDosTiposLeche { get; set; } = false;
         public decimal? PrecioBufalaLitroUSD { get; set; } = 0.0000m;
+        public decimal? Latitud { get; set; }
+        public decimal? Longitud { get; set; }
         public bool Activo { get; set; } = true;
         public List<FincaCuentaBancariaDto>? Cuentas { get; set; }
     }
@@ -792,6 +796,8 @@ namespace Transporte.Core.DTOs
         public decimal? PrecioLitroAcidaUSD { get; set; }
         public bool? TieneDosTiposLeche { get; set; }
         public decimal? PrecioBufalaLitroUSD { get; set; }
+        public decimal? Latitud { get; set; }
+        public decimal? Longitud { get; set; }
         public bool? Activo { get; set; }
         public List<FincaCuentaBancariaDto>? Cuentas { get; set; }
     }
@@ -1569,6 +1575,9 @@ namespace Transporte.Core.DTOs
         public int? NumeroCompartimiento { get; set; }
         public string? Observacion { get; set; }
         public string? FotoComprobante { get; set; }
+        public decimal? Latitud { get; set; }
+        public decimal? Longitud { get; set; }
+        public decimal? PrecisionMetros { get; set; }
     }
 
     public class FincaPaqueteSyncDto
@@ -1583,6 +1592,9 @@ namespace Transporte.Core.DTOs
         public decimal? Temperatura { get; set; }
         public string? Observacion { get; set; }
         public string? FotoComprobante { get; set; }
+        public decimal? Latitud { get; set; }
+        public decimal? Longitud { get; set; }
+        public decimal? PrecisionMetros { get; set; }
     }
 
     public class SincronizarPaqueteTicketDto
@@ -2782,6 +2794,99 @@ namespace Transporte.Core.DTOs
         public bool EsAlterna { get; set; } = false;
         public string? RutaPrincipalNombre { get; set; }
         public List<int> RutasAsignadasIds { get; set; } = new();
+    }
+
+    // =====================================================================
+    // DTOs PARA MAPA DE RUTAS & GPS (OpenStreetMap - Solo Ticket Abierto)
+    // =====================================================================
+    public class RegistrarPuntoGpsDto
+    {
+        public long ControlRutaId { get; set; }
+        public int? FincaId { get; set; }
+        public decimal Latitud { get; set; }
+        public decimal Longitud { get; set; }
+        public decimal? PrecisionMetros { get; set; }
+        public string Evento { get; set; } = "ENTRADA_APP"; // ENTRADA_APP | REGISTRO_LITROS | INICIO_VIAJE
+        public DateTime? FechaHoraDispositivo { get; set; }
+    }
+
+    public class PuntoGpsViajeDto
+    {
+        public long Id { get; set; }
+        public long ControlRutaId { get; set; }
+        public int UsuarioId { get; set; }
+        public string ChoferNombre { get; set; } = string.Empty;
+        public int? CamionId { get; set; }
+        public string? CamionPlaca { get; set; }
+        public int? FincaId { get; set; }
+        public string? FincaNombre { get; set; }
+        public decimal Latitud { get; set; }
+        public decimal Longitud { get; set; }
+        public decimal? PrecisionMetros { get; set; }
+        public string Evento { get; set; } = string.Empty;
+        public DateTime FechaHoraDispositivo { get; set; }
+    }
+
+    public class ViajeGpsResumenDto
+    {
+        public long ControlRutaId { get; set; }
+        public DateTime Fecha { get; set; }
+        public int UsuarioId { get; set; }
+        public string ChoferNombre { get; set; } = string.Empty;
+        public int? CamionId { get; set; }
+        public string? CamionPlaca { get; set; }
+        public int? RutaLogisticaId { get; set; }
+        public string? RutaNombre { get; set; }
+        public string? RutaColor { get; set; }
+        public int ProcesoActualId { get; set; }
+        public string Estado { get; set; } = string.Empty;
+        public int TotalLitrosFinca { get; set; }
+        public int CantidadPuntos { get; set; }
+        public double DistanciaEstimadaKm { get; set; }
+        public int DuracionMinutos { get; set; }
+        public List<PuntoGpsViajeDto> Puntos { get; set; } = new();
+    }
+
+    public class FincaMapaDto
+    {
+        public int Id { get; set; }
+        public string? Codigo { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+        public string Propietario { get; set; } = string.Empty;
+        public int? RutaId { get; set; }
+        public string? RutaNombre { get; set; }
+        public string? RutaColor { get; set; }
+        public decimal? Latitud { get; set; }
+        public decimal? Longitud { get; set; }
+        public int PromedioLitrosDiarios { get; set; }
+        public bool Activo { get; set; }
+    }
+
+    public class ActualizarCoordenadasFincaDto
+    {
+        public decimal Latitud { get; set; }
+        public decimal Longitud { get; set; }
+    }
+
+    public class CruceRutasDto
+    {
+        public int RutaAId { get; set; }
+        public string RutaANombre { get; set; } = string.Empty;
+        public string? RutaAColor { get; set; }
+        public int RutaBId { get; set; }
+        public string RutaBNombre { get; set; } = string.Empty;
+        public string? RutaBColor { get; set; }
+        public decimal Latitud { get; set; }
+        public decimal Longitud { get; set; }
+        public string Descripcion { get; set; } = string.Empty;
+        public double DistanciaEntrePuntosMetros { get; set; }
+    }
+
+    public class AnalisisRutasMapaDto
+    {
+        public List<FincaMapaDto> Fincas { get; set; } = new();
+        public List<ViajeGpsResumenDto> Viajes { get; set; } = new();
+        public List<CruceRutasDto> Cruces { get; set; } = new();
     }
 }
 

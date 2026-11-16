@@ -6027,10 +6027,8 @@ namespace Transporte.Infrastructure.Repositories
                 INNER JOIN TB_RUTAS_RECOLECCION r ON f.Id = r.FincaId
                 WHERE f.Id != 68
                   AND (@tieneFincas = 0 OR f.Id IN @fincaIds)
-                  AND (
-                      (@targetCicloId > 0 AND ISNULL(r.CicloLiquidacionId, r.CicloId) = @targetCicloId)
-                      OR (@targetCicloId <= 0 AND r.Fecha >= @fechaInicio AND r.Fecha <= @fechaFin)
-                  )
+                  AND CAST(r.Fecha AS DATE) >= @fechaInicio
+                  AND CAST(r.Fecha AS DATE) <= @fechaFin
                 ORDER BY f.Nombre";
 
             bool tieneFincas = fincaIds != null && fincaIds.Any();
@@ -6071,10 +6069,8 @@ namespace Transporte.Infrastructure.Repositories
                 LEFT JOIN TB_USUARIOS u ON r.UsuarioId = u.Id
                 WHERE f.Id != 68
                   AND (@tieneFincas = 0 OR r.FincaId IN @fincaIds)
-                  AND (
-                      (@targetCicloId > 0 AND ISNULL(r.CicloLiquidacionId, r.CicloId) = @targetCicloId)
-                      OR (@targetCicloId <= 0 AND r.Fecha >= @fechaInicio AND r.Fecha <= @fechaFin)
-                  )
+                  AND CAST(r.Fecha AS DATE) >= @fechaInicio
+                  AND CAST(r.Fecha AS DATE) <= @fechaFin
                 ORDER BY r.Fecha";
 
             var todosDetallesRaw = (await connection.QueryAsync<dynamic>(sqlDetalle, new { 

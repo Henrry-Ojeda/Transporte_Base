@@ -9052,13 +9052,6 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     COALESCE(cam.CapacidadLitros, cam_plan.CapacidadLitros) AS CapacidadCamionLitros,
                     cr.TipoDestino,
                     cr.LitrosRecibidosReceptoria,
-                    cr.DiferenciaReceptoria,
-                    cr.LitrosCargadosAdicional,
-                    cr.CompaniaDestinoId,
-                    cp.Nombre AS NombreCompaniaDestino,
-                    cr.LitrosEntregadosCompania,
-                    cr.DiferenciaCompania,
-                    cr.MermaTotalLitros,
                     uc.NombreCompleto AS NombreCerradoPor,
                     (SELECT COUNT(*) FROM TB_RUTAS_RECOLECCION r WHERE r.ControlRutaId = cr.Id OR (r.ControlRutaId IS NULL AND r.UsuarioId = cr.UsuarioId AND CAST(r.Fecha AS DATE) = CAST(cr.Fecha AS DATE))) AS TotalFincas
                 FROM TB_CONTROL_RUTAS cr
@@ -9922,7 +9915,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                                     INSERT INTO TB_RUTAS_RECOLECCION
                                     (ControlRutaId, FincaId, CicloId, UsuarioId, Fecha, Litros, EsAcida, TipoLeche, EsDiferido, CreatedAt, Observacion)
                                     VALUES
-                                    (@nuevoId, @fId, @cicloEfectivoId, @conductorEfectivo, @fecha, 0, 0, 'VACA', 0, GETDATE(), 'Asignada en inicio de ruta [ORIGEN_PLANIFICACION]');
+                                    (@nuevoId, @fId, @cicloEfectivoId, @conductorEfectivo, @fecha, 0, 0, 'VACA', 0, GETDATE(), NULL);
                                 END";
                             await connection.ExecuteAsync(sqlParada, new { nuevoId, fId, cicloEfectivoId, conductorEfectivo, fecha });
                         }

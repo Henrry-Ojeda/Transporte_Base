@@ -413,7 +413,7 @@ class SyncEngine {
           await operacionesApi.agregarFincaViaje(ticketId, payloadEnvio);
           await dbLocal.marcarRecoleccionSincronizada(carga.idLocal);
           subidosDbId.add(carga.idLocal);
-          subidosClave.add(`${ticketId}_${Number(carga.fincaId)}`);
+          subidosClave.add(`${ticketId}_${Number(carga.fincaId)}_${(carga.tipoLeche || 'VACA').toUpperCase()}`);
           exitosas++;
           movilAuditLog.registrar({
             tipo: 'SYNC_OK',
@@ -460,7 +460,8 @@ class SyncEngine {
               }
 
               // Si ya se subió en el paso 1 por IndexedDB, marcarla como sincronizada
-              const claveYa = `${tReal}_${fId}`;
+              const tipoCarga = (c.tipoLeche || 'VACA').toUpperCase();
+              const claveYa = `${tReal}_${fId}_${tipoCarga}`;
               if ((c.dbLocalId && subidosDbId.has(Number(c.dbLocalId))) || (tReal > 0 && subidosClave.has(claveYa))) {
                 listaCargas[i] = { ...c, serverTicketId: tReal > 0 ? tReal : c.serverTicketId, synced: true };
                 huboCambiosCargas = true;
@@ -510,7 +511,7 @@ class SyncEngine {
                       if (c.dbLocalId) {
                         await dbLocal.marcarRecoleccionSincronizada(Number(c.dbLocalId)).catch(() => {});
                       }
-                      subidosClave.add(`${tReal}_${fId}`);
+                      subidosClave.add(`${tReal}_${fId}_${(c.tipoLeche || 'VACA').toUpperCase()}`);
                       huboCambiosCargas = true;
                       exitosas++;
                       movilAuditLog.registrar({

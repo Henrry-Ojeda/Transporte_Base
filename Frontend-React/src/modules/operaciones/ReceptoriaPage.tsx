@@ -511,6 +511,8 @@ export const ReceptoriaPage: React.FC = () => {
                 fincasConLitros = fincasRuta;
                 const totalRuta = fincasRuta.reduce((acc: number, f: any) => acc + Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0), 0);
                 setViajeParaRecibir((prev: any) => prev ? { ...prev, totalLitrosRecogidos: totalRuta, totalLitrosFinca: totalRuta } : prev);
+                setLitrosRecibidosInput(totalRuta);
+                setDestinosRecarga([{ id: '1', companiaId: 0, litrosDespachados: totalRuta, tipoLeche: 'VACA', numeroGuiaSADA: '', observacion: '' }]);
               }
             }
           }
@@ -639,12 +641,30 @@ export const ReceptoriaPage: React.FC = () => {
     setObsRecepcionInput('');
     setModalVerificarViaje(true);
 
-    if (viaje?.id && fincasViajeVerificar.length === 0) {
+    if (viaje?.id) {
       setCargandoFincasViaje(true);
       operacionesApi.getFincasViaje(viaje.id, true)
         .then((fincas) => {
           const list = Array.isArray(fincas) ? fincas : [];
-          const fincasConLitros = list.filter((f: any) => Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0) > 0);
+          let fincasConLitros = list.filter((f: any) => Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0) > 0);
+          const tieneDespachosExternos = despachosCompanias.some(
+            (d: any) => Number(d.controlRutaId) === Number(viaje.id) && !esDespachoReceptoria(d)
+          );
+          if (tieneDespachosExternos) {
+            const idsRuta = new Set(
+              (fincasCatalogo || [])
+                .filter((fc: any) => Number(fc.tipoServicioId || 1) === 1 && !fc.companiaId)
+                .map((fc: any) => Number(fc.id))
+            );
+            const fincasRuta = fincasConLitros.filter((f: any) => idsRuta.has(Number(f.fincaId || f.id)));
+            if (fincasRuta.length > 0) {
+              fincasConLitros = fincasRuta;
+              const totalRuta = fincasRuta.reduce((acc: number, f: any) => acc + Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0), 0);
+              setViajeParaRecibir((prev: any) => prev ? { ...prev, totalLitrosRecogidos: totalRuta, totalLitrosFinca: totalRuta } : prev);
+              setLitrosRecibidosInput(totalRuta);
+              setDestinosRecarga([{ id: '1', companiaId: 0, litrosDespachados: totalRuta, tipoLeche: 'VACA', numeroGuiaSADA: '', observacion: '' }]);
+            }
+          }
           setFincasViajeVerificar(fincasConLitros);
           setFincasVerificadasIds(new Set(fincasConLitros.map((f: any, idx: number) => Number(f.id || f.fincaId || idx))));
         })

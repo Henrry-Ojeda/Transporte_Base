@@ -1045,7 +1045,7 @@ export const ReceptoriaPage: React.FC = () => {
           _fincas: fincasSoloRuta,
         };
       });
-  }, [viajesActivos, filtroFecha, subFiltroEntradas, busquedaBandeja, fincasTicketsMap, conductores, usuarios]);
+  }, [viajesActivos, filtroFecha, subFiltroEntradas, busquedaBandeja, fincasTicketsMap, conductores, usuarios, despachosCompanias, fincasCatalogo]);
 
   // Bandeja 2: Salidas a queseras (En espera de verificación en planta)
   const salidasTransito = useMemo(() => {

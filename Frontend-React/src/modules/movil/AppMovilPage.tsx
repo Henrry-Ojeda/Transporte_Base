@@ -5336,7 +5336,7 @@ export const AppMovilPage: React.FC = () => {
     const fincaSel = fincas.find((f) => f.id === Number(formCarga.fincaId)) || fincaFijadaParaModal;
 
     const now = new Date();
-    const horaStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const horaStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
     const fechaAUsar = viajeActivo?.fecha ? viajeActivo.fecha.split('T')[0] : (formCarga.fecha || hoyStr);
     const litrosDiferirNum = formCarga.esDiferido ? Number(formCarga.litrosDiferir || formCarga.litros) : undefined;

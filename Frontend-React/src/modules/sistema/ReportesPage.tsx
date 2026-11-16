@@ -77,35 +77,22 @@ export const ReportesPage: React.FC = () => {
     staleTime: 1000 * 60 * 10,
   });
 
-  // Lista de Semanas Operativas configuradas
-  const { data: ciclosLista = [] } = useQuery<any[]>({
-    queryKey: ['ciclos-lista-reportes'],
-    queryFn: async () => {
-      try {
-        const res = await apiClient.get<any[]>('/ciclos');
-        return Array.isArray(res.data) ? res.data : [];
-      } catch {
-        return [];
-      }
-    },
-    staleTime: 1000 * 60 * 10,
-  });
-
   // Estados de Filtros Principales (inicializados por el ciclo operativo activo)
   const [tipoReporte, setTipoReporte] = useState<TipoReporteOficial>('DIARIOS');
   const [fechaInicio, setFechaInicio] = useState<string>('');
   const [fechaFin, setFechaFin] = useState<string>('');
-  const [semanaSeleccionadaId, setSemanaSeleccionadaId] = useState<string>('');
   const [tasaManual, setTasaManual] = useState<string>('');
+  const fechasEditadasManualRef = useRef<boolean>(false);
 
   const formatLocalYMD = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  const aplicarSemanaActual = () => {
+  // Sincronizar fechas con el ciclo operativo activo (sin sobrescribir si el usuario ya eligió fechas a su gusto)
+  useEffect(() => {
+    if (fechasEditadasManualRef.current) return;
     if (cicloActivo?.fechaInicio && cicloActivo?.fechaFin) {
       setFechaInicio(String(cicloActivo.fechaInicio).split('T')[0]);
       setFechaFin(String(cicloActivo.fechaFin).split('T')[0]);
-      if (cicloActivo?.id) setSemanaSeleccionadaId(String(cicloActivo.id));
     } else {
       const hoy = new Date();
       const diaSemana = hoy.getDay(); // 0=Dom, 1=Lun, 2=Mar, 3=Mie, 4=Jue, 5=Vie, 6=Sab
@@ -116,23 +103,7 @@ export const ReportesPage: React.FC = () => {
       lunes.setDate(martes.getDate() + 6);
       setFechaInicio(formatLocalYMD(martes));
       setFechaFin(formatLocalYMD(lunes));
-      setSemanaSeleccionadaId('');
     }
-  };
-
-  const aplicarMesCompleto = () => {
-    const baseStr = fechaInicio || formatLocalYMD(new Date());
-    const [y, m] = baseStr.split('-').map(Number);
-    const primerDia = new Date(y, (m || new Date().getMonth() + 1) - 1, 1);
-    const ultimoDia = new Date(y, m || new Date().getMonth() + 1, 0);
-    setFechaInicio(formatLocalYMD(primerDia));
-    setFechaFin(formatLocalYMD(ultimoDia));
-    setSemanaSeleccionadaId('MES_COMPLETO');
-  };
-
-  // Sincronizar fechas con el ciclo operativo activo (o cálculo estándar Martes -> Lunes)
-  useEffect(() => {
-    aplicarSemanaActual();
   }, [cicloActivo]);
 
   // Subfiltros contextuales
@@ -761,83 +732,6 @@ export const ReportesPage: React.FC = () => {
         </div>
 
         <div style={{ padding: '18px' }}>
-          {/* BARRA RÁPIDA: SEMANA OPERATIVA CONFIGURADA O MES COMPLETO */}
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'flex-end',
-              gap: '12px',
-              marginBottom: '14px',
-              paddingBottom: '12px',
-              borderBottom: '1px dashed #e2e8f0',
-            }}
-          >
-            <div style={{ minWidth: '280px', flex: '1 1 280px' }}>
-              <label style={{ fontSize: '12px', color: '#475569', fontWeight: 700, display: 'block', marginBottom: '5px' }}>
-                <i className="fa-solid fa-calendar-week" style={{ color: '#0284c7', marginRight: '6px' }}></i>
-                Semana Operativa Configurada:
-              </label>
-              <SearchableSelect
-                options={[
-                  ...(ciclosLista || []).map((c: any) => ({
-                    value: String(c.id),
-                    label: `${c.codigo || `Semana #${c.id}`} (${formatearFechaLocal(String(c.fechaInicio).split('T')[0])} al ${formatearFechaLocal(String(c.fechaFin).split('T')[0])})`,
-                  })),
-                ]}
-                value={semanaSeleccionadaId === 'MES_COMPLETO' ? '' : semanaSeleccionadaId}
-                onChange={(val) => {
-                  if (!val) return;
-                  setSemanaSeleccionadaId(val);
-                  const found = (ciclosLista || []).find((c: any) => String(c.id) === String(val));
-                  if (found?.fechaInicio && found?.fechaFin) {
-                    setFechaInicio(String(found.fechaInicio).split('T')[0]);
-                    setFechaFin(String(found.fechaFin).split('T')[0]);
-                  }
-                }}
-                placeholder="Seleccionar semana operativa..."
-              />
-            </div>
-            <button
-              type="button"
-              onClick={aplicarSemanaActual}
-              className="btn btn-sm"
-              style={{
-                height: '38px',
-                padding: '0 14px',
-                borderRadius: '8px',
-                fontWeight: 700,
-                fontSize: '12.5px',
-                background: semanaSeleccionadaId !== 'MES_COMPLETO' ? '#e0f2fe' : '#f8fafc',
-                color: '#0369a1',
-                border: '1px solid #bae6fd',
-                cursor: 'pointer',
-              }}
-            >
-              <i className="fa-solid fa-rotate-left mr-1.5"></i>
-              Semana Actual
-            </button>
-            <button
-              type="button"
-              onClick={aplicarMesCompleto}
-              className="btn btn-sm"
-              style={{
-                height: '38px',
-                padding: '0 14px',
-                borderRadius: '8px',
-                fontWeight: 700,
-                fontSize: '12.5px',
-                background: semanaSeleccionadaId === 'MES_COMPLETO' ? '#dcfce7' : '#f8fafc',
-                color: semanaSeleccionadaId === 'MES_COMPLETO' ? '#15803d' : '#334155',
-                border: semanaSeleccionadaId === 'MES_COMPLETO' ? '1px solid #86efac' : '1px solid #cbd5e1',
-                cursor: 'pointer',
-              }}
-            >
-              <i className="fa-solid fa-calendar-days mr-1.5"></i>
-              Mes Entero
-            </button>
-          </div>
-
           {/* FILA 1: DESDE, HASTA, TIPO, BOTÓN BUSCAR */}
           <div
             style={{
@@ -856,7 +750,10 @@ export const ReportesPage: React.FC = () => {
                 type="date"
                 className="form-input"
                 value={fechaInicio}
-                onChange={(e) => setFechaInicio(e.target.value)}
+                onChange={(e) => {
+                  fechasEditadasManualRef.current = true;
+                  setFechaInicio(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -874,7 +771,10 @@ export const ReportesPage: React.FC = () => {
                 type="date"
                 className="form-input"
                 value={fechaFin}
-                onChange={(e) => setFechaFin(e.target.value)}
+                onChange={(e) => {
+                  fechasEditadasManualRef.current = true;
+                  setFechaFin(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();

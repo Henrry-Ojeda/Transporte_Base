@@ -2405,13 +2405,17 @@ export const RecoleccionRutasPage: React.FC = () => {
       ? fincasTicketsMap[viajeTimelapse.id]
       : recolecciones.filter((r) => r.controlRutaId != null && Number(r.controlRutaId) === Number(viajeTimelapse.id));
 
-    // Identificar planificación asociada a este ticket
-    const planCorrespondiente = planificaciones.find(
-      (p) =>
-        p.controlRutaId === viajeTimelapse.id ||
-        (p.camionId === viajeTimelapse.camionId &&
-          (p.conductorId === viajeTimelapse.usuarioId || (viajeTimelapse as any).choferId === p.conductorId))
-    );
+    // Identificar planificación asociada a este ticket (priorizando controlRutaId exacto y fecha)
+    const fechaViaje = String(viajeTimelapse.fecha || '').split('T')[0];
+    const planCorrespondiente =
+      planificaciones.find((p) => Number(p.controlRutaId) === Number(viajeTimelapse.id)) ||
+      planificaciones.find(
+        (p) =>
+          (!p.controlRutaId || Number(p.controlRutaId) <= 0) &&
+          String(p.fecha || '').split('T')[0] === fechaViaje &&
+          p.camionId === viajeTimelapse.camionId &&
+          (p.conductorId === viajeTimelapse.usuarioId || (viajeTimelapse as any).choferId === p.conductorId)
+      );
 
     // REGLA FUNDAMENTAL: Solo las paradas con LITROS > 0 son RECOLECTADAS (VERDE)
     const paradasRecolectadas = paradasDelTicket.filter(
@@ -2453,23 +2457,8 @@ export const RecoleccionRutasPage: React.FC = () => {
     // Las fincas que se sacaron de la planificación NO deben aparecer aquí (quedan libres para otro chofer).
     let pendientes: any[] = [];
     if (!esFinalizado) {
-      if (planCorrespondiente && Array.isArray(planCorrespondiente.listaFincasIds) && planCorrespondiente.listaFincasIds.length > 0) {
-        // Ticket con planificación: SOLO las fincas del plan que aún no tienen litros
-        pendientes = planCorrespondiente.listaFincasIds
-          .filter((fId) => !idsRecolectadas.has(fId))
-          .map((fId) => {
-            const fObj = fincas.find((f) => f.id === fId);
-            const pEnTicket = paradasDelTicket.find((p) => Number(p.fincaId || (p as any).FincaId) === fId);
-            return {
-              id: fId,
-              nombre: fObj?.nombre || pEnTicket?.fincaNombre || `Finca #${fId}`,
-              propietario: fObj?.propietario || fObj?.propietarioNombre || pEnTicket?.propietarioNombre || 'No especificado',
-              promedioLitrosDiarios: fObj?.promedioLitrosDiarios || (fObj as any)?.promedioLitros || 0,
-              tipoLeche: fObj?.tipoLeche || pEnTicket?.tipoLeche || 'VACA',
-            };
-          });
-      } else if (paradasDelTicket.length > 0) {
-        // Ticket con paradas en TB_RUTAS_RECOLECCION: las que tienen litros == 0
+      if (paradasDelTicket.length > 0) {
+        // Prioridad absoluta: las paradas reales registradas en ESTE ticket (las mismas que muestra "Ver Paradas")
         pendientes = paradasDelTicket
           .filter((p) => Number(p.litros || (p as any).Litros || (p as any).litrosLeche || 0) <= 0 && !idsRecolectadas.has(Number(p.fincaId || (p as any).FincaId)))
           .map((p) => {
@@ -2481,6 +2470,20 @@ export const RecoleccionRutasPage: React.FC = () => {
               propietario: p.propietarioNombre || fObj?.propietario || 'No especificado',
               promedioLitrosDiarios: fObj?.promedioLitrosDiarios || (fObj as any)?.promedioLitros || 0,
               tipoLeche: p.tipoLeche || fObj?.tipoLeche || 'VACA',
+            };
+          });
+      } else if (planCorrespondiente && Array.isArray(planCorrespondiente.listaFincasIds) && planCorrespondiente.listaFincasIds.length > 0) {
+        // Ticket recién planificado sin filas aún en TB_RUTAS_RECOLECCION: usar las fincas del plan exacto
+        pendientes = planCorrespondiente.listaFincasIds
+          .filter((fId) => !idsRecolectadas.has(fId))
+          .map((fId) => {
+            const fObj = fincas.find((f) => f.id === fId);
+            return {
+              id: fId,
+              nombre: fObj?.nombre || `Finca #${fId}`,
+              propietario: fObj?.propietario || fObj?.propietarioNombre || 'No especificado',
+              promedioLitrosDiarios: fObj?.promedioLitrosDiarios || (fObj as any)?.promedioLitros || 0,
+              tipoLeche: fObj?.tipoLeche || 'VACA',
             };
           });
       }

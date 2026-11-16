@@ -12,7 +12,7 @@ export const esTicketAbiertoGps = (viaje: any): boolean => {
   return String(viaje.estado || '').toUpperCase() === 'ABIERTO';
 };
 
-export const capturarGpsSilencioso = (timeoutMs = 3000): Promise<CoordenadasGps | null> => {
+const intentarGetPosition = (highAccuracy: boolean, timeoutMs: number): Promise<CoordenadasGps | null> => {
   return new Promise((resolve) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       resolve(null);
@@ -45,11 +45,18 @@ export const capturarGpsSilencioso = (timeoutMs = 3000): Promise<CoordenadasGps 
           clearTimeout(timer);
           resolve(null);
         },
-        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 }
+        { enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: 60000 }
       );
     } catch {
       clearTimeout(timer);
       resolve(null);
     }
   });
+};
+
+export const capturarGpsSilencioso = async (timeoutMs = 3000): Promise<CoordenadasGps | null> => {
+  const high = await intentarGetPosition(true, timeoutMs);
+  if (high) return high;
+  // Fallback para laptops/PCs sin chip GPS (ubicación por Wi-Fi/red)
+  return await intentarGetPosition(false, Math.max(timeoutMs, 3500));
 };

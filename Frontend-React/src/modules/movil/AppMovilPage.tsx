@@ -1628,12 +1628,15 @@ export const AppMovilPage: React.FC = () => {
   // Solo el ADMIN puede crearle otro ticket ese mismo día teniendo ya uno activo.
   const choferTieneTicketEnRutaActivo = useMemo(() => {
     if (esAdminReal) return false;
-    return viajesChofer.some((v) => {
+    const tieneEnLista = viajesChofer.some((v) => {
       const enRecep = viajeEstaEnviadoAReceptoria(v);
       const finalizado = v.estado === 'FINALIZADO' || v.estado === 'CERRADO' || Number(v.procesoActualId) === 4;
       return !enRecep && !finalizado;
     });
-  }, [esAdminReal, viajesChofer]);
+    if (tieneEnLista) return true;
+    // Bloquear también si ya existe un ticket local pendiente de sincronizar para este chofer
+    return ticketsLocales.listarPendientes().some((t) => Number(t.ticket?.usuarioId) === Number(choferEfectivoId));
+  }, [esAdminReal, viajesChofer, choferEfectivoId]);
 
   // REGLA MAESTRA CHOFER / INICIO:
   // En menú Inicio solo se muestran turnos que están ABIERTOS O EN RUTA (proceso 1).
@@ -2817,6 +2820,19 @@ export const AppMovilPage: React.FC = () => {
 
     // Crea el ticket SOLO en el teléfono (sin internet). Se subirá solo a la central al recuperar señal.
     const crearTicketLocal = async () => {
+      // Si ya existe un ticket local pendiente para este chofer, reutilizarlo y NO duplicar
+      const pendienteExistente = !esAdminReal
+        ? ticketsLocales.listarPendientes().find((t) => Number(t.ticket?.usuarioId) === Number(choferEfectivoId))
+        : undefined;
+      if (pendienteExistente) {
+        const ticketExistente = pendienteExistente.ticket as ControlRutaDto;
+        setViajeSeleccionadoId(ticketExistente.id);
+        setViajeActivo(ticketExistente);
+        setModalNuevoViajeChofer(false);
+        toast.warning('Ya tienes un ticket local pendiente de subir. Se reutilizó para no duplicar turnos.');
+        return;
+      }
+
       const camionSel = camionesLista.find((c) => c.id === camionEfectivoId);
       const rutaSel = rutasLogisticas.find((r) => r.id === rutaNuevoViajeId);
       const localId = ticketsLocales.nuevoIdLocal();
@@ -2848,6 +2864,11 @@ export const AppMovilPage: React.FC = () => {
         fincas: [],
         payload: payloadViaje,
         ticket: ticketLocal,
+      });
+      movilAuditLog.registrar({
+        tipo: 'TICKET_EVENTO',
+        ticketId: localId,
+        detalle: `Ticket local creado offline (${turnoNombre}, fecha=${fFinal})`,
       });
 
       const nuevaLista = [...viajesChofer.filter((v) => v.id !== localId), ticketLocal as ControlRutaDto];

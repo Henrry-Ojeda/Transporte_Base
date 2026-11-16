@@ -1712,7 +1712,11 @@ export const RecoleccionRutasPage: React.FC = () => {
       esAcida: Boolean(row.esAcida),
       esDiferido: Boolean(row.esDiferido),
       fecha: row.fecha || hoyStr,
-      observacion: row.observacion || '',
+      observacion: (row.observacion || '')
+        .replace(/Asignada en inicio de ruta\s*\[ORIGEN_PLANIFICACION\]/gi, '')
+        .replace(/\[ORIGEN_PLANIFICACION\]/gi, '')
+        .replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '')
+        .trim(),
       fotoComprobante: row.fotoComprobante || row.FotoComprobante || row.foto || '',
     });
     setModalEditarRecoleccion(true);
@@ -4458,7 +4462,11 @@ export const RecoleccionRutasPage: React.FC = () => {
                                               esAcida: esAcida,
                                               esDiferido: Boolean(f.esDiferido || f.EsDiferido),
                                               fecha: f.fecha || item.fecha || '',
-                                              observacion: f.observacion || f.Observacion || '',
+                                              observacion: (f.observacion || f.Observacion || '')
+                                                .replace(/Asignada en inicio de ruta\s*\[ORIGEN_PLANIFICACION\]/gi, '')
+                                                .replace(/\[ORIGEN_PLANIFICACION\]/gi, '')
+                                                .replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '')
+                                                .trim(),
                                               fotoComprobante: f.fotoComprobante || (f as any).FotoComprobante || '',
                                             });
                                             setModalEditarRecoleccion(true);

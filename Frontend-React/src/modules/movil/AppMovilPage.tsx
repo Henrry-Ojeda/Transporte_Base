@@ -5449,9 +5449,11 @@ export const AppMovilPage: React.FC = () => {
         synced: false,
       } as any;
 
+      const tipoNuevoUpper = (formCarga.tipoLeche || 'VACA').toUpperCase();
       const idxExistente = cargas.findIndex((c) => {
         const cTicket = ticketsLocales.resolverId(Number(c.serverTicketId || 0)) || Number(c.serverTicketId || 0);
-        return Number(c.fincaId) === Number(formCarga.fincaId) && cTicket === Number(ticketIdEfectivo);
+        const cTipo = (c.tipoLeche || 'VACA').toUpperCase();
+        return Number(c.fincaId) === Number(formCarga.fincaId) && cTicket === Number(ticketIdEfectivo) && cTipo === tipoNuevoUpper;
       });
       let nuevasCargas: CargaOffline[];
       if (idxExistente >= 0) {
@@ -5525,9 +5527,15 @@ export const AppMovilPage: React.FC = () => {
       }
 
       const actualizarParadasYResumen = (origenParada: 'Servidor' | 'Teléfono') => {
+        const tipoUpper = (formCarga.tipoLeche || 'VACA').toUpperCase();
         setParadasViajeActivo((prev) => {
           const list = Array.isArray(prev) ? [...prev] : [];
-          const idxP = list.findIndex((p) => Number(p.fincaId || p.FincaId) === Number(formCarga.fincaId));
+          const idxP = list.findIndex((p) => {
+            if (Number(p.fincaId || p.FincaId) !== Number(formCarga.fincaId)) return false;
+            const pLitros = Number(p.litros ?? p.Litros ?? 0);
+            const pTipo = String(p.tipoLeche || p.TipoLeche || 'VACA').toUpperCase();
+            return pLitros === 0 || pTipo === tipoUpper;
+          });
           if (idxP >= 0) {
             list[idxP] = {
               ...list[idxP],

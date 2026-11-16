@@ -96,7 +96,8 @@ export const ticketsLocales = {
     if (idx < 0) return;
     const actual = lista[idx];
     const fincas = Array.isArray(actual.fincas) ? [...actual.fincas] : [];
-    const fIdx = fincas.findIndex((f) => Number(f.fincaId) === Number(finca.fincaId));
+    const tipoNuevo = (finca.tipoLeche || 'VACA').toUpperCase();
+    const fIdx = fincas.findIndex((f) => Number(f.fincaId) === Number(finca.fincaId) && (f.tipoLeche || 'VACA').toUpperCase() === tipoNuevo);
     if (fIdx >= 0) {
       fincas[fIdx] = { ...fincas[fIdx], ...finca };
     } else {

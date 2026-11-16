@@ -679,14 +679,26 @@ namespace Transporte.Infrastructure.Repositories
             else
             {
                 ticketIdEfectivo = ticketExistenteId.Value;
+                var nuevoCicloId = await connection.ExecuteScalarAsync<int?>(@"
+                    SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS 
+                    WHERE @Fecha BETWEEN CAST(FechaInicio AS DATE) AND CAST(FechaFin AS DATE)
+                    ORDER BY Id DESC", new { Fecha = dto.Fecha.Date });
+
                 await connection.ExecuteAsync(@"
                     UPDATE TB_CONTROL_RUTAS
-                    SET UsuarioId = @ConductorId,
+                    SET Fecha = @Fecha,
+                        CicloId = COALESCE(@nuevoCicloId, CicloId),
+                        UsuarioId = @ConductorId,
                         RutaLogisticaId = COALESCE(@RutaLogisticaId, RutaLogisticaId),
                         ModifiedAt = GETDATE(),
                         ModifiedBy = @usuarioId
-                    WHERE Id = @ticketIdEfectivo",
-                    new { dto.ConductorId, dto.RutaLogisticaId, usuarioId, ticketIdEfectivo });
+                    WHERE Id = @ticketIdEfectivo;
+
+                    UPDATE TB_RUTAS_RECOLECCION
+                    SET Fecha = @Fecha,
+                        CicloId = COALESCE(@nuevoCicloId, CicloId)
+                    WHERE ControlRutaId = @ticketIdEfectivo;",
+                    new { Fecha = dto.Fecha.Date, nuevoCicloId, dto.ConductorId, dto.RutaLogisticaId, usuarioId, ticketIdEfectivo });
             }
 
             // 2. Guardar o actualizar la Planificación ligada al Ticket (PREVINIENDO DUPLICADOS)

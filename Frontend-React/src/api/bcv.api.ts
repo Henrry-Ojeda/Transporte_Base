@@ -14,8 +14,22 @@ export interface BcvHistoricoDto {
 
 export const bcvApi = {
   getTasaHoy: async (): Promise<BcvRateResponse> => {
-    const res = await apiClient.get<BcvRateResponse>('/bcv/hoy');
-    return res.data;
+    const res = await apiClient.get<any>('/bcv/hoy');
+    const raw = res.data || {};
+    const tasaNormalizada = Number(
+      raw.tasaDolarBs ??
+      raw.TasaDolarBs ??
+      raw.data?.tasaDolarBs ??
+      raw.data?.TasaDolarBs ??
+      raw.tasa ??
+      raw.Tasa ??
+      0
+    );
+    return {
+      ...raw,
+      tasa: tasaNormalizada,
+      tasaDolarBs: tasaNormalizada,
+    };
   },
 
   getHistorial: async (dias = 1000): Promise<BcvHistoricoDto[]> => {

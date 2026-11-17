@@ -9122,7 +9122,6 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     cr.LitrosRecibidosReceptoria,
                     uc.NombreCompleto AS NombreCerradoPor,
                     (SELECT COUNT(*) FROM TB_RUTAS_RECOLECCION r WHERE r.ControlRutaId = cr.Id OR (r.ControlRutaId IS NULL AND r.UsuarioId = cr.UsuarioId AND CAST(r.Fecha AS DATE) = CAST(cr.Fecha AS DATE))) AS TotalFincas
-                FROM TB_CONTROL_RUTAS cr
                 INNER JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
                 LEFT JOIN TB_PROCESOS_TICKET pt ON cr.ProcesoActualId = pt.Id
                 LEFT JOIN TB_COMPANIAS cp ON cr.CompaniaDestinoId = cp.Id
@@ -11304,11 +11303,28 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 });
             }
 
-            // Recalcular total acumulado de todos los despachos asociados a este ticket
-            int totalDespachado = await connection.ExecuteScalarAsync<int>(
-                "SELECT ISNULL(SUM(LitrosDespachados), 0) FROM TB_CONTROL_COMPANIAS WHERE ControlRutaId = @controlRutaId",
+            // Separar despachos a Receptoría (1. Entradas) vs Compañías/Queseras externas (2. Salidas)
+            int totalDespachadoReceptoria = await connection.ExecuteScalarAsync<int>(@"
+                SELECT ISNULL(SUM(cc.LitrosDespachados), 0)
+                FROM TB_CONTROL_COMPANIAS cc
+                INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
+                WHERE cc.ControlRutaId = @controlRutaId
+                  AND (UPPER(ISNULL(c.Nombre, '')) LIKE '%RECEPTORIA%'
+                    OR UPPER(ISNULL(c.Nombre, '')) LIKE '%RECEPTORÍA%'
+                    OR UPPER(ISNULL(c.Nombre, '')) LIKE '%PLANTA PRINCIPAL%')",
                 new { controlRutaId });
 
+            int totalDespachadoExterno = await connection.ExecuteScalarAsync<int>(@"
+                SELECT ISNULL(SUM(cc.LitrosDespachados), 0)
+                FROM TB_CONTROL_COMPANIAS cc
+                INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
+                WHERE cc.ControlRutaId = @controlRutaId
+                  AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%RECEPTORIA%'
+                  AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%RECEPTORÍA%'
+                  AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%PLANTA PRINCIPAL%'",
+                new { controlRutaId });
+
+            int totalDespachado = totalDespachadoReceptoria + totalDespachadoExterno;
             if (totalDespachado <= 0) totalDespachado = totalLitrosFinca;
             int dif = totalLitrosFinca - totalDespachado;
             decimal merma = totalLitrosFinca > 0 ? Math.Round((Math.Abs(dif) * 100.0m) / totalLitrosFinca, 2) : 0;
@@ -11328,15 +11344,23 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 finalCompaniaDestinoId = null;
             }
 
-            // Finalizar la entrada en TB_CONTROL_RUTAS (Estado = 'RECEPCIONADO') con el total consolidado
+            // Solo queda pendiente en 1. Entradas (RECEPCIONADO / Proceso 3) si hay leche destinada a Receptoría
+            bool tieneEntradaReceptoria = totalDespachadoReceptoria > 0 || (totalLitrosFinca - totalDespachadoExterno) > 0;
+            string estadoRuta = tieneEntradaReceptoria ? "RECEPCIONADO" : "FINALIZADO";
+            int procesoRuta = tieneEntradaReceptoria ? 3 : 4;
+            string tipoDestinoRuta = (totalDespachadoReceptoria > 0 && totalDespachadoExterno > 0)
+                ? "RECEPTORIA_Y_COMPANIA"
+                : (tieneEntradaReceptoria ? "RECEPTORIA" : "COMPANIA_DIRECTA");
+
             await connection.ExecuteAsync(@"
                 UPDATE TB_CONTROL_RUTAS
-                SET Estado = 'RECEPCIONADO',
-                    TipoDestino = 'COMPANIA_DIRECTA',
-                    ProcesoActualId = 3,
+                SET Estado = @estadoRuta,
+                    TipoDestino = @tipoDestinoRuta,
+                    ProcesoActualId = @procesoRuta,
                     CompaniaDestinoId = @companiaId,
-                    TotalLitrosReceptoria = @totalDespachado,
-                    LitrosEntregadosCompania = @totalDespachado,
+                    TotalLitrosReceptoria = 0,
+                    LitrosRecibidosReceptoria = CASE WHEN @tieneEntradaReceptoria = 1 THEN NULL ELSE 0 END,
+                    LitrosEntregadosCompania = @totalDespachadoExterno,
                     DiferenciaLitros = @dif,
                     DiferenciaCompania = @dif,
                     MermaTotalLitros = @dif,
@@ -11345,7 +11369,19 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     ModifiedAt = GETDATE(),
                     ModifiedBy = @usuarioId
                 WHERE Id = @controlRutaId",
-                new { companiaId = finalCompaniaDestinoId, totalDespachado, dif, merma, usuarioId, controlRutaId });
+                new
+                {
+                    estadoRuta,
+                    tipoDestinoRuta,
+                    procesoRuta,
+                    companiaId = finalCompaniaDestinoId,
+                    tieneEntradaReceptoria = tieneEntradaReceptoria ? 1 : 0,
+                    totalDespachadoExterno,
+                    dif,
+                    merma,
+                    usuarioId,
+                    controlRutaId
+                });
 
             // Los choferes ya no requieren permiso de "un solo uso" para crear tickets: no se revoca nada.
 
@@ -13432,18 +13468,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     new { fecha, companiaId, choferId, modificadoPor, id });
             }
 
-            // Sincronizar viaje padre en TB_CONTROL_RUTAS si existe
-            if (rows > 0 && control.ControlRutaId != null)
-            {
-                long cRutaId = (long)control.ControlRutaId;
-                await connection.ExecuteAsync(@"
-                    UPDATE TB_CONTROL_RUTAS
-                    SET CompaniaDestinoId = @companiaId,
-                        ModifiedAt = GETDATE(),
-                        ModifiedBy = @modificadoPor
-                    WHERE Id = @cRutaId",
-                    new { companiaId, modificadoPor, cRutaId });
-            }
+            // Solo sincronizar CompaniaDestinoId en TB_CONTROL_RUTAS si no hay otros despachos mixtos activos
 
             if (rows > 0 && recibidos.HasValue && estado == "FINALIZADO" && control.CicloId != null)
             {

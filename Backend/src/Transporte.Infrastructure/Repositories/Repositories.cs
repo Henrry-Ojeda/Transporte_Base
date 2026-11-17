@@ -827,6 +827,23 @@ namespace Transporte.Infrastructure.Repositories
                 ? (decimal)(fincaInfo?.PrecioLitroAcidaUSD ?? 0m) 
                 : precioBase);
 
+            int? cicloLiquidacionFinal = (int?)ruta.CicloLiquidacionId;
+            if (dto.EsDiferido.HasValue)
+            {
+                if (dto.EsDiferido.Value)
+                {
+                    if (!cicloLiquidacionFinal.HasValue || cicloLiquidacionFinal.Value <= 0)
+                    {
+                        int sig = await ResolveSiguienteCicloAsync(connection, (int)ruta.CicloId);
+                        cicloLiquidacionFinal = sig > 0 ? sig : (int?)null;
+                    }
+                }
+                else
+                {
+                    cicloLiquidacionFinal = null;
+                }
+            }
+
             var sql = @"
                 UPDATE TB_RUTAS_RECOLECCION 
                 SET Litros = @litrosFinal,
@@ -835,6 +852,7 @@ namespace Transporte.Infrastructure.Repositories
                     Fecha = @fechaFinal,
                     EsAcida = @esAcidaFinal,
                     EsDiferido = @esDiferidoFinal,
+                    CicloLiquidacionId = @cicloLiquidacionFinal,
                     TipoLeche = @tipoLecheFinal,
                     PrecioLitroUSDAplicado = @precioAplicado,
                     Observacion = @observacionFinal,
@@ -851,6 +869,7 @@ namespace Transporte.Infrastructure.Repositories
                 fechaFinal,
                 esAcidaFinal,
                 esDiferidoFinal,
+                cicloLiquidacionFinal,
                 tipoLecheFinal,
                 precioAplicado,
                 observacionFinal,
@@ -1001,6 +1020,28 @@ namespace Transporte.Infrastructure.Repositories
             return true;
         }
 
+        internal static async Task<int> ResolveSiguienteCicloAsync(SqlConnection connection, int cicloActualId, System.Data.IDbTransaction? tx = null)
+        {
+            int destinoCiclo = 0;
+            var fechaFin = await connection.ExecuteScalarAsync<DateTime?>(
+                @"SELECT FechaFin FROM TB_CICLOS_OPERATIVOS WHERE Id = @cicloActualId",
+                new { cicloActualId }, tx);
+
+            if (fechaFin.HasValue)
+            {
+                destinoCiclo = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS WHERE FechaInicio > @fFin ORDER BY FechaInicio ASC",
+                    new { fFin = fechaFin.Value }, tx);
+            }
+            if (destinoCiclo <= 0)
+            {
+                destinoCiclo = await connection.ExecuteScalarAsync<int>(
+                    @"SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS WHERE Id > @cicloActualId ORDER BY Id ASC",
+                    new { cicloActualId }, tx);
+            }
+            return destinoCiclo;
+        }
+
         public async Task<bool> DiferirLitrosAsync(long rutaId, int litrosDiferir, int? cicloDestinoId, string? motivo, int usuarioId, string rol)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -1015,30 +1056,15 @@ namespace Transporte.Infrastructure.Repositories
                 throw new InvalidOperationException("No se encontró la recolección especificada.");
 
             int litrosActuales = (int)original.Litros;
-            if (litrosDiferir <= 0 || litrosDiferir >= litrosActuales)
-                throw new InvalidOperationException($"Los litros a diferir deben ser mayores a 0 y menores a los litros actuales ({litrosActuales} L).");
+            if (litrosDiferir <= 0 || litrosDiferir > litrosActuales)
+                throw new InvalidOperationException($"Los litros a diferir deben ser mayores a 0 y menores o iguales a los litros actuales ({litrosActuales} L).");
 
             int cicloActualId = (int)original.CicloId;
             int destinoCiclo = cicloDestinoId ?? 0;
 
             if (destinoCiclo <= 0)
             {
-                var fechaFin = await connection.ExecuteScalarAsync<DateTime?>(
-                    @"SELECT FechaFin FROM TB_CICLOS_OPERATIVOS WHERE Id = @cicloActualId",
-                    new { cicloActualId }, tx);
-
-                if (fechaFin.HasValue)
-                {
-                    destinoCiclo = await connection.ExecuteScalarAsync<int>(
-                        @"SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS WHERE FechaInicio > @fFin ORDER BY FechaInicio ASC",
-                        new { fFin = fechaFin.Value }, tx);
-                }
-                if (destinoCiclo <= 0)
-                {
-                    destinoCiclo = await connection.ExecuteScalarAsync<int>(
-                        @"SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS WHERE Id > @cicloActualId ORDER BY Id ASC",
-                        new { cicloActualId }, tx);
-                }
+                destinoCiclo = await ResolveSiguienteCicloAsync(connection, cicloActualId, tx);
             }
 
             if (destinoCiclo <= 0)
@@ -1052,48 +1078,64 @@ namespace Transporte.Infrastructure.Repositories
             string obsPadre = $"{notaOriginal} [Diferido: {litrosDiferir} L para Sem. {destinoCiclo} ({motivoStr})]".Trim();
             string obsHijo = $"[Traspaso diferido de Sem. {cicloActualId}: {litrosDiferir} L ({motivoStr})]".Trim();
 
-            // 1. Actualizar registro original
-            await connection.ExecuteAsync(@"
-                UPDATE TB_RUTAS_RECOLECCION 
-                SET Litros = @litrosRestantes,
-                    LitrosOriginales = @litrosOrig,
-                    Observacion = @obsPadre,
-                    ModifiedAt = GETDATE(),
-                    ModifiedBy = @usuarioId
-                WHERE Id = @rutaId",
-                new { litrosRestantes, litrosOrig, obsPadre, usuarioId, rutaId }, tx);
+            if (litrosRestantes == 0)
+            {
+                // Diferimiento total: marcar el registro completo para el ciclo destino sin crear registro hijo en 0 L
+                await connection.ExecuteAsync(@"
+                    UPDATE TB_RUTAS_RECOLECCION
+                    SET EsDiferido = 1,
+                        CicloLiquidacionId = @destinoCiclo,
+                        LitrosOriginales = @litrosOrig,
+                        Observacion = @obsPadre,
+                        ModifiedAt = GETDATE(),
+                        ModifiedBy = @usuarioId
+                    WHERE Id = @rutaId",
+                    new { destinoCiclo, litrosOrig, obsPadre, usuarioId, rutaId }, tx);
+            }
+            else
+            {
+                // Diferimiento parcial: actualizar registro original y crear registro hijo diferido
+                await connection.ExecuteAsync(@"
+                    UPDATE TB_RUTAS_RECOLECCION 
+                    SET Litros = @litrosRestantes,
+                        LitrosOriginales = @litrosOrig,
+                        Observacion = @obsPadre,
+                        ModifiedAt = GETDATE(),
+                        ModifiedBy = @usuarioId
+                    WHERE Id = @rutaId",
+                    new { litrosRestantes, litrosOrig, obsPadre, usuarioId, rutaId }, tx);
 
-            // 2. Insertar registro diferido hijo
-            await connection.ExecuteAsync(@"
-                INSERT INTO TB_RUTAS_RECOLECCION (
-                    CicloId, Fecha, FincaId, UsuarioId, Litros,
-                    PrecioLitroUSDAplicado, TasaDolarBsAplicada, Observacion,
-                    EsAcida, ControlRutaId, TipoLeche,
-                    CicloLiquidacionId, EsDiferido, RecoleccionOrigenId, LitrosOriginales,
-                    CreatedAt, CreatedBy
-                ) VALUES (
-                    @CicloId, @Fecha, @FincaId, @ChoferUsuarioId, @Litros,
-                    @PrecioLitroUSDAplicado, @TasaDolarBsAplicada, @Observacion,
-                    @EsAcida, @ControlRutaId, @TipoLeche,
-                    @CicloLiquidacionId, 1, @RecoleccionOrigenId, @Litros,
-                    GETDATE(), @OperadorId
-                )",
-                new {
-                    CicloId = cicloActualId, // Mantiene el ciclo físico de la ruta
-                    Fecha = original.Fecha,
-                    FincaId = original.FincaId,
-                    ChoferUsuarioId = original.UsuarioId,
-                    Litros = litrosDiferir,
-                    PrecioLitroUSDAplicado = original.PrecioLitroUSDAplicado,
-                    TasaDolarBsAplicada = original.TasaDolarBsAplicada,
-                    Observacion = obsHijo,
-                    EsAcida = original.EsAcida,
-                    ControlRutaId = original.ControlRutaId,
-                    TipoLeche = original.TipoLeche,
-                    CicloLiquidacionId = destinoCiclo, // Se liquida en el ciclo destino
-                    RecoleccionOrigenId = rutaId,
-                    OperadorId = usuarioId
-                }, tx);
+                await connection.ExecuteAsync(@"
+                    INSERT INTO TB_RUTAS_RECOLECCION (
+                        CicloId, Fecha, FincaId, UsuarioId, Litros,
+                        PrecioLitroUSDAplicado, TasaDolarBsAplicada, Observacion,
+                        EsAcida, ControlRutaId, TipoLeche,
+                        CicloLiquidacionId, EsDiferido, RecoleccionOrigenId, LitrosOriginales,
+                        CreatedAt, CreatedBy
+                    ) VALUES (
+                        @CicloId, @Fecha, @FincaId, @ChoferUsuarioId, @Litros,
+                        @PrecioLitroUSDAplicado, @TasaDolarBsAplicada, @Observacion,
+                        @EsAcida, @ControlRutaId, @TipoLeche,
+                        @CicloLiquidacionId, 1, @RecoleccionOrigenId, @Litros,
+                        GETDATE(), @OperadorId
+                    )",
+                    new {
+                        CicloId = cicloActualId, // Mantiene el ciclo físico de la ruta
+                        Fecha = original.Fecha,
+                        FincaId = original.FincaId,
+                        ChoferUsuarioId = original.UsuarioId,
+                        Litros = litrosDiferir,
+                        PrecioLitroUSDAplicado = original.PrecioLitroUSDAplicado,
+                        TasaDolarBsAplicada = original.TasaDolarBsAplicada,
+                        Observacion = obsHijo,
+                        EsAcida = original.EsAcida,
+                        ControlRutaId = original.ControlRutaId,
+                        TipoLeche = original.TipoLeche,
+                        CicloLiquidacionId = destinoCiclo, // Se liquida en el ciclo destino
+                        RecoleccionOrigenId = rutaId,
+                        OperadorId = usuarioId
+                    }, tx);
+            }
 
             tx.Commit();
             return true;
@@ -1112,8 +1154,38 @@ namespace Transporte.Infrastructure.Repositories
             if (reg == null)
                 throw new InvalidOperationException("No se encontró la recolección.");
 
-            long padreId = (reg.EsDiferido == true || reg.RecoleccionOrigenId != null) 
-                ? (long)reg.RecoleccionOrigenId 
+            // Caso 1: diferimiento total marcado directamente en el registro (sin registro hijo)
+            if (reg.RecoleccionOrigenId == null && (bool)(reg.EsDiferido ?? false))
+            {
+                var hijosDirectos = (await connection.QueryAsync<dynamic>(
+                    @"SELECT * FROM TB_RUTAS_RECOLECCION WHERE RecoleccionOrigenId = @rutaId",
+                    new { rutaId }, tx)).ToList();
+
+                if (!hijosDirectos.Any())
+                {
+                    string obsLimpiaDirecto = (string)reg.Observacion ?? "";
+                    int idxDif = obsLimpiaDirecto.IndexOf("[Diferido:", StringComparison.OrdinalIgnoreCase);
+                    if (idxDif >= 0)
+                        obsLimpiaDirecto = obsLimpiaDirecto.Substring(0, idxDif).Trim();
+
+                    await connection.ExecuteAsync(@"
+                        UPDATE TB_RUTAS_RECOLECCION
+                        SET EsDiferido = 0,
+                            CicloLiquidacionId = NULL,
+                            LitrosOriginales = NULL,
+                            Observacion = @obsLimpiaDirecto,
+                            ModifiedAt = GETDATE(),
+                            ModifiedBy = @usuarioId
+                        WHERE Id = @rutaId",
+                        new { obsLimpiaDirecto, usuarioId, rutaId }, tx);
+
+                    tx.Commit();
+                    return true;
+                }
+            }
+
+            long padreId = reg.RecoleccionOrigenId != null
+                ? (long)reg.RecoleccionOrigenId
                 : rutaId;
 
             var padre = await connection.QueryFirstOrDefaultAsync<dynamic>(
@@ -10197,6 +10269,13 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 }
             }
 
+            int? cicloLiquidacionEfectivo = null;
+            if (esDiferidoEfectivo && efectivoCicloId.HasValue)
+            {
+                int sigCiclo = await RutasRepository.ResolveSiguienteCicloAsync(connection, efectivoCicloId.Value);
+                if (sigCiclo > 0) cicloLiquidacionEfectivo = sigCiclo;
+            }
+
             if (paradaExistenteId.HasValue)
             {
                 var sqlUpdateRuta = @"
@@ -10205,6 +10284,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         EsAcida = @esAcida,
                         TipoLeche = @tipoLeche,
                         EsDiferido = @esDiferido,
+                        CicloLiquidacionId = @cicloLiquidacionId,
                         LitrosOriginales = CASE WHEN @esDiferido = 1 THEN @litros ELSE LitrosOriginales END,
                         PrecioLitroUSDAplicado = @precioAplicado,
                         TasaDolarBsAplicada = @tasaActual,
@@ -10228,6 +10308,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     esAcida = dto.EsAcida,
                     tipoLeche = tipoLecheEfectivo,
                     esDiferido = esDiferidoEfectivo,
+                    cicloLiquidacionId = cicloLiquidacionEfectivo,
                     precioAplicado,
                     tasaActual,
                     observacion = dto.Observacion,
@@ -10245,8 +10326,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             {
                 var sqlInsertRuta = @"
                     INSERT INTO TB_RUTAS_RECOLECCION
-                    (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, LitrosOriginales, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy, ModifiedAt, ModifiedBy)
-                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, @createdAtEfectivo, @usuarioId, @createdAtEfectivo, @usuarioId);
+                    (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, CicloLiquidacionId, LitrosOriginales, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy, ModifiedAt, ModifiedBy)
+                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, @cicloLiquidacionId, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, @createdAtEfectivo, @usuarioId, @createdAtEfectivo, @usuarioId);
                     SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
                 nuevaRutaId = await connection.ExecuteScalarAsync<long>(sqlInsertRuta, new
@@ -10259,6 +10340,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     esAcida = dto.EsAcida,
                     tipoLeche = tipoLecheEfectivo,
                     esDiferido = esDiferidoEfectivo,
+                    cicloLiquidacionId = cicloLiquidacionEfectivo,
                     precioAplicado,
                     tasaActual,
                     uuidLocal = Guid.NewGuid().ToString(),

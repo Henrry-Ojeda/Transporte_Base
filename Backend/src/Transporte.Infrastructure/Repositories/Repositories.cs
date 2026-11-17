@@ -6819,7 +6819,7 @@ namespace Transporte.Infrastructure.Repositories
                     SUM(c.TotalLitrosReceptoria + ISNULL(c.LitrosEntregadosCompania, 0)) AS LitrosQuesera
                 FROM TB_CONTROL_RUTAS c
                 LEFT JOIN TB_USUARIOS u ON c.UsuarioId = u.Id
-                WHERE c.Fecha >= @fechaInicio AND c.Fecha <= @fechaFin
+                WHERE CAST(c.Fecha AS DATE) >= @fechaInicio AND CAST(c.Fecha AS DATE) <= @fechaFin
                 GROUP BY c.UsuarioId, u.NombreCompleto, u.Username
                 ORDER BY Chofer";
 
@@ -6838,7 +6838,7 @@ namespace Transporte.Infrastructure.Repositories
                             SUM(r.Litros) AS LitrosRuta
                         FROM TB_RUTAS_RECOLECCION r
                         LEFT JOIN TB_USUARIOS u ON r.UsuarioId = u.Id
-                        WHERE r.Fecha >= @fechaInicio AND r.Fecha <= @fechaFin
+                        WHERE CAST(r.Fecha AS DATE) >= @fechaInicio AND CAST(r.Fecha AS DATE) <= @fechaFin
                           AND r.FincaId != 68
                         GROUP BY r.UsuarioId, u.NombreCompleto, u.Username
                     ),
@@ -6849,7 +6849,7 @@ namespace Transporte.Infrastructure.Repositories
                             SUM(e.Litros) AS LitrosQuesera
                         FROM TB_ENTREGAS_COMPANIA e
                         LEFT JOIN TB_USUARIOS u ON e.UsuarioId = u.Id
-                        WHERE e.Fecha >= @fechaInicio AND e.Fecha <= @fechaFin
+                        WHERE CAST(e.Fecha AS DATE) >= @fechaInicio AND CAST(e.Fecha AS DATE) <= @fechaFin
                           AND e.Litros > 0
                         GROUP BY e.UsuarioId, u.NombreCompleto, u.Username
                     )
@@ -6883,7 +6883,7 @@ namespace Transporte.Infrastructure.Repositories
                     ISNULL(r.ControlRutaId, 0) AS TicketControlId
                 FROM TB_RUTAS_RECOLECCION r
                 LEFT JOIN TB_FINCAS f ON r.FincaId = f.Id
-                WHERE r.Fecha >= @fechaInicio AND r.Fecha <= @fechaFin
+                WHERE CAST(r.Fecha AS DATE) >= @fechaInicio AND CAST(r.Fecha AS DATE) <= @fechaFin
                   AND r.FincaId != 68
                   AND r.Litros > 0
                 ORDER BY r.Fecha DESC, r.Id DESC";
@@ -6905,7 +6905,7 @@ namespace Transporte.Infrastructure.Repositories
                     ISNULL(c.Observacion, '') AS Observacion,
                     ISNULL(c.TipoDestino, 'RECEPTORIA') AS Destino
                 FROM TB_CONTROL_RUTAS c
-                WHERE c.Fecha >= @fechaInicio AND c.Fecha <= @fechaFin
+                WHERE CAST(c.Fecha AS DATE) >= @fechaInicio AND CAST(c.Fecha AS DATE) <= @fechaFin
                 ORDER BY c.Fecha DESC, c.Id DESC";
 
             var detalleDiario = (await connection.QueryAsync<ReporteRelacionChoferDiarioDto>(sqlDetalleDiario, new { 

@@ -16,6 +16,7 @@ import { finanzasApi } from '@/api/finanzas.api';
 import { useAuthStore } from '@/stores/authStore';
 import { updateAppIcon } from '@/utils/pwaIcons';
 import { getPermisosTipoLecheFinca } from '@/utils/procesoViaje';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import type {
   FincaDto,
   DespachoCompaniaDto,
@@ -2362,6 +2363,7 @@ export const AppMovilPage: React.FC = () => {
   const [tipoReporte, setTipoReporte] = useState<string>('DIARIOS');
   const [repFechaInicio, setRepFechaInicio] = useState<string>(hoyStr);
   const [repFechaFin, setRepFechaFin] = useState<string>(hoyStr);
+  const [repFincaId, setRepFincaId] = useState<string>('');
   const [cargandoReporte, setCargandoReporte] = useState(false);
   const [datosReporte, setDatosReporte] = useState<any>(null);
 
@@ -4718,16 +4720,21 @@ export const AppMovilPage: React.FC = () => {
       if (tipoReporte === 'DIARIOS') {
         const raw: any = await sistemaApi.getReporteDiarios(repFechaInicio, repFechaFin, choferNumId);
         const lista = raw?.diarioRutas || raw?.diarioTransporteRutas || (Array.isArray(raw) ? raw : []);
-        const total = raw?.totalDiarioRutas ?? raw?.totalLitros ?? lista.reduce((a: number, b: any) => a + Number(b.litros || b.totalLitros || 0), 0);
+        const total = Number(raw?.totalDiarioRutas || raw?.totalLitros || 0) || lista.reduce((a: number, b: any) => a + Number(b.litros || b.totalLitros || b.Litros || 0), 0);
         res = { items: lista, totalLitros: total, raw };
       } else if (tipoReporte === 'RECEPTORIAS') {
         const raw: any = await sistemaApi.getReporteReceptorias(repFechaInicio, repFechaFin);
         const lista = Array.isArray(raw) ? raw : (raw?.items || raw?.detalles || []);
-        res = { items: lista, totalLitros: lista.reduce((a: number, b: any) => a + Number(b.litros || b.litrosRecibidos || 0), 0), raw };
+        const total = lista.reduce((a: number, b: any) => a + Number(b.totalLitros || b.TotalLitros || b.litros || b.litrosRecibidos || 0), 0);
+        res = { items: lista, totalLitros: total, raw };
       } else if (tipoReporte === 'FINCAS') {
-        const raw: any = await sistemaApi.getReporteFincas(repFechaInicio, repFechaFin);
-        const lista = Array.isArray(raw) ? raw : (raw?.fincas || raw?.items || []);
-        res = { items: lista, totalLitros: lista.reduce((a: number, b: any) => a + Number(b.totalLitros || b.litros || 0), 0), raw };
+        const raw: any = await sistemaApi.getReporteFincas(repFechaInicio, repFechaFin, repFincaId || undefined);
+        const baseLista = Array.isArray(raw) ? raw : (raw?.fincas || raw?.items || []);
+        const lista = repFincaId
+          ? baseLista.filter((f: any) => String(f.id || f.Id || f.fincaId || f.FincaId) === String(repFincaId))
+          : baseLista;
+        const total = lista.reduce((a: number, b: any) => a + Number(b.totalLitros || b.TotalLitros || b.litros || b.Litros || 0), 0);
+        res = { items: lista, totalLitros: total, raw };
       } else if (tipoReporte === 'CHOFERES') {
         const raw: any = await sistemaApi.getReporteChoferes(repFechaInicio, repFechaFin, choferNumId);
         const lista = Array.isArray(raw) ? raw : (raw?.detalles || raw?.items || []);
@@ -4738,11 +4745,11 @@ export const AppMovilPage: React.FC = () => {
         const allList = Array.isArray(raw) ? raw : [];
         const filtered = allList.filter((r: any) => 
           (choferNumId && Number(r.usuarioId || r.UsuarioId) === choferNumId) ||
-          (dispositivo?.nombreCompleto && (r.chofer || '').toLowerCase().includes(dispositivo.nombreCompleto.toLowerCase())) ||
-          (dispositivo?.username && (r.chofer || '').toLowerCase().includes(dispositivo.username.toLowerCase()))
+          (dispositivo?.nombreCompleto && (r.chofer || r.Chofer || '').toLowerCase().includes(dispositivo.nombreCompleto.toLowerCase())) ||
+          (dispositivo?.username && (r.chofer || r.Chofer || '').toLowerCase().includes(dispositivo.username.toLowerCase()))
         );
         const lista = filtered.length > 0 ? filtered : allList;
-        const total = lista.reduce((a: number, b: any) => a + Number(b.litrosRuta || b.totalLitros || b.litros || 0), 0);
+        const total = lista.reduce((a: number, b: any) => a + Number(b.litrosRuta || b.LitrosRuta || b.totalLitros || b.TotalLitros || b.litros || 0), 0);
         res = { items: lista, totalLitros: total, raw };
       }
       setDatosReporte(res);
@@ -10619,7 +10626,12 @@ export const AppMovilPage: React.FC = () => {
                 </label>
                 <select
                   value={tipoReporte}
-                  onChange={(e) => setTipoReporte(e.target.value)}
+                  onChange={(e) => {
+                    const nextTipo = e.target.value;
+                    setTipoReporte(nextTipo);
+                    setDatosReporte(null);
+                    if (nextTipo !== 'FINCAS') setRepFincaId('');
+                  }}
                   style={{
                     width: '100%',
                     height: '42px',
@@ -10641,6 +10653,28 @@ export const AppMovilPage: React.FC = () => {
                   ))}
                 </select>
               </div>
+
+              {/* Campo FINCA: Solo visible cuando el reporte seleccionado es 3. FINCAS */}
+              {tipoReporte === 'FINCAS' && (
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '4px' }}>
+                    <i className="fa-solid fa-cow text-emerald-600 mr-1"></i>
+                    Finca (Ver detalle diario):
+                  </label>
+                  <SearchableSelect
+                    options={fincas.map((f) => ({
+                      value: String(f.id),
+                      label: f.nombre,
+                      sublabel: f.propietario ? `Prop: ${f.propietario}` : undefined,
+                    }))}
+                    value={repFincaId}
+                    onChange={(val) => setRepFincaId(val)}
+                    placeholder="Todas las fincas (o busque una finca)..."
+                    searchPlaceholder="Buscar finca o propietario..."
+                    allowClear
+                  />
+                </div>
+              )}
 
               <button
                 type="button"
@@ -10679,7 +10713,7 @@ export const AppMovilPage: React.FC = () => {
               const items: any[] = datosReporte?.items || (Array.isArray(datosReporte) ? datosReporte : []);
               const totalLitrosCalculados = Number(
                 datosReporte?.totalLitros ?? 
-                items.reduce((acc, r) => acc + Number(r.litros || r.totalLitros || r.litrosDespachados || 0), 0)
+                items.reduce((acc, r) => acc + Number(r.totalLitros || r.TotalLitros || r.litros || r.Litros || r.litrosDespachados || r.litrosRuta || r.LitrosRuta || 0), 0)
               );
 
               return (
@@ -10824,10 +10858,13 @@ export const AppMovilPage: React.FC = () => {
                         })
                       ) : tipoReporte === 'RELACION_CHOFER' ? (
                         items.map((row: any, idx: number) => {
-                          const difGlobal = Number(row.diferencias || 0);
+                          const lRuta = Number(row.litrosRuta ?? row.LitrosRuta ?? 0);
+                          const lQuesera = Number(row.litrosQuesera ?? row.LitrosQuesera ?? 0);
+                          const difGlobal = Number(row.diferencias ?? row.Diferencias ?? (lRuta - lQuesera));
                           const esPos = difGlobal > 0;
                           const esZero = difGlobal === 0;
-                          const detalleDiario: any[] = row.detalleDiario || [];
+                          const detalleDiario: any[] = row.detalleDiario || row.DetalleDiario || [];
+                          const detalleFincas: any[] = row.detalleFincas || row.DetalleFincas || [];
 
                           return (
                             <div
@@ -10844,10 +10881,10 @@ export const AppMovilPage: React.FC = () => {
                                 <div>
                                   <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
                                     <i className="fa-solid fa-file-invoice mr-1.5 text-purple-600"></i>
-                                    {row.chofer || 'Chofer'}
+                                    {row.chofer || row.Chofer || 'Chofer'}
                                   </div>
                                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                                    Ruta: <strong>{Number(row.litrosRuta || 0).toLocaleString()} L</strong> • Quesera: <strong>{Number(row.litrosQuesera || 0).toLocaleString()} L</strong>
+                                    Ruta: <strong>{lRuta.toLocaleString()} L</strong> • Quesera: <strong>{lQuesera.toLocaleString()} L</strong>
                                   </div>
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
@@ -10869,18 +10906,20 @@ export const AppMovilPage: React.FC = () => {
                                 </div>
                               </div>
 
-                              {/* Fechas con diferencias */}
+                              {/* Fechas / Viajes */}
                               <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>
                                   📅 Desglose Diario por Fechas ({detalleDiario.length})
                                 </div>
                                 {detalleDiario.length === 0 ? (
-                                  <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', padding: '6px' }}>
-                                    No hay registros diarios para este período.
+                                  <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', padding: '4px 6px' }}>
+                                    Sin tickets diarios registrados en este período.
                                   </div>
                                 ) : (
                                   detalleDiario.map((dd: any, dIdx: number) => {
-                                    const diff = Number(dd.diferencia ?? (Number(dd.litrosQuesera || 0) - Number(dd.litrosRuta || 0)));
+                                    const dRuta = Number(dd.litrosRuta ?? dd.LitrosRuta ?? 0);
+                                    const dQuesera = Number(dd.litrosQuesera ?? dd.LitrosQuesera ?? 0);
+                                    const diff = Number(dd.diferencia ?? dd.Diferencia ?? (dQuesera - dRuta));
                                     const esDPos = diff > 0;
                                     const esDZero = diff === 0;
 
@@ -10898,11 +10937,11 @@ export const AppMovilPage: React.FC = () => {
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                             <span style={{ fontWeight: 800, color: '#1e293b' }}>
-                                              {dd.fecha ? String(dd.fecha).split('T')[0] : 'Fecha'}
+                                              {(dd.fecha || dd.Fecha) ? String(dd.fecha || dd.Fecha).split('T')[0] : 'Fecha'}
                                             </span>
-                                            {dd.ticketId && (
+                                            {(dd.ticketId || dd.TicketId) && (
                                               <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#475569', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
-                                                #{dd.ticketId}
+                                                #{dd.ticketId || dd.TicketId}
                                               </span>
                                             )}
                                           </div>
@@ -10920,12 +10959,12 @@ export const AppMovilPage: React.FC = () => {
                                           </span>
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10.5px', color: '#64748b', marginTop: '3px' }}>
-                                          <span>Ruta: <strong>{Number(dd.litrosRuta || 0).toLocaleString()} L</strong> • Quesera: <strong>{Number(dd.litrosQuesera || 0).toLocaleString()} L</strong></span>
-                                          <span>{dd.destino || 'Receptoría'}</span>
+                                          <span>Ruta: <strong>{dRuta.toLocaleString()} L</strong> • Quesera: <strong>{dQuesera.toLocaleString()} L</strong></span>
+                                          <span>{dd.destino || dd.Destino || 'Receptoría'}</span>
                                         </div>
-                                        {dd.observacion && (
+                                        {(dd.observacion || dd.Observacion) && (
                                           <div style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>
-                                            {dd.observacion}
+                                            {dd.observacion || dd.Observacion}
                                           </div>
                                         )}
                                       </div>
@@ -10933,13 +10972,144 @@ export const AppMovilPage: React.FC = () => {
                                   })
                                 )}
                               </div>
+
+                              {/* Fincas Recogidas */}
+                              {detalleFincas.length > 0 && (
+                                <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>
+                                    🐮 Fincas Recogidas ({detalleFincas.length})
+                                  </div>
+                                  {detalleFincas.slice(0, 50).map((df: any, fIdx: number) => {
+                                    const fLts = Number(df.litros ?? df.Litros ?? 0);
+                                    const fTipo = String(df.tipoLeche || df.TipoLeche || 'VACA').toUpperCase();
+                                    const fObs = String(df.observacion || df.Observacion || '').replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '').trim();
+                                    return (
+                                      <div
+                                        key={fIdx}
+                                        style={{
+                                          background: '#ffffff',
+                                          borderRadius: '8px',
+                                          padding: '7px 10px',
+                                          border: '1px solid #e2e8f0',
+                                          fontSize: '11.5px',
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <div style={{ fontWeight: 800, color: '#0f172a' }}>
+                                            {df.fincaNombre || df.FincaNombre || 'Finca'}
+                                          </div>
+                                          <span style={{ fontWeight: 900, color: '#059669' }}>
+                                            {fLts.toLocaleString()} L
+                                          </span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10.5px', color: '#64748b', marginTop: '2px' }}>
+                                          <span>{(df.fecha || df.Fecha) ? String(df.fecha || df.Fecha).split('T')[0] : ''}</span>
+                                          <span style={{ fontSize: '10px', fontWeight: 800, color: fTipo.includes('BUF') ? '#7e22ce' : '#1d4ed8' }}>
+                                            {fTipo}
+                                          </span>
+                                        </div>
+                                        {fObs && (
+                                          <div style={{ fontSize: '10px', color: '#92400e', marginTop: '2px', fontStyle: 'italic' }}>
+                                            {fObs}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : tipoReporte === 'FINCAS' ? (
+                        items.slice(0, 50).map((row: any, idx: number) => {
+                          const lts = Number(row.totalLitros || row.TotalLitros || row.litros || row.Litros || 0);
+                          const titulo = row.nombre || row.Nombre || row.fincaNombre || row.FincaNombre || `Finca #${idx + 1}`;
+                          const prop = row.propietario || row.Propietario || '';
+                          const detalle: any[] = row.detalle || row.Detalle || [];
+
+                          return (
+                            <div
+                              key={idx}
+                              style={{
+                                background: '#f8fafc',
+                                borderRadius: '12px',
+                                padding: '12px',
+                                border: '1px solid #e2e8f0',
+                                fontSize: '12px',
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontWeight: 800, color: '#1e293b' }}>
+                                <div>
+                                  <span>{titulo}</span>
+                                  {prop && <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>Prop: {prop}</div>}
+                                </div>
+                                <span style={{ color: '#059669', fontWeight: 900, whiteSpace: 'nowrap', marginLeft: '8px', fontSize: '13.5px' }}>
+                                  {lts.toLocaleString()} L
+                                </span>
+                              </div>
+
+                              {/* Desglose diario de la finca (siempre visible cuando se selecciona finca o si hay detalle) */}
+                              {detalle.length > 0 && (repFincaId || items.length <= 5) && (
+                                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #cbd5e1', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                  <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>
+                                    📅 Detalle Diario ({detalle.length} {detalle.length === 1 ? 'día' : 'días'})
+                                  </div>
+                                  {detalle.map((det: any, dIdx: number) => {
+                                    const dLts = Number(det.litros ?? det.Litros ?? 0);
+                                    const dFecha = (det.fecha || det.Fecha) ? String(det.fecha || det.Fecha).split('T')[0] : '';
+                                    const dTipo = String(det.tipoLeche || det.TipoLeche || 'VACA').toUpperCase();
+                                    const dObs = String(det.observacion || det.Observacion || '').replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '').trim();
+                                    return (
+                                      <div
+                                        key={dIdx}
+                                        style={{
+                                          background: '#ffffff',
+                                          borderRadius: '8px',
+                                          padding: '6px 9px',
+                                          border: '1px solid #e2e8f0',
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          fontSize: '11.5px',
+                                        }}
+                                      >
+                                        <div>
+                                          <div style={{ fontWeight: 700, color: '#0f172a' }}>
+                                            {dFecha || `Día #${dIdx + 1}`}
+                                            <span style={{
+                                              marginLeft: '6px',
+                                              fontSize: '9.5px',
+                                              fontWeight: 800,
+                                              padding: '1px 5px',
+                                              borderRadius: '4px',
+                                              background: dTipo.includes('BUF') ? '#f3e8ff' : '#dbeafe',
+                                              color: dTipo.includes('BUF') ? '#7e22ce' : '#1d4ed8',
+                                            }}>
+                                              {dTipo}
+                                            </span>
+                                          </div>
+                                          {dObs && (
+                                            <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
+                                              {dObs}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <span style={{ fontWeight: 900, color: '#0284c7', whiteSpace: 'nowrap' }}>
+                                          {dLts.toLocaleString()} L
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                           );
                         })
                       ) : (
                         items.slice(0, 50).map((row: any, idx: number) => {
-                          const lts = Number(row.litros || row.totalLitros || row.litrosDespachados || row.Litros || 0);
-                          const titulo = row.nombre || row.fincaNombre || row.finca || row.FincaNombre || row.choferNombre || row.companiaNombre || row.rutaLogisticaNombre || `Registro #${idx + 1}`;
+                          const lts = Number(row.litros || row.totalLitros || row.TotalLitros || row.litrosDespachados || row.Litros || 0);
+                          const titulo = row.nombre || row.Nombre || row.fincaNombre || row.finca || row.FincaNombre || row.choferNombre || row.companiaNombre || row.rutaLogisticaNombre || `Registro #${idx + 1}`;
                           const sub = row.propietario || row.dueño || row.placaCamion || row.observacion || '';
                           const fechaStr = row.fecha ? String(row.fecha).split('T')[0] : '';
                           const tipoLeche = (row.tipoLeche || row.TipoLeche || 'VACA').toUpperCase();
@@ -10981,6 +11151,26 @@ export const AppMovilPage: React.FC = () => {
                           );
                         })
                       )}
+
+                      {/* Barra Resumen Total Litros (DIARIOS, RECEPTORIAS, FINCAS, etc.) */}
+                      <div
+                        style={{
+                          marginTop: '6px',
+                          background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
+                          color: '#ffffff',
+                          borderRadius: '12px',
+                          padding: '12px 14px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontWeight: 900,
+                          fontSize: '13.5px',
+                          boxShadow: '0 4px 10px rgba(37,99,235,0.2)',
+                        }}
+                      >
+                        <span>TOTAL LITROS</span>
+                        <span style={{ fontSize: '16px' }}>{totalLitrosCalculados.toLocaleString()} L</span>
+                      </div>
                     </div>
                   )}
                 </div>

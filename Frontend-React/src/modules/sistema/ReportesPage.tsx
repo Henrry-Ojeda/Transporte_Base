@@ -788,24 +788,16 @@ export const ReportesPage: React.FC = () => {
               <label style={{ fontSize: '13px', color: '#1e293b', fontWeight: 700, display: 'block', marginBottom: '6px' }}>
                 Tipo de Reporte:
               </label>
-              <select
-                className="form-input form-select"
+              <SearchableSelect
+                options={catalogosDisponibles.map((r) => ({ value: r.value, label: r.label }))}
                 value={tipoReporte}
-                onChange={(e) => setTipoReporte(e.target.value as TipoReporteOficial)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    refetch();
-                  }
+                onChange={(val) => {
+                  if (val) setTipoReporte(val as TipoReporteOficial);
                 }}
-                style={{ height: '42px', fontWeight: 700, fontSize: '13.5px', color: '#0f172a', width: '100%', borderRadius: '8px' }}
-              >
-                {catalogosDisponibles.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
+                placeholder="Seleccione Tipo de Reporte..."
+                allowClear={false}
+                style={{ minHeight: '42px' }}
+              />
             </div>
             <div>
               <button

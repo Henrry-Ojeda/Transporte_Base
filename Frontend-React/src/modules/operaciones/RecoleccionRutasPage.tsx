@@ -6256,7 +6256,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                   return (
                 <div className={`grid ${hasBufala ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'} gap-3.5`}>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 min-h-[22px] whitespace-nowrap">
                       <i className="fa-solid fa-faucet-drip text-blue-600"></i>
                       Litros Recolectados *
                     </label>
@@ -6279,10 +6279,18 @@ export const RecoleccionRutasPage: React.FC = () => {
 
                   {hasBufala && (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <i className="fa-solid fa-cow text-sky-600"></i>
-                        Tipo de Leche * {!permisosTl.esDual && formFinca.fincaId > 0 && (
-                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Automático por Finca</span>
+                      <label className="text-xs font-bold text-slate-800 flex items-center justify-between gap-1.5 min-h-[22px]">
+                        <span className="flex items-center gap-1.5 whitespace-nowrap">
+                          <i className="fa-solid fa-cow text-sky-600"></i>
+                          Tipo de Leche *
+                        </span>
+                        {!permisosTl.esDual && formFinca.fincaId > 0 && (
+                          <span
+                            title="Asignado automáticamente según la finca"
+                            className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded whitespace-nowrap shrink-0"
+                          >
+                            Automático
+                          </span>
                         )}
                       </label>
                       <div className="grid grid-cols-2 gap-2 h-11">
@@ -8461,7 +8469,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                 {/* 1. LITROS RECOLECTADOS & TIPO DE LECHE */}
                 <div className={`grid ${hasBufala ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'} gap-3.5`}>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 min-h-[22px] whitespace-nowrap">
                       <i className="fa-solid fa-faucet-drip text-blue-600"></i>
                       Litros Recolectados *
                     </label>
@@ -8486,10 +8494,18 @@ export const RecoleccionRutasPage: React.FC = () => {
                     const permisosTlEdit = getPermisosTipoLecheFinca(fSelEdit);
                     return (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <i className="fa-solid fa-cow text-sky-600"></i>
-                        Tipo de Leche * {!permisosTlEdit.esDual && formEditar.fincaId > 0 && (
-                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Automático por Finca</span>
+                      <label className="text-xs font-bold text-slate-800 flex items-center justify-between gap-1.5 min-h-[22px]">
+                        <span className="flex items-center gap-1.5 whitespace-nowrap">
+                          <i className="fa-solid fa-cow text-sky-600"></i>
+                          Tipo de Leche *
+                        </span>
+                        {!permisosTlEdit.esDual && formEditar.fincaId > 0 && (
+                          <span
+                            title="Asignado automáticamente según la finca"
+                            className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded whitespace-nowrap shrink-0"
+                          >
+                            Automático
+                          </span>
                         )}
                       </label>
                       <div className="grid grid-cols-2 gap-2 h-11">

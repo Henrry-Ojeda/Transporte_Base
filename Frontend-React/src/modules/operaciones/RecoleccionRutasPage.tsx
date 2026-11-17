@@ -628,13 +628,17 @@ export const RecoleccionRutasPage: React.FC = () => {
       }
       return res;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
+      const fechaCreada = variables?.fecha;
+      if (fechaCreada) {
+        setFechaFiltro(fechaCreada);
+      }
       toast.success(data.message || 'Viaje iniciado exitosamente');
       queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
       setModalIniciarViaje(false);
       setFincasSeleccionadasIniciar([]);
       setFormIniciar({
-        fecha: fechaFiltro || hoyStr,
+        fecha: fechaCreada || fechaFiltro || hoyStr,
         camionId: 0,
         choferId: user?.id && rol === 'CHOFER' ? user.id : 0,
         rutaLogisticaId: 0,

@@ -991,33 +991,9 @@ export const ReportesPage: React.FC = () => {
                 </div>
               </div>
             )}
-          {/* ACCIONES EXCLUSIVAS DE REPORTES FINCAS */}
-          {tipoReporte === 'FINCAS' && (
+          {/* ACCIONES EXCLUSIVAS DE REPORTES FINCAS (COMPARATIVA) */}
+          {tipoReporte === 'FINCAS' && finca1Id && finca2Id && (
             <div style={{ marginTop: '14px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => setMostrarAdelanto(!mostrarAdelanto)}
-                className="btn"
-                style={{
-                  background: mostrarAdelanto ? '#d97706' : '#ffffff',
-                  color: mostrarAdelanto ? '#ffffff' : '#b45309',
-                  border: '1.5px solid #d97706',
-                  fontWeight: 800,
-                  fontSize: '12px',
-                  padding: '6px 14px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
-                <i className="fa-solid fa-hand-holding-dollar"></i>
-                {mostrarAdelanto ? 'Adelanto: ACTIVADO' : 'Mostrar Adelanto (Opcional)'}
-              </button>
-
-              {finca1Id && finca2Id && (
-                <>
                   <button
                     type="button"
                     onClick={() => setMostrarConsolidadoManual(!mostrarConsolidadoManual)}
@@ -1052,8 +1028,6 @@ export const ReportesPage: React.FC = () => {
                   >
                     <i className="fa-solid fa-camera"></i> Capturar Imagen Ambas
                   </button>
-                </>
-              )}
             </div>
           )}
         </div>

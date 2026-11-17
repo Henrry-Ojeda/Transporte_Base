@@ -10675,8 +10675,16 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                             FechaEntrega = ISNULL(FechaEntrega, GETDATE()),
                             ModifiedAt = GETDATE(),
                             ModifiedBy = @usuarioId
-                        WHERE ControlRutaId = @controlRutaId AND Estado != 'FINALIZADO';",
-                        new { litrosRecibidos = dto.LitrosRecibidos, diferenciaRec, porcentajeRec, usuarioId, controlRutaId });
+                        WHERE ControlRutaId = @controlRutaId
+                          AND Estado != 'FINALIZADO'
+                          AND CompaniaId IN (
+                              SELECT Id FROM TB_COMPANIAS
+                              WHERE Id = @compReceptoriaId
+                                 OR UPPER(ISNULL(Nombre, '')) LIKE '%RECEPTORIA%'
+                                 OR UPPER(ISNULL(Nombre, '')) LIKE '%RECEPTORÍA%'
+                                 OR UPPER(ISNULL(Nombre, '')) LIKE '%PLANTA PRINCIPAL%'
+                          );",
+                        new { litrosRecibidos = dto.LitrosRecibidos, diferenciaRec, porcentajeRec, usuarioId, controlRutaId, compReceptoriaId });
                 }
                 catch { /* Tolerante */ }
 

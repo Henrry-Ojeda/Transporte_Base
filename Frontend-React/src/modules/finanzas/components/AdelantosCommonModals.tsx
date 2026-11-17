@@ -61,33 +61,52 @@ export const ModalCrearAdelanto: React.FC<ModalCrearAdelantoProps> = ({
     return numeroCuotas > 0 ? Number((montoTotalUSD / numeroCuotas).toFixed(2)) : 0;
   }, [montoTotalUSD, numeroCuotas]);
 
-  // Preview de las cuotas distribuidas cronológicamente
-  const cuotasPreview = useMemo(() => {
-    if (montoTotalUSD <= 0 || numeroCuotas <= 0) return [];
+  const semanasOrdenadas = useMemo(() => {
+    return [...semanas].sort((a: any, b: any) => {
+      const fa = String(a.fechaInicio || a.FechaInicio || '').split('T')[0];
+      const fb = String(b.fechaInicio || b.FechaInicio || '').split('T')[0];
+      if (fa && fb && fa !== fb) return fa.localeCompare(fb);
+      return Number(a.id) - Number(b.id);
+    });
+  }, [semanas]);
 
-    const startIdx = semanas.findIndex((s) => String(s.id) === semanaInicioId);
+  const [cuotasEditables, setCuotasEditables] = useState<
+    { numero: number; semanaId: number; semanaCodigo: string; montoUSD: number }[]
+  >([]);
+
+  // Recalcular cuotas equitativas en orden cronológico ascendente cuando cambian monto, cuotas o semana inicial
+  useEffect(() => {
+    if (montoTotalUSD <= 0 || numeroCuotas <= 0 || semanasOrdenadas.length === 0) {
+      setCuotasEditables([]);
+      return;
+    }
+
+    const startIdx = semanasOrdenadas.findIndex((s: any) => String(s.id) === semanaInicioId);
     const baseIdx = startIdx >= 0 ? startIdx : 0;
 
-    const list = [];
+    const list: { numero: number; semanaId: number; semanaCodigo: string; montoUSD: number }[] = [];
     const baseCuota = Math.floor((montoTotalUSD / numeroCuotas) * 100) / 100;
     let acumulado = 0;
 
     for (let i = 0; i < numeroCuotas; i++) {
-      const sem = semanas[baseIdx + i] || null;
+      const sem: any = semanasOrdenadas[baseIdx + i] || null;
       const isLast = i === numeroCuotas - 1;
       const cuotaUSD = isLast ? Number((montoTotalUSD - acumulado).toFixed(2)) : baseCuota;
       acumulado += cuotaUSD;
-      const cuotaBs = Number((cuotaUSD * tasaBcv).toFixed(2));
 
       list.push({
         numero: i + 1,
+        semanaId: sem ? Number(sem.id) : 0,
         semanaCodigo: sem ? (sem.codigo || sem.Codigo || `Semana #${sem.id}`) : `Semana +${i}`,
         montoUSD: cuotaUSD,
-        montoBs: cuotaBs,
       });
     }
-    return list;
-  }, [montoTotalUSD, numeroCuotas, semanaInicioId, semanas, tasaBcv]);
+    setCuotasEditables(list);
+  }, [montoTotalUSD, numeroCuotas, semanaInicioId, semanasOrdenadas]);
+
+  const sumaCuotasUSD = useMemo(() => {
+    return Number(cuotasEditables.reduce((acc, c) => acc + (Number(c.montoUSD) || 0), 0).toFixed(2));
+  }, [cuotasEditables]);
 
   if (!isOpen) return null;
 
@@ -105,30 +124,29 @@ export const ModalCrearAdelanto: React.FC<ModalCrearAdelantoProps> = ({
       toast.error('Debe asignar al menos 1 cuota.');
       return;
     }
+    if (cuotasEditables.length > 0 && Math.abs(sumaCuotasUSD - montoTotalUSD) > 0.05) {
+      toast.error(`La suma de las cuotas ($${sumaCuotasUSD.toFixed(2)}) debe coincidir con el monto total ($${montoTotalUSD.toFixed(2)}).`);
+      return;
+    }
 
     setLoading(true);
     try {
       const payload: any = {
         tipoEntidad,
-        montoUSD: montoTotalUSD,
+        entidadId: parseInt(entidadId, 10),
         montoTotalUSD,
         numeroCuotas,
-        tasaBcvAplicada: tasaBcv,
-        tasaBCV: tasaBcv,
-        fecha: fechaSolicitud,
+        tasaBcvInicial: tasaBcv,
         fechaSolicitud,
-        motivo: observacion,
         observacion,
-        semanaOperativaId: semanaInicioId ? parseInt(semanaInicioId, 10) : undefined,
+        semanaInicioId: semanaInicioId ? parseInt(semanaInicioId, 10) : undefined,
+        cuotasPersonalizadas: cuotasEditables.map((c) => ({
+          numeroCuota: c.numero,
+          semanaOperativaId: c.semanaId > 0 ? c.semanaId : undefined,
+          montoCuotaUSD: Number(c.montoUSD || 0),
+          tasaBcvAplicada: tasaBcv,
+        })),
       };
-
-      if (tipoEntidad === 'FINCA') {
-        payload.fincaId = parseInt(entidadId, 10);
-      } else if (tipoEntidad === 'COMPANIA') {
-        payload.companiaId = parseInt(entidadId, 10);
-      } else if (tipoEntidad === 'RECEPTORIA') {
-        payload.usuarioId = parseInt(entidadId, 10);
-      }
 
       const res = await finanzasApi.crearAdelanto(payload);
       Swal.fire({
@@ -362,7 +380,7 @@ export const ModalCrearAdelanto: React.FC<ModalCrearAdelantoProps> = ({
                   style={{ height: '38px', fontWeight: 700, color: '#0f172a' }}
                 >
                   <option value="">-- Ciclo Activo Actual --</option>
-                  {semanas.map((s) => {
+                  {semanasOrdenadas.map((s) => {
                     const sId = String(s.id);
                     const cod = s.codigo || `Semana #${sId}`;
                     const fIni = (s.fechaInicio || s.FechaInicio || '').split('T')[0];
@@ -393,36 +411,108 @@ export const ModalCrearAdelanto: React.FC<ModalCrearAdelantoProps> = ({
               />
             </div>
 
-            {/* PREVIEW DE CUOTAS */}
-            {cuotasPreview.length > 0 && (
+            {/* PREVIEW DE CUOTAS EDITABLES */}
+            {cuotasEditables.length > 0 && (
               <div>
-                <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                  <i className="fa-solid fa-list-ol" style={{ marginRight: '6px' }}></i>
-                  Cronograma Previsto de Amortización ({cuotasPreview.length} Cuotas)
-                </label>
-                <div style={{ maxHeight: '140px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', margin: 0 }}>
+                    <i className="fa-solid fa-list-ol" style={{ marginRight: '6px' }}></i>
+                    Cronograma de Amortización ({cuotasEditables.length} Cuotas)
+                  </label>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      color: Math.abs(sumaCuotasUSD - montoTotalUSD) <= 0.05 ? '#059669' : '#dc2626',
+                    }}
+                  >
+                    Suma: ${sumaCuotasUSD.toFixed(2)} / ${montoTotalUSD.toFixed(2)}
+                  </span>
+                </div>
+                <div style={{ maxHeight: '190px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                   <table style={{ width: '100%', fontSize: '11.5px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead style={{ background: '#f1f5f9', color: '#475569', fontWeight: 800, position: 'sticky', top: 0 }}>
+                    <thead style={{ background: '#f1f5f9', color: '#475569', fontWeight: 800, position: 'sticky', top: 0, zIndex: 1 }}>
                       <tr>
-                        <th style={{ padding: '6px 10px', width: '60px' }}>Cuota</th>
+                        <th style={{ padding: '6px 10px', width: '50px' }}>Cuota</th>
                         <th style={{ padding: '6px 10px' }}>Semana Cobro</th>
-                        <th style={{ padding: '6px 10px', textAlign: 'right' }}>Monto ($)</th>
-                        <th style={{ padding: '6px 10px', textAlign: 'right' }}>Monto (Bs)</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'right', width: '115px' }}>Monto ($)</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'right', width: '120px' }}>Monto (Bs)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {cuotasPreview.map((c) => (
-                        <tr key={c.numero} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '5px 10px', fontWeight: 800 }}>#{c.numero}</td>
-                          <td style={{ padding: '5px 10px' }}>{c.semanaCodigo}</td>
-                          <td style={{ padding: '5px 10px', textAlign: 'right', fontWeight: 800, color: '#2563eb' }}>
-                            $ {c.montoUSD.toFixed(2)}
-                          </td>
-                          <td style={{ padding: '5px 10px', textAlign: 'right', color: '#059669', fontWeight: 700 }}>
-                            Bs. {c.montoBs.toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
+                      {cuotasEditables.map((c, idx) => {
+                        const cuotaBs = Number(((Number(c.montoUSD) || 0) * tasaBcv).toFixed(2));
+                        return (
+                          <tr key={c.numero} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '5px 10px', fontWeight: 800 }}>#{c.numero}</td>
+                            <td style={{ padding: '4px 8px' }}>
+                              <select
+                                value={c.semanaId || ''}
+                                onChange={(e) => {
+                                  const newSemId = Number(e.target.value);
+                                  const match = semanasOrdenadas.find((s: any) => Number(s.id) === newSemId);
+                                  setCuotasEditables((prev) =>
+                                    prev.map((item, i) =>
+                                      i === idx
+                                        ? {
+                                            ...item,
+                                            semanaId: newSemId,
+                                            semanaCodigo: match ? (match.codigo || (match as any).Codigo || `Semana #${newSemId}`) : item.semanaCodigo,
+                                          }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                style={{
+                                  width: '100%',
+                                  height: '28px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 700,
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '6px',
+                                  padding: '0 6px',
+                                  background: '#ffffff',
+                                }}
+                              >
+                                {semanasOrdenadas.map((s: any) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.codigo || s.Codigo || `Semana #${s.id}`}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td style={{ padding: '4px 8px', textAlign: 'right' }}>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={c.montoUSD}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  setCuotasEditables((prev) =>
+                                    prev.map((item, i) => (i === idx ? { ...item, montoUSD: val } : item))
+                                  );
+                                }}
+                                style={{
+                                  width: '96px',
+                                  height: '28px',
+                                  textAlign: 'right',
+                                  fontWeight: 800,
+                                  fontSize: '12px',
+                                  color: '#2563eb',
+                                  border: '1px solid #bfdbfe',
+                                  borderRadius: '6px',
+                                  padding: '0 6px',
+                                  background: '#eff6ff',
+                                }}
+                              />
+                            </td>
+                            <td style={{ padding: '5px 10px', textAlign: 'right', color: '#059669', fontWeight: 700 }}>
+                              Bs. {cuotaBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

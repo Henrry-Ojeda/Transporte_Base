@@ -28,19 +28,23 @@ export const esReceptoriaPrincipal = (nombreOCompania: any): boolean => {
     ) {
       return true;
     }
+    if (
+      nombreOCompania.esPrincipal === false ||
+      nombreOCompania.EsPrincipal === false ||
+      nombreOCompania.esPrincipal === 0 ||
+      nombreOCompania.EsPrincipal === 0
+    ) {
+      return nom.includes('RECEPTORIA') || nom.includes('RECEPTORÍA') || nom.includes('PLANTA PRINCIPAL');
+    }
   }
   if (!nom) return false;
 
   return (
     nom.includes('RECEPTORIA') ||
     nom.includes('RECEPTORÍA') ||
-    nom.includes('CAMPO VERDE') ||
-    nom.includes('CAMPOVERDE') ||
-    nom.includes('VERGEL') ||
-    nom.includes('PLANTA') ||
+    nom.includes('PLANTA PRINCIPAL') ||
     nom.includes('MATRIZ') ||
-    nom.includes('SILO') ||
-    nom.includes('BASE')
+    nom.includes('SILO')
   );
 };
 

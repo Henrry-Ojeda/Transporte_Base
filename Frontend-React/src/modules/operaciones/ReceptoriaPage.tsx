@@ -1702,7 +1702,7 @@ export const ReceptoriaPage: React.FC = () => {
                               <i className={`fa-solid ${isConfirmadoFinalizado ? 'fa-circle-check' : 'fa-hourglass-half'}`}></i>
                               {isConfirmadoFinalizado
                                 ? `Confirmado en Silos (${Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || litrosRecogidos).toLocaleString()} Lts)`
-                                : `Descargado en Silos (${Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || litrosRecogidos).toLocaleString()} Lts) — Falta Confirmar`}
+                                : `Descargado en Silos (${Number(c.litrosRecibidosReceptoria || litrosRecogidos).toLocaleString()} Lts) — Falta Confirmar`}
                             </div>
                             <button
                               type="button"

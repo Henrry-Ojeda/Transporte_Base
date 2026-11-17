@@ -659,7 +659,7 @@ export const operacionesApi = {
     return res.data;
   },
 
-  diferirLitros: async (rutaId: number, dto: { litrosDiferir: number; cicloDestinoId?: number; motivo?: string }): Promise<{ message: string }> => {
+  diferirLitros: async (rutaId: number, dto: { litrosDiferir: number; cicloDestinoId?: number; motivo?: string; fechaDestino?: string }): Promise<{ message: string }> => {
     const res = await apiClient.post<{ message: string }>(`/rutas/${rutaId}/diferir-litros`, dto);
     return res.data;
   },

@@ -184,6 +184,7 @@ namespace Transporte.Core.DTOs
         public int LitrosDiferir { get; set; }
         public int? CicloDestinoId { get; set; }
         public string? Motivo { get; set; }
+        public DateTime? FechaDestino { get; set; }
     }
 
     public class ModificarLitrosDto

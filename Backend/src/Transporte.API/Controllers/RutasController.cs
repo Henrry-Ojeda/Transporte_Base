@@ -175,7 +175,7 @@ namespace Transporte.API.Controllers
 
             try
             {
-                await _rutasRepository.DiferirLitrosAsync(id, dto.LitrosDiferir, dto.CicloDestinoId, dto.Motivo, userId, rol);
+                await _rutasRepository.DiferirLitrosAsync(id, dto.LitrosDiferir, dto.CicloDestinoId, dto.Motivo, userId, rol, dto.FechaDestino);
                 return Ok(new { message = "Litros diferidos exitosamente hacia la siguiente semana operativa." });
             }
             catch (Exception ex)

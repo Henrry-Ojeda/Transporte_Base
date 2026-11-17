@@ -84,7 +84,12 @@ export const AdelantosFincasPage: React.FC = () => {
       const fincaNom = a.entidadNombre ?? a.EntidadNombre ?? a.fincaNombre ?? a.FincaNombre ?? fMatch?.nombre ?? 'Finca sin nombre';
       const propNom = fMatch?.propietarioNombre || (fMatch as any)?.propietario || '';
 
-      const semNom = a.semanaOperativaCodigo || a.semanaOperativa?.codigo || a.cicloCodigo || (a.semanaOperativaId ? `Semana #${a.semanaOperativaId}` : 'Ciclo general');
+      const semNom =
+        a.semanaInicioNombre ||
+        a.semanaOperativaCodigo ||
+        a.semanaOperativa?.codigo ||
+        a.cicloCodigo ||
+        (a.semanaInicioId || a.semanaOperativaId ? `Semana #${a.semanaInicioId || a.semanaOperativaId}` : 'Ciclo general');
 
       const est = String(a.estado || a.Estado || (saldoPend <= 0.001 ? 'PAGADO' : 'ACTIVO')).toUpperCase();
 
@@ -112,7 +117,7 @@ export const AdelantosFincasPage: React.FC = () => {
   const adelantosFiltrados = useMemo(() => {
     return adelantos.filter((a) => {
       if (filtroSemana) {
-        const matchesSemana = String(a.semanaOperativaId) === filtroSemana ||
+        const matchesSemana = String(a.semanaInicioId || a.semanaOperativaId) === filtroSemana ||
           (a.cuotas && a.cuotas.some((c: any) => String(c.semanaOperativaId) === filtroSemana));
         if (!matchesSemana) return false;
       }

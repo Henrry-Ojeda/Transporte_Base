@@ -9122,6 +9122,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     cr.LitrosRecibidosReceptoria,
                     uc.NombreCompleto AS NombreCerradoPor,
                     (SELECT COUNT(*) FROM TB_RUTAS_RECOLECCION r WHERE r.ControlRutaId = cr.Id OR (r.ControlRutaId IS NULL AND r.UsuarioId = cr.UsuarioId AND CAST(r.Fecha AS DATE) = CAST(cr.Fecha AS DATE))) AS TotalFincas
+                FROM TB_CONTROL_RUTAS cr
                 INNER JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
                 LEFT JOIN TB_PROCESOS_TICKET pt ON cr.ProcesoActualId = pt.Id
                 LEFT JOIN TB_COMPANIAS cp ON cr.CompaniaDestinoId = cp.Id

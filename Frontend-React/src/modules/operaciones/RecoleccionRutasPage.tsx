@@ -8679,7 +8679,10 @@ export const RecoleccionRutasPage: React.FC = () => {
       {/* ========================================================================= */}
       {modalEnviarCompania && viajeActivo && (() => {
         const fincasT = fincasTicketsMap[viajeActivo.id] || [];
-        const totalCamion = ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosRecogidos || 0) > 0 ? ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosRecogidos) : fincasT.reduce((a: number, f: any) => a + Number(f.litros || f.Litros || 0), 0);
+        const ltsFincasLive = fincasT.reduce((a: number, f: any) => a + Number(f.litros || f.Litros || f.litrosLeche || 0), 0);
+        const totalCamion = ltsFincasLive > 0
+          ? ltsFincasLive
+          : Number((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosRecogidos || viajeActivo.totalLitrosFinca || 0);
         const yaAsignado = (viajeActivo as any)._litrosEntregados || viajeActivo.totalLitrosEntregados || 0;
         const faltante = Math.max(0, totalCamion - yaAsignado);
         const sumaFilas = filasEntregaDirecta.reduce((acc, f) => acc + (Number(f.litros) || 0), 0);
@@ -8982,7 +8985,10 @@ export const RecoleccionRutasPage: React.FC = () => {
       {/* ========================================================================= */}
       {modalTraspaso && viajeActivo && (() => {
         const fincasT = fincasTicketsMap[viajeActivo.id] || [];
-        const totalCamion = ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosRecogidos || 0) > 0 ? ((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosRecogidos) : fincasT.reduce((a: number, f: any) => a + Number(f.litros || f.Litros || 0), 0);
+        const ltsFincasLive = fincasT.reduce((a: number, f: any) => a + Number(f.litros || f.Litros || f.litrosLeche || 0), 0);
+        const totalCamion = ltsFincasLive > 0
+          ? ltsFincasLive
+          : Number((viajeActivo as any)._litrosRecogidos || viajeActivo.totalLitrosRecogidos || viajeActivo.totalLitrosFinca || 0);
         const yaAsignado = (viajeActivo as any)._litrosEntregados || viajeActivo.totalLitrosEntregados || 0;
         const ltsDisponibles = Math.max(0, totalCamion - yaAsignado);
         const ticketsDestino = viajes.filter((v) => v.id !== viajeActivo.id && v.estado !== 'FINALIZADO');

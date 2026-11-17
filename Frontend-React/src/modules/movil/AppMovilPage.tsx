@@ -15,6 +15,7 @@ import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.
 import { finanzasApi } from '@/api/finanzas.api';
 import { useAuthStore } from '@/stores/authStore';
 import { updateAppIcon } from '@/utils/pwaIcons';
+import { getPermisosTipoLecheFinca } from '@/utils/procesoViaje';
 import type {
   FincaDto,
   DespachoCompaniaDto,
@@ -5369,15 +5370,17 @@ export const AppMovilPage: React.FC = () => {
       ltsPrevios = String(paradaServidor.litros || paradaServidor.Litros);
     }
 
+    const permisosTipo = getPermisosTipoLecheFinca(fincaItem);
     setFormCarga((prev) => {
       const esDiferidoPrev = Boolean(cargaLocal?.esDiferido ?? fincaItem.parada?.esDiferido ?? prev.esDiferido);
       const ltsDiferirPrev = cargaLocal?.litrosDiferir ? String(cargaLocal.litrosDiferir) : (esDiferidoPrev ? ltsPrevios : '');
+      const tipoPrev = cargaLocal?.tipoLeche || fincaItem.parada?.tipoLeche || permisosTipo.defaultTipo;
       return {
         ...prev,
         fecha: fechaAUsar,
         fincaId: Number(fincaItem.id),
         litros: ltsPrevios,
-        tipoLeche: cargaLocal?.tipoLeche || fincaItem.parada?.tipoLeche || prev.tipoLeche || 'VACA',
+        tipoLeche: permisosTipo.esDual ? tipoPrev : permisosTipo.defaultTipo,
         esAcida: Boolean(cargaLocal?.esAcida ?? fincaItem.parada?.esAcida ?? prev.esAcida),
         esDiferido: esDiferidoPrev,
         litrosDiferir: ltsDiferirPrev,
@@ -15432,23 +15435,31 @@ export const AppMovilPage: React.FC = () => {
               </div>
 
               {/* Tipo de Leche */}
+              {(() => {
+                const fincaActual = fincas.find((f) => Number(f.id) === Number(formCarga.fincaId));
+                const permisosTipo = getPermisosTipoLecheFinca(fincaActual);
+                return (
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#1e293b', marginBottom: '6px' }}>
-                  Tipo de Leche
+                  Tipo de Leche {!permisosTipo.esDual && formCarga.fincaId > 0 && (
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', marginLeft: '6px' }}>(Automático por Finca)</span>
+                  )}
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: tieneModuloBufala ? '1fr 1fr' : '1fr', gap: '8px' }}>
                   <button
                     type="button"
-                    onClick={() => setFormCarga({ ...formCarga, tipoLeche: 'VACA' })}
+                    disabled={!permisosTipo.permiteVaca}
+                    onClick={() => permisosTipo.permiteVaca && setFormCarga({ ...formCarga, tipoLeche: 'VACA' })}
                     style={{
                       height: '42px',
                       borderRadius: '10px',
-                      border: formCarga.tipoLeche === 'VACA' ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                      background: formCarga.tipoLeche === 'VACA' ? '#eff6ff' : '#ffffff',
-                      color: formCarga.tipoLeche === 'VACA' ? '#1d4ed8' : '#64748b',
+                      border: !permisosTipo.permiteVaca ? '1px solid #e2e8f0' : (formCarga.tipoLeche === 'VACA' ? '2px solid #2563eb' : '1px solid #cbd5e1'),
+                      background: !permisosTipo.permiteVaca ? '#f1f5f9' : (formCarga.tipoLeche === 'VACA' ? '#eff6ff' : '#ffffff'),
+                      color: !permisosTipo.permiteVaca ? '#cbd5e1' : (formCarga.tipoLeche === 'VACA' ? '#1d4ed8' : '#64748b'),
                       fontSize: '13px',
                       fontWeight: 800,
-                      cursor: 'pointer',
+                      cursor: !permisosTipo.permiteVaca ? 'not-allowed' : 'pointer',
+                      opacity: !permisosTipo.permiteVaca ? 0.55 : 1,
                     }}
                   >
                     🥛 Vaca (Estándar)
@@ -15456,16 +15467,18 @@ export const AppMovilPage: React.FC = () => {
                   {tieneModuloBufala && (
                     <button
                       type="button"
-                      onClick={() => setFormCarga({ ...formCarga, tipoLeche: 'BUFALA' })}
+                      disabled={!permisosTipo.permiteBufala}
+                      onClick={() => permisosTipo.permiteBufala && setFormCarga({ ...formCarga, tipoLeche: 'BUFALA' })}
                       style={{
                         height: '42px',
                         borderRadius: '10px',
-                        border: formCarga.tipoLeche === 'BUFALA' ? '2px solid #ea580c' : '1px solid #cbd5e1',
-                        background: formCarga.tipoLeche === 'BUFALA' ? '#fff7ed' : '#ffffff',
-                        color: formCarga.tipoLeche === 'BUFALA' ? '#c2410c' : '#64748b',
+                        border: !permisosTipo.permiteBufala ? '1px solid #e2e8f0' : (formCarga.tipoLeche === 'BUFALA' ? '2px solid #ea580c' : '1px solid #cbd5e1'),
+                        background: !permisosTipo.permiteBufala ? '#f1f5f9' : (formCarga.tipoLeche === 'BUFALA' ? '#fff7ed' : '#ffffff'),
+                        color: !permisosTipo.permiteBufala ? '#cbd5e1' : (formCarga.tipoLeche === 'BUFALA' ? '#c2410c' : '#64748b'),
                         fontSize: '13px',
                         fontWeight: 800,
-                        cursor: 'pointer',
+                        cursor: !permisosTipo.permiteBufala ? 'not-allowed' : 'pointer',
+                        opacity: !permisosTipo.permiteBufala ? 0.55 : 1,
                       }}
                     >
                       🐃 Búfala
@@ -15473,6 +15486,8 @@ export const AppMovilPage: React.FC = () => {
                   )}
                 </div>
               </div>
+                );
+              })()}
 
               {/* Calidad y Temperatura */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>

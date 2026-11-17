@@ -17,7 +17,7 @@ import { useAuthStore } from '@/stores/authStore';
 import type { ControlRutaDto, FincaDto, CamionDto, CompaniaDto, DespachoCompaniaDto, PlanificacionRutaChoferDto } from '@/types';
 import { PlanificacionRutasChoferesPage } from './PlanificacionRutasChoferesPage';
 import { getTimestampParada, formatFechaHoraParada } from '@/utils/timelapseUtils';
-import { esReceptoriaPrincipal } from '@/utils/procesoViaje';
+import { esReceptoriaPrincipal, getPermisosTipoLecheFinca } from '@/utils/procesoViaje';
 
 interface RutaDetalleFinca {
   id: number;
@@ -283,6 +283,9 @@ export const RecoleccionRutasPage: React.FC = () => {
     tipoLeche: 'VACA',
     esAcida: false,
     esDiferido: false,
+    litrosDiferir: '' as any,
+    fechaDiferido: '',
+    cicloDestinoId: 0,
     fecha: '',
     observacion: '',
     fotoComprobante: '',
@@ -305,6 +308,9 @@ export const RecoleccionRutasPage: React.FC = () => {
     tipoLeche: 'VACA',
     esAcida: false,
     esDiferido: false,
+    litrosDiferir: '' as any,
+    fechaDiferido: '',
+    cicloDestinoId: 0,
     fecha: '',
     observacion: '',
     fotoComprobante: '',
@@ -706,21 +712,63 @@ export const RecoleccionRutasPage: React.FC = () => {
     e.target.value = '';
   };
 
+  const getDefaultDiferidoDestino = (fechaBase?: string) => {
+    const ciclosList = Array.isArray(ciclos) ? ciclos : [];
+    const baseId = Number(cicloFechaFiltro?.id || cicloActivo?.id || 0);
+    const sig = ciclosList
+      .filter((s: any) => Number(s.id) > baseId)
+      .sort((a: any, b: any) => Number(a.id) - Number(b.id))[0];
+    const fechaSig = sig?.fechaInicio
+      ? String(sig.fechaInicio).split('T')[0]
+      : (fechaBase ? String(fechaBase).split('T')[0] : hoyStr);
+    return {
+      cicloDestinoId: sig ? Number(sig.id) : 0,
+      fechaDiferido: fechaSig,
+    };
+  };
+
+  const resolverCicloPorFechaDiferido = (fechaStr: string, fallbackId?: number) => {
+    const ciclosList = Array.isArray(ciclos) ? ciclos : [];
+    if (fechaStr) {
+      const match = ciclosList.find((s: any) => {
+        const ini = s.fechaInicio ? String(s.fechaInicio).split('T')[0] : '';
+        const fin = s.fechaFin ? String(s.fechaFin).split('T')[0] : '';
+        return ini && fin && fechaStr >= ini && fechaStr <= fin;
+      });
+      if (match) return Number(match.id);
+    }
+    return fallbackId && fallbackId > 0 ? fallbackId : undefined;
+  };
+
   const guardarRecoleccionModalMutation = useMutation({
     mutationFn: async (dto: typeof formFinca) => {
       if (!viajeActivo) throw new Error('No hay ticket activo seleccionado');
+      const totalLts = Number(dto.litros);
+      const ltsDiferir = dto.esDiferido ? Number(dto.litrosDiferir || totalLts) : 0;
+      if (dto.esDiferido && (ltsDiferir <= 0 || ltsDiferir > totalLts)) {
+        throw new Error(`Los litros a diferir deben ser mayores a 0 y menores o iguales a ${totalLts} L`);
+      }
       const payload: any = {
         controlRutaId: viajeActivo.id,
         fincaId: dto.fincaId,
-        litros: Number(dto.litros),
+        litros: totalLts,
         tipoLeche: dto.tipoLeche,
         esAcida: dto.esAcida,
-        esDiferido: Boolean(dto.esDiferido),
+        esDiferido: false,
         fecha: dto.fecha || (viajeActivo.fecha ? viajeActivo.fecha.split('T')[0] : undefined),
         observacion: dto.observacion,
         fotoComprobante: dto.fotoComprobante || undefined,
       };
-      return operacionesApi.agregarFincaViaje(viajeActivo.id, payload);
+      const res: any = await operacionesApi.agregarFincaViaje(viajeActivo.id, payload);
+      if (dto.esDiferido && ltsDiferir > 0 && res?.rutaId) {
+        const cicloDest = resolverCicloPorFechaDiferido(dto.fechaDiferido, dto.cicloDestinoId);
+        await operacionesApi.diferirLitros(Number(res.rutaId), {
+          litrosDiferir: ltsDiferir,
+          cicloDestinoId: cicloDest,
+          motivo: dto.observacion || (dto.fechaDiferido ? `Diferido al ${dto.fechaDiferido}` : 'Solicitud del productor'),
+        });
+      }
+      return res;
     },
     onSuccess: async (data) => {
       toast.success(data.message || 'Finca agregada al viaje exitosamente');
@@ -735,10 +783,10 @@ export const RecoleccionRutasPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['rutas-fincas-hoy'] });
       queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
       setModalRegistroFinca(false);
-      setFormFinca({ fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, esDiferido: false, fecha: '', observacion: '', fotoComprobante: '' });
+      setFormFinca({ fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, esDiferido: false, litrosDiferir: '', fechaDiferido: '', cicloDestinoId: 0, fecha: '', observacion: '', fotoComprobante: '' });
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message || 'Error al registrar recolección');
+      toast.error(err.response?.data?.message || err?.message || 'Error al registrar recolección');
     },
   });
 
@@ -1593,16 +1641,31 @@ export const RecoleccionRutasPage: React.FC = () => {
   };
 
   const editarRecoleccionMutation = useMutation({
-    mutationFn: (dto: typeof formEditar) =>
-      operacionesApi.editarRecoleccion(dto.id, {
+    mutationFn: async (dto: typeof formEditar) => {
+      const totalLts = Number(dto.litros);
+      const ltsDiferir = dto.esDiferido ? Number(dto.litrosDiferir || totalLts) : 0;
+      if (dto.esDiferido && (ltsDiferir <= 0 || ltsDiferir > totalLts)) {
+        throw new Error(`Los litros a diferir deben ser mayores a 0 y menores o iguales a ${totalLts} L`);
+      }
+      const res = await operacionesApi.editarRecoleccion(dto.id, {
         fincaId: dto.fincaId,
-        litros: Number(dto.litros),
+        litros: totalLts,
         tipoLeche: dto.tipoLeche,
         esAcida: dto.esAcida,
-        esDiferido: Boolean(dto.esDiferido),
+        esDiferido: dto.esDiferido ? ltsDiferir === totalLts : false,
         observacion: dto.observacion,
         fotoComprobante: dto.fotoComprobante || undefined,
-      }),
+      });
+      if (dto.esDiferido && ltsDiferir > 0) {
+        const cicloDest = resolverCicloPorFechaDiferido(dto.fechaDiferido, dto.cicloDestinoId);
+        await operacionesApi.diferirLitros(dto.id, {
+          litrosDiferir: ltsDiferir,
+          cicloDestinoId: cicloDest,
+          motivo: dto.observacion || (dto.fechaDiferido ? `Diferido al ${dto.fechaDiferido}` : 'Solicitud del productor'),
+        });
+      }
+      return res;
+    },
     onSuccess: async (data) => {
       toast.success(data.message || 'Parada actualizada exitosamente');
       if (viajeActivo?.id) {
@@ -1706,15 +1769,22 @@ export const RecoleccionRutasPage: React.FC = () => {
   };
 
   const abrirEditarDesdeHistorial = (row: RutaDetalleFinca) => {
+    const fMatch = fincas.find((f) => Number(f.id) === Number(row.fincaId));
+    const permisos = getPermisosTipoLecheFinca(fMatch);
+    const tipoFinal = permisos.esDual ? (row.tipoLeche || permisos.defaultTipo) : permisos.defaultTipo;
+    const difDef = getDefaultDiferidoDestino(row.fecha);
     setFormEditar({
       id: row.id,
       fincaId: row.fincaId,
       fincaNombre: row.fincaNombre || `Finca #${row.fincaId}`,
       propietarioNombre: (row as any).propietarioNombre || (row as any).propietario || 'Productor',
       litros: row.litros,
-      tipoLeche: row.tipoLeche || 'VACA',
+      tipoLeche: tipoFinal,
       esAcida: Boolean(row.esAcida),
       esDiferido: Boolean(row.esDiferido),
+      litrosDiferir: Boolean(row.esDiferido) ? row.litros : '',
+      fechaDiferido: difDef.fechaDiferido,
+      cicloDestinoId: difDef.cicloDestinoId,
       fecha: row.fecha || hoyStr,
       observacion: (row.observacion || '')
         .replace(/Asignada en inicio de ruta\s*\[ORIGEN_PLANIFICACION\]/gi, '')
@@ -4041,7 +4111,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setViajeActivo(item);
-                                  setFormFinca({ fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, esDiferido: false, fecha: '', observacion: '', fotoComprobante: '' });
+                                  setFormFinca({ fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, esDiferido: false, litrosDiferir: '', fechaDiferido: '', cicloDestinoId: 0, fecha: '', observacion: '', fotoComprobante: '' });
                                   setModalRegistroFinca(true);
                                 }}
                                 className="btn btn-sm"
@@ -4456,15 +4526,22 @@ export const RecoleccionRutasPage: React.FC = () => {
                                           type="button"
                                           onClick={() => {
                                             setViajeActivo(item);
+                                            const fMatchEdit = fincas.find((fx) => Number(fx.id) === Number(f.fincaId || f.FincaId));
+                                            const permisosEdit = getPermisosTipoLecheFinca(fMatchEdit);
+                                            const tipoFinalEdit = permisosEdit.esDual ? (fTipo || permisosEdit.defaultTipo) : permisosEdit.defaultTipo;
+                                            const difDefEdit = getDefaultDiferidoDestino(f.fecha || item.fecha);
                                             setFormEditar({
                                               id: fId,
                                               fincaId: f.fincaId || f.FincaId,
                                               fincaNombre: fNombre,
                                               propietarioNombre: fProp,
                                               litros: fLitros,
-                                              tipoLeche: fTipo,
+                                              tipoLeche: tipoFinalEdit,
                                               esAcida: esAcida,
                                               esDiferido: Boolean(f.esDiferido || f.EsDiferido),
+                                              litrosDiferir: Boolean(f.esDiferido || f.EsDiferido) ? fLitros : '',
+                                              fechaDiferido: difDefEdit.fechaDiferido,
+                                              cicloDestinoId: difDefEdit.cicloDestinoId,
                                               fecha: f.fecha || item.fecha || '',
                                               observacion: (f.observacion || f.Observacion || '')
                                                 .replace(/Asignada en inicio de ruta\s*\[ORIGEN_PLANIFICACION\]/gi, '')
@@ -5201,12 +5278,16 @@ export const RecoleccionRutasPage: React.FC = () => {
                                       if (viajeTimelapse) {
                                         setViajeActivo(viajeTimelapse);
                                       }
+                                      const permisosTl = getPermisosTipoLecheFinca(f);
                                       setFormFinca({
                                         fincaId: f.id,
                                         litros: '',
-                                        tipoLeche: (f.tipoLeche as any) || 'VACA',
+                                        tipoLeche: permisosTl.defaultTipo,
                                         esAcida: false,
                                         esDiferido: false,
+                                        litrosDiferir: '',
+                                        fechaDiferido: '',
+                                        cicloDestinoId: 0,
                                         fecha: viajeTimelapse?.fecha ? viajeTimelapse.fecha.split('T')[0] : (fechaFiltro || hoyStr),
                                         observacion: '',
                                         fotoComprobante: '',
@@ -6157,11 +6238,11 @@ export const RecoleccionRutasPage: React.FC = () => {
                     })()}
                     onChange={(id) => {
                       const fMatch = fincas.find((f) => f.id === id);
-                      const esBuf = (fMatch?.tipoLeche || '').toUpperCase().includes('BUFAL');
+                      const permisos = getPermisosTipoLecheFinca(fMatch);
                       setFormFinca({
                         ...formFinca,
                         fincaId: id,
-                        tipoLeche: esBuf ? 'BUFALA' : (formFinca.tipoLeche || 'VACA'),
+                        tipoLeche: permisos.defaultTipo,
                       });
                     }}
                     required
@@ -6169,6 +6250,10 @@ export const RecoleccionRutasPage: React.FC = () => {
                 </div>
 
                 {/* 3. LITROS RECOLECTADOS & TIPO DE LECHE */}
+                {(() => {
+                  const fSel = fincas.find((f) => Number(f.id) === Number(formFinca.fincaId));
+                  const permisosTl = getPermisosTipoLecheFinca(fSel);
+                  return (
                 <div className={`grid ${hasBufala ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'} gap-3.5`}>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -6196,16 +6281,22 @@ export const RecoleccionRutasPage: React.FC = () => {
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <i className="fa-solid fa-cow text-sky-600"></i>
-                        Tipo de Leche *
+                        Tipo de Leche * {!permisosTl.esDual && formFinca.fincaId > 0 && (
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Automático por Finca</span>
+                        )}
                       </label>
                       <div className="grid grid-cols-2 gap-2 h-11">
                         <button
                           type="button"
-                          onClick={() => setFormFinca({ ...formFinca, tipoLeche: 'VACA' })}
-                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            formFinca.tipoLeche === 'VACA'
-                              ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-2xs font-extrabold ring-1 ring-blue-500/20'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          disabled={!permisosTl.permiteVaca}
+                          onClick={() => permisosTl.permiteVaca && setFormFinca({ ...formFinca, tipoLeche: 'VACA' })}
+                          title={!permisosTl.permiteVaca ? 'Esta finca solo produce leche de Búfala' : undefined}
+                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                            !permisosTl.permiteVaca
+                              ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-50'
+                              : formFinca.tipoLeche === 'VACA'
+                                ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-2xs font-extrabold ring-1 ring-blue-500/20 cursor-pointer'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
                           }`}
                         >
                           <span>🥛</span>
@@ -6213,11 +6304,15 @@ export const RecoleccionRutasPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setFormFinca({ ...formFinca, tipoLeche: 'BUFALA' })}
-                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            formFinca.tipoLeche === 'BUFALA'
-                              ? 'bg-purple-50 border-purple-500 text-purple-800 shadow-2xs font-extrabold ring-1 ring-purple-500/20'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          disabled={!permisosTl.permiteBufala}
+                          onClick={() => permisosTl.permiteBufala && setFormFinca({ ...formFinca, tipoLeche: 'BUFALA' })}
+                          title={!permisosTl.permiteBufala ? 'Esta finca solo produce leche de Vaca' : undefined}
+                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                            !permisosTl.permiteBufala
+                              ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-50'
+                              : formFinca.tipoLeche === 'BUFALA'
+                                ? 'bg-purple-50 border-purple-500 text-purple-800 shadow-2xs font-extrabold ring-1 ring-purple-500/20 cursor-pointer'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
                           }`}
                         >
                           <span>🐃</span>
@@ -6227,12 +6322,24 @@ export const RecoleccionRutasPage: React.FC = () => {
                     </div>
                   )}
                 </div>
+                  );
+                })()}
 
                 {/* 4. OPCIONES OPERATIVAS: DIFERIDO Y CALIDAD */}
                 <div className="space-y-2.5 pt-1">
                   {/* OPCIÓN DIFERIR LITROS */}
                   <div
-                    onClick={() => setFormFinca({ ...formFinca, esDiferido: !formFinca.esDiferido })}
+                    onClick={() => {
+                      const next = !formFinca.esDiferido;
+                      const def = getDefaultDiferidoDestino(formFinca.fecha || viajeActivo?.fecha);
+                      setFormFinca({
+                        ...formFinca,
+                        esDiferido: next,
+                        litrosDiferir: next ? (formFinca.litrosDiferir || formFinca.litros || '') : '',
+                        fechaDiferido: next ? (formFinca.fechaDiferido || def.fechaDiferido) : '',
+                        cicloDestinoId: next ? (formFinca.cicloDestinoId || def.cicloDestinoId) : 0,
+                      });
+                    }}
                     className={`p-3.5 rounded-xl border-[1.5px] transition-all cursor-pointer select-none ${
                       formFinca.esDiferido
                         ? 'bg-amber-50/90 border-amber-400 shadow-xs'
@@ -6243,7 +6350,17 @@ export const RecoleccionRutasPage: React.FC = () => {
                       <input
                         type="checkbox"
                         checked={formFinca.esDiferido}
-                        onChange={(e) => setFormFinca({ ...formFinca, esDiferido: e.target.checked })}
+                        onChange={(e) => {
+                          const next = e.target.checked;
+                          const def = getDefaultDiferidoDestino(formFinca.fecha || viajeActivo?.fecha);
+                          setFormFinca({
+                            ...formFinca,
+                            esDiferido: next,
+                            litrosDiferir: next ? (formFinca.litrosDiferir || formFinca.litros || '') : '',
+                            fechaDiferido: next ? (formFinca.fechaDiferido || def.fechaDiferido) : '',
+                            cicloDestinoId: next ? (formFinca.cicloDestinoId || def.cicloDestinoId) : 0,
+                          });
+                        }}
                         onClick={(e) => e.stopPropagation()}
                         className="w-5 h-5 rounded border-slate-300 text-amber-600 focus:ring-amber-500 mt-0.5 cursor-pointer"
                       />
@@ -6264,6 +6381,49 @@ export const RecoleccionRutasPage: React.FC = () => {
                         <p className="text-[11.5px] text-slate-600 m-0 mt-1 leading-snug">
                           Suma de inmediato al volumen de leche recolectada del camión en ruta, pero <strong>pospone el cálculo de pago</strong> para la liquidación de la próxima semana.
                         </p>
+
+                        {formFinca.esDiferido && (
+                          <div
+                            className="mt-3 pt-3 border-t border-amber-200 grid grid-cols-1 sm:grid-cols-2 gap-3"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div>
+                              <label className="block text-[11px] font-extrabold text-amber-900 mb-1">
+                                <i className="fa-solid fa-share mr-1"></i> Litros a Diferir (Sig. Sem.) *
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={Number(formFinca.litros) || undefined}
+                                value={formFinca.litrosDiferir}
+                                onChange={(e) => setFormFinca({ ...formFinca, litrosDiferir: e.target.value })}
+                                placeholder="Ej: 100"
+                                className="w-full h-9 px-2.5 rounded-lg border border-amber-300 bg-white font-mono font-extrabold text-sm text-amber-900"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-extrabold text-amber-900 mb-1">
+                                <i className="fa-regular fa-calendar mr-1"></i> Fecha Destino Liquidación *
+                              </label>
+                              <input
+                                type="date"
+                                value={formFinca.fechaDiferido}
+                                onChange={(e) => {
+                                  const fStr = e.target.value;
+                                  const cid = resolverCicloPorFechaDiferido(fStr, formFinca.cicloDestinoId) || 0;
+                                  setFormFinca({ ...formFinca, fechaDiferido: fStr, cicloDestinoId: cid });
+                                }}
+                                className="w-full h-9 px-2.5 rounded-lg border border-amber-300 bg-white font-bold text-xs text-slate-800"
+                                required
+                              />
+                            </div>
+                            <div className="sm:col-span-2 flex items-center justify-between text-[11px] font-bold bg-amber-100/70 px-2.5 py-1.5 rounded-lg text-amber-950">
+                              <span>Esta semana: {Math.max(0, Number(formFinca.litros || 0) - Number(formFinca.litrosDiferir || 0))} L</span>
+                              <span>Próxima semana: {Number(formFinca.litrosDiferir || 0)} L</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -8321,20 +8481,29 @@ export const RecoleccionRutasPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {hasBufala && (
+                  {hasBufala && (() => {
+                    const fSelEdit = fincas.find((f) => Number(f.id) === Number(formEditar.fincaId));
+                    const permisosTlEdit = getPermisosTipoLecheFinca(fSelEdit);
+                    return (
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <i className="fa-solid fa-cow text-sky-600"></i>
-                        Tipo de Leche *
+                        Tipo de Leche * {!permisosTlEdit.esDual && formEditar.fincaId > 0 && (
+                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Automático por Finca</span>
+                        )}
                       </label>
                       <div className="grid grid-cols-2 gap-2 h-11">
                         <button
                           type="button"
-                          onClick={() => setFormEditar({ ...formEditar, tipoLeche: 'VACA' })}
-                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            formEditar.tipoLeche === 'VACA'
-                              ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-2xs'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          disabled={!permisosTlEdit.permiteVaca}
+                          onClick={() => permisosTlEdit.permiteVaca && setFormEditar({ ...formEditar, tipoLeche: 'VACA' })}
+                          title={!permisosTlEdit.permiteVaca ? 'Esta finca solo produce leche de Búfala' : undefined}
+                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                            !permisosTlEdit.permiteVaca
+                              ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-50'
+                              : formEditar.tipoLeche === 'VACA'
+                                ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-2xs cursor-pointer'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
                           }`}
                         >
                           <span>🥛</span>
@@ -8342,11 +8511,15 @@ export const RecoleccionRutasPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setFormEditar({ ...formEditar, tipoLeche: 'BUFALA' })}
-                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            formEditar.tipoLeche === 'BUFALA'
-                              ? 'bg-purple-50 border-purple-500 text-purple-800 shadow-2xs'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          disabled={!permisosTlEdit.permiteBufala}
+                          onClick={() => permisosTlEdit.permiteBufala && setFormEditar({ ...formEditar, tipoLeche: 'BUFALA' })}
+                          title={!permisosTlEdit.permiteBufala ? 'Esta finca solo produce leche de Vaca' : undefined}
+                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                            !permisosTlEdit.permiteBufala
+                              ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-50'
+                              : formEditar.tipoLeche === 'BUFALA'
+                                ? 'bg-purple-50 border-purple-500 text-purple-800 shadow-2xs cursor-pointer'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
                           }`}
                         >
                           <span>🐃</span>
@@ -8354,14 +8527,25 @@ export const RecoleccionRutasPage: React.FC = () => {
                         </button>
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 {/* 2. OPCIONES DIFERIDO Y ÁCIDA */}
                 <div className="space-y-2.5 pt-1">
                   {/* DIFERIDO */}
                   <div
-                    onClick={() => setFormEditar({ ...formEditar, esDiferido: !formEditar.esDiferido })}
+                    onClick={() => {
+                      const next = !formEditar.esDiferido;
+                      const def = getDefaultDiferidoDestino(formEditar.fecha);
+                      setFormEditar({
+                        ...formEditar,
+                        esDiferido: next,
+                        litrosDiferir: next ? (formEditar.litrosDiferir || formEditar.litros || '') : '',
+                        fechaDiferido: next ? (formEditar.fechaDiferido || def.fechaDiferido) : '',
+                        cicloDestinoId: next ? (formEditar.cicloDestinoId || def.cicloDestinoId) : 0,
+                      });
+                    }}
                     className={`p-3.5 rounded-xl border-[1.5px] transition-all cursor-pointer select-none ${
                       formEditar.esDiferido
                         ? 'bg-amber-50/90 border-amber-400 shadow-xs'
@@ -8372,7 +8556,17 @@ export const RecoleccionRutasPage: React.FC = () => {
                       <input
                         type="checkbox"
                         checked={formEditar.esDiferido}
-                        onChange={(e) => setFormEditar({ ...formEditar, esDiferido: e.target.checked })}
+                        onChange={(e) => {
+                          const next = e.target.checked;
+                          const def = getDefaultDiferidoDestino(formEditar.fecha);
+                          setFormEditar({
+                            ...formEditar,
+                            esDiferido: next,
+                            litrosDiferir: next ? (formEditar.litrosDiferir || formEditar.litros || '') : '',
+                            fechaDiferido: next ? (formEditar.fechaDiferido || def.fechaDiferido) : '',
+                            cicloDestinoId: next ? (formEditar.cicloDestinoId || def.cicloDestinoId) : 0,
+                          });
+                        }}
                         onClick={(e) => e.stopPropagation()}
                         className="w-5 h-5 rounded border-slate-300 text-amber-600 focus:ring-amber-500 mt-0.5 cursor-pointer"
                       />
@@ -8393,6 +8587,49 @@ export const RecoleccionRutasPage: React.FC = () => {
                         <p className="text-[11.5px] text-slate-600 m-0 mt-1 leading-snug">
                           Suma al volumen del camión, pero se liquida y paga en la semana operativa siguiente.
                         </p>
+
+                        {formEditar.esDiferido && (
+                          <div
+                            className="mt-3 pt-3 border-t border-amber-200 grid grid-cols-1 sm:grid-cols-2 gap-3"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div>
+                              <label className="block text-[11px] font-extrabold text-amber-900 mb-1">
+                                <i className="fa-solid fa-share mr-1"></i> Litros a Diferir (Sig. Sem.) *
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={Number(formEditar.litros) || undefined}
+                                value={formEditar.litrosDiferir}
+                                onChange={(e) => setFormEditar({ ...formEditar, litrosDiferir: e.target.value })}
+                                placeholder="Ej: 100"
+                                className="w-full h-9 px-2.5 rounded-lg border border-amber-300 bg-white font-mono font-extrabold text-sm text-amber-900"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-extrabold text-amber-900 mb-1">
+                                <i className="fa-regular fa-calendar mr-1"></i> Fecha Destino Liquidación *
+                              </label>
+                              <input
+                                type="date"
+                                value={formEditar.fechaDiferido}
+                                onChange={(e) => {
+                                  const fStr = e.target.value;
+                                  const cid = resolverCicloPorFechaDiferido(fStr, formEditar.cicloDestinoId) || 0;
+                                  setFormEditar({ ...formEditar, fechaDiferido: fStr, cicloDestinoId: cid });
+                                }}
+                                className="w-full h-9 px-2.5 rounded-lg border border-amber-300 bg-white font-bold text-xs text-slate-800"
+                                required
+                              />
+                            </div>
+                            <div className="sm:col-span-2 flex items-center justify-between text-[11px] font-bold bg-amber-100/70 px-2.5 py-1.5 rounded-lg text-amber-950">
+                              <span>Esta semana: {Math.max(0, Number(formEditar.litros || 0) - Number(formEditar.litrosDiferir || 0))} L</span>
+                              <span>Próxima semana: {Number(formEditar.litrosDiferir || 0)} L</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -46,10 +46,14 @@ export const ModalCrearAdelanto: React.FC<ModalCrearAdelantoProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      setEntidadId('');
+      setMontoTotalUSD(0);
+      setNumeroCuotas(1);
       setTasaBcv(tasaBcvActual || 36.5);
-      if (cicloActivoId && !semanaInicioId) {
-        setSemanaInicioId(String(cicloActivoId));
-      }
+      setFechaSolicitud(new Date().toISOString().split('T')[0]);
+      setSemanaInicioId(cicloActivoId ? String(cicloActivoId) : '');
+      setObservacion('');
+      setCuotasEditables([]);
     }
   }, [isOpen, tasaBcvActual, cicloActivoId]);
 

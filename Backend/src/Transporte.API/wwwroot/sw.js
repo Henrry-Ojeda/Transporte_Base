@@ -1,5 +1,5 @@
 // Service Worker para Rutas Móvil (Offline-First / PWA Ultra-Resiliente)
-const CACHE_NAME = 'rutas-movil-v3.52.1';
+const CACHE_NAME = 'rutas-movil-v3.53.1';
 const STATIC_ASSETS = [
   "/",
   "/app",
@@ -9,7 +9,7 @@ const STATIC_ASSETS = [
   "/manifest.json",
   "/favicon.svg",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css",
-  "/assets/index-BQ8aN77K.js",
+  "/assets/index-B2s41MsM.js",
   "/assets/index-evEBnEhC.css",
   "/assets/rolldown-runtime-XKyaHtl9.js",
   "/assets/vendor-excel-D_lWTlWp.js",

@@ -10711,6 +10711,30 @@ export const AppMovilPage: React.FC = () => {
             {/* Vista de Datos del Reporte */}
             {datosReporte && (() => {
               const items: any[] = datosReporte?.items || (Array.isArray(datosReporte) ? datosReporte : []);
+              const rawDiarios = datosReporte?.raw || {};
+              const tablasDiarios = tipoReporte === 'DIARIOS' ? [
+                {
+                  titulo: 'DIARIO RUTAS',
+                  items: rawDiarios?.diarioRutas || [],
+                  total: Number(rawDiarios?.totalDiarioRutas ?? 0) || (rawDiarios?.diarioRutas || []).reduce((a: number, b: any) => a + Number(b.litros || b.Litros || 0), 0),
+                },
+                {
+                  titulo: 'DIARIO RECEPTORIAS',
+                  items: rawDiarios?.diarioReceptorias || [],
+                  total: Number(rawDiarios?.totalDiarioReceptorias ?? 0) || (rawDiarios?.diarioReceptorias || []).reduce((a: number, b: any) => a + Number(b.litros || b.Litros || 0), 0),
+                },
+                {
+                  titulo: 'DIARIO TRANSPORTE RUTAS',
+                  items: rawDiarios?.diarioTransporteRutas || [],
+                  total: Number(rawDiarios?.totalDiarioTransporteRutas ?? 0) || (rawDiarios?.diarioTransporteRutas || []).reduce((a: number, b: any) => a + Number(b.litros || b.Litros || 0), 0),
+                },
+                {
+                  titulo: 'DIARIO TRANSPORTE RECEPTORIAS',
+                  items: rawDiarios?.diarioTransporteReceptorias || [],
+                  total: Number(rawDiarios?.totalDiarioTransporteReceptorias ?? 0) || (rawDiarios?.diarioTransporteReceptorias || []).reduce((a: number, b: any) => a + Number(b.litros || b.Litros || 0), 0),
+                },
+              ] : [];
+              const totalRegistrosDiarios = tablasDiarios.reduce((acc, t) => acc + t.items.length, 0);
               const totalLitrosCalculados = Number(
                 datosReporte?.totalLitros ?? 
                 items.reduce((acc, r) => acc + Number(r.totalLitros || r.TotalLitros || r.litros || r.Litros || r.litrosDespachados || r.litrosRuta || r.LitrosRuta || 0), 0)
@@ -10728,14 +10752,108 @@ export const AppMovilPage: React.FC = () => {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
                     <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
-                      Resultados ({items.length} {items.length === 1 ? 'registro' : 'registros'})
+                      {tipoReporte === 'DIARIOS'
+                        ? `Resultados (4 tablas • ${totalRegistrosDiarios} reg.)`
+                        : `Resultados (${items.length} ${items.length === 1 ? 'registro' : 'registros'})`}
                     </div>
                     <div style={{ fontSize: '12px', fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '2px 8px', borderRadius: '6px' }}>
                       {totalLitrosCalculados.toLocaleString()} Lts Totales
                     </div>
                   </div>
 
-                  {items.length === 0 ? (
+                  {tipoReporte === 'DIARIOS' ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      {tablasDiarios.map((t, tIdx) => (
+                        <div
+                          key={tIdx}
+                          style={{
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '12px',
+                            overflow: 'hidden',
+                            background: '#ffffff',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+                          }}
+                        >
+                          <div
+                            style={{
+                              background: 'linear-gradient(135deg, #1d4ed8, #1e40af)',
+                              color: '#ffffff',
+                              textAlign: 'center',
+                              fontWeight: 900,
+                              fontSize: '12.5px',
+                              padding: '8px 10px',
+                              letterSpacing: '0.4px',
+                            }}
+                          >
+                            {t.titulo}
+                          </div>
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr 1fr',
+                              background: '#e2e8f0',
+                              color: '#1e293b',
+                              fontWeight: 800,
+                              fontSize: '11px',
+                              padding: '6px 10px',
+                              textAlign: 'center',
+                              borderBottom: '1px solid #cbd5e1',
+                            }}
+                          >
+                            <span>FECHA</span>
+                            <span>LITROS</span>
+                          </div>
+                          {t.items.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '12px', fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
+                              Sin registros en este período
+                            </div>
+                          ) : (
+                            t.items.map((row: any, rIdx: number) => {
+                              const rawFecha = row.fecha || row.Fecha || '';
+                              const cleanFecha = rawFecha ? String(rawFecha).split('T')[0] : '';
+                              const parts = cleanFecha.split('-');
+                              const fechaFmt = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : (cleanFecha || '-');
+                              const lts = Number(row.litros ?? row.Litros ?? 0);
+                              return (
+                                <div
+                                  key={rIdx}
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '1fr 1fr',
+                                    padding: '7px 10px',
+                                    fontSize: '12px',
+                                    fontWeight: 700,
+                                    color: '#0f172a',
+                                    textAlign: 'center',
+                                    borderBottom: '1px solid #e2e8f0',
+                                    background: rIdx % 2 === 1 ? '#f8fafc' : '#ffffff',
+                                  }}
+                                >
+                                  <span>{fechaFmt}</span>
+                                  <span>{lts.toLocaleString()}</span>
+                                </div>
+                              );
+                            })
+                          )}
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr 1fr',
+                              background: '#047857',
+                              color: '#ffffff',
+                              fontWeight: 900,
+                              fontSize: '12.5px',
+                              padding: '8px 10px',
+                              textAlign: 'center',
+                            }}
+                          >
+                            <span>TOTAL</span>
+                            <span>{Number(t.total || 0).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : items.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '24px 12px', color: '#94a3b8', fontSize: '12px' }}>
                       <i className="fa-solid fa-folder-open text-2xl mb-1.5 block text-slate-300"></i>
                       No se encontraron registros para este rango de fechas ({repFechaInicio} al {repFechaFin}).

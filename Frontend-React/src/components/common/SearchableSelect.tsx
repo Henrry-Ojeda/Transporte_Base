@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, ChevronDown, Check, X } from 'lucide-react';
+import { ChevronDown, Check, X } from 'lucide-react';
 
 export interface SelectOption {
   value: string | number;
@@ -28,7 +28,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   value,
   onChange,
   placeholder = '-- Seleccionar opción --',
-  searchPlaceholder = 'Buscar...',
+  searchPlaceholder,
   disabled = false,
   required = false,
   allowClear = true,
@@ -36,13 +36,25 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   style,
   dropDirection = 'down',
 }) => {
+  const selectedOption = options.find((opt) => String(opt.value) === String(value));
+
   const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [inputText, setInputText] = useState(selectedOption?.label ?? '');
+  const [isFiltering, setIsFiltering] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [dropUp, setDropUp] = useState(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const optionsListRef = useRef<HTMLDivElement>(null);
+  const justSelectedRef = useRef(false);
+
+  // Sincronizar texto mostrado cuando cambia value o options externamente y no se está escribiendo
+  useEffect(() => {
+    if (!isOpen || !isFiltering) {
+      setInputText(selectedOption?.label ?? '');
+    }
+  }, [value, selectedOption?.label, isOpen, isFiltering]);
 
   // Detección de dropup o forzado hacia abajo para evitar que tape la cabecera de los modales
   useEffect(() => {
@@ -71,6 +83,8 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
+        setIsFiltering(false);
+        setInputText(selectedOption?.label ?? '');
       }
     };
     if (isOpen) {
@@ -79,39 +93,29 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isOpen]);
-
-  // Enfocar input al abrir y reiniciar índice destacado
-  useEffect(() => {
-    if (isOpen) {
-      setHighlightedIndex(0);
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      }, 50);
-    } else {
-      setSearchTerm('');
-      setHighlightedIndex(0);
-    }
-  }, [isOpen]);
-
-  const selectedOption = options.find((opt) => String(opt.value) === String(value));
+  }, [isOpen, selectedOption?.label]);
 
   const filteredOptions = options.filter((opt) => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
+    if (!isFiltering || !inputText.trim()) return true;
+    const term = inputText.toLowerCase();
     const matchesLabel = opt.label.toLowerCase().includes(term);
     const matchesSub = opt.subLabel ? opt.subLabel.toLowerCase().includes(term) : false;
     return matchesLabel || matchesSub;
   });
 
-  // Asegurar que el highlightedIndex esté en rango si filteredOptions cambia
+  // Asegurar que highlightedIndex esté en rango
   useEffect(() => {
-    setHighlightedIndex((prev) => {
-      if (filteredOptions.length === 0) return 0;
-      return prev >= filteredOptions.length ? 0 : prev;
-    });
-  }, [filteredOptions.length]);
+    if (!isOpen) return;
+    if (!isFiltering && selectedOption) {
+      const idx = filteredOptions.findIndex((o) => String(o.value) === String(selectedOption.value));
+      setHighlightedIndex(idx >= 0 ? idx : 0);
+    } else {
+      setHighlightedIndex((prev) => {
+        if (filteredOptions.length === 0) return 0;
+        return prev >= filteredOptions.length ? 0 : prev;
+      });
+    }
+  }, [filteredOptions.length, isOpen, isFiltering, selectedOption?.value]);
 
   // Scroll automático hacia la opción destacada
   useEffect(() => {
@@ -123,17 +127,63 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     }
   }, [highlightedIndex, isOpen]);
 
+  const openDropdown = (selectText = true) => {
+    if (disabled) return;
+    setIsFiltering(false);
+    setIsOpen(true);
+    if (selectText) {
+      setTimeout(() => {
+        try {
+          inputRef.current?.select();
+        } catch {
+          // ignore
+        }
+      }, 0);
+    }
+  };
+
   const handleSelect = (val: string | number) => {
-    onChange(val);
+    justSelectedRef.current = true;
+    const chosen = options.find((o) => String(o.value) === String(val));
+    setInputText(chosen?.label ?? '');
+    setIsFiltering(false);
     setIsOpen(false);
+    onChange(val);
+    setTimeout(() => {
+      justSelectedRef.current = false;
+    }, 120);
   };
 
   const handleClear = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
+    setInputText('');
+    setIsFiltering(false);
     onChange(undefined);
+    inputRef.current?.focus();
+    setIsOpen(true);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setInputText(val);
+    setIsFiltering(true);
+    setHighlightedIndex(0);
+    if (!isOpen) setIsOpen(true);
+    if (!val.trim() && allowClear && value !== undefined && value !== null && value !== '') {
+      onChange(undefined);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (disabled) return;
+
+    if (!isOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      openDropdown(false);
+      return;
+    }
+
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setHighlightedIndex((prev) => (prev + 1 < filteredOptions.length ? prev + 1 : 0));
@@ -141,20 +191,29 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
       e.preventDefault();
       setHighlightedIndex((prev) => (prev - 1 >= 0 ? prev - 1 : Math.max(0, filteredOptions.length - 1)));
     } else if (e.key === 'Enter') {
-      e.preventDefault();
-      e.stopPropagation();
-      if (filteredOptions[highlightedIndex]) {
-        handleSelect(filteredOptions[highlightedIndex].value);
+      if (isOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (filteredOptions[highlightedIndex] && !filteredOptions[highlightedIndex].disabled) {
+          handleSelect(filteredOptions[highlightedIndex].value);
+        }
       }
     } else if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsOpen(false);
-    } else if (e.key === 'Tab') {
-      if (filteredOptions[highlightedIndex]) {
-        handleSelect(filteredOptions[highlightedIndex].value);
+      if (isOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsOpen(false);
+        setIsFiltering(false);
+        setInputText(selectedOption?.label ?? '');
       }
-      setIsOpen(false);
+    } else if (e.key === 'Tab') {
+      if (isOpen && isFiltering && filteredOptions[highlightedIndex] && !filteredOptions[highlightedIndex].disabled) {
+        handleSelect(filteredOptions[highlightedIndex].value);
+      } else {
+        setIsOpen(false);
+        setIsFiltering(false);
+        setInputText(selectedOption?.label ?? '');
+      }
     }
   };
 
@@ -164,49 +223,71 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
       className={`relative w-full ${className}`}
       style={{ position: 'relative', width: '100%', ...style }}
     >
-      {/* Botón selector principal */}
+      {/* Campo de entrada directo estilo V2_3_11_26 (escribe y filtra al instante sin segundo clic) */}
       <div
-        tabIndex={disabled ? -1 : 0}
         onClick={() => {
-          if (!disabled) setIsOpen(!isOpen);
-        }}
-        onKeyDown={(e) => {
-          if (!disabled && !isOpen && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown')) {
-            e.preventDefault();
-            setIsOpen(true);
+          if (!disabled && !isOpen) {
+            inputRef.current?.focus();
+            openDropdown(true);
           }
         }}
-        className={`form-input flex items-center justify-between cursor-pointer select-none transition ${
+        className={`form-input flex items-center justify-between transition ${
           disabled ? 'opacity-60 cursor-not-allowed bg-slate-100' : 'bg-white hover:border-blue-400'
         } ${isOpen ? 'ring-2 ring-blue-500 border-blue-500' : ''}`}
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '8px 12px',
+          padding: '0 10px 0 12px',
           minHeight: '38px',
           height: '38px',
-          border: '1px solid #cbd5e1',
+          border: isOpen ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
           borderRadius: '8px',
-          cursor: disabled ? 'not-allowed' : 'pointer',
+          cursor: disabled ? 'not-allowed' : 'text',
           backgroundColor: disabled ? '#f1f5f9' : '#ffffff',
+          gap: '6px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
-          {selectedOption ? (
-            <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-              {selectedOption.label}
-            </span>
-          ) : (
-            <span style={{ fontSize: '13px', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{placeholder}</span>
-          )}
-        </div>
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputText}
+          onChange={handleInputChange}
+          onFocus={() => {
+            if (!disabled && !justSelectedRef.current) {
+              openDropdown(true);
+            }
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!disabled && !isOpen) {
+              openDropdown(true);
+            }
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder || searchPlaceholder}
+          disabled={disabled}
+          required={required && !selectedOption}
+          autoComplete="off"
+          style={{
+            width: '100%',
+            flex: 1,
+            minWidth: 0,
+            border: 'none',
+            outline: 'none',
+            backgroundColor: 'transparent',
+            fontSize: '13.5px',
+            fontWeight: selectedOption && !isFiltering ? 600 : 500,
+            color: '#0f172a',
+            padding: 0,
+          }}
+        />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {allowClear && selectedOption && !disabled && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          {allowClear && (selectedOption || inputText) && !disabled && (
             <button
               type="button"
-              onClick={handleClear}
+              onMouseDown={handleClear}
               style={{
                 background: 'none',
                 border: 'none',
@@ -222,18 +303,45 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
               <X size={14} />
             </button>
           )}
-          <ChevronDown
-            size={16}
-            style={{
-              color: '#64748b',
-              transform: isOpen ? 'rotate(180deg)' : 'none',
-              transition: 'transform 0.2s ease',
+          <button
+            type="button"
+            tabIndex={-1}
+            disabled={disabled}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (disabled) return;
+              if (isOpen) {
+                setIsOpen(false);
+                setIsFiltering(false);
+                setInputText(selectedOption?.label ?? '');
+              } else {
+                inputRef.current?.focus();
+                openDropdown(true);
+              }
             }}
-          />
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '2px',
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <ChevronDown
+              size={16}
+              style={{
+                color: '#64748b',
+                transform: isOpen ? 'rotate(180deg)' : 'none',
+                transition: 'transform 0.2s ease',
+              }}
+            />
+          </button>
         </div>
       </div>
 
-      {/* Menú desplegable con filtro */}
+      {/* Lista de opciones desplegable */}
       {isOpen && (
         <div
           style={{
@@ -249,50 +357,10 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
             overflow: 'hidden',
           }}
         >
-          {/* Barra de búsqueda interactiva */}
-          <div
-            style={{
-              padding: '8px',
-              borderBottom: '1px solid #e2e8f0',
-              backgroundColor: '#f8fafc',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
-            <Search size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={searchPlaceholder}
-              style={{
-                width: '100%',
-                border: 'none',
-                outline: 'none',
-                backgroundColor: 'transparent',
-                fontSize: '13px',
-                color: '#1e293b',
-              }}
-            />
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm('')}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px' }}
-              >
-                <X size={13} />
-              </button>
-            )}
-          </div>
-
-          {/* Lista de opciones filtradas */}
           <div
             ref={optionsListRef}
             style={{
-              maxHeight: '220px',
+              maxHeight: '240px',
               overflowY: 'auto',
               padding: '4px 0',
             }}
@@ -315,7 +383,8 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 return (
                   <div
                     key={opt.value}
-                    onClick={() => {
+                    onMouseDown={(e) => {
+                      e.preventDefault();
                       if (!opt.disabled) handleSelect(opt.value);
                     }}
                     style={{
@@ -357,4 +426,3 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 };
 
 export default SearchableSelect;
-

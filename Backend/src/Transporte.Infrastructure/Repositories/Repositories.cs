@@ -242,7 +242,7 @@ namespace Transporte.Infrastructure.Repositories
         Task<bool> EditarRutaAsync(int rutaId, EditarRutaDto dto, int usuarioId, string rol);
         Task<bool> EliminarRutaAsync(int rutaId, int usuarioId, string rol);
         Task<bool> LimpiarRecoleccionAsync(long rutaId, int usuarioId, string rol);
-        Task<bool> DiferirLitrosAsync(long rutaId, int litrosDiferir, int? cicloDestinoId, string? motivo, int usuarioId, string rol);
+        Task<bool> DiferirLitrosAsync(long rutaId, int litrosDiferir, int? cicloDestinoId, string? motivo, int usuarioId, string rol, DateTime? fechaDestino = null);
         Task<bool> RevertirDiferimientoAsync(long rutaId, int usuarioId, string rol);
     }
 
@@ -1042,7 +1042,7 @@ namespace Transporte.Infrastructure.Repositories
             return destinoCiclo;
         }
 
-        public async Task<bool> DiferirLitrosAsync(long rutaId, int litrosDiferir, int? cicloDestinoId, string? motivo, int usuarioId, string rol)
+        public async Task<bool> DiferirLitrosAsync(long rutaId, int litrosDiferir, int? cicloDestinoId, string? motivo, int usuarioId, string rol, DateTime? fechaDestino = null)
         {
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
@@ -1078,23 +1078,41 @@ namespace Transporte.Infrastructure.Repositories
             string obsPadre = $"{notaOriginal} [Diferido: {litrosDiferir} L para Sem. {destinoCiclo} ({motivoStr})]".Trim();
             string obsHijo = $"[Traspaso diferido de Sem. {cicloActualId}: {litrosDiferir} L ({motivoStr})]".Trim();
 
+            DateTime fechaLiquidacion = fechaDestino?.Date ?? DateTime.MinValue;
+            if (fechaLiquidacion == DateTime.MinValue && !string.IsNullOrWhiteSpace(motivo))
+            {
+                var matchFecha = System.Text.RegularExpressions.Regex.Match(motivo, @"Diferido al (\d{4}-\d{2}-\d{2})");
+                if (matchFecha.Success && DateTime.TryParse(matchFecha.Groups[1].Value, out var parsedFecha))
+                {
+                    fechaLiquidacion = parsedFecha.Date;
+                }
+            }
+            if (fechaLiquidacion == DateTime.MinValue)
+            {
+                var fechaInicioCiclo = await connection.QueryFirstOrDefaultAsync<DateTime?>(
+                    @"SELECT FechaInicio FROM TB_CICLOS_OPERATIVOS WHERE Id = @destinoCiclo",
+                    new { destinoCiclo }, tx);
+                fechaLiquidacion = fechaInicioCiclo?.Date ?? ((DateTime)original.Fecha).Date;
+            }
+
             if (litrosRestantes == 0)
             {
-                // Diferimiento total: marcar el registro completo para el ciclo destino sin crear registro hijo en 0 L
+                // Diferimiento total: marcar el registro completo para el ciclo y fecha destino sin crear registro hijo en 0 L
                 await connection.ExecuteAsync(@"
                     UPDATE TB_RUTAS_RECOLECCION
                     SET EsDiferido = 1,
+                        Fecha = @fechaLiquidacion,
                         CicloLiquidacionId = @destinoCiclo,
                         LitrosOriginales = @litrosOrig,
                         Observacion = @obsPadre,
                         ModifiedAt = GETDATE(),
                         ModifiedBy = @usuarioId
                     WHERE Id = @rutaId",
-                    new { destinoCiclo, litrosOrig, obsPadre, usuarioId, rutaId }, tx);
+                    new { fechaLiquidacion, destinoCiclo, litrosOrig, obsPadre, usuarioId, rutaId }, tx);
             }
             else
             {
-                // Diferimiento parcial: actualizar registro original y crear registro hijo diferido
+                // Diferimiento parcial: actualizar registro original y crear registro hijo diferido con la fecha destino
                 await connection.ExecuteAsync(@"
                     UPDATE TB_RUTAS_RECOLECCION 
                     SET Litros = @litrosRestantes,
@@ -1121,7 +1139,7 @@ namespace Transporte.Infrastructure.Repositories
                     )",
                     new {
                         CicloId = cicloActualId, // Mantiene el ciclo físico de la ruta
-                        Fecha = original.Fecha,
+                        Fecha = fechaLiquidacion,
                         FincaId = original.FincaId,
                         ChoferUsuarioId = original.UsuarioId,
                         Litros = litrosDiferir,

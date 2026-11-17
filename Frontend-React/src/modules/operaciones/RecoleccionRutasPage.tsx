@@ -766,6 +766,7 @@ export const RecoleccionRutasPage: React.FC = () => {
           litrosDiferir: ltsDiferir,
           cicloDestinoId: cicloDest,
           motivo: dto.observacion || (dto.fechaDiferido ? `Diferido al ${dto.fechaDiferido}` : 'Solicitud del productor'),
+          fechaDestino: dto.fechaDiferido || undefined,
         });
       }
       return res;
@@ -1662,6 +1663,7 @@ export const RecoleccionRutasPage: React.FC = () => {
           litrosDiferir: ltsDiferir,
           cicloDestinoId: cicloDest,
           motivo: dto.observacion || (dto.fechaDiferido ? `Diferido al ${dto.fechaDiferido}` : 'Solicitud del productor'),
+          fechaDestino: dto.fechaDiferido || undefined,
         });
       }
       return res;

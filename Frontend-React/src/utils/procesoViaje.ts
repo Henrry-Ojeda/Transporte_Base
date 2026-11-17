@@ -48,6 +48,28 @@ export const esReceptoriaPrincipal = (nombreOCompania: any): boolean => {
   );
 };
 
+export function getPermisosTipoLecheFinca(finca: any): {
+  permiteVaca: boolean;
+  permiteBufala: boolean;
+  defaultTipo: 'VACA' | 'BUFALA';
+  esDual: boolean;
+} {
+  if (!finca) return { permiteVaca: true, permiteBufala: true, defaultTipo: 'VACA', esDual: true };
+  const tipo = String(finca.tipoLeche || finca.TipoLeche || '').toUpperCase().trim();
+  const dual =
+    Boolean(finca.tieneDosTiposLeche || finca.TieneDosTiposLeche) ||
+    tipo.includes('AMBAS') ||
+    tipo.includes('DUAL') ||
+    (tipo.includes('VACA') && tipo.includes('BUFAL'));
+  if (dual) {
+    return { permiteVaca: true, permiteBufala: true, defaultTipo: 'VACA', esDual: true };
+  }
+  if (tipo.includes('BUFAL')) {
+    return { permiteVaca: false, permiteBufala: true, defaultTipo: 'BUFALA', esDual: false };
+  }
+  return { permiteVaca: true, permiteBufala: false, defaultTipo: 'VACA', esDual: false };
+}
+
 /**
  * Determina estrictamente si un viaje de ruta ha concluido su fase de recolección en campo
  * y ha sido efectivamente despachado / enviado a Receptoría de Planta o Compañía.

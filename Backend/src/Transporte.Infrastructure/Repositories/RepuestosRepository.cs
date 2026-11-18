@@ -72,6 +72,12 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<int> CrearRepuestoAsync(GuardarRepuestoDto dto)
         {
             using var connection = CreateConnection();
+            var existe = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM TB_INVENTARIO_REPUESTOS WHERE Codigo = @Codigo AND Activo = 1",
+                new { dto.Codigo });
+            if (existe > 0)
+                throw new InvalidOperationException($"Ya existe un repuesto activo con el código '{dto.Codigo}'.");
+
             var sql = @"
                 INSERT INTO TB_INVENTARIO_REPUESTOS (
                     Codigo, Nombre, Categoria, StockActual, StockMinimo,
@@ -83,12 +89,28 @@ namespace Transporte.Infrastructure.Repositories
                 );
                 SELECT CAST(SCOPE_IDENTITY() as int);";
 
-            return await connection.ExecuteScalarAsync<int>(sql, dto);
+            return await connection.ExecuteScalarAsync<int>(sql, new
+            {
+                dto.Codigo,
+                dto.Nombre,
+                Categoria = string.IsNullOrWhiteSpace(dto.Categoria) ? "OTROS" : dto.Categoria,
+                dto.StockActual,
+                dto.StockMinimo,
+                dto.CostoUnitarioUSD,
+                dto.UbicacionAlmacen,
+                dto.Activo
+            });
         }
 
         public async Task<bool> ActualizarRepuestoAsync(int id, GuardarRepuestoDto dto)
         {
             using var connection = CreateConnection();
+            var existe = await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM TB_INVENTARIO_REPUESTOS WHERE Codigo = @Codigo AND Activo = 1 AND Id <> @Id",
+                new { dto.Codigo, Id = id });
+            if (existe > 0)
+                throw new InvalidOperationException($"Ya existe otro repuesto activo con el código '{dto.Codigo}'.");
+
             var sql = @"
                 UPDATE TB_INVENTARIO_REPUESTOS SET
                     Codigo = @Codigo,
@@ -106,7 +128,7 @@ namespace Transporte.Infrastructure.Repositories
                 Id = id,
                 dto.Codigo,
                 dto.Nombre,
-                dto.Categoria,
+                Categoria = string.IsNullOrWhiteSpace(dto.Categoria) ? "OTROS" : dto.Categoria,
                 dto.StockActual,
                 dto.StockMinimo,
                 dto.CostoUnitarioUSD,

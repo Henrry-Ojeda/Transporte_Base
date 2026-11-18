@@ -2142,6 +2142,7 @@ export const AppMovilPage: React.FC = () => {
   const [abriendoTraspaso, setAbriendoTraspaso] = useState<boolean>(false);
   const [abriendoEntregaDirecta, setAbriendoEntregaDirecta] = useState<boolean>(false);
   const inputFotoReciboRef = useRef<HTMLInputElement | null>(null);
+  const inputFotoReciboGaleriaRef = useRef<HTMLInputElement | null>(null);
 
   // Sincronización en tiempo real de módulos SaaS en App Móvil
   useEffect(() => {
@@ -12908,37 +12909,44 @@ export const AppMovilPage: React.FC = () => {
                     const paradas = (t as any).paradas || [];
                     const chofNom = t.nombreConductor || t.choferNombre || (t as any).conductorNombre || (t as any).usuarioNombre || choferesLista.find((c) => c.id === (t.usuarioId || t.choferId))?.nombreCompleto || 'Chofer';
                     const enviadoARecep = viajeEstaEnviadoAReceptoria(t);
+                    const estTicket = String(t.estado || '').trim().toUpperCase();
+                    const yaVerificado =
+                      estTicket === 'RECEPCIONADO' ||
+                      estTicket === 'FINALIZADO' ||
+                      estTicket === 'CERRADO' ||
+                      estTicket === 'VERIFICADO' ||
+                      ltsRecibidos > 0;
 
                     return (
                       <div
                         key={t.id}
                         style={{
-                          background: '#ffffff',
+                          background: yaVerificado ? '#f0fdf4' : '#ffffff',
                           borderRadius: '16px',
                           padding: '16px',
-                          border: '1px solid #e2e8f0',
-                          boxShadow: '0 3px 10px rgba(0,0,0,0.03)',
+                          border: yaVerificado ? '2px solid #22c55e' : '1px solid #e2e8f0',
+                          boxShadow: yaVerificado ? '0 4px 14px rgba(34, 197, 94, 0.12)' : '0 3px 10px rgba(0,0,0,0.03)',
                         }}
                       >
                         {/* Cabecera del Ticket */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
                           <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '15px', fontWeight: 900, color: '#1e1b4b' }}>
                                 🎫 Ticket #{t.codigoTicket || t.id}
                               </span>
                               <span
                                 style={{
                                   fontSize: '10px',
-                                  fontWeight: 800,
-                                  background: enviadoARecep ? '#dcfce7' : '#fef3c7',
-                                  color: enviadoARecep ? '#15803d' : '#b45309',
-                                  padding: '2px 6px',
-                                  borderRadius: '5px',
-                                  border: enviadoARecep ? '1px solid #bbf7d0' : '1px solid #fde68a',
+                                  fontWeight: 900,
+                                  background: yaVerificado ? '#16a34a' : enviadoARecep ? '#dbeafe' : '#fef3c7',
+                                  color: yaVerificado ? '#ffffff' : enviadoARecep ? '#1d4ed8' : '#b45309',
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  border: yaVerificado ? '1px solid #15803d' : enviadoARecep ? '1px solid #bfdbfe' : '1px solid #fde68a',
                                 }}
                               >
-                                {enviadoARecep ? '🏭 EN PLANTA' : '⏳ EN RECOLECCIÓN'}
+                                {yaVerificado ? '✅ VERIFICADO' : enviadoARecep ? '🏭 EN PLANTA' : '⏳ EN RECOLECCIÓN'}
                               </span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '5px', flexWrap: 'wrap' }}>
@@ -13028,9 +13036,9 @@ export const AppMovilPage: React.FC = () => {
                               }
                               style={{
                                 flex: 1,
-                                background: '#eff6ff',
-                                color: '#1d4ed8',
-                                border: '1.5px solid #bfdbfe',
+                                background: yaVerificado ? '#dcfce7' : '#eff6ff',
+                                color: yaVerificado ? '#15803d' : '#1d4ed8',
+                                border: yaVerificado ? '1.5px solid #86efac' : '1.5px solid #bfdbfe',
                                 borderRadius: '10px',
                                 padding: '9px 10px',
                                 fontSize: '12px',
@@ -13042,8 +13050,8 @@ export const AppMovilPage: React.FC = () => {
                                 gap: '6px',
                               }}
                             >
-                              <i className="fa-solid fa-scale-balanced"></i>
-                              <span>Verificar Litros</span>
+                              <i className={`fa-solid ${yaVerificado ? 'fa-circle-check' : 'fa-scale-balanced'}`}></i>
+                              <span>{yaVerificado ? 'Verificado (Editar)' : 'Verificar Litros'}</span>
                             </button>
                           ) : (
                             <button
@@ -15989,6 +15997,32 @@ export const AppMovilPage: React.FC = () => {
                 )}
               </div>
 
+              {/* Observación / Comentarios en Finca (Opcional) */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12.5px', fontWeight: 800, color: '#1e293b', marginBottom: '6px' }}>
+                  <span><i className="fa-solid fa-comment-dots" style={{ color: '#2563eb', marginRight: '6px' }}></i> Observación en Finca</span>
+                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>Opcional</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Ej: Tanque con espuma, manguera en mal estado, recolección parcial..."
+                  value={formCarga.observacion}
+                  onChange={(e) => setFormCarga((prev) => ({ ...prev, observacion: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: '#0f172a',
+                    background: '#ffffff',
+                    resize: 'vertical',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
               {/* Foto del Comprobante / Recibo de Finca */}
               <div style={{ marginBottom: '18px' }}>
                 <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12.5px', fontWeight: 800, color: '#1e293b', marginBottom: '6px' }}>
@@ -16007,6 +16041,14 @@ export const AppMovilPage: React.FC = () => {
                   type="file"
                   accept="image/*"
                   capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={handleSubirFotoReciboMovil}
+                />
+
+                <input
+                  ref={inputFotoReciboGaleriaRef}
+                  type="file"
+                  accept="image/*"
                   style={{ display: 'none' }}
                   onChange={handleSubirFotoReciboMovil}
                 />
@@ -16043,28 +16085,52 @@ export const AppMovilPage: React.FC = () => {
                     </button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => inputFotoReciboRef.current?.click()}
-                    style={{
-                      width: '100%',
-                      height: '46px',
-                      borderRadius: '10px',
-                      border: '1.5px dashed #93c5fd',
-                      background: '#eff6ff',
-                      color: '#1d4ed8',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <i className="fa-solid fa-camera"></i>
-                    <span>Tomar Foto / Subir Recibo</span>
-                  </button>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => inputFotoReciboRef.current?.click()}
+                      style={{
+                        width: '100%',
+                        height: '46px',
+                        borderRadius: '10px',
+                        border: '1.5px dashed #93c5fd',
+                        background: '#eff6ff',
+                        color: '#1d4ed8',
+                        fontSize: '12.5px',
+                        fontWeight: 800,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <i className="fa-solid fa-camera"></i>
+                      <span>Tomar Foto</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => inputFotoReciboGaleriaRef.current?.click()}
+                      style={{
+                        width: '100%',
+                        height: '46px',
+                        borderRadius: '10px',
+                        border: '1.5px dashed #60a5fa',
+                        background: '#ffffff',
+                        color: '#1d4ed8',
+                        fontSize: '12.5px',
+                        fontWeight: 800,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <i className="fa-solid fa-images"></i>
+                      <span>Subir Imagen</span>
+                    </button>
+                  </div>
                 )}
               </div>
 

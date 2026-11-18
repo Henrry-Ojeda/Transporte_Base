@@ -14,12 +14,23 @@ export const combustibleApi = {
     return Array.isArray(res.data) ? res.data : [];
   },
 
-  getHistorial: async (tipoCombustible?: string, camionId?: number, top = 100): Promise<CombustibleHistorialDto[]> => {
+  getHistorial: async (
+    tipoCombustible?: string,
+    camionId?: number,
+    top = 100,
+    tipoMovimiento?: string
+  ): Promise<CombustibleHistorialDto[]> => {
     const params: Record<string, any> = { top };
     if (tipoCombustible) params.tipoCombustible = tipoCombustible;
+    if (tipoMovimiento) params.tipoMovimiento = tipoMovimiento;
     if (camionId) params.camionId = camionId;
     const res = await apiClient.get<CombustibleHistorialDto[]>('/combustible/historial', { params });
     return Array.isArray(res.data) ? res.data : [];
+  },
+
+  eliminarMovimiento: async (id: number): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.delete(`/combustible/historial/${id}`);
+    return res.data;
   },
 
   registrarDespacho: async (dto: RegistrarDespachoCombustibleDto): Promise<{ success: boolean; message: string }> => {

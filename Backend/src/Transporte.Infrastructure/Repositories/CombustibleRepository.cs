@@ -13,10 +13,11 @@ namespace Transporte.Infrastructure.Repositories
     public interface ICombustibleRepository
     {
         Task<IEnumerable<CombustibleInventarioDto>> ObtenerInventarioAsync();
-        Task<IEnumerable<CombustibleHistorialDto>> ObtenerHistorialAsync(string? tipoCombustible = null, int? camionId = null, int top = 100);
+        Task<IEnumerable<CombustibleHistorialDto>> ObtenerHistorialAsync(string? tipoCombustible = null, int? camionId = null, int top = 100, string? tipoMovimiento = null);
         Task<bool> RegistrarCompraAsync(RegistrarCompraCombustibleDto dto, int? userId);
         Task<bool> RegistrarDespachoAsync(RegistrarDespachoCombustibleDto dto, int? userId);
         Task<bool> AjustarStockAsync(string tipoCombustible, decimal nuevoStock, string motivo, int? userId, decimal? nuevaCapacidad = null);
+        Task<bool> EliminarMovimientoAsync(int id);
     }
 
     public class CombustibleRepository : ICombustibleRepository
@@ -38,17 +39,25 @@ namespace Transporte.Infrastructure.Repositories
             using var connection = CreateConnection();
             var sql = @"
                 SELECT 
-                    Id,
-                    TipoCombustible,
-                    StockActualLitros,
-                    CapacidadTanqueAlmacen,
-                    UpdatedAt
-                FROM TB_COMBUSTIBLE_INVENTARIO
-                ORDER BY TipoCombustible ASC";
+                    i.Id,
+                    i.TipoCombustible,
+                    i.StockActualLitros,
+                    i.CapacidadTanqueAlmacen,
+                    (
+                        SELECT TOP 1 h.CostoPorLitroUSD
+                        FROM TB_COMBUSTIBLE_HISTORIAL h
+                        WHERE h.TipoCombustible = i.TipoCombustible
+                          AND h.TipoMovimiento = 'COMPRA_INGRESO'
+                          AND h.CostoPorLitroUSD > 0
+                        ORDER BY h.Fecha DESC, h.Id DESC
+                    ) AS CostoPromedioPorLitroUSD,
+                    i.UpdatedAt
+                FROM TB_COMBUSTIBLE_INVENTARIO i
+                ORDER BY i.TipoCombustible ASC";
             return await connection.QueryAsync<CombustibleInventarioDto>(sql);
         }
 
-        public async Task<IEnumerable<CombustibleHistorialDto>> ObtenerHistorialAsync(string? tipoCombustible = null, int? camionId = null, int top = 100)
+        public async Task<IEnumerable<CombustibleHistorialDto>> ObtenerHistorialAsync(string? tipoCombustible = null, int? camionId = null, int top = 100, string? tipoMovimiento = null)
         {
             using var connection = CreateConnection();
             var sql = @"
@@ -76,6 +85,7 @@ namespace Transporte.Infrastructure.Repositories
                 LEFT JOIN TB_CONTROL_RUTAS cr ON h.ControlRutaId = cr.Id
                 LEFT JOIN TB_RUTAS_LOGISTICA rl ON cr.RutaLogisticaId = rl.Id
                 WHERE (@TipoCombustible IS NULL OR h.TipoCombustible = @TipoCombustible)
+                  AND (@TipoMovimiento IS NULL OR h.TipoMovimiento = @TipoMovimiento)
                   AND (@CamionId IS NULL OR h.CamionId = @CamionId)
                 ORDER BY h.Fecha DESC, h.Id DESC";
 
@@ -83,6 +93,7 @@ namespace Transporte.Infrastructure.Repositories
             { 
                 Top = top, 
                 TipoCombustible = string.IsNullOrWhiteSpace(tipoCombustible) ? null : tipoCombustible,
+                TipoMovimiento = string.IsNullOrWhiteSpace(tipoMovimiento) ? null : tipoMovimiento,
                 CamionId = camionId
             });
         }
@@ -188,7 +199,7 @@ namespace Transporte.Infrastructure.Repositories
                     await connection.ExecuteAsync(
                         @"UPDATE TB_CAMIONES 
                           SET OdometroActualKm = CASE 
-                                WHEN @Km > OdometroActualKm THEN @Km 
+                                WHEN @Km > ISNULL(OdometroActualKm, 0) THEN @Km 
                                 ELSE OdometroActualKm 
                               END 
                           WHERE Id = @CamionId",
@@ -277,6 +288,68 @@ namespace Transporte.Infrastructure.Repositories
                         Obs = $"Ajuste de inventario: {motivo}",
                         UserId = userId
                     },
+                    transaction: tx);
+
+                tx.Commit();
+                return true;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        public async Task<bool> EliminarMovimientoAsync(int id)
+        {
+            using var connection = CreateConnection();
+            if (connection.State != ConnectionState.Open) connection.Open();
+            using var tx = connection.BeginTransaction();
+
+            try
+            {
+                var mov = await connection.QueryFirstOrDefaultAsync<CombustibleHistorialDto>(
+                    "SELECT Id, TipoMovimiento, TipoCombustible, Litros, StockAnteriorLitros, StockNuevoLitros FROM TB_COMBUSTIBLE_HISTORIAL WHERE Id = @Id",
+                    new { Id = id },
+                    transaction: tx);
+
+                if (mov == null) return false;
+
+                var inv = await connection.QueryFirstOrDefaultAsync<CombustibleInventarioDto>(
+                    "SELECT * FROM TB_COMBUSTIBLE_INVENTARIO WHERE TipoCombustible = @Tipo",
+                    new { Tipo = mov.TipoCombustible },
+                    transaction: tx);
+
+                if (inv != null)
+                {
+                    decimal nuevoStock = inv.StockActualLitros;
+                    if (mov.TipoMovimiento == "COMPRA_INGRESO")
+                    {
+                        if (inv.StockActualLitros < mov.Litros)
+                        {
+                            throw new InvalidOperationException($"No se puede revertir esta compra porque parte del combustible ({mov.Litros:N2} L) ya fue despachado. Stock actual: {inv.StockActualLitros:N2} L.");
+                        }
+                        nuevoStock = inv.StockActualLitros - mov.Litros;
+                    }
+                    else if (mov.TipoMovimiento == "DESPACHO_CAMION")
+                    {
+                        nuevoStock = inv.StockActualLitros + mov.Litros;
+                    }
+                    else if (mov.TipoMovimiento == "AJUSTE")
+                    {
+                        decimal delta = mov.StockNuevoLitros - mov.StockAnteriorLitros;
+                        nuevoStock = Math.Max(0, inv.StockActualLitros - delta);
+                    }
+
+                    await connection.ExecuteAsync(
+                        "UPDATE TB_COMBUSTIBLE_INVENTARIO SET StockActualLitros = @Stock, UpdatedAt = GETDATE() WHERE TipoCombustible = @Tipo",
+                        new { Stock = nuevoStock, Tipo = mov.TipoCombustible },
+                        transaction: tx);
+                }
+
+                await connection.ExecuteAsync(
+                    "DELETE FROM TB_COMBUSTIBLE_HISTORIAL WHERE Id = @Id",
+                    new { Id = id },
                     transaction: tx);
 
                 tx.Commit();

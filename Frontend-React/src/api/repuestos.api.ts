@@ -7,7 +7,7 @@ import type {
 } from '@/types';
 
 export const repuestosApi = {
-  getRepuestos: async (categoria?: string, soloActivos = false): Promise<RepuestoDto[]> => {
+  getRepuestos: async (categoria?: string, soloActivos = true): Promise<RepuestoDto[]> => {
     const params: Record<string, any> = { soloActivos };
     if (categoria) params.categoria = categoria;
     const res = await apiClient.get<RepuestoDto[]>('/repuestos', { params });

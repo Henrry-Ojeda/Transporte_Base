@@ -134,7 +134,7 @@ namespace Transporte.Infrastructure.Repositories
                     dto.CamionId,
                     dto.TipoEvento,
                     dto.Titulo,
-                    dto.Descripcion,
+                    Descripcion = dto.Descripcion ?? string.Empty,
                     dto.FechaEvento,
                     dto.OdometroKm,
                     dto.ProximoKmSugerido,
@@ -151,11 +151,21 @@ namespace Transporte.Infrastructure.Repositories
                     await connection.ExecuteAsync(
                         @"UPDATE TB_CAMIONES 
                           SET OdometroActualKm = CASE 
-                                WHEN @Km > OdometroActualKm THEN @Km 
+                                WHEN @Km > ISNULL(OdometroActualKm, 0) THEN @Km 
                                 ELSE OdometroActualKm 
                               END 
                           WHERE Id = @CamionId",
                         new { Km = dto.OdometroKm.Value, CamionId = dto.CamionId },
+                        transaction: tx);
+                }
+
+                // Sincronizar disponibilidad del camión si entra a taller
+                var estadoNorm = (dto.Estado ?? "").Trim().ToUpper();
+                if (estadoNorm == "EN_TALLER")
+                {
+                    await connection.ExecuteAsync(
+                        "UPDATE TB_CAMIONES SET Estado = 'MANTENIMIENTO', Activo = 0 WHERE Id = @CamionId",
+                        new { CamionId = dto.CamionId },
                         transaction: tx);
                 }
 
@@ -193,7 +203,7 @@ namespace Transporte.Infrastructure.Repositories
                 dto.CamionId,
                 dto.TipoEvento,
                 dto.Titulo,
-                dto.Descripcion,
+                Descripcion = dto.Descripcion ?? string.Empty,
                 dto.FechaEvento,
                 dto.OdometroKm,
                 dto.ProximoKmSugerido,
@@ -203,13 +213,63 @@ namespace Transporte.Infrastructure.Repositories
                 dto.CostoTotalUSD
             });
 
+            if (rows > 0)
+            {
+                if (dto.OdometroKm.HasValue && dto.OdometroKm.Value > 0)
+                {
+                    await connection.ExecuteAsync(
+                        @"UPDATE TB_CAMIONES 
+                          SET OdometroActualKm = CASE 
+                                WHEN @Km > ISNULL(OdometroActualKm, 0) THEN @Km 
+                                ELSE OdometroActualKm 
+                              END 
+                          WHERE Id = @CamionId",
+                        new { Km = dto.OdometroKm.Value, dto.CamionId });
+                }
+
+                var estadoNorm = (dto.Estado ?? "").Trim().ToUpper();
+                if (estadoNorm == "EN_TALLER")
+                {
+                    await connection.ExecuteAsync(
+                        "UPDATE TB_CAMIONES SET Estado = 'MANTENIMIENTO', Activo = 0 WHERE Id = @CamionId",
+                        new { dto.CamionId });
+                }
+                else if (estadoNorm == "RESUELTO" || estadoNorm == "COMPLETADO" || estadoNorm == "CANCELADO")
+                {
+                    var otrosEnTaller = await connection.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(*) FROM TB_MANTENIMIENTO_CAMIONES WHERE CamionId = @CamionId AND Estado = 'EN_TALLER' AND Id <> @Id",
+                        new { dto.CamionId, Id = id });
+                    if (otrosEnTaller == 0)
+                    {
+                        await connection.ExecuteAsync(
+                            "UPDATE TB_CAMIONES SET Estado = 'ACTIVO', Activo = 1 WHERE Id = @CamionId",
+                            new { dto.CamionId });
+                    }
+                }
+            }
+
             return rows > 0;
         }
 
         public async Task<bool> EliminarMantenimientoAsync(int id)
         {
             using var connection = CreateConnection();
+            var mant = await ObtenerPorIdAsync(id);
+            if (mant == null) return false;
+
             var rows = await connection.ExecuteAsync("DELETE FROM TB_MANTENIMIENTO_CAMIONES WHERE Id = @Id", new { Id = id });
+            if (rows > 0 && string.Equals(mant.Estado, "EN_TALLER", StringComparison.OrdinalIgnoreCase))
+            {
+                var otrosEnTaller = await connection.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM TB_MANTENIMIENTO_CAMIONES WHERE CamionId = @CamionId AND Estado = 'EN_TALLER'",
+                    new { mant.CamionId });
+                if (otrosEnTaller == 0)
+                {
+                    await connection.ExecuteAsync(
+                        "UPDATE TB_CAMIONES SET Estado = 'ACTIVO', Activo = 1 WHERE Id = @CamionId",
+                        new { mant.CamionId });
+                }
+            }
             return rows > 0;
         }
 
@@ -281,7 +341,7 @@ namespace Transporte.Infrastructure.Repositories
             if (dto.OdometroKm.HasValue && dto.OdometroKm.Value > 0)
             {
                 await connection.ExecuteAsync(
-                    "UPDATE TB_CAMIONES SET OdometroActualKm = @km WHERE Id = @CamionId AND OdometroActualKm < @km",
+                    "UPDATE TB_CAMIONES SET OdometroActualKm = @km WHERE Id = @CamionId AND ISNULL(OdometroActualKm, 0) < @km",
                     new { km = dto.OdometroKm.Value, dto.CamionId });
             }
 

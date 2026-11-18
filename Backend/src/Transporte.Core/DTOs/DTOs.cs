@@ -2534,6 +2534,7 @@ namespace Transporte.Core.DTOs
         public string TipoCombustible { get; set; } = "GASOIL";
         public decimal StockActualLitros { get; set; }
         public decimal CapacidadTanqueAlmacen { get; set; }
+        public decimal? CostoPromedioPorLitroUSD { get; set; }
         public decimal PorcentajeOcupado => CapacidadTanqueAlmacen > 0 
             ? Math.Round((StockActualLitros / CapacidadTanqueAlmacen) * 100m, 2) 
             : 0;

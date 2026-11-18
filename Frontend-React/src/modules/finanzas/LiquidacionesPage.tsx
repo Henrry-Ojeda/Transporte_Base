@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import { finanzasApi } from '@/api/finanzas.api';
+import { sistemaApi } from '@/api/sistema.api';
 import { useAuthStore } from '@/stores/authStore';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -26,7 +27,18 @@ export const LiquidacionesPage: React.FC = () => {
   const [fincaRecibo, setFincaRecibo] = useState<PreliquidacionFincaDto | null>(null);
   const [tabRecibo, setTabRecibo] = useState<'voucher' | 'whatsapp'>('voucher');
 
+  // Modal Actualizar Tasa BCV (Pendientes)
+  const [modalActualizarBcv, setModalActualizarBcv] = useState(false);
+  const [nuevaTasaBcvInput, setNuevaTasaBcvInput] = useState<string>('');
+  const [actualizandoBcv, setActualizandoBcv] = useState(false);
+
   // Queries
+  const { data: bcvHoyData } = useQuery<any>({
+    queryKey: ['bcv-hoy'],
+    queryFn: () => sistemaApi.getBcvHoy(),
+    staleTime: 60000,
+  });
+  const tasaBcvActualHoy = Number(bcvHoyData?.tasaDolarBs || bcvHoyData?.tasa || 0);
   const { data: ciclos = [] } = useQuery<CicloSemanalDto[]>({
     queryKey: ['ciclos-semanas'],
     queryFn: () => finanzasApi.getCiclos(),
@@ -287,40 +299,30 @@ export const LiquidacionesPage: React.FC = () => {
     });
   };
 
-  const handleActualizarTasaPendientes = async () => {
-    const { value: nuevaTasa } = await Swal.fire({
-      title: 'Actualizar Tasa BCV (Pendientes)',
-      text: 'Ingresa la nueva tasa BCV que se aplicará a todas las fincas con estado PENDIENTE de pago:',
-      input: 'number',
-      inputAttributes: {
-        step: '0.01',
-        min: '1',
-      },
-      inputValue: preliquidacion[0]?.tasaBCV || '',
-      showCancelButton: true,
-      confirmButtonText: 'Actualizar Tasa',
-      cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#d97706',
-    });
+  const handleActualizarTasaPendientes = () => {
+    const tasaSugerida = tasaBcvActualHoy > 0 ? tasaBcvActualHoy : Number(preliquidacion[0]?.tasaBCV || 0);
+    setNuevaTasaBcvInput(tasaSugerida > 0 ? tasaSugerida.toFixed(4) : '');
+    setModalActualizarBcv(true);
+  };
 
-    if (nuevaTasa && Number(nuevaTasa) > 0) {
-      try {
-        const res = await finanzasApi.actualizarTasaPendientes(cicloSeleccionadoId || cicloActivo?.id || 0, Number(nuevaTasa));
-        Swal.fire({
-          icon: 'success',
-          title: '¡Tasa Actualizada!',
-          text: res.message || 'Se actualizó la tasa BCV para las fincas pendientes.',
-          confirmButtonColor: '#059669',
-        });
-        queryClient.invalidateQueries({ queryKey: ['preliquidacion'] });
-      } catch (err: any) {
-        Swal.fire({
-          icon: 'error',
-          title: 'Error',
-          text: err.response?.data?.message || 'Error al actualizar tasa',
-          confirmButtonColor: '#ef4444',
-        });
-      }
+  const handleConfirmarActualizarTasaBcv = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const tasaNum = Number(String(nuevaTasaBcvInput).replace(',', '.'));
+    if (!tasaNum || tasaNum <= 0) {
+      toast.warning('Ingresa una tasa BCV válida mayor a cero.');
+      return;
+    }
+    setActualizandoBcv(true);
+    try {
+      const res = await finanzasApi.actualizarTasaPendientes(cicloSeleccionadoId || cicloActivo?.id || 0, tasaNum);
+      toast.success(res.mensaje || res.message || 'Se actualizó la tasa BCV para las fincas pendientes.');
+      queryClient.invalidateQueries({ queryKey: ['preliquidacion'] });
+      queryClient.invalidateQueries({ queryKey: ['bcv-hoy'] });
+      setModalActualizarBcv(false);
+    } catch (err: any) {
+      toast.error(err.response?.data?.mensaje || err.response?.data?.message || 'Error al actualizar tasa BCV');
+    } finally {
+      setActualizandoBcv(false);
     }
   };
 
@@ -1878,6 +1880,181 @@ export const LiquidacionesPage: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* MODAL ACTUALIZAR TASA BCV (PENDIENTES) */}
+      {modalActualizarBcv && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.72)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1050,
+            padding: '16px',
+          }}
+          onClick={() => !actualizandoBcv && setModalActualizarBcv(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '460px',
+              background: '#ffffff',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+              border: '1px solid #e2e8f0',
+            }}
+          >
+            {/* Cabecera */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+                padding: '16px 20px',
+                color: '#ffffff',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <i className="fa-solid fa-arrows-rotate"></i>
+                  Actualizar Tasa BCV (Pendientes)
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#fef3c7' }}>
+                  Aplica a todas las fincas con estado PENDIENTE de pago
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={actualizandoBcv}
+                onClick={() => setModalActualizarBcv(false)}
+                style={{ background: 'none', border: 'none', color: '#fef3c7', fontSize: '20px', cursor: 'pointer' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Cuerpo */}
+            <form onSubmit={handleConfirmarActualizarTasaBcv} style={{ padding: '18px 20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '10px 12px' }}>
+                  <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#92400e', textTransform: 'uppercase' }}>
+                    Tasa BCV Hoy
+                  </div>
+                  <div style={{ fontSize: '15px', fontWeight: 900, color: '#b45309', marginTop: '2px', fontFamily: 'monospace' }}>
+                    Bs. {(tasaBcvActualHoy || Number(preliquidacion[0]?.tasaBCV || 0)).toLocaleString('es-VE', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+                  </div>
+                </div>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px' }}>
+                  <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>
+                    Fincas Pendientes
+                  </div>
+                  <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>
+                    {pendientes.length} {pendientes.length === 1 ? 'finca' : 'fincas'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '18px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e293b' }}>
+                    Nueva Tasa BCV a Aplicar (Bs./$) *
+                  </label>
+                  {tasaBcvActualHoy > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setNuevaTasaBcvInput(tasaBcvActualHoy.toFixed(4))}
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        color: '#b45309',
+                        background: '#fef3c7',
+                        border: '1px solid #fde68a',
+                        borderRadius: '6px',
+                        padding: '2px 8px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Usar Tasa Hoy
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  step="0.0001"
+                  min="0.0001"
+                  required
+                  autoFocus
+                  value={nuevaTasaBcvInput}
+                  onChange={(e) => setNuevaTasaBcvInput(e.target.value)}
+                  placeholder="Ej: 916.6477"
+                  style={{
+                    width: '100%',
+                    height: '44px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #f59e0b',
+                    padding: '0 12px',
+                    fontSize: '16px',
+                    fontWeight: 900,
+                    fontFamily: 'monospace',
+                    color: '#0f172a',
+                    background: '#ffffff',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  disabled={actualizandoBcv}
+                  onClick={() => setModalActualizarBcv(false)}
+                  style={{
+                    height: '40px',
+                    padding: '0 16px',
+                    borderRadius: '10px',
+                    border: '1px solid #cbd5e1',
+                    background: '#ffffff',
+                    color: '#475569',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={actualizandoBcv}
+                  style={{
+                    height: '40px',
+                    padding: '0 20px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                    color: '#ffffff',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: actualizandoBcv ? 'wait' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '7px',
+                    boxShadow: '0 4px 10px rgba(217, 119, 6, 0.3)',
+                  }}
+                >
+                  <i className={`fa-solid ${actualizandoBcv ? 'fa-spinner fa-spin' : 'fa-check'}`}></i>
+                  {actualizandoBcv ? 'Actualizando...' : 'Actualizar Tasa'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* MODAL REGISTRAR PAGO INDIVIDUAL (Image 2 Redesign) */}
       {modalPagar && fincaPago && (() => {

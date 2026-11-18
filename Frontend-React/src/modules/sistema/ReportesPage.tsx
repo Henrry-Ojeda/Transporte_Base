@@ -305,16 +305,68 @@ export const ReportesPage: React.FC = () => {
   // =========================================================================
   // CAPTURAS EN ALTA DEFINICIÓN (html2canvas) AL PORTAPAPELES O DESCARGA
   // =========================================================================
+  const recortarEspacioBlancoInferior = (sourceCanvas: HTMLCanvasElement, paddingPx = 24): HTMLCanvasElement => {
+    const ctx = sourceCanvas.getContext('2d');
+    if (!ctx) return sourceCanvas;
+    const { width, height } = sourceCanvas;
+    const imgData = ctx.getImageData(0, 0, width, height).data;
+
+    let bottomY = height - 1;
+    // Buscar desde abajo hacia arriba la última fila que tenga contenido no blanco (ni casi blanco)
+    for (let y = height - 1; y >= 0; y--) {
+      let rowHasContent = false;
+      const rowOffset = y * width * 4;
+      for (let x = 0; x < width; x += 2) {
+        const idx = rowOffset + x * 4;
+        const r = imgData[idx];
+        const g = imgData[idx + 1];
+        const b = imgData[idx + 2];
+        const a = imgData[idx + 3];
+        if (a > 10 && (r < 248 || g < 248 || b < 248)) {
+          rowHasContent = true;
+          break;
+        }
+      }
+      if (rowHasContent) {
+        bottomY = y;
+        break;
+      }
+    }
+
+    const croppedHeight = Math.min(height, bottomY + 1 + paddingPx);
+    if (croppedHeight >= height - 10) return sourceCanvas;
+
+    const trimmed = document.createElement('canvas');
+    trimmed.width = width;
+    trimmed.height = croppedHeight;
+    const tCtx = trimmed.getContext('2d');
+    if (!tCtx) return sourceCanvas;
+    tCtx.fillStyle = '#ffffff';
+    tCtx.fillRect(0, 0, width, croppedHeight);
+    tCtx.drawImage(sourceCanvas, 0, 0, width, croppedHeight, 0, 0, width, croppedHeight);
+    return trimmed;
+  };
+
   const ejecutarCaptura = async (elemento: HTMLElement | null, nombreArchivo: string) => {
     if (!elemento) return;
     try {
       toast.info('Generando captura en alta definición...');
-      const canvas = await html2canvas(elemento, {
+      const rawCanvas = await html2canvas(elemento, {
         scale: 3,
         useCORS: true,
         backgroundColor: '#ffffff',
         ignoreElements: (el) => el.classList.contains('no-capture'),
+        onclone: (clonedDoc, clonedEl) => {
+          clonedDoc.querySelectorAll('.no-capture').forEach((n) => {
+            (n as HTMLElement).style.display = 'none';
+          });
+          clonedEl.style.height = 'auto';
+          clonedEl.style.minHeight = '0';
+          clonedEl.style.paddingBottom = '8px';
+        },
       });
+
+      const canvas = recortarEspacioBlancoInferior(rawCanvas, 24);
 
       canvas.toBlob(async (blob) => {
         if (!blob) return;
@@ -1761,7 +1813,15 @@ const RenderReporteFincas: React.FC<{
       </div>
 
       {/* GRID DE TABLAS INDIVIDUALES (1:1 V2_3_11_26) */}
-      <div className="report-grid-cards" style={{ display: 'grid', gridTemplateColumns: tieneDosTablas ? 'repeat(auto-fit, minmax(420px, 1fr))' : '1fr', gap: '20px' }}>
+      <div
+        className="report-grid-cards"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: tieneDosTablas ? 'repeat(auto-fit, minmax(420px, 1fr))' : 'minmax(320px, 640px)',
+          justifyContent: tieneDosTablas ? 'stretch' : 'center',
+          gap: '20px',
+        }}
+      >
         {[cardObj1, cardObj2].filter(Boolean).map((finca) => {
           const cardRef = React.createRef<HTMLDivElement>();
           const tieneLecheMala = finca.totalLitrosMala > 0;

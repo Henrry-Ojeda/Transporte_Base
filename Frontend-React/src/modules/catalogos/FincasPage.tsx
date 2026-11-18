@@ -82,7 +82,9 @@ export const FincasPage: React.FC = () => {
         rutaId: dto.activo === false ? undefined : dto.rutaId,
         tipoLeche: !hasBufala ? 'VACA' : (esDual ? 'AMBOS' : (esSoloBufala ? 'BUFALA' : 'VACA')),
         tieneDosTiposLeche: esDual,
-        precioBufalaLitroUSD: (hasBufala && (esDual || esSoloBufala)) ? (dto.precioBufalaLitroUSD || 0.40) : 0,
+        precioLitroUSD: Number(dto.precioLitroUSD || 0),
+        precioLitroAcidaUSD: dto.precioLitroAcidaUSD !== undefined && (dto.precioLitroAcidaUSD as any) !== '' ? Number(dto.precioLitroAcidaUSD) : 0,
+        precioBufalaLitroUSD: (hasBufala && (esDual || esSoloBufala)) ? Number(dto.precioBufalaLitroUSD || 0.40) : 0,
       };
       return modoEdicionId ? catalogosApi.actualizarFinca(modoEdicionId, payload) : catalogosApi.crearFinca(payload);
     },
@@ -143,10 +145,10 @@ export const FincasPage: React.FC = () => {
       rutaId: item.activo !== false ? item.rutaId : undefined,
       tipoServicioId: item.tipoServicioId || 1,
       companiaId: item.companiaId || undefined,
-      precioLitroUSD: item.precioLitroUSD || 0.35,
-      precioLitroAcidaUSD: item.precioLitroAcidaUSD || 0.20,
+      precioLitroUSD: item.precioLitroUSD ?? 0.35,
+      precioLitroAcidaUSD: item.precioLitroAcidaUSD ?? 0,
       tieneDosTiposLeche: Boolean(item.tieneDosTiposLeche),
-      precioBufalaLitroUSD: item.precioBufalaLitroUSD || 0.40,
+      precioBufalaLitroUSD: item.precioBufalaLitroUSD ?? 0.40,
       tipoLeche: item.tieneDosTiposLeche ? 'AMBOS' : (item.tipoLeche || 'VACA'),
       telefono: item.telefono || '',
       ubicacion: item.ubicacion || '',
@@ -393,10 +395,10 @@ export const FincasPage: React.FC = () => {
                 nombre: row.nombre,
                 propietarioId: row.propietarioId,
                 rutaId: nuevoEstado ? row.rutaId : undefined,
-                precioLitroUSD: row.precioLitroUSD || 0.35,
-                precioLitroAcidaUSD: row.precioLitroAcidaUSD || 0.2,
+                precioLitroUSD: row.precioLitroUSD ?? 0.35,
+                precioLitroAcidaUSD: row.precioLitroAcidaUSD ?? 0,
                 tieneDosTiposLeche: Boolean(row.tieneDosTiposLeche),
-                precioBufalaLitroUSD: row.precioBufalaLitroUSD || 0.4,
+                precioBufalaLitroUSD: row.precioBufalaLitroUSD ?? 0.4,
                 tipoLeche: row.tipoLeche || 'VACA',
                 telefono: row.telefono || '',
                 ubicacion: row.ubicacion || '',
@@ -1054,8 +1056,8 @@ export const FincasPage: React.FC = () => {
                       <input
                         type="number"
                         step="0.0001"
-                        value={form.precioLitroUSD}
-                        onChange={(e) => setForm({ ...form, precioLitroUSD: Number(e.target.value) })}
+                        value={form.precioLitroUSD ?? ''}
+                        onChange={(e) => setForm({ ...form, precioLitroUSD: e.target.value as any })}
                         style={{
                           width: '100%',
                           height: '42px',
@@ -1081,8 +1083,8 @@ export const FincasPage: React.FC = () => {
                       <input
                         type="number"
                         step="0.0001"
-                        value={form.precioBufalaLitroUSD || 0.40}
-                        onChange={(e) => setForm({ ...form, precioBufalaLitroUSD: Number(e.target.value) })}
+                        value={form.precioBufalaLitroUSD ?? ''}
+                        onChange={(e) => setForm({ ...form, precioBufalaLitroUSD: e.target.value as any })}
                         style={{
                           width: '100%',
                           height: '42px',
@@ -1108,8 +1110,8 @@ export const FincasPage: React.FC = () => {
                     <input
                       type="number"
                       step="0.0001"
-                      value={form.precioLitroAcidaUSD || 0.20}
-                      onChange={(e) => setForm({ ...form, precioLitroAcidaUSD: Number(e.target.value) })}
+                      value={form.precioLitroAcidaUSD ?? ''}
+                      onChange={(e) => setForm({ ...form, precioLitroAcidaUSD: e.target.value as any })}
                       placeholder="0.2000"
                       style={{
                         width: '100%',

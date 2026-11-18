@@ -139,8 +139,8 @@ export const finanzasApi = {
     });
     return res.data;
   },
-  actualizarTasaPendientes: async (cicloId: number, nuevaTasa: number): Promise<{ affectedRows: number; message: string }> => {
-    const res = await apiClient.post('/catalogos/pre-liquidacion/actualizar-tasa-pendientes', { cicloId, nuevaTasa });
+  actualizarTasaPendientes: async (cicloId: number, nuevaTasa: number): Promise<{ fincasActualizadas?: number; affectedRows?: number; mensaje?: string; message?: string }> => {
+    const res = await apiClient.post('/catalogos/pre-liquidacion/actualizar-tasa-pendientes', { cicloId, tasaBcv: nuevaTasa });
     return res.data;
   },
 

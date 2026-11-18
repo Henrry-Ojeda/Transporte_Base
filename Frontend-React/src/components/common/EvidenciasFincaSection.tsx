@@ -76,6 +76,7 @@ export const EvidenciasFincaSection: React.FC<EvidenciasFincaSectionProps> = ({
   onPreview,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputCamRef = useRef<HTMLInputElement | null>(null);
   const [etiquetaActiva, setEtiquetaActiva] = useState<string>('Foto del Tanque');
   const [procesando, setProcesando] = useState(false);
 
@@ -170,6 +171,15 @@ export const EvidenciasFincaSection: React.FC<EvidenciasFincaSectionProps> = ({
       </div>
 
       <input
+        ref={inputCamRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFilesSelected}
+      />
+
+      <input
         ref={inputRef}
         type="file"
         accept="image/*"
@@ -178,29 +188,55 @@ export const EvidenciasFincaSection: React.FC<EvidenciasFincaSectionProps> = ({
         onChange={handleFilesSelected}
       />
 
-      <button
-        type="button"
-        disabled={procesando}
-        onClick={() => inputRef.current?.click()}
-        style={{
-          width: '100%',
-          padding: '9px 12px',
-          borderRadius: '10px',
-          border: '1.5px dashed #818cf8',
-          background: '#eef2ff',
-          color: '#3730a3',
-          fontSize: '12px',
-          fontWeight: 800,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '8px',
-          cursor: procesando ? 'wait' : 'pointer',
-        }}
-      >
-        <i className={`fa-solid ${procesando ? 'fa-spinner fa-spin' : 'fa-camera-retro'}`}></i>
-        <span>{procesando ? 'Procesando fotos...' : `Agregar Foto(s): ${etiquetaActiva}`}</span>
-      </button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+        <button
+          type="button"
+          disabled={procesando}
+          onClick={() => inputCamRef.current?.click()}
+          style={{
+            width: '100%',
+            padding: '9px 10px',
+            borderRadius: '10px',
+            border: '1.5px dashed #818cf8',
+            background: '#eef2ff',
+            color: '#3730a3',
+            fontSize: '12px',
+            fontWeight: 800,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            cursor: procesando ? 'wait' : 'pointer',
+          }}
+        >
+          <i className={`fa-solid ${procesando ? 'fa-spinner fa-spin' : 'fa-camera'}`}></i>
+          <span>{procesando ? 'Procesando...' : 'Tomar Foto'}</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={procesando}
+          onClick={() => inputRef.current?.click()}
+          style={{
+            width: '100%',
+            padding: '9px 10px',
+            borderRadius: '10px',
+            border: '1.5px dashed #6366f1',
+            background: '#ffffff',
+            color: '#4338ca',
+            fontSize: '12px',
+            fontWeight: 800,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            cursor: procesando ? 'wait' : 'pointer',
+          }}
+        >
+          <i className={`fa-solid ${procesando ? 'fa-spinner fa-spin' : 'fa-images'}`}></i>
+          <span>{procesando ? 'Procesando...' : 'Subir Imagen'}</span>
+        </button>
+      </div>
 
       {/* Lista de fotos adjuntas */}
       {fotos.length > 0 && (

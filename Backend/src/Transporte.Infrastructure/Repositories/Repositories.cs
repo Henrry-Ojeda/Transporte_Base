@@ -8058,7 +8058,8 @@ namespace Transporte.Infrastructure.Repositories
                 "⚠️ ¿Dónde están los mayores problemas de merma?",
                 "🚜 ¿Cuáles fincas o choferes presentan descuadres?",
                 "💰 Estado de adelantos y préstamos pendientes por cobrar",
-                "🧪 Evaluar mermas por leche ácida o pérdida de calidad"
+                "🧪 Evaluar mermas por leche ácida o pérdida de calidad",
+                "🚛 Estado de la flota, combustible, mantenimientos y repuestos"
             });
         }
 
@@ -8623,6 +8624,123 @@ namespace Transporte.Infrastructure.Repositories
             {
                 ctx.AppendLine($"Fecha: {((DateTime)b.Fecha).ToString("dd/MM/yyyy")} | Tasa: Bs. {b.TasaDolarBs:N2}");
             }
+            ctx.AppendLine();
+
+            // Flota, Mantenimiento, Combustible y Repuestos
+            try
+            {
+                var camionesFlota = await connection.QueryAsync<dynamic>(@"
+                    SELECT c.Placa, c.MarcaModelo, c.Estado, c.Activo, ISNULL(c.OdometroActualKm, 0) AS OdometroActualKm,
+                           c.CapacidadLitros, u.NombreCompleto AS Chofer
+                    FROM TB_CAMIONES c
+                    LEFT JOIN TB_USUARIOS u ON c.UsuarioId = u.Id
+                    ORDER BY c.Placa ASC");
+
+                ctx.AppendLine("--- FLOTA DE CAMIONES ---");
+                if (camionesFlota.Any())
+                {
+                    foreach (var cam in camionesFlota)
+                    {
+                        ctx.AppendLine($"Placa: {cam.Placa} | {cam.MarcaModelo ?? "Cisterna"} | Estado: {cam.Estado ?? (cam.Activo == true ? "ACTIVO" : "INACTIVO")} | Odómetro: {cam.OdometroActualKm:N0} Km | Cap: {cam.CapacidadLitros:N0} L | Chofer: {cam.Chofer ?? "Sin asignar"}");
+                    }
+                }
+                else
+                {
+                    ctx.AppendLine("No hay camiones registrados.");
+                }
+                ctx.AppendLine();
+            }
+            catch { }
+
+            try
+            {
+                var mantenimientosRecientes = await connection.QueryAsync<dynamic>(@"
+                    SELECT TOP 20 m.Id, c.Placa, m.TipoEvento, m.Titulo, m.Estado, m.Urgencia,
+                           m.CostoTotalUSD, m.FechaEvento, m.OdometroKm, m.ProximoKmSugerido, m.TallerOMecanico
+                    FROM TB_MANTENIMIENTO_CAMIONES m
+                    INNER JOIN TB_CAMIONES c ON m.CamionId = c.Id
+                    ORDER BY m.FechaEvento DESC, m.Id DESC");
+
+                ctx.AppendLine("--- HISTORIAL Y ALERTAS DE MANTENIMIENTO ---");
+                if (mantenimientosRecientes.Any())
+                {
+                    foreach (var mt in mantenimientosRecientes)
+                    {
+                        string fMt = mt.FechaEvento != null ? ((DateTime)mt.FechaEvento).ToString("dd/MM/yyyy") : "-";
+                        ctx.AppendLine($"#{mt.Id} | Placa: {mt.Placa} | {mt.TipoEvento}: {mt.Titulo} | Estado: {mt.Estado} ({mt.Urgencia ?? "MEDIA"}) | Costo: ${mt.CostoTotalUSD:N2} | Fecha: {fMt} | Km: {mt.OdometroKm ?? 0} | Próx Km: {mt.ProximoKmSugerido ?? 0}");
+                    }
+                }
+                else
+                {
+                    ctx.AppendLine("Sin registros de mantenimiento.");
+                }
+                ctx.AppendLine();
+            }
+            catch { }
+
+            try
+            {
+                var invCombustible = await connection.QueryAsync<dynamic>(@"
+                    SELECT TipoCombustible, StockActualLitros, CapacidadTanqueAlmacen
+                    FROM TB_COMBUSTIBLE_INVENTARIO
+                    ORDER BY TipoCombustible ASC");
+
+                var histCombustible = await connection.QueryAsync<dynamic>(@"
+                    SELECT TOP 15 h.Fecha, h.TipoMovimiento, h.TipoCombustible, h.Litros, h.StockNuevoLitros,
+                           c.Placa, h.Proveedor, h.OdometroKm, h.Observaciones
+                    FROM TB_COMBUSTIBLE_HISTORIAL h
+                    LEFT JOIN TB_CAMIONES c ON h.CamionId = c.Id
+                    ORDER BY h.Fecha DESC, h.Id DESC");
+
+                ctx.AppendLine("--- INVENTARIO Y MOVIMIENTOS DE COMBUSTIBLE ---");
+                foreach (var ic in invCombustible)
+                {
+                    decimal cap = ic.CapacidadTanqueAlmacen > 0 ? (decimal)ic.CapacidadTanqueAlmacen : 1m;
+                    decimal pct = Math.Round(((decimal)ic.StockActualLitros / cap) * 100m, 1);
+                    ctx.AppendLine($"Tanque {ic.TipoCombustible}: {ic.StockActualLitros:N0} L / {ic.CapacidadTanqueAlmacen:N0} L ({pct}% lleno)");
+                }
+                foreach (var hc in histCombustible)
+                {
+                    string fHc = hc.Fecha != null ? ((DateTime)hc.Fecha).ToString("dd/MM/yyyy") : "-";
+                    string dest = hc.Placa != null ? $"Camión {hc.Placa}" : (hc.Proveedor != null ? $"Prov: {hc.Proveedor}" : "Ajuste");
+                    ctx.AppendLine($"  {fHc} | {hc.TipoMovimiento} | {hc.TipoCombustible}: {hc.Litros:N0} L | {dest} | Stock res: {hc.StockNuevoLitros:N0} L");
+                }
+                ctx.AppendLine();
+            }
+            catch { }
+
+            try
+            {
+                var repuestosActivos = await connection.QueryAsync<dynamic>(@"
+                    SELECT Codigo, Nombre, Categoria, StockActual, StockMinimo, CostoUnitarioUSD, UbicacionAlmacen
+                    FROM TB_INVENTARIO_REPUESTOS
+                    WHERE Activo = 1
+                    ORDER BY Nombre ASC");
+
+                var movRepuestos = await connection.QueryAsync<dynamic>(@"
+                    SELECT TOP 15 m.Fecha, m.TipoMovimiento, r.Codigo, r.Nombre, m.Cantidad, m.CostoUnitarioUSD, c.Placa
+                    FROM TB_MOVIMIENTOS_REPUESTOS m
+                    INNER JOIN TB_INVENTARIO_REPUESTOS r ON m.RepuestoId = r.Id
+                    LEFT JOIN TB_CAMIONES c ON m.CamionId = c.Id
+                    ORDER BY m.Fecha DESC, m.Id DESC");
+
+                ctx.AppendLine("--- INVENTARIO DE REPUESTOS Y KÁRDEX ---");
+                decimal valorAlmacen = repuestosActivos.Sum(r => (decimal)r.StockActual * (decimal)r.CostoUnitarioUSD);
+                int stockCritico = repuestosActivos.Count(r => (int)r.StockActual <= (int)r.StockMinimo);
+                ctx.AppendLine($"Total ítems activos: {repuestosActivos.Count()} | En stock crítico: {stockCritico} | Valorizado: ${valorAlmacen:N2} USD");
+                foreach (var rp in repuestosActivos.Take(25))
+                {
+                    string alerta = (int)rp.StockActual <= (int)rp.StockMinimo ? " [STOCK CRÍTICO]" : "";
+                    ctx.AppendLine($"  [{rp.Codigo}] {rp.Nombre} ({rp.Categoria}): {rp.StockActual} unid (Mín: {rp.StockMinimo}) | ${rp.CostoUnitarioUSD:N2}{alerta}");
+                }
+                foreach (var mr in movRepuestos)
+                {
+                    string fMr = mr.Fecha != null ? ((DateTime)mr.Fecha).ToString("dd/MM/yyyy") : "-";
+                    ctx.AppendLine($"  Mov {fMr} | {mr.TipoMovimiento} | {mr.Codigo} - {mr.Nombre} x{mr.Cantidad} | Camión: {mr.Placa ?? "Almacén"}");
+                }
+                ctx.AppendLine();
+            }
+            catch { }
 
             string contextoCompleto = ctx.ToString();
 

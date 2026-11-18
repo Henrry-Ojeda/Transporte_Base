@@ -17,6 +17,11 @@ import { useAuthStore } from '@/stores/authStore';
 import { updateAppIcon } from '@/utils/pwaIcons';
 import { getPermisosTipoLecheFinca } from '@/utils/procesoViaje';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import {
+  EvidenciasFincaSection,
+  parseFotosEvidencia,
+  type FotoEvidenciaItem,
+} from '@/components/common/EvidenciasFincaSection';
 import type {
   FincaDto,
   DespachoCompaniaDto,
@@ -2129,6 +2134,7 @@ export const AppMovilPage: React.FC = () => {
     temperatura: '',
     observacion: '',
     fotoRecibo: '',
+    fotosEvidencia: [] as FotoEvidenciaItem[],
   });
   const [busquedaFinca, setBusquedaFinca] = useState('');
   const [fotoReciboVerModal, setFotoReciboVerModal] = useState<string | null>(null);
@@ -5354,6 +5360,7 @@ export const AppMovilPage: React.FC = () => {
         temperatura: '',
         observacion: '',
         fotoRecibo: '',
+        fotosEvidencia: [],
       });
       setModalRegistro(true);
       return;
@@ -5394,6 +5401,7 @@ export const AppMovilPage: React.FC = () => {
         temperatura: cargaLocal?.temperatura ? String(cargaLocal.temperatura) : '',
         observacion: cargaLocal?.observacion || '',
         fotoRecibo: cargaLocal?.fotoRecibo || paradaServidor?.fotoComprobante || (paradaServidor as any)?.FotoComprobante || fincaItem.fotoRecibo || fincaItem.fotoComprobante || '',
+        fotosEvidencia: (cargaLocal as any)?.fotosEvidencia || parseFotosEvidencia((paradaServidor as any)?.fotosEvidenciaJson || (paradaServidor as any)?.FotosEvidenciaJson),
       };
     });
     setModalRegistro(true);
@@ -5465,6 +5473,8 @@ export const AppMovilPage: React.FC = () => {
         temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
         observacion: formCarga.observacion,
         fotoRecibo: formCarga.fotoRecibo || undefined,
+        fotosEvidencia: formCarga.fotosEvidencia,
+        fotosEvidenciaJson: formCarga.fotosEvidencia.length > 0 ? JSON.stringify(formCarga.fotosEvidencia) : '',
         latitud: gpsCaptura?.latitud,
         longitud: gpsCaptura?.longitud,
         precisionMetros: gpsCaptura?.precisionMetros,
@@ -5699,6 +5709,7 @@ export const AppMovilPage: React.FC = () => {
         temperatura: '',
         observacion: '',
         fotoRecibo: '',
+        fotosEvidencia: [],
       });
       setBusquedaFinca('');
 
@@ -16055,6 +16066,15 @@ export const AppMovilPage: React.FC = () => {
                     <span>Tomar Foto / Subir Recibo</span>
                   </button>
                 )}
+              </div>
+
+              {/* Evidencias / Novedades en Finca (Varias Fotos) */}
+              <div style={{ marginBottom: '18px' }}>
+                <EvidenciasFincaSection
+                  fotos={formCarga.fotosEvidencia}
+                  onChange={(next) => setFormCarga((prev) => ({ ...prev, fotosEvidencia: next }))}
+                  onPreview={(img) => setFotoReciboVerModal(img)}
+                />
               </div>
 
               {guardandoCarga && (

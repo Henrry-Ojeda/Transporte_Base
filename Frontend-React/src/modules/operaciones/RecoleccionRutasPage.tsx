@@ -18,6 +18,12 @@ import type { ControlRutaDto, FincaDto, CamionDto, CompaniaDto, DespachoCompania
 import { PlanificacionRutasChoferesPage } from './PlanificacionRutasChoferesPage';
 import { getTimestampParada, formatFechaHoraParada } from '@/utils/timelapseUtils';
 import { esReceptoriaPrincipal, getPermisosTipoLecheFinca } from '@/utils/procesoViaje';
+import {
+  EvidenciasFincaSection,
+  EvidenciasGaleriaModal,
+  parseFotosEvidencia,
+  type FotoEvidenciaItem,
+} from '@/components/common/EvidenciasFincaSection';
 
 interface RutaDetalleFinca {
   id: number;
@@ -289,8 +295,18 @@ export const RecoleccionRutasPage: React.FC = () => {
     fecha: '',
     observacion: '',
     fotoComprobante: '',
+    fotosEvidencia: [] as FotoEvidenciaItem[],
   });
   const [fotoReciboModal, setFotoReciboModal] = useState<string | null>(null);
+  const [evidenciasModal, setEvidenciasModal] = useState<{
+    fincaNombre: string;
+    propietarioNombre?: string;
+    telefono?: string;
+    fecha?: string;
+    litros?: number;
+    observacion?: string;
+    fotos: FotoEvidenciaItem[];
+  } | null>(null);
   const fileInputComprobanteRef = useRef<HTMLInputElement | null>(null);
 
   // Filtro unificado de paradas por ticket (Finca o Propietario)
@@ -314,6 +330,7 @@ export const RecoleccionRutasPage: React.FC = () => {
     fecha: '',
     observacion: '',
     fotoComprobante: '',
+    fotosEvidencia: [] as FotoEvidenciaItem[],
   });
 
   // Formulario Enviar Receptoría (1:1 V2_3_11_26)
@@ -758,6 +775,7 @@ export const RecoleccionRutasPage: React.FC = () => {
         fecha: dto.fecha || (viajeActivo.fecha ? viajeActivo.fecha.split('T')[0] : undefined),
         observacion: dto.observacion,
         fotoComprobante: dto.fotoComprobante || undefined,
+        fotosEvidenciaJson: dto.fotosEvidencia && dto.fotosEvidencia.length > 0 ? JSON.stringify(dto.fotosEvidencia) : '',
       };
       const res: any = await operacionesApi.agregarFincaViaje(viajeActivo.id, payload);
       if (dto.esDiferido && ltsDiferir > 0 && res?.rutaId) {
@@ -784,7 +802,7 @@ export const RecoleccionRutasPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['rutas-fincas-hoy'] });
       queryClient.invalidateQueries({ queryKey: ['rutas-viajes-hoy'] });
       setModalRegistroFinca(false);
-      setFormFinca({ fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, esDiferido: false, litrosDiferir: '', fechaDiferido: '', cicloDestinoId: 0, fecha: '', observacion: '', fotoComprobante: '' });
+      setFormFinca({ fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, esDiferido: false, litrosDiferir: '', fechaDiferido: '', cicloDestinoId: 0, fecha: '', observacion: '', fotoComprobante: '', fotosEvidencia: [] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.message || err?.message || 'Error al registrar recolección');
@@ -1656,6 +1674,7 @@ export const RecoleccionRutasPage: React.FC = () => {
         esDiferido: dto.esDiferido ? ltsDiferir === totalLts : false,
         observacion: dto.observacion,
         fotoComprobante: dto.fotoComprobante || undefined,
+        fotosEvidenciaJson: dto.fotosEvidencia && dto.fotosEvidencia.length > 0 ? JSON.stringify(dto.fotosEvidencia) : '',
       });
       if (dto.esDiferido && ltsDiferir > 0) {
         const cicloDest = resolverCicloPorFechaDiferido(dto.fechaDiferido, dto.cicloDestinoId);
@@ -1794,6 +1813,7 @@ export const RecoleccionRutasPage: React.FC = () => {
         .replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '')
         .trim(),
       fotoComprobante: row.fotoComprobante || row.FotoComprobante || row.foto || '',
+      fotosEvidencia: parseFotosEvidencia((row as any).fotosEvidenciaJson || (row as any).FotosEvidenciaJson),
     });
     setModalEditarRecoleccion(true);
   };
@@ -4113,7 +4133,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setViajeActivo(item);
-                                  setFormFinca({ fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, esDiferido: false, litrosDiferir: '', fechaDiferido: '', cicloDestinoId: 0, fecha: '', observacion: '', fotoComprobante: '' });
+                                  setFormFinca({ fincaId: 0, litros: '', tipoLeche: 'VACA', esAcida: false, esDiferido: false, litrosDiferir: '', fechaDiferido: '', cicloDestinoId: 0, fecha: '', observacion: '', fotoComprobante: '', fotosEvidencia: [] });
                                   setModalRegistroFinca(true);
                                 }}
                                 className="btn btn-sm"
@@ -4478,6 +4498,32 @@ export const RecoleccionRutasPage: React.FC = () => {
                                         <i className="fa-solid fa-receipt"></i> Recibo
                                       </button>
                                     )}
+                                    {(() => {
+                                      const evFotos = parseFotosEvidencia((f as any).fotosEvidenciaJson || (f as any).FotosEvidenciaJson);
+                                      if (evFotos.length === 0) return null;
+                                      const fCat = fincas.find((fc) => Number(fc.id) === Number(f.fincaId));
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setEvidenciasModal({
+                                              fincaNombre: f.fincaNombre || fCat?.nombre || `Finca #${f.fincaId}`,
+                                              propietarioNombre: f.propietarioNombre || f.propietario || fCat?.propietarioNombre,
+                                              telefono: fCat?.telefono,
+                                              fecha: f.fecha,
+                                              litros: fLitros,
+                                              observacion: f.observacion,
+                                              fotos: evFotos,
+                                            })
+                                          }
+                                          className="btn btn-xs"
+                                          style={{ padding: '3px 7px', background: '#eef2ff', borderColor: '#c7d2fe', color: '#3730a3', fontWeight: 700, borderRadius: '5px' }}
+                                          title="Ver evidencias y enviar observación al propietario"
+                                        >
+                                          <i className="fa-solid fa-images"></i> Evidencias ({evFotos.length})
+                                        </button>
+                                      );
+                                    })()}
                                     {fLitros === 0 ? (
                                       <span
                                         className="badge"
@@ -4551,6 +4597,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                                                 .replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '')
                                                 .trim(),
                                               fotoComprobante: f.fotoComprobante || (f as any).FotoComprobante || '',
+                                              fotosEvidencia: parseFotosEvidencia((f as any).fotosEvidenciaJson || (f as any).FotosEvidenciaJson),
                                             });
                                             setModalEditarRecoleccion(true);
                                           }}
@@ -5293,6 +5340,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                                         fecha: viajeTimelapse?.fecha ? viajeTimelapse.fecha.split('T')[0] : (fechaFiltro || hoyStr),
                                         observacion: '',
                                         fotoComprobante: '',
+                                        fotosEvidencia: [],
                                       });
                                       setModalRegistroFinca(true);
                                     }}
@@ -6549,6 +6597,13 @@ export const RecoleccionRutasPage: React.FC = () => {
                     placeholder="Ej: Muestra tomada en caneca, recolección con retraso..."
                   />
                 </div>
+
+                {/* 5.1 EVIDENCIAS / NOVEDADES EN FINCA (VARIAS FOTOS) */}
+                <EvidenciasFincaSection
+                  fotos={formFinca.fotosEvidencia}
+                  onChange={(next) => setFormFinca((prev) => ({ ...prev, fotosEvidencia: next }))}
+                  onPreview={(img) => setFotoReciboModal(img)}
+                />
               </div>
 
               {/* PIE DE ACCIONES */}
@@ -8756,6 +8811,13 @@ export const RecoleccionRutasPage: React.FC = () => {
                     )}
                   </div>
                 </div>
+
+                {/* 5. EVIDENCIAS / NOVEDADES EN FINCA (VARIAS FOTOS) */}
+                <EvidenciasFincaSection
+                  fotos={formEditar.fotosEvidencia}
+                  onChange={(next) => setFormEditar((prev) => ({ ...prev, fotosEvidencia: next }))}
+                  onPreview={(img) => setFotoReciboModal(img)}
+                />
               </div>
 
               {/* PIE */}
@@ -9845,6 +9907,13 @@ export const RecoleccionRutasPage: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* MODAL GALERÍA DE EVIDENCIAS PARA PROPIETARIO */}
+      <EvidenciasGaleriaModal
+        data={evidenciasModal}
+        onClose={() => setEvidenciasModal(null)}
+        onZoom={(img) => setFotoReciboModal(img)}
+      />
 
       {/* MODAL VISUALIZADOR DE RECIBO DE FINCA */}
       {fotoReciboModal && (

@@ -127,7 +127,16 @@ export const finanzasApi = {
     });
   },
   pagarPreliquidacion: async (dto: { fincaId: number; cicloId: number; referenciaPago: string; montoUSD: number; montoBs: number; tasaBCV: number }): Promise<{ success: boolean; message: string }> => {
-    const res = await apiClient.post('/catalogos/pre-liquidacion/pagar', dto);
+    const res = await apiClient.post('/catalogos/pre-liquidacion/pagar', { ...dto, pagado: true });
+    return res.data;
+  },
+  revertirPagoPreliquidacion: async (dto: { fincaId: number; cicloId: number; observacion?: string }): Promise<{ success?: boolean; mensaje?: string; message?: string }> => {
+    const res = await apiClient.post('/catalogos/pre-liquidacion/pagar', {
+      fincaId: dto.fincaId,
+      cicloId: dto.cicloId,
+      pagado: false,
+      observacion: dto.observacion,
+    });
     return res.data;
   },
   actualizarTasaPendientes: async (cicloId: number, nuevaTasa: number): Promise<{ affectedRows: number; message: string }> => {

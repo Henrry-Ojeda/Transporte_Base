@@ -82,6 +82,38 @@ export const LiquidacionesPage: React.FC = () => {
     },
   });
 
+  // Mutación Revertir Pago (1:1 V2_3_11_26)
+  const revertirMutation = useMutation({
+    mutationFn: (dto: { fincaId: number; cicloId: number; observacion?: string }) =>
+      finanzasApi.revertirPagoPreliquidacion(dto),
+    onSuccess: (data) => {
+      toast.success(data.mensaje || data.message || 'Pago revertido exitosamente');
+      queryClient.invalidateQueries({ queryKey: ['preliquidacion'] });
+      queryClient.invalidateQueries({ queryKey: ['adelantos'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.mensaje || err.response?.data?.message || 'Error al revertir pago');
+    },
+  });
+
+  const handleRevertirPago = async (row: PreliquidacionFincaDto) => {
+    const confirm = await Swal.fire({
+      title: '¿Revertir Pago?',
+      html: `Se revertirá el pago de <strong>${row.fincaNombre}</strong> y la cuota de adelanto volverá a estar pendiente.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, Revertir Pago',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#f59e0b',
+      cancelButtonColor: '#64748b',
+    });
+    if (!confirm.isConfirmed) return;
+    revertirMutation.mutate({
+      fincaId: row.fincaId,
+      cicloId: cicloSeleccionadoId || cicloActivo?.id || 0,
+    });
+  };
+
   // Bancos únicos para filtro
   const listaBancos = useMemo(() => {
     const setBancos = new Set<string>();
@@ -712,8 +744,8 @@ export const LiquidacionesPage: React.FC = () => {
             <i className="fa-solid fa-file-invoice"></i> Recibo
           </button>
 
-          {/* BOTÓN PAGAR */}
-          {!row.pagado && (
+          {/* BOTÓN PAGAR / REVERTIR PAGO */}
+          {!row.pagado ? (
             <button
               type="button"
               onClick={() => {
@@ -739,6 +771,30 @@ export const LiquidacionesPage: React.FC = () => {
               title="Registrar pago bancario"
             >
               <i className="fa-solid fa-money-bill-wave"></i> Pagar
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={revertirMutation.isPending}
+              onClick={() => handleRevertirPago(row)}
+              className="btn btn-sm"
+              style={{
+                height: '32px',
+                padding: '0 10px',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '7px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: revertirMutation.isPending ? 'not-allowed' : 'pointer',
+              }}
+              title="Revertir pago registrado"
+            >
+              <i className="fa-solid fa-rotate-left"></i> Revertir Pago
             </button>
           )}
         </div>

@@ -301,6 +301,7 @@ namespace Transporte.Infrastructure.Repositories
                     ISNULL(r.PrecioLitroUSDAplicado, CASE WHEN r.EsAcida = 1 THEN f.PrecioLitroAcidaUSD ELSE f.PrecioLitroUSD END) AS PrecioLitroUSD,
                     r.Observacion AS Observacion,
                     r.FotoComprobante AS FotoComprobante,
+                    r.FotosEvidenciaJson AS FotosEvidenciaJson,
                     r.ControlRutaId AS ControlRutaId,
                     r.CicloId AS CicloId,
                     r.CicloLiquidacionId AS CicloLiquidacionId,
@@ -9010,6 +9011,10 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('TB_RUTAS_RECOLECCION') AND name = 'FotoComprobante')
                     BEGIN
                         ALTER TABLE TB_RUTAS_RECOLECCION ADD FotoComprobante NVARCHAR(MAX) NULL;
+                    END
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('TB_RUTAS_RECOLECCION') AND name = 'FotosEvidenciaJson')
+                    BEGIN
+                        ALTER TABLE TB_RUTAS_RECOLECCION ADD FotosEvidenciaJson NVARCHAR(MAX) NULL;
                     END";
                 await connection.ExecuteAsync(sql);
                 _ensuredDatabases[dbKey] = true;
@@ -10308,6 +10313,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         TasaDolarBsAplicada = @tasaActual,
                         Observacion = @observacion,
                         FotoComprobante = ISNULL(@fotoComprobante, FotoComprobante),
+                        FotosEvidenciaJson = ISNULL(@fotosEvidenciaJson, FotosEvidenciaJson),
                         CreatedAt = CASE WHEN CreatedAt IS NULL OR ISNULL(Litros, 0) = 0 OR CAST(CreatedAt AS DATE) != CAST(@fechaEfectiva AS DATE) THEN @createdAtEfectivo ELSE CreatedAt END,
                         ModifiedAt = @createdAtEfectivo,
                         ModifiedBy = @usuarioId
@@ -10331,6 +10337,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     tasaActual,
                     observacion = dto.Observacion,
                     fotoComprobante = dto.FotoComprobante,
+                    fotosEvidenciaJson = dto.FotosEvidenciaJson,
                     usuarioId,
                     controlRutaId = dto.ControlRutaId,
                     fincaId = dto.FincaId,
@@ -10344,8 +10351,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             {
                 var sqlInsertRuta = @"
                     INSERT INTO TB_RUTAS_RECOLECCION
-                    (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, CicloLiquidacionId, LitrosOriginales, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, ControlRutaId, CreatedAt, CreatedBy, ModifiedAt, ModifiedBy)
-                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, @cicloLiquidacionId, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @controlRutaId, @createdAtEfectivo, @usuarioId, @createdAtEfectivo, @usuarioId);
+                    (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, CicloLiquidacionId, LitrosOriginales, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, FotosEvidenciaJson, ControlRutaId, CreatedAt, CreatedBy, ModifiedAt, ModifiedBy)
+                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, @cicloLiquidacionId, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @fotosEvidenciaJson, @controlRutaId, @createdAtEfectivo, @usuarioId, @createdAtEfectivo, @usuarioId);
                     SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
                 nuevaRutaId = await connection.ExecuteScalarAsync<long>(sqlInsertRuta, new
@@ -10364,6 +10371,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     uuidLocal = Guid.NewGuid().ToString(),
                     observacion = dto.Observacion,
                     fotoComprobante = dto.FotoComprobante,
+                    fotosEvidenciaJson = dto.FotosEvidenciaJson,
                     controlRutaId = dto.ControlRutaId,
                     createdAtEfectivo,
                     usuarioId
@@ -10525,6 +10533,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     ISNULL(r.PrecioLitroUSDAplicado, CASE WHEN r.EsAcida = 1 THEN ISNULL(f.PrecioLitroAcidaUSD, 0) ELSE ISNULL(f.PrecioLitroUSD, 0) END) AS PrecioLitroUSD,
                     r.Observacion AS Observacion,
                     r.FotoComprobante AS FotoComprobante,
+                    r.FotosEvidenciaJson AS FotosEvidenciaJson,
                     ISNULL(r.EsDiferido, 0) AS EsDiferido,
                     r.LitrosOriginales AS LitrosOriginales,
                     r.RecoleccionOrigenId AS RecoleccionOrigenId,
@@ -12117,10 +12126,11 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     PrecioLitroUSDAplicado = @precioAplicado,
                     Observacion = @Observacion,
                     FotoComprobante = ISNULL(@FotoComprobante, FotoComprobante),
+                    FotosEvidenciaJson = ISNULL(@FotosEvidenciaJson, FotosEvidenciaJson),
                     ModifiedAt = GETDATE(),
                     ModifiedBy = @usuarioId
                 WHERE Id = @rutaId",
-                new { dto.FincaId, dto.Litros, dto.EsAcida, dto.EsDiferido, tipoLeche, precioAplicado, dto.Observacion, dto.FotoComprobante, usuarioId, rutaId });
+                new { dto.FincaId, dto.Litros, dto.EsAcida, dto.EsDiferido, tipoLeche, precioAplicado, dto.Observacion, dto.FotoComprobante, dto.FotosEvidenciaJson, usuarioId, rutaId });
 
             // 2. Registrar en Bitácora de Auditoría
             await connection.ExecuteAsync(@"

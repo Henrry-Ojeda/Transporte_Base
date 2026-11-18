@@ -175,6 +175,7 @@ namespace Transporte.Core.DTOs
         public long? RecoleccionOrigenId { get; set; }
         public int? LitrosOriginales { get; set; }
         public string? FotoComprobante { get; set; }
+        public string? FotosEvidenciaJson { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? ModifiedAt { get; set; }
     }
@@ -1576,6 +1577,7 @@ namespace Transporte.Core.DTOs
         public int? NumeroCompartimiento { get; set; }
         public string? Observacion { get; set; }
         public string? FotoComprobante { get; set; }
+        public string? FotosEvidenciaJson { get; set; }
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
         public decimal? PrecisionMetros { get; set; }
@@ -1593,6 +1595,7 @@ namespace Transporte.Core.DTOs
         public decimal? Temperatura { get; set; }
         public string? Observacion { get; set; }
         public string? FotoComprobante { get; set; }
+        public string? FotosEvidenciaJson { get; set; }
         public decimal? Latitud { get; set; }
         public decimal? Longitud { get; set; }
         public decimal? PrecisionMetros { get; set; }
@@ -1961,6 +1964,7 @@ namespace Transporte.Core.DTOs
         public bool EsDiferido { get; set; } = false;
         public string? Observacion { get; set; }
         public string? FotoComprobante { get; set; }
+        public string? FotosEvidenciaJson { get; set; }
         public string Motivo { get; set; } = string.Empty;
     }
 
@@ -1970,6 +1974,7 @@ namespace Transporte.Core.DTOs
         public int Litros { get; set; }
         public string? Observacion { get; set; }
         public string? FotoComprobante { get; set; }
+        public string? FotosEvidenciaJson { get; set; }
         public string Motivo { get; set; } = string.Empty;
     }
 

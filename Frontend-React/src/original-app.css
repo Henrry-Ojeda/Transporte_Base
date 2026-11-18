@@ -1247,7 +1247,8 @@ body {
     letter-spacing: 0.04em;
     text-transform: uppercase;
     white-space: nowrap;
-    vertical-align: middle;
+    vertical-align: middle !important;
+    line-height: 1.25 !important;
 }
 
 .table-reporte-demarcada thead tr:first-child th:only-child,
@@ -1311,7 +1312,8 @@ body {
     border: 1.5px solid #000000 !important;
     color: #000000;
     text-align: center !important;
-    vertical-align: middle;
+    vertical-align: middle !important;
+    line-height: 1.25 !important;
     font-size: 13px;
     font-weight: 700;
     transition: background 0.15s ease;
@@ -1344,11 +1346,12 @@ body {
 .table-reporte-demarcada tfoot tr td {
     font-weight: 800;
     font-size: 13px;
-    text-align: center;
-    padding: 10px 12px;
+    text-align: center !important;
+    padding: 10px 12px !important;
     letter-spacing: 0.01em;
     border: 1px solid #064e3b !important;
-    vertical-align: middle;
+    vertical-align: middle !important;
+    line-height: 1.25 !important;
     background: #047857 !important;
     color: #ffffff !important;
 }

@@ -170,7 +170,7 @@ export const operacionesApi = {
     return res.data;
   },
 
-  agregarFincaViaje: async (id: number, dto: { choferId?: number; fincaId: number; litrosLeche?: number; litros?: number; esAcida?: boolean; esDiferido?: boolean; fecha?: string; hora?: string; tipoLeche?: string; observacion?: string; temperatura?: number; fotoComprobante?: string }): Promise<{ success: boolean; message: string }> => {
+  agregarFincaViaje: async (id: number, dto: { choferId?: number; fincaId: number; litrosLeche?: number; litros?: number; esAcida?: boolean; esDiferido?: boolean; fecha?: string; hora?: string; tipoLeche?: string; observacion?: string; temperatura?: number; fotoComprobante?: string; fotosEvidenciaJson?: string }): Promise<{ success: boolean; message: string }> => {
     const payload = {
       controlRutaId: id,
       choferId: dto.choferId || undefined,
@@ -184,6 +184,7 @@ export const operacionesApi = {
       observacion: dto.observacion || '',
       temperatura: dto.temperatura,
       fotoComprobante: dto.fotoComprobante,
+      fotosEvidenciaJson: dto.fotosEvidenciaJson,
     };
     const res = await apiClient.post(`/control-rutas/${id}/fincas`, payload);
     return res.data;
@@ -595,7 +596,7 @@ export const operacionesApi = {
     return res.data;
   },
 
-  editarRecoleccion: async (id: number, dto: { fincaId?: number; litros?: number; tipoLeche?: string; esAcida?: boolean; esDiferido?: boolean; temperatura?: number; observacion?: string; fotoComprobante?: string }): Promise<{ success: boolean; message: string }> => {
+  editarRecoleccion: async (id: number, dto: { fincaId?: number; litros?: number; tipoLeche?: string; esAcida?: boolean; esDiferido?: boolean; temperatura?: number; observacion?: string; fotoComprobante?: string; fotosEvidenciaJson?: string }): Promise<{ success: boolean; message: string }> => {
     const res = await apiClient.put(`/rutas/${id}`, dto);
     return res.data;
   },

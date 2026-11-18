@@ -4,9 +4,9 @@ import { toast } from 'sonner';
 import { mantenimientoApi } from '@/api/mantenimiento.api';
 import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
+import { SearchableSelect, type SelectOption } from '@/components/common/SearchableSelect';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import Swal from 'sweetalert2';
-import { CamionSelect } from '@/components/selectors';
 import type {
   MantenimientoCamionDto,
   CrearMantenimientoCamionDto,
@@ -63,8 +63,35 @@ export const MantenimientoPage: React.FC = () => {
 
   const { data: camiones = [] } = useQuery<CamionDto[]>({
     queryKey: ['camiones-mantenimiento'],
-    queryFn: () => catalogosApi.getCamiones(true),
+    queryFn: () => catalogosApi.getCamiones(false),
   });
+
+  const camionOptions: SelectOption[] = useMemo(
+    () =>
+      camiones.map((c) => ({
+        value: c.id,
+        label: `${c.placa} - ${c.marca || 'Cisterna'} ${c.modelo || ''}`.trim(),
+        subLabel: `Chofer: ${c.choferNombre || 'Sin chofer'} | Estado: ${c.estado || 'ACTIVO'}`,
+        badge: (c.estado || '').toUpperCase() === 'MANTENIMIENTO' ? 'TALLER' : undefined,
+      })),
+    [camiones]
+  );
+
+  const tipoEventoOptions: SelectOption[] = [
+    { value: 'CAMBIO_ACEITE', label: 'Cambio de Aceite / Filtros' },
+    { value: 'CAUCHOS', label: 'Cambio / Rotación de Cauchos' },
+    { value: 'PREVENTIVO', label: 'Mantenimiento Preventivo General' },
+    { value: 'CORRECTIVO', label: 'Reparación Correctiva' },
+    { value: 'SINIESTRO_CHOFER', label: 'Siniestro / Incidente Chofer' },
+    { value: 'INCIDENTE', label: 'Incidente Reportado' },
+  ];
+
+  const estadoOptions: SelectOption[] = [
+    { value: 'RESUELTO', label: 'Resuelto / Listo para rodar' },
+    { value: 'EN_TALLER', label: 'En Taller / En proceso de reparación' },
+    { value: 'PENDIENTE', label: 'Pendiente / Reportado' },
+    { value: 'REPORTADO_CHOFER', label: 'Reportado por Chofer' },
+  ];
 
   // Mutación: Cambiar Estado de Incidente (Taller <-> Chofer)
   const mutationCambiarEstadoIncidente = useMutation({
@@ -90,6 +117,10 @@ export const MantenimientoPage: React.FC = () => {
       toast.success(data.message || 'Mantenimiento registrado exitosamente');
       queryClient.invalidateQueries({ queryKey: ['mantenimientos'] });
       queryClient.invalidateQueries({ queryKey: ['mantenimientos-alertas'] });
+      queryClient.invalidateQueries({ queryKey: ['mantenimientos-incidentes'] });
+      queryClient.invalidateQueries({ queryKey: ['camiones'] });
+      queryClient.invalidateQueries({ queryKey: ['camiones-catalogos'] });
+      queryClient.invalidateQueries({ queryKey: ['camiones-mantenimiento'] });
       cerrarModal();
     },
     onError: (err: any) => {
@@ -103,6 +134,10 @@ export const MantenimientoPage: React.FC = () => {
       toast.success(data.message || 'Registro de mantenimiento eliminado');
       queryClient.invalidateQueries({ queryKey: ['mantenimientos'] });
       queryClient.invalidateQueries({ queryKey: ['mantenimientos-alertas'] });
+      queryClient.invalidateQueries({ queryKey: ['mantenimientos-incidentes'] });
+      queryClient.invalidateQueries({ queryKey: ['camiones'] });
+      queryClient.invalidateQueries({ queryKey: ['camiones-catalogos'] });
+      queryClient.invalidateQueries({ queryKey: ['camiones-mantenimiento'] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.message || 'Error al eliminar mantenimiento');
@@ -140,7 +175,7 @@ export const MantenimientoPage: React.FC = () => {
 
   // Métricas
   const totalEnTaller = mantenimientos.filter((m) => m.estado === 'EN_TALLER').length;
-  const totalReportados = mantenimientos.filter((m) => m.estado === 'REPORTADO_CHOFER').length;
+  const totalReportados = mantenimientos.filter((m) => m.estado === 'REPORTADO_CHOFER' || m.estado === 'PENDIENTE').length;
   const totalAlertasCriticas = alertas.filter(
     (a) => a.proximoKmSugerido != null && a.odometroActualKm >= a.proximoKmSugerido
   ).length;
@@ -778,45 +813,35 @@ export const MantenimientoPage: React.FC = () => {
           }
           actions={
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <select
-                className="form-input"
-                value={filtroCamion}
-                onChange={(e) => setFiltroCamion(e.target.value)}
-                style={{ height: '38px', fontSize: '13px', fontWeight: 600 }}
-              >
-                <option value="">-- Todos los Camiones --</option>
-                {camiones.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.placa} ({c.marca} {c.modelo})
-                  </option>
-                ))}
-              </select>
+              <div style={{ minWidth: '210px' }}>
+                <SearchableSelect
+                  options={[{ value: '', label: '-- Todos los Camiones --' }, ...camionOptions]}
+                  value={filtroCamion}
+                  onChange={(val) => setFiltroCamion(String(val || ''))}
+                  placeholder="-- Todos los Camiones --"
+                  allowClear={true}
+                />
+              </div>
 
-              <select
-                className="form-input"
-                value={filtroTipo}
-                onChange={(e) => setFiltroTipo(e.target.value)}
-                style={{ height: '38px', fontSize: '13px', fontWeight: 600 }}
-              >
-                <option value="">-- Todos los Eventos --</option>
-                <option value="CAMBIO_ACEITE">Cambio de Aceite</option>
-                <option value="CAUCHOS">Cauchos / Neumáticos</option>
-                <option value="PREVENTIVO">Mantenimiento Preventivo</option>
-                <option value="CORRECTIVO">Reparación Correctiva</option>
-                <option value="SINIESTRO_CHOFER">Siniestro / Incidente Chofer</option>
-              </select>
+              <div style={{ minWidth: '190px' }}>
+                <SearchableSelect
+                  options={[{ value: '', label: '-- Todos los Eventos --' }, ...tipoEventoOptions]}
+                  value={filtroTipo}
+                  onChange={(val) => setFiltroTipo(String(val || ''))}
+                  placeholder="-- Todos los Eventos --"
+                  allowClear={true}
+                />
+              </div>
 
-              <select
-                className="form-input"
-                value={filtroEstado}
-                onChange={(e) => setFiltroEstado(e.target.value)}
-                style={{ height: '38px', fontSize: '13px', fontWeight: 600 }}
-              >
-                <option value="">-- Todos los Estados --</option>
-                <option value="RESUELTO">Resuelto / Completado</option>
-                <option value="EN_TALLER">En Taller</option>
-                <option value="REPORTADO_CHOFER">Reportado / Pendiente</option>
-              </select>
+              <div style={{ minWidth: '185px' }}>
+                <SearchableSelect
+                  options={[{ value: '', label: '-- Todos los Estados --' }, ...estadoOptions]}
+                  value={filtroEstado}
+                  onChange={(val) => setFiltroEstado(String(val || ''))}
+                  placeholder="-- Todos los Estados --"
+                  allowClear={true}
+                />
+              </div>
             </div>
           }
         />
@@ -975,10 +1000,12 @@ export const MantenimientoPage: React.FC = () => {
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
                     Camión Cisterna *
                   </label>
-                  <CamionSelect
-                    value={form.camionId}
-                    onChange={(id) => setForm({ ...form, camionId: id })}
+                  <SearchableSelect
+                    options={camionOptions}
+                    value={form.camionId || ''}
+                    onChange={(val) => setForm({ ...form, camionId: Number(val) || 0 })}
                     placeholder="-- Seleccionar Camión Cisterna --"
+                    allowClear={false}
                     required
                   />
                 </div>
@@ -987,19 +1014,13 @@ export const MantenimientoPage: React.FC = () => {
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
                     Tipo de Evento *
                   </label>
-                  <select
-                    className="form-input"
-                    required
+                  <SearchableSelect
+                    options={tipoEventoOptions}
                     value={form.tipoEvento}
-                    onChange={(e) => setForm({ ...form, tipoEvento: e.target.value })}
-                    style={{ height: '38px', fontWeight: 700 }}
-                  >
-                    <option value="CAMBIO_ACEITE">Cambio de Aceite / Filtros</option>
-                    <option value="CAUCHOS">Cambio / Rotación de Cauchos</option>
-                    <option value="PREVENTIVO">Mantenimiento Preventivo General</option>
-                    <option value="CORRECTIVO">Reparación Correctiva</option>
-                    <option value="SINIESTRO_CHOFER">Siniestro / Incidente Chofer</option>
-                  </select>
+                    onChange={(val) => setForm({ ...form, tipoEvento: String(val || 'PREVENTIVO') })}
+                    allowClear={false}
+                    required
+                  />
                 </div>
               </div>
 
@@ -1015,6 +1036,20 @@ export const MantenimientoPage: React.FC = () => {
                   value={form.titulo}
                   onChange={(e) => setForm({ ...form, titulo: e.target.value })}
                   style={{ height: '38px', fontWeight: 600 }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
+                  Descripción / Detalles Técnicos
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Detalles del trabajo realizado, repuestos usados, etc."
+                  value={form.descripcion}
+                  onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
+                  style={{ height: '38px' }}
                 />
               </div>
 
@@ -1042,8 +1077,37 @@ export const MantenimientoPage: React.FC = () => {
                     className="form-input"
                     placeholder="Ej: 145000"
                     value={form.odometroKm || ''}
-                    onChange={(e) => setForm({ ...form, odometroKm: Number(e.target.value) || undefined })}
+                    onChange={(e) => setForm({ ...form, odometroKm: e.target.value ? Number(e.target.value) : undefined })}
                     style={{ height: '38px', fontWeight: 700 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
+                    Próximo Servicio (Km)
+                  </label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    placeholder="Ej: 155000"
+                    value={form.proximoKmSugerido || ''}
+                    onChange={(e) => setForm({ ...form, proximoKmSugerido: e.target.value ? Number(e.target.value) : undefined })}
+                    style={{ height: '38px' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
+                    Próxima Fecha Sugerida
+                  </label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={form.proximaFechaSugerida || ''}
+                    onChange={(e) => setForm({ ...form, proximaFechaSugerida: e.target.value || undefined })}
+                    style={{ height: '38px' }}
                   />
                 </div>
               </div>
@@ -1083,16 +1147,13 @@ export const MantenimientoPage: React.FC = () => {
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
                   Estado del Mantenimiento *
                 </label>
-                <select
-                  className="form-input"
+                <SearchableSelect
+                  options={estadoOptions}
                   value={form.estado}
-                  onChange={(e) => setForm({ ...form, estado: e.target.value })}
-                  style={{ height: '38px', fontWeight: 700 }}
-                >
-                  <option value="RESUELTO">Resuelto / Listo para rodar</option>
-                  <option value="EN_TALLER">En Taller / En proceso de reparación</option>
-                  <option value="REPORTADO_CHOFER">Reportado / Pendiente de ingreso</option>
-                </select>
+                  onChange={(val) => setForm({ ...form, estado: String(val || 'RESUELTO') })}
+                  allowClear={false}
+                  required
+                />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>

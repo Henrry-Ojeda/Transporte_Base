@@ -44,11 +44,11 @@ namespace Transporte.API.Controllers
         }
 
         [HttpGet("historial")]
-        public async Task<IActionResult> ObtenerHistorial([FromQuery] string? tipoCombustible, [FromQuery] int? camionId, [FromQuery] int top = 100)
+        public async Task<IActionResult> ObtenerHistorial([FromQuery] string? tipoCombustible, [FromQuery] string? tipoMovimiento, [FromQuery] int? camionId, [FromQuery] int top = 100)
         {
             try
             {
-                var historial = await _repo.ObtenerHistorialAsync(tipoCombustible, camionId, top);
+                var historial = await _repo.ObtenerHistorialAsync(tipoCombustible, camionId, top, tipoMovimiento);
                 return Ok(historial);
             }
             catch (Exception ex)
@@ -130,6 +130,25 @@ namespace Transporte.API.Controllers
             catch (Exception ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("historial/{id}")]
+        public async Task<IActionResult> EliminarMovimiento(int id)
+        {
+            try
+            {
+                var ok = await _repo.EliminarMovimientoAsync(id);
+                if (!ok) return NotFound(new { message = "Movimiento de combustible no encontrado." });
+                return Ok(new { success = true, message = "Movimiento revertido y eliminado exitosamente." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error al eliminar movimiento: " + ex.Message });
             }
         }
     }

@@ -2,8 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { repuestosApi } from '@/api/repuestos.api';
-import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
+import { SearchableSelect, type SelectOption } from '@/components/common/SearchableSelect';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import { CamionSelect } from '@/components/selectors';
 import type {
@@ -11,7 +11,6 @@ import type {
   GuardarRepuestoDto,
   MovimientoRepuestoDto,
   RegistrarMovimientoRepuestoDto,
-  CamionDto,
 } from '@/types';
 
 export const RepuestosPage: React.FC = () => {
@@ -59,10 +58,26 @@ export const RepuestosPage: React.FC = () => {
     queryFn: () => repuestosApi.getMovimientos(),
   });
 
-  const { data: camiones = [] } = useQuery<CamionDto[]>({
-    queryKey: ['camiones-repuestos'],
-    queryFn: () => catalogosApi.getCamiones(true),
-  });
+  const categoriaOptions: SelectOption[] = [
+    { value: 'LUBRICANTES', label: 'Lubricantes / Aceites' },
+    { value: 'FILTROS', label: 'Filtros (Aceite, Diésel, Aire)' },
+    { value: 'CAUCHOS', label: 'Cauchos / Neumáticos' },
+    { value: 'MOTOR', label: 'Motor / Inyección' },
+    { value: 'FRENOS', label: 'Frenos y Suspensión' },
+    { value: 'ELECTRICIDAD', label: 'Electricidad / Baterías' },
+    { value: 'OTROS', label: 'Otros Repuestos' },
+  ];
+
+  const repuestoOptions: SelectOption[] = useMemo(
+    () =>
+      repuestos.map((r) => ({
+        value: r.id,
+        label: `${r.codigo} - ${r.nombre}`,
+        subLabel: `Categoría: ${r.categoria} | Ubicación: ${r.ubicacionAlmacen || 'Almacén'}`,
+        badge: `Stock: ${r.stockActual}`,
+      })),
+    [repuestos]
+  );
 
   // Mutaciones
   const mutationGuardarRepuesto = useMutation({
@@ -483,21 +498,15 @@ export const RepuestosPage: React.FC = () => {
           }
           actions={
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <select
-                className="form-input"
-                value={filtroCategoria}
-                onChange={(e) => setFiltroCategoria(e.target.value)}
-                style={{ height: '38px', fontSize: '13px', fontWeight: 600 }}
-              >
-                <option value="">-- Todas las Categorías --</option>
-                <option value="LUBRICANTES">Lubricantes / Aceites</option>
-                <option value="FILTROS">Filtros (Aceite, Combustible, Aire)</option>
-                <option value="CAUCHOS">Cauchos / Neumáticos</option>
-                <option value="MOTOR">Motor / Inyección</option>
-                <option value="FRENOS">Frenos y Suspensión</option>
-                <option value="ELECTRICIDAD">Electricidad / Baterías</option>
-                <option value="OTROS">Otros Repuestos</option>
-              </select>
+              <div style={{ minWidth: '220px' }}>
+                <SearchableSelect
+                  options={[{ value: '', label: '-- Todas las Categorías --' }, ...categoriaOptions]}
+                  value={filtroCategoria}
+                  onChange={(val) => setFiltroCategoria(String(val || ''))}
+                  placeholder="-- Todas las Categorías --"
+                  allowClear={true}
+                />
+              </div>
               <button
                 type="button"
                 className="btn btn-outline"
@@ -609,21 +618,13 @@ export const RepuestosPage: React.FC = () => {
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
                     Categoría *
                   </label>
-                  <select
-                    className="form-input"
-                    required
+                  <SearchableSelect
+                    options={categoriaOptions}
                     value={formRepuesto.categoria}
-                    onChange={(e) => setFormRepuesto({ ...formRepuesto, categoria: e.target.value })}
-                    style={{ height: '38px', fontWeight: 700 }}
-                  >
-                    <option value="LUBRICANTES">Lubricantes / Aceites</option>
-                    <option value="FILTROS">Filtros (Aceite, Diésel, Aire)</option>
-                    <option value="CAUCHOS">Cauchos / Neumáticos</option>
-                    <option value="MOTOR">Motor / Inyección</option>
-                    <option value="FRENOS">Frenos y Suspensión</option>
-                    <option value="ELECTRICIDAD">Electricidad / Baterías</option>
-                    <option value="OTROS">Otros</option>
-                  </select>
+                    onChange={(val) => setFormRepuesto({ ...formRepuesto, categoria: String(val || 'OTROS') })}
+                    allowClear={false}
+                    required
+                  />
                 </div>
               </div>
 
@@ -645,7 +646,7 @@ export const RepuestosPage: React.FC = () => {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '14px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
-                    Stock Inicial
+                    {modoEdicionId ? 'Stock Actual' : 'Stock Inicial'}
                   </label>
                   <input
                     type="number"
@@ -785,6 +786,10 @@ export const RepuestosPage: React.FC = () => {
                   toast.error('Seleccione un repuesto y una cantidad válida');
                   return;
                 }
+                if (formMovimiento.tipoMovimiento === 'SALIDA_MANTENIMIENTO' && !formMovimiento.camionId) {
+                  toast.error('Seleccione el camión cisterna receptor');
+                  return;
+                }
                 mutationMovimiento.mutate(formMovimiento);
               }}
               style={{ padding: '20px' }}
@@ -793,12 +798,11 @@ export const RepuestosPage: React.FC = () => {
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
                   Repuesto a mover *
                 </label>
-                <select
-                  className="form-input"
-                  required
+                <SearchableSelect
+                  options={repuestoOptions}
                   value={formMovimiento.repuestoId || ''}
-                  onChange={(e) => {
-                    const rId = Number(e.target.value);
+                  onChange={(val) => {
+                    const rId = Number(val) || 0;
                     const rep = repuestos.find((r) => r.id === rId);
                     setFormMovimiento({
                       ...formMovimiento,
@@ -806,15 +810,10 @@ export const RepuestosPage: React.FC = () => {
                       costoUnitarioUSD: rep?.costoUnitarioUSD || 0,
                     });
                   }}
-                  style={{ height: '38px', fontWeight: 700 }}
-                >
-                  <option value="">-- Seleccionar Repuesto --</option>
-                  {repuestos.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.codigo} - {r.nombre} (Stock: {r.stockActual})
-                    </option>
-                  ))}
-                </select>
+                  placeholder="-- Seleccionar Repuesto --"
+                  allowClear={false}
+                  required
+                />
               </div>
 
               {formMovimiento.tipoMovimiento === 'SALIDA_MANTENIMIENTO' && (

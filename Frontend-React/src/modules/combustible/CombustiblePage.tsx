@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { combustibleApi } from '@/api/combustible.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import { CamionSelect } from '@/components/selectors';
 import type {
   CombustibleHistorialDto,
@@ -56,8 +58,14 @@ export const CombustiblePage: React.FC = () => {
   });
 
   const { data: historial = [], isLoading: cargandoHistorial, refetch: recargarHistorial } = useQuery({
-    queryKey: ['combustible-historial', filtroTipo, filtroCamion],
-    queryFn: () => combustibleApi.getHistorial(filtroTipo || undefined, filtroCamion ? Number(filtroCamion) : undefined),
+    queryKey: ['combustible-historial', filtroTipo, filtroCombustible, filtroCamion],
+    queryFn: () =>
+      combustibleApi.getHistorial(
+        filtroCombustible || undefined,
+        filtroCamion ? Number(filtroCamion) : undefined,
+        100,
+        filtroTipo || undefined
+      ),
   });
 
   // Mutaciones
@@ -113,6 +121,18 @@ export const CombustiblePage: React.FC = () => {
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.message || err.message || 'Error al ajustar el stock.');
+    },
+  });
+
+  const mutationEliminarMovimiento = useMutation({
+    mutationFn: (id: number) => combustibleApi.eliminarMovimiento(id),
+    onSuccess: (data) => {
+      toast.success(data.message || 'Movimiento revertido y eliminado.');
+      queryClient.invalidateQueries({ queryKey: ['combustible-inventario'] });
+      queryClient.invalidateQueries({ queryKey: ['combustible-historial'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || err.message || 'Error al eliminar el movimiento.');
     },
   });
 
@@ -176,7 +196,7 @@ export const CombustiblePage: React.FC = () => {
       sortable: true,
       cell: (row) => (
         <span style={{ fontWeight: 700, color: '#0f172a' }}>
-          {new Date(row.fecha).toLocaleDateString('es-VE')}
+          {row.fecha ? row.fecha.split('T')[0].split('-').reverse().join('/') : '-'}
         </span>
       ),
     },
@@ -289,6 +309,27 @@ export const CombustiblePage: React.FC = () => {
       accessorKey: 'observaciones',
       cell: (row) => (
         <span style={{ fontSize: '12px', color: '#64748b' }}>{row.observaciones || '-'}</span>
+      ),
+    },
+    {
+      header: 'ACCIONES',
+      width: '80px',
+      cell: (row) => (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline"
+            onClick={async () => {
+              if (await confirmDeleteOrDeactivate('Revertir y eliminar movimiento', `${row.tipoCombustible} (${row.litros} L)`)) {
+                mutationEliminarMovimiento.mutate(row.id);
+              }
+            }}
+            title="Revertir y eliminar movimiento"
+            style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px', color: '#ef4444', borderColor: '#fca5a5' }}
+          >
+            <i className="fa-solid fa-trash-can" style={{ fontSize: '11px' }}></i>
+          </button>
+        </div>
       ),
     },
   ];
@@ -702,28 +743,34 @@ export const CombustiblePage: React.FC = () => {
           </div>
 
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <select
-              value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
-              className="form-input"
-              style={{ height: '38px', fontSize: '12.5px', fontWeight: 600, minWidth: '180px' }}
-            >
-              <option value="">-- Todos los Movimientos --</option>
-              <option value="DESPACHO_CAMION">Despachos a Camión</option>
-              <option value="COMPRA_INGRESO">Compras / Ingresos</option>
-              <option value="AJUSTE">Ajustes de Inventario</option>
-            </select>
+            <div style={{ minWidth: '200px' }}>
+              <SearchableSelect
+                options={[
+                  { value: '', label: '-- Todos los Movimientos --' },
+                  { value: 'DESPACHO_CAMION', label: 'Despachos a Camión' },
+                  { value: 'COMPRA_INGRESO', label: 'Compras / Ingresos' },
+                  { value: 'AJUSTE', label: 'Ajustes de Inventario' },
+                ]}
+                value={filtroTipo}
+                onChange={(val) => setFiltroTipo(String(val || ''))}
+                placeholder="-- Todos los Movimientos --"
+                allowClear={true}
+              />
+            </div>
 
-            <select
-              value={filtroCombustible}
-              onChange={(e) => setFiltroCombustible(e.target.value)}
-              className="form-input"
-              style={{ height: '38px', fontSize: '12.5px', fontWeight: 600, minWidth: '150px' }}
-            >
-              <option value="">-- Combustible --</option>
-              <option value="GASOIL">GASOIL (Diésel)</option>
-              <option value="GASOLINA">GASOLINA</option>
-            </select>
+            <div style={{ minWidth: '170px' }}>
+              <SearchableSelect
+                options={[
+                  { value: '', label: '-- Combustible --' },
+                  { value: 'GASOIL', label: 'GASOIL (Diésel)' },
+                  { value: 'GASOLINA', label: 'GASOLINA' },
+                ]}
+                value={filtroCombustible}
+                onChange={(val) => setFiltroCombustible(String(val || ''))}
+                placeholder="-- Combustible --"
+                allowClear={true}
+              />
+            </div>
 
             <button
               type="button"
@@ -861,15 +908,16 @@ export const CombustiblePage: React.FC = () => {
                     <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
                       Tipo de Combustible *
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={[
+                        { value: 'GASOIL', label: 'GASOIL (Diésel)' },
+                        { value: 'GASOLINA', label: 'GASOLINA' },
+                      ]}
                       value={formDespacho.tipoCombustible}
-                      onChange={(e) => setFormDespacho({ ...formDespacho, tipoCombustible: e.target.value })}
-                      className="form-input"
-                      style={{ width: '100%', height: '42px', fontWeight: 700 }}
-                    >
-                      <option value="GASOIL">GASOIL (Diésel)</option>
-                      <option value="GASOLINA">GASOLINA</option>
-                    </select>
+                      onChange={(val) => setFormDespacho({ ...formDespacho, tipoCombustible: String(val || 'GASOIL') })}
+                      allowClear={false}
+                      required
+                    />
                   </div>
 
                   <div>
@@ -1068,15 +1116,16 @@ export const CombustiblePage: React.FC = () => {
                     <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
                       Tanque de Destino *
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={[
+                        { value: 'GASOIL', label: 'Tanque GASOIL (Diésel)' },
+                        { value: 'GASOLINA', label: 'Tanque GASOLINA' },
+                      ]}
                       value={formCompra.tipoCombustible}
-                      onChange={(e) => setFormCompra({ ...formCompra, tipoCombustible: e.target.value })}
-                      className="form-input"
-                      style={{ width: '100%', height: '42px', fontWeight: 700 }}
-                    >
-                      <option value="GASOIL">Tanque GASOIL (Diésel)</option>
-                      <option value="GASOLINA">Tanque GASOLINA</option>
-                    </select>
+                      onChange={(val) => setFormCompra({ ...formCompra, tipoCombustible: String(val || 'GASOIL') })}
+                      allowClear={false}
+                      required
+                    />
                   </div>
 
                   <div>
@@ -1301,15 +1350,16 @@ export const CombustiblePage: React.FC = () => {
                   <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
                     Tanque a Calibrar *
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={[
+                      { value: 'GASOIL', label: 'Tanque GASOIL (Diésel)' },
+                      { value: 'GASOLINA', label: 'Tanque GASOLINA' },
+                    ]}
                     value={formAjuste.tipoCombustible}
-                    onChange={(e) => handleCambioTanqueAjuste(e.target.value)}
-                    className="form-input"
-                    style={{ width: '100%', height: '42px', fontWeight: 700 }}
-                  >
-                    <option value="GASOIL">Tanque GASOIL (Diésel)</option>
-                    <option value="GASOLINA">Tanque GASOLINA</option>
-                  </select>
+                    onChange={(val) => handleCambioTanqueAjuste(String(val || 'GASOIL'))}
+                    allowClear={false}
+                    required
+                  />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>

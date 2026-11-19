@@ -477,7 +477,36 @@ export const ReceptoriaPage: React.FC = () => {
                 .filter((fc: any) => Number(fc.companiaId) === Number(companiaIdFiltro))
                 .map((fc: any) => Number(fc.id))
             );
-            const fincasCompania = fincasConLitros.filter((f: any) => idsDeCompania.has(Number(f.fincaId || f.id)));
+            let fincasCompania = fincasConLitros.filter((f: any) => idsDeCompania.has(Number(f.fincaId || f.id)));
+
+            // Si hay fincas por separado según tipo de servicio (RUTA vs TRANSPORTE) y el despacho corresponde a un bloque específico, mostrar solo sus fincas
+            if (despachoRef && fincasCompania.length > 0) {
+              const ltsDespObj = Number(despachoRef.litrosDespachados || despachoRef.LitrosDespachados || 0);
+              const idsRutaComp = new Set(
+                (fincasCatalogo || [])
+                  .filter((fc: any) => Number(fc.tipoServicioId || 1) === 1)
+                  .map((fc: any) => Number(fc.id))
+              );
+              const idsTranspComp = new Set(
+                (fincasCatalogo || [])
+                  .filter((fc: any) => Number(fc.tipoServicioId) === 2)
+                  .map((fc: any) => Number(fc.id))
+              );
+              const fincasRuta = fincasCompania.filter((f: any) => idsRutaComp.has(Number(f.fincaId || f.id)));
+              const fincasTransp = fincasCompania.filter((f: any) => idsTranspComp.has(Number(f.fincaId || f.id)));
+              const sumRuta = fincasRuta.reduce((acc: number, f: any) => acc + Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0), 0);
+              const sumTransp = fincasTransp.reduce((acc: number, f: any) => acc + Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0), 0);
+              const obsDesp = String(despachoRef.observaciones || despachoRef.observacion || '').toUpperCase();
+
+              if (fincasRuta.length > 0 && fincasTransp.length > 0) {
+                if ((ltsDespObj > 0 && Math.abs(ltsDespObj - sumRuta) <= 1) || obsDesp.includes('RUTA')) {
+                  fincasCompania = fincasRuta;
+                } else if ((ltsDespObj > 0 && Math.abs(ltsDespObj - sumTransp) <= 1) || obsDesp.includes('TRANSPORTE')) {
+                  fincasCompania = fincasTransp;
+                }
+              }
+            }
+
             if (fincasCompania.length === 0) {
               setModalValidarFincasTicket(false);
               setTicketsFincasValidadas((prev) => new Set(prev).add(viaje.id));
@@ -491,7 +520,8 @@ export const ReceptoriaPage: React.FC = () => {
             }
             fincasConLitros = fincasCompania;
             const totalFiltrado = fincasCompania.reduce((acc: number, f: any) => acc + Number(f.litros ?? f.Litros ?? f.litrosLeche ?? 0), 0);
-            setViajeParaRecibir((prev: any) => prev ? { ...prev, totalLitrosRecogidos: totalFiltrado, totalLitrosFinca: totalFiltrado } : prev);
+            const totalMostrar = despachoRef ? Number(despachoRef.litrosDespachados || despachoRef.LitrosDespachados || totalFiltrado) : totalFiltrado;
+            setViajeParaRecibir((prev: any) => prev ? { ...prev, totalLitrosRecogidos: totalMostrar, totalLitrosFinca: totalMostrar } : prev);
           } else {
             // En 1. ENTRADAS (Receptoría):
             // Si el ticket tiene despachos separados a compañías externas (no unificados todos a Receptoría),
@@ -580,6 +610,8 @@ export const ReceptoriaPage: React.FC = () => {
     toast.success('¡Litros y Recibos de Fincas Validados Exitosamente!');
     setModalValidarFincasTicket(false);
     if (despachoSeleccionado && Number(despachoSeleccionado.controlRutaId) === Number(viajeParaRecibir.id)) {
+      setLitrosConfirmadosInput(Number(despachoSeleccionado.litrosDespachados || (despachoSeleccionado as any).LitrosDespachados || 0));
+      setObsConfirmacionInput('');
       setModalConfirmar(true);
     } else {
       setModalVerificarViaje(true);
@@ -588,6 +620,8 @@ export const ReceptoriaPage: React.FC = () => {
 
   const abrirModalValidarFincasDesdeDespacho = (despacho: any) => {
     setDespachoSeleccionado(despacho);
+    setLitrosConfirmadosInput(Number(despacho.litrosDespachados || (despacho as any).LitrosDespachados || 0));
+    setObsConfirmacionInput('');
     const cRutaId = Number(despacho.controlRutaId || 0);
     if (!cRutaId) {
       toast.error('Este despacho no tiene ticket de recolección de ruta vinculado.');
@@ -910,8 +944,17 @@ export const ReceptoriaPage: React.FC = () => {
     ...companiasUnicasHoy.map((cp) => ({ value: cp, label: cp }))
   ], [companiasUnicasHoy]);
 
-  const esDespachoReceptoria = (d: any): boolean =>
-    esReceptoriaPrincipal(d?.companiaNombre || d?.nombreCompania || d?.destino || '');
+  const esDespachoReceptoria = (d: any): boolean => {
+    if (!d) return false;
+    if (esReceptoriaPrincipal(d)) return true;
+    const nomDest = String(d?.companiaNombre || d?.nombreCompania || d?.destino || '').toUpperCase().trim();
+    const compId = Number(d?.companiaId || 0);
+    const compCatalogo = companias.find(
+      (c) => (compId > 0 && Number(c.id) === compId) || (nomDest && String(c.nombre || '').toUpperCase().trim() === nomDest)
+    );
+    if (compCatalogo && esReceptoriaPrincipal(compCatalogo)) return true;
+    return esReceptoriaPrincipal(nomDest);
+  };
 
   const esEntradaReceptoriaValida = (v: any): boolean => {
     if (!esTicketVisibleEnReceptoria(v)) return false;
@@ -1052,7 +1095,7 @@ export const ReceptoriaPage: React.FC = () => {
           _fincas: fincasSoloRuta,
         };
       });
-  }, [viajesActivos, filtroFecha, subFiltroEntradas, busquedaBandeja, fincasTicketsMap, conductores, usuarios, despachosCompanias, fincasCatalogo]);
+  }, [viajesActivos, filtroFecha, subFiltroEntradas, busquedaBandeja, fincasTicketsMap, conductores, usuarios, despachosCompanias, fincasCatalogo, companias]);
 
   // Bandeja 2: Salidas a queseras (En espera de verificación en planta)
   const salidasTransito = useMemo(() => {
@@ -1100,7 +1143,7 @@ export const ReceptoriaPage: React.FC = () => {
 
       return true;
     });
-  }, [despachosCompanias, filtroFecha, subFiltroSalidas, busquedaBandeja]);
+  }, [despachosCompanias, filtroFecha, subFiltroSalidas, busquedaBandeja, companias]);
 
   // Bandeja 2.1: Salidas confirmadas y finalizadas
   const salidasFinalizadas = useMemo(() => {
@@ -1141,7 +1184,7 @@ export const ReceptoriaPage: React.FC = () => {
 
       return true;
     });
-  }, [despachosCompanias, filtroFecha, subFiltroSalidas, busquedaBandeja]);
+  }, [despachosCompanias, filtroFecha, subFiltroSalidas, busquedaBandeja, companias]);
 
   const handleCambiarVista = (val: string) => {
     setFiltroEstado(val);

@@ -8923,6 +8923,7 @@ export const RecoleccionRutasPage: React.FC = () => {
               </div>
 
               <form
+                style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
                 onSubmit={(e) => {
                   e.preventDefault();
                   enviarReceptoriaMutation.mutate(viajeActivo.id);
@@ -9036,9 +9037,9 @@ export const RecoleccionRutasPage: React.FC = () => {
 
         return (
           <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', padding: '16px' }}>
-            <div className="content-card" style={{ maxWidth: '840px', width: '95%', background: '#ffffff', color: '#0f172a', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden', padding: 0 }}>
+            <div className="content-card" style={{ maxWidth: '840px', width: '95%', maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: '#ffffff', color: '#0f172a', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden', padding: 0 }}>
               {/* Header gradiente verde esmeralda */}
-              <div style={{ background: 'linear-gradient(135deg, #065f46, #059669, #10b981)', color: '#ffffff', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ flexShrink: 0, background: 'linear-gradient(135deg, #065f46, #059669, #10b981)', color: '#ffffff', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                   <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.2)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
                     <i className="fa-solid fa-building-circle-check"></i>
@@ -9062,6 +9063,7 @@ export const RecoleccionRutasPage: React.FC = () => {
               </div>
 
               <form
+                style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (filasEntregaDirecta.length === 0) {
@@ -9082,7 +9084,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                   enviarCompaniaMutation.mutate(viajeActivo.id);
                 }}
               >
-                <div style={{ padding: '22px', background: '#f8fafc' }}>
+                <div style={{ padding: '22px', background: '#f8fafc', flex: 1, minHeight: 0, overflowY: 'auto' }}>
                   {/* Subtexto del ticket */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', padding: '0 4px' }}>
                     <span style={{ fontSize: '13px', color: '#334155', fontWeight: 700 }}>
@@ -9273,7 +9275,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 22px', background: '#ffffff', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 16px 16px' }}>
+                <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 22px', background: '#ffffff', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 16px 16px' }}>
                   <button
                     type="button"
                     className="btn btn-outline"
@@ -9344,6 +9346,7 @@ export const RecoleccionRutasPage: React.FC = () => {
               </div>
 
               <form
+                style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (modoTraspaso === 'EXISTENTE') {

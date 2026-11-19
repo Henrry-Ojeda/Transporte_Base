@@ -464,9 +464,9 @@ export const AbonosCompaniasPage: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => abrirModalAbono(row.companiaId, row.cicloId, Math.max(0, row.saldoPendienteUSD))}
+            onClick={() => abrirModalAbono(row.companiaId, row.cicloId)}
             style={{
-              padding: '6px 12px',
+              padding: '6px 10px',
               borderRadius: '8px',
               fontSize: '12px',
               fontWeight: 800,
@@ -481,6 +481,28 @@ export const AbonosCompaniasPage: React.FC = () => {
           >
             <i className="fa-solid fa-hand-holding-dollar"></i> Abonar
           </button>
+          {row.saldoPendienteUSD > 0.01 && (
+            <button
+              type="button"
+              title="Pagar el 100% del saldo pendiente de esta semana"
+              onClick={() => abrirModalAbono(row.companiaId, row.cicloId, row.saldoPendienteUSD)}
+              style={{
+                padding: '6px 10px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 800,
+                background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                border: 'none',
+                color: '#ffffff',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+              }}
+            >
+              <i className="fa-solid fa-check-double"></i> Cancelar Semana
+            </button>
+          )}
         </div>
       ),
     },
@@ -1344,9 +1366,55 @@ export const AbonosCompaniasPage: React.FC = () => {
 
               {/* Semanas con despachos de la compañía */}
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#065f46', marginBottom: '6px' }}>
-                  Semanas con despachos de esta compañía (ingresa el monto USD a abonar en cada una):
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 800, color: '#065f46', margin: 0 }}>
+                    Semanas con despachos de esta compañía (ingresa el monto USD a abonar):
+                  </label>
+                  {semanasDeCompaniaModal.some((s) => s.saldoPendienteUSD > 0.01) && (
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const all: Record<number, string> = {};
+                          for (const s of semanasDeCompaniaModal) {
+                            if (s.saldoPendienteUSD > 0.01) {
+                              all[s.cicloId] = s.saldoPendienteUSD.toFixed(2);
+                            }
+                          }
+                          setMontosPorSemana(all);
+                        }}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '7px',
+                          border: '1px solid #bae6fd',
+                          background: '#e0f2fe',
+                          color: '#0369a1',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <i className="fa-solid fa-check-double mr-1"></i> Cancelar Todas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMontosPorSemana({})}
+                        style={{
+                          padding: '4px 8px',
+                          borderRadius: '7px',
+                          border: '1px solid #cbd5e1',
+                          background: '#f8fafc',
+                          color: '#475569',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Limpiar
+                      </button>
+                    </div>
+                  )}
+                </div>
                 {abonoCompaniaId <= 0 ? (
                   <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '10px', border: '1px dashed #cbd5e1', fontSize: '12.5px', color: '#64748b', textAlign: 'center' }}>
                     Selecciona primero una compañía para ver sus semanas con despachos.
@@ -1416,7 +1484,7 @@ export const AbonosCompaniasPage: React.FC = () => {
                                   cursor: 'pointer',
                                 }}
                               >
-                                Saldar
+                                Cancelar Semana
                               </button>
                             )}
                             <span style={{ fontWeight: 800, color: '#059669' }}>$</span>

@@ -1379,6 +1379,134 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
+  const puedeEliminarOfflineOCeroLitros = ['CHOFER', 'CONDUCTOR', 'ADMIN', 'SUPERADMIN', 'SUPER_ADMIN', 'ADMINISTRADOR'].includes(
+    (dispositivo ? dispositivo.rol : useAuthStore.getState().user?.rol || '').trim().toUpperCase()
+  );
+
+  const handleEliminarDataOfflineMovil = async () => {
+    if (!puedeEliminarOfflineOCeroLitros) return;
+    const res = await Swal.fire({
+      title: '¿Eliminar data no sincronizada?',
+      html: `<div style="text-align:left;font-size:13px;line-height:1.5;">
+        <p>Se eliminarán del teléfono <b>${pendientesTotalCount} registro(s)</b> pendientes por sincronizar (cargas y borradores offline).</p>
+        <p style="color:#dc2626;font-weight:700;margin-top:6px;">Esta acción no afecta los datos ya guardados en la Web.</p>
+      </div>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, Eliminar Offline',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#dc2626',
+    });
+    if (!res.isConfirmed) return;
+
+    try {
+      // 1. Limpiar cargas locales no sincronizadas
+      setCargas((prev) => prev.filter((c) => c.synced));
+      try {
+        const rawCargas = localStorage.getItem('movil_cargas');
+        if (rawCargas) {
+          const parsed = JSON.parse(rawCargas);
+          if (Array.isArray(parsed)) {
+            localStorage.setItem('movil_cargas', JSON.stringify(parsed.filter((c: any) => c.synced)));
+          }
+        }
+      } catch {}
+
+      // 2. Limpiar tickets locales pendientes (y mapa local si aplica)
+      try {
+        localStorage.removeItem('movil_tickets_locales_pendientes');
+      } catch {}
+
+      // 3. Limpiar recolecciones pendientes en IndexedDB (dbLocal)
+      try {
+        const todasDb = await dbLocal.getRecoleccionesPendientes();
+        for (const item of todasDb) {
+          if (item.idLocal) {
+            await dbLocal.marcarRecoleccionSincronizada(item.idLocal).catch(() => {});
+          }
+        }
+      } catch {}
+
+      // 4. Si el viaje activo actual es local/offline o tiene 0 litros, limpiarlo también
+      if (viajeActivo && (ticketsLocales.esLocal(viajeActivo.id) || Number(viajeActivo.totalLitrosFinca || 0) === 0)) {
+        setViajeActivo(null);
+        setParadasViajeActivo([]);
+        try {
+          localStorage.removeItem('movil_viaje_activo');
+          localStorage.removeItem('movil_paradas_activo');
+        } catch {}
+      }
+
+      toast.success('Data no sincronizada eliminada del dispositivo.');
+      if (choferEfectivoId) {
+        cargarViajeActivo(choferEfectivoId);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Error al limpiar data offline.');
+    }
+  };
+
+  const handleEliminarTicketCeroLitros = async (ticket: any) => {
+    if (!puedeEliminarOfflineOCeroLitros || !ticket) return;
+    const litrosTicket = Number(ticket.totalLitrosFinca || ticket.totalLitrosRecogidos || ticket.litrosCargadosTotal || 0);
+    const esViajeActual = viajeActivo && Number(viajeActivo.id) === Number(ticket.id);
+    const litrosEfectivos = esViajeActual ? Math.max(litrosTicket, totalLitrosCargados) : litrosTicket;
+
+    if (litrosEfectivos > 0) {
+      toast.error(`Solo se pueden eliminar tickets sin litros (0 L). Este ticket tiene ${litrosEfectivos.toLocaleString()} L.`);
+      return;
+    }
+
+    const res = await Swal.fire({
+      title: `¿Eliminar Ticket #${ticket.codigoTicket || ticket.id} (0 L)?`,
+      text: 'Este ticket no tiene litros recolectados. Se eliminará permanentemente.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, Eliminar (0 L)',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#dc2626',
+    });
+    if (!res.isConfirmed) return;
+
+    try {
+      const idNum = Number(ticket.id);
+      const esLocal = ticketsLocales.esLocal(idNum) || idNum <= 0;
+
+      if (!esLocal) {
+        try {
+          await operacionesApi.eliminarControl(idNum);
+        } catch (apiErr: any) {
+          // Si devuelve 404 (el ticket ya no existe en BD, solo estaba en caché local), continuar limpieza local
+          if (apiErr?.response?.status !== 404) {
+            throw apiErr;
+          }
+        }
+      } else {
+        try {
+          const pend = ticketsLocales.listarPendientes().filter((t) => Number(t.localId) !== idNum);
+          localStorage.setItem('movil_tickets_locales_pendientes', JSON.stringify(pend));
+        } catch {}
+      }
+
+      // Limpiar estado local asociado al ticket
+      setCargas((prev) => prev.filter((c) => Number((c as any).controlRutaId || 0) !== idNum));
+      if (esViajeActual) {
+        setViajeActivo(null);
+        setParadasViajeActivo([]);
+        try {
+          localStorage.removeItem('movil_viaje_activo');
+          localStorage.removeItem('movil_paradas_activo');
+        } catch {}
+      }
+
+      toast.success(`Ticket #${ticket.codigoTicket || ticket.id} (0 L) eliminado.`);
+      if (choferEfectivoId) cargarViajeActivo(choferEfectivoId);
+      cargarDatosAdminEnVivo();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'Error al eliminar el ticket.');
+    }
+  };
+
   // Persistir viaje activo y paradas en LocalStorage (Solo guardar, no borrar por fallo de red)
   useEffect(() => {
     if (viajeActivo && viajeActivo.id) {
@@ -7221,6 +7349,31 @@ export const AppMovilPage: React.FC = () => {
               )}
             </button>
 
+            {pendientesTotalCount > 0 && puedeEliminarOfflineOCeroLitros && (
+              <button
+                type="button"
+                onClick={handleEliminarDataOfflineMovil}
+                title="Eliminar data no sincronizada del teléfono"
+                style={{
+                  background: '#fef2f2',
+                  border: '1.5px solid #fca5a5',
+                  color: '#dc2626',
+                  height: '34px',
+                  width: '34px',
+                  padding: 0,
+                  borderRadius: '9px',
+                  fontSize: '12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <i className="fa-solid fa-trash-can"></i>
+              </button>
+            )}
+
             {/* Botón de Notificaciones con Badge */}
             <button
               type="button"
@@ -8879,13 +9032,39 @@ export const AppMovilPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div style={{ textAlign: 'right' }}>
+                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                   <div style={{ fontSize: '16px', fontWeight: 900, color: '#15803d' }}>
                     {totalLitrosCargados.toLocaleString()} L
                   </div>
                   <div style={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>
                     {todasLasParadas.length} parada(s)
                   </div>
+                  {puedeEliminarOfflineOCeroLitros &&
+                    totalLitrosCargados === 0 &&
+                    Number(viajeActivo.totalLitrosFinca || 0) === 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleEliminarTicketCeroLitros(viajeActivo)}
+                        style={{
+                          marginTop: '2px',
+                          background: '#fef2f2',
+                          color: '#dc2626',
+                          border: '1px solid #fca5a5',
+                          borderRadius: '7px',
+                          padding: '3px 8px',
+                          fontSize: '10.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                        title="Eliminar ticket vacío (0 L)"
+                      >
+                        <i className="fa-solid fa-trash-can"></i>
+                        <span>Eliminar (0 L)</span>
+                      </button>
+                    )}
                 </div>
               </div>
             )}
@@ -13969,6 +14148,31 @@ export const AppMovilPage: React.FC = () => {
                             <i className="fa-solid fa-eye text-slate-500"></i>
                             <span>Ver Chofer</span>
                           </button>
+
+                          {puedeEliminarOfflineOCeroLitros && lts === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleEliminarTicketCeroLitros(viaje)}
+                              style={{
+                                background: '#fef2f2',
+                                color: '#dc2626',
+                                border: '1.5px solid #fca5a5',
+                                borderRadius: '10px',
+                                padding: '8px 10px',
+                                fontSize: '11.5px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px',
+                              }}
+                              title="Eliminar ticket sin litros (0 L)"
+                            >
+                              <i className="fa-solid fa-trash-can"></i>
+                              <span>Eliminar (0 L)</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     );

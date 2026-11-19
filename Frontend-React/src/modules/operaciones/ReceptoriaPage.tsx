@@ -93,6 +93,59 @@ export const ReceptoriaPage: React.FC = () => {
   const [fincasVerificadasIds, setFincasVerificadasIds] = useState<Set<number>>(new Set());
   const [cargandoFincasViaje, setCargandoFincasViaje] = useState<boolean>(false);
 
+  // Modal Nueva Entrada por Tercero (Conductor OTROS / Camión OTROS)
+  const [modalEntradaTercero, setModalEntradaTercero] = useState<boolean>(false);
+  const [formEntradaTercero, setFormEntradaTercero] = useState({
+    fecha: hoyStr,
+    fincaId: 0,
+    crearFincaNueva: false,
+    nuevaFincaNombre: '',
+    nuevaFincaPropietario: '',
+    nuevaFincaPrecioLitro: '',
+    tipoLeche: 'VACA',
+    litros: '',
+    observacion: '',
+  });
+
+  const { data: fincasActivasTercero = [] } = useQuery<any[]>({
+    queryKey: ['fincas-activas-tercero'],
+    queryFn: () => catalogosApi.getFincas(true),
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const crearEntradaTerceroMutation = useMutation({
+    mutationFn: () =>
+      operacionesApi.crearEntradaTercero({
+        fecha: formEntradaTercero.fecha,
+        fincaId: formEntradaTercero.crearFincaNueva ? undefined : formEntradaTercero.fincaId,
+        nuevaFincaNombre: formEntradaTercero.crearFincaNueva ? formEntradaTercero.nuevaFincaNombre.trim() : undefined,
+        nuevaFincaPropietario: formEntradaTercero.crearFincaNueva
+          ? formEntradaTercero.nuevaFincaPropietario.trim() || undefined
+          : undefined,
+        nuevaFincaPrecioLitro:
+          formEntradaTercero.crearFincaNueva && formEntradaTercero.nuevaFincaPrecioLitro
+            ? Number(formEntradaTercero.nuevaFincaPrecioLitro)
+            : undefined,
+        litros: Number(formEntradaTercero.litros),
+        tipoLeche: hasBufala ? formEntradaTercero.tipoLeche : 'VACA',
+        observacion: formEntradaTercero.observacion.trim() || undefined,
+      }),
+    onSuccess: (res) => {
+      toast.success(res?.message || 'Ticket de entrada por tercero registrado y confirmado en silos.');
+      setModalEntradaTercero(false);
+      queryClient.invalidateQueries({ queryKey: ['viajes-activos-receptoria'] });
+      queryClient.invalidateQueries({ queryKey: ['receptoria-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['despachos-companias'] });
+      queryClient.invalidateQueries({ queryKey: ['receptoria-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['fincas-activas-tercero'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-data'] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Error al registrar entrada por tercero');
+    },
+  });
+
   const [formDespacho, setFormDespacho] = useState({
     camionId: 0,
     companiaId: 0,
@@ -1513,6 +1566,40 @@ export const ReceptoriaPage: React.FC = () => {
                 <span className="badge" style={{ background: '#e0f2fe', color: '#0284c7', fontWeight: 800, border: '1px solid #bae6fd' }}>
                   {camionesEnEspera.length} {camionesEnEspera.length === 1 ? 'Camión' : 'Camiones'}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormEntradaTercero({
+                      fecha: filtroFecha || hoyStr,
+                      fincaId: 0,
+                      crearFincaNueva: false,
+                      nuevaFincaNombre: '',
+                      nuevaFincaPropietario: '',
+                      nuevaFincaPrecioLitro: '',
+                      tipoLeche: 'VACA',
+                      litros: '',
+                      observacion: '',
+                    });
+                    setModalEntradaTercero(true);
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)',
+                  }}
+                >
+                  <i className="fa-solid fa-plus-circle"></i>
+                  <span>Nueva Entrada (Tercero)</span>
+                </button>
               </div>
 
               {/* Sub-filtros interactivos de Entradas */}
@@ -5121,6 +5208,280 @@ export const ReceptoriaPage: React.FC = () => {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL WEB: NUEVA ENTRADA POR TERCERO (CONDUCTOR OTROS / CAMIÓN OTROS) */}
+      {modalEntradaTercero && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.72)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '18px',
+              width: '100%',
+              maxWidth: '500px',
+              overflow: 'hidden',
+              boxShadow: '0 20px 45px rgba(0, 0, 0, 0.3)',
+            }}
+          >
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #3730a3 0%, #1e1b4b 100%)',
+                padding: '16px 20px',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900 }}>
+                  🚚 Nueva Entrada de Leche por Tercero
+                </h3>
+                <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#c7d2fe' }}>
+                  Se registra como control de viaje (OTROS), suma a Silos/Stock y genera Liquidación
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalEntradaTercero(false)}
+                style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const lts = Number(formEntradaTercero.litros);
+                if (!lts || lts <= 0) {
+                  toast.error('Ingresa los litros recibidos');
+                  return;
+                }
+                if (!formEntradaTercero.crearFincaNueva && !formEntradaTercero.fincaId) {
+                  toast.error('Selecciona una finca o activa "+ Crear finca nueva"');
+                  return;
+                }
+                if (formEntradaTercero.crearFincaNueva && !formEntradaTercero.nuevaFincaNombre.trim()) {
+                  toast.error('Ingresa el nombre de la nueva finca');
+                  return;
+                }
+                crearEntradaTerceroMutation.mutate();
+              }}
+              style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+            >
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Fecha de Entrada *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={formEntradaTercero.fecha}
+                  onChange={(e) => setFormEntradaTercero({ ...formEntradaTercero, fecha: e.target.value })}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                    Conductor (Fijo)
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value="OTROS"
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: '#f1f5f9', fontWeight: 800, color: '#334155', fontSize: '12.5px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                    Camión (Fijo)
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value="OTROS"
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: '#f1f5f9', fontWeight: 800, color: '#334155', fontSize: '12.5px' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>
+                    Finca / Proveedor Tercero *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormEntradaTercero({
+                        ...formEntradaTercero,
+                        crearFincaNueva: !formEntradaTercero.crearFincaNueva,
+                        fincaId: 0,
+                      })
+                    }
+                    style={{
+                      background: formEntradaTercero.crearFincaNueva ? '#fee2e2' : '#e0e7ff',
+                      color: formEntradaTercero.crearFincaNueva ? '#b91c1c' : '#3730a3',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '3px 9px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {formEntradaTercero.crearFincaNueva ? '← Elegir existente' : '+ Crear finca nueva'}
+                  </button>
+                </div>
+
+                {!formEntradaTercero.crearFincaNueva ? (
+                  <SearchableSelect
+                    options={(fincasActivasTercero || []).map((f: any) => ({
+                      value: f.id,
+                      label: f.nombre,
+                      subLabel: f.propietario ? `Propietario: ${f.propietario}` : undefined,
+                    }))}
+                    value={formEntradaTercero.fincaId || ''}
+                    onChange={(val) => setFormEntradaTercero({ ...formEntradaTercero, fincaId: Number(val) || 0 })}
+                    placeholder="-- Seleccionar o buscar finca --"
+                    searchPlaceholder="Buscar finca o propietario..."
+                  />
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nombre de la nueva finca *"
+                      value={formEntradaTercero.nuevaFincaNombre}
+                      onChange={(e) => setFormEntradaTercero({ ...formEntradaTercero, nuevaFincaNombre: e.target.value })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="Propietario (opcional)"
+                        value={formEntradaTercero.nuevaFincaPropietario}
+                        onChange={(e) => setFormEntradaTercero({ ...formEntradaTercero, nuevaFincaPropietario: e.target.value })}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '12.5px' }}
+                      />
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Precio/L USD (opcional)"
+                        value={formEntradaTercero.nuevaFincaPrecioLitro}
+                        onChange={(e) => setFormEntradaTercero({ ...formEntradaTercero, nuevaFincaPrecioLitro: e.target.value })}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '12.5px' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {hasBufala && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Tipo de Leche *
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {['VACA', 'BUFALA'].map((tipo) => {
+                      const active = formEntradaTercero.tipoLeche === tipo;
+                      return (
+                        <button
+                          key={tipo}
+                          type="button"
+                          onClick={() => setFormEntradaTercero({ ...formEntradaTercero, tipoLeche: tipo })}
+                          style={{
+                            padding: '9px',
+                            borderRadius: '10px',
+                            border: active ? '2px solid #4f46e5' : '1.5px solid #cbd5e1',
+                            background: active ? '#eef2ff' : '#ffffff',
+                            color: active ? '#3730a3' : '#475569',
+                            fontWeight: 800,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {tipo === 'BUFALA' ? '🐃 BÚFALA' : '🥛 VACA'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Litros Recibidos *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  placeholder="Ej: 450"
+                  value={formEntradaTercero.litros}
+                  onChange={(e) => setFormEntradaTercero({ ...formEntradaTercero, litros: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '15px', fontWeight: 800 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Observación (opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Traído en camioneta particular..."
+                  value={formEntradaTercero.observacion}
+                  onChange={(e) => setFormEntradaTercero({ ...formEntradaTercero, observacion: e.target.value })}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalEntradaTercero(false)}
+                  style={{ padding: '10px 18px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={crearEntradaTerceroMutation.isPending}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)',
+                  }}
+                >
+                  {crearEntradaTerceroMutation.isPending ? 'Guardando...' : 'Registrar Entrada en Silos'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -682,14 +682,14 @@ export const PermisosPage: React.FC = () => {
 
       {/* CONTENIDO 3: CONFIGURACIÓN DE MÉTRICAS DEL DASHBOARD (TB_DASHBOARD_WIDGETS) */}
       {tabActiva === 'metricas' && esAdmin && (
-        <div className="content-card" style={{ padding: '20px' }}>
-          <div style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
-            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
-              <i className="fa-solid fa-sliders text-blue-600 mr-2"></i>
-              Visibilidad de Bloques de Métricas en el Dashboard
+        <div className="content-card" style={{ padding: '22px' }}>
+          <div style={{ marginBottom: '18px', paddingBottom: '14px', borderBottom: '1px solid var(--border-color)' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <i className="fa-solid fa-sliders text-blue-600"></i>
+              <span>Visibilidad de Bloques en el Dashboard</span>
             </h3>
-            <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: '#64748b' }}>
-              Selecciona cuáles de las 4 secciones del Tablero de Control estarán visibles en el Dashboard. Se guarda automáticamente en <code>TB_DASHBOARD_WIDGETS</code>.
+            <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: '#64748b' }}>
+              Activa o desactiva cada una de las 4 secciones que se muestran en el Tablero Principal. Los cambios se aplican al instante.
             </p>
           </div>
 
@@ -698,31 +698,58 @@ export const PermisosPage: React.FC = () => {
               <i className="fa-solid fa-spinner fa-spin mr-2"></i> Cargando configuración de métricas...
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '14px' }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {widgetsDashboard
                 .filter((w) => String(w.tipoWidget || '').toUpperCase() === 'SECCION_METRICAS')
                 .map((w) => {
                   const activo = w.activo !== false;
+                  const textosLimpios: Record<string, { titulo: string; subtitulo: string }> = {
+                    DASHBOARD_METRICAS_RUTA: {
+                      titulo: '1. Métricas de Servicio de Ruta',
+                      subtitulo: 'Recolección en fincas de ruta, entradas a silos, stock, despachos y merma de ruta.',
+                    },
+                    DASHBOARD_METRICAS_TRANSPORTE: {
+                      titulo: '2. Métricas de Servicio de Transporte',
+                      subtitulo: 'Recolección transporte, entrega directa a planta, custodia en silos y merma transporte.',
+                    },
+                    DASHBOARD_METRICAS_CONSOLIDADO: {
+                      titulo: '3. Consolidado General (Ruta + Transporte)',
+                      subtitulo: 'Total recolectado, entradas a silos, stock en tanques, total despachado y merma consolidada.',
+                    },
+                    DASHBOARD_GRAFICOS: {
+                      titulo: '4. Tablero de Gráficos y Tendencia',
+                      subtitulo: 'Tendencia operativa histórica, desempeño por chofer, distribución por servicio, destino y leche ácida.',
+                    },
+                  };
+                  const info = textosLimpios[String(w.codigo || '').toUpperCase()] || {
+                    titulo: w.titulo,
+                    subtitulo: w.subtitulo || '',
+                  };
+
                   return (
                     <div
                       key={w.id}
+                      onClick={() => !toggleWidgetMutation.isPending && toggleWidgetMutation.mutate({ id: w.id, activo: !activo })}
                       style={{
-                        border: activo ? '1.5px solid #10b981' : '1.5px solid #e2e8f0',
+                        border: activo ? '1.5px solid #10b981' : '1.5px solid #cbd5e1',
                         background: activo ? '#f0fdf4' : '#f8fafc',
                         borderRadius: '14px',
-                        padding: '16px',
+                        padding: '16px 18px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
-                        gap: '12px',
+                        gap: '10px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxSizing: 'border-box',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                           <div
                             style={{
-                              width: '38px',
-                              height: '38px',
+                              width: '40px',
+                              height: '40px',
                               borderRadius: '10px',
                               background: activo ? '#dcfce7' : '#e2e8f0',
                               color: activo ? '#15803d' : '#64748b',
@@ -735,27 +762,36 @@ export const PermisosPage: React.FC = () => {
                           >
                             <i className={`fa-solid ${w.icono || 'fa-chart-pie'}`}></i>
                           </div>
-                          <div>
-                            <div style={{ fontWeight: 800, fontSize: '14px', color: '#0f172a' }}>{w.titulo}</div>
-                            <div style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>{w.codigo}</div>
+                          <div style={{ fontWeight: 800, fontSize: '14px', color: '#0f172a', lineHeight: 1.3 }}>
+                            {info.titulo}
                           </div>
                         </div>
 
-                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flexShrink: 0 }}>
-                          <input
-                            type="checkbox"
-                            checked={activo}
-                            disabled={toggleWidgetMutation.isPending}
-                            onChange={(e) => toggleWidgetMutation.mutate({ id: w.id, activo: e.target.checked })}
-                            style={{ width: '18px', height: '18px', accentColor: '#10b981', cursor: 'pointer' }}
-                          />
-                          <span style={{ fontSize: '12px', fontWeight: 800, color: activo ? '#15803d' : '#64748b' }}>
-                            {activo ? 'VISIBLE' : 'OCULTO'}
-                          </span>
-                        </label>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '5px 11px',
+                            borderRadius: '999px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            letterSpacing: '0.03em',
+                            background: activo ? '#10b981' : '#e2e8f0',
+                            color: activo ? '#ffffff' : '#475569',
+                            flexShrink: 0,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <i className={`fa-solid ${activo ? 'fa-eye' : 'fa-eye-slash'}`}></i>
+                          {activo ? 'Visible' : 'Oculto'}
+                        </span>
                       </div>
-                      {w.subtitulo && (
-                        <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>{w.subtitulo}</p>
+
+                      {info.subtitulo && (
+                        <p style={{ margin: 0, fontSize: '12.5px', color: '#475569', lineHeight: 1.45, paddingLeft: '52px' }}>
+                          {info.subtitulo}
+                        </p>
                       )}
                     </div>
                   );

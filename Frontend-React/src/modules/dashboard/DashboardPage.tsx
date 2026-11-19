@@ -363,6 +363,8 @@ export const DashboardPage: React.FC = () => {
       totalRecibidoQueseras,
       variacionQueseras,
       variacionPct,
+      despachosExternosCount: despachos.filter((d) => !esReceptoria(d)).length,
+      queserasExternasCount: new Set(despachos.filter((d) => !esReceptoria(d)).map((d) => d.companiaId || d.nombreCompania || d.companiaNombre)).size,
     };
   }, [rutas, entregas, despachos, dashboardData?.balance]);
 
@@ -1124,6 +1126,7 @@ export const DashboardPage: React.FC = () => {
       )}
 
       {/* BLOQUE 4: DESPACHOS Y ENTREGAS A QUESERAS / COMPAÑÍAS */}
+      {puedeVerSeccion('DASHBOARD_METRICAS_CONSOLIDADO') && (
       <div id="bloqueMetricsCompanias" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
           <h3
@@ -1165,7 +1168,7 @@ export const DashboardPage: React.FC = () => {
               <div className="kpi-value">
                 {metricas.ltsTotalDespachado.toLocaleString()} <small>Lts</small>
               </div>
-              <span className="kpi-foot">{despachos.length} Despachos realizados</span>
+              <span className="kpi-foot">{metricas.despachosExternosCount} Despachos realizados</span>
             </div>
           </div>
 
@@ -1178,7 +1181,7 @@ export const DashboardPage: React.FC = () => {
               <div className="kpi-value">
                 {metricas.totalRecibidoQueseras.toLocaleString()} <small>Lts</small>
               </div>
-              <span className="kpi-foot">{despachos.length} Queseras / Plantas</span>
+              <span className="kpi-foot">{metricas.queserasExternasCount} Queseras / Plantas</span>
             </div>
           </div>
 
@@ -1196,6 +1199,7 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* TABLERO DE CONTROL 5 GRÁFICOS CRÍTICOS */}
       {puedeVerSeccion('DASHBOARD_GRAFICOS') && (

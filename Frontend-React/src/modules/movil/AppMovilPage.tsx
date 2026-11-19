@@ -2175,6 +2175,20 @@ export const AppMovilPage: React.FC = () => {
   const [fincasVerificadasMovilIds, setFincasVerificadasMovilIds] = useState<Set<number>>(new Set());
   const [cargandoFincasMovil, setCargandoFincasMovil] = useState<boolean>(false);
   const [fotoZoomMovil, setFotoZoomMovil] = useState<string | null>(null);
+  const [fincasReceptoria, setFincasReceptoria] = useState<any[]>([]);
+  const [guardandoEntradaTercero, setGuardandoEntradaTercero] = useState(false);
+  const [modalNuevaEntradaTercero, setModalNuevaEntradaTercero] = useState<{
+    open: boolean;
+    fecha: string;
+    fincaId: number;
+    crearFincaNueva: boolean;
+    nuevaFincaNombre: string;
+    nuevaFincaPropietario: string;
+    nuevaFincaPrecioLitro: string;
+    tipoLeche: string;
+    litros: string;
+    observacion: string;
+  } | null>(null);
 
   const [modalDevolverTicket, setModalDevolverTicket] = useState<{
     open: boolean;
@@ -4219,10 +4233,11 @@ export const AppMovilPage: React.FC = () => {
     const f = fechaParam || fechaReceptoria || hoyStr;
     setCargandoReceptoria(true);
     try {
-      const [tickets, despachos, comps] = await Promise.all([
+      const [tickets, despachos, comps, fincasCat] = await Promise.all([
         operacionesApi.getControles(f),
         operacionesApi.getDespachosCompanias(f),
         catalogosApi.getCompanias(true),
+        catalogosApi.getFincas(true).catch(() => []),
       ]);
       const listaTickets = Array.isArray(tickets) ? tickets : [];
       const listaComps = Array.isArray(comps) ? comps : [];
@@ -4237,6 +4252,7 @@ export const AppMovilPage: React.FC = () => {
       setTicketsReceptoria(listaTickets.filter(esTicketVisibleEnReceptoria));
       setDespachosSalidaReceptoria(salidasExternas);
       setCompaniasReceptoria(listaComps);
+      setFincasReceptoria(Array.isArray(fincasCat) ? fincasCat : []);
     } catch {
       console.warn('Error al cargar datos de receptoría móvil');
     } finally {
@@ -13072,6 +13088,43 @@ export const AppMovilPage: React.FC = () => {
               </p>
             </div>
 
+            {/* Botón Nuevo Ticket de Entrada (Tercero) */}
+            <button
+              type="button"
+              onClick={() => {
+                setModalNuevaEntradaTercero({
+                  open: true,
+                  fecha: fechaReceptoria || hoyStr,
+                  fincaId: 0,
+                  crearFincaNueva: false,
+                  nuevaFincaNombre: '',
+                  nuevaFincaPropietario: '',
+                  nuevaFincaPrecioLitro: '',
+                  tipoLeche: 'VACA',
+                  litros: '',
+                  observacion: '',
+                });
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '14px',
+                padding: '12px 14px',
+                fontSize: '13.5px',
+                fontWeight: 900,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 14px rgba(79, 70, 229, 0.3)',
+              }}
+            >
+              <i className="fa-solid fa-plus-circle"></i>
+              <span>+ Nuevo Ticket de Entrada (Tercero)</span>
+            </button>
+
             {/* Buscador de Tickets */}
             <div style={{ position: 'relative' }}>
               <input
@@ -19354,6 +19407,313 @@ export const AppMovilPage: React.FC = () => {
                   }}
                 >
                   Emitir Ticket de Salida
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL MÓVIL: NUEVO TICKET DE ENTRADA (TERCERO -> RECEPTORÍA / SILOS)     */}
+      {/* ========================================================================= */}
+      {modalNuevaEntradaTercero?.open && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.72)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            overflowY: 'auto',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '20px',
+              width: '100%',
+              maxWidth: '460px',
+              margin: 'auto',
+              overflow: 'hidden',
+              boxShadow: '0 20px 45px rgba(0, 0, 0, 0.3)',
+            }}
+          >
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #3730a3 0%, #1e1b4b 100%)',
+                padding: '16px 20px',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900 }}>
+                  🚚 Entrada de Leche por Tercero
+                </h3>
+                <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#c7d2fe' }}>
+                  Suma directo a Silos, Stock y Liquidación de Finca
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalNuevaEntradaTercero(null)}
+                style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!modalNuevaEntradaTercero) return;
+                const lts = Number(modalNuevaEntradaTercero.litros);
+                if (!lts || lts <= 0) {
+                  toast.error('Ingresa los litros recibidos');
+                  return;
+                }
+                if (!modalNuevaEntradaTercero.crearFincaNueva && !modalNuevaEntradaTercero.fincaId) {
+                  toast.error('Selecciona una finca o activa "Crear finca nueva"');
+                  return;
+                }
+                if (modalNuevaEntradaTercero.crearFincaNueva && !modalNuevaEntradaTercero.nuevaFincaNombre.trim()) {
+                  toast.error('Ingresa el nombre de la nueva finca');
+                  return;
+                }
+                setGuardandoEntradaTercero(true);
+                try {
+                  const res = await operacionesApi.crearEntradaTercero({
+                    fecha: modalNuevaEntradaTercero.fecha,
+                    fincaId: modalNuevaEntradaTercero.crearFincaNueva ? undefined : modalNuevaEntradaTercero.fincaId,
+                    nuevaFincaNombre: modalNuevaEntradaTercero.crearFincaNueva ? modalNuevaEntradaTercero.nuevaFincaNombre.trim() : undefined,
+                    nuevaFincaPropietario: modalNuevaEntradaTercero.crearFincaNueva ? modalNuevaEntradaTercero.nuevaFincaPropietario.trim() || undefined : undefined,
+                    nuevaFincaPrecioLitro: modalNuevaEntradaTercero.crearFincaNueva && modalNuevaEntradaTercero.nuevaFincaPrecioLitro
+                      ? Number(modalNuevaEntradaTercero.nuevaFincaPrecioLitro)
+                      : undefined,
+                    litros: lts,
+                    tipoLeche: tieneModuloBufala ? modalNuevaEntradaTercero.tipoLeche : 'VACA',
+                    observacion: modalNuevaEntradaTercero.observacion.trim() || undefined,
+                  });
+                  toast.success(res?.message || 'Ticket de entrada por tercero registrado');
+                  setModalNuevaEntradaTercero(null);
+                  cargarDatosReceptoria(fechaReceptoria);
+                } catch (err: any) {
+                  toast.error(err?.response?.data?.message || 'Error al registrar entrada por tercero');
+                } finally {
+                  setGuardandoEntradaTercero(false);
+                }
+              }}
+              style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+            >
+              {/* Fecha */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Fecha de Entrada *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={modalNuevaEntradaTercero.fecha}
+                  onChange={(e) => setModalNuevaEntradaTercero((p) => (p ? { ...p, fecha: e.target.value } : null))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Conductor y Camión fijos OTROS */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                    Conductor (Fijo)
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value="OTROS"
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: '#f1f5f9', fontWeight: 800, color: '#334155', fontSize: '12.5px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>
+                    Camión (Fijo)
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value="OTROS"
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: '#f1f5f9', fontWeight: 800, color: '#334155', fontSize: '12.5px' }}
+                  />
+                </div>
+              </div>
+
+              {/* Finca (SearchableSelect o Crear Nueva) */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>
+                    Finca / Proveedor Tercero *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setModalNuevaEntradaTercero((p) =>
+                        p ? { ...p, crearFincaNueva: !p.crearFincaNueva, fincaId: 0 } : null
+                      )
+                    }
+                    style={{
+                      background: modalNuevaEntradaTercero.crearFincaNueva ? '#fee2e2' : '#e0e7ff',
+                      color: modalNuevaEntradaTercero.crearFincaNueva ? '#b91c1c' : '#3730a3',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '3px 9px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {modalNuevaEntradaTercero.crearFincaNueva ? '← Elegir existente' : '+ Crear finca nueva'}
+                  </button>
+                </div>
+
+                {!modalNuevaEntradaTercero.crearFincaNueva ? (
+                  <SearchableSelect
+                    options={(fincasReceptoria || []).map((f: any) => ({
+                      value: f.id,
+                      label: f.nombre,
+                      subLabel: f.propietario ? `Propietario: ${f.propietario}` : undefined,
+                    }))}
+                    value={modalNuevaEntradaTercero.fincaId || ''}
+                    onChange={(val) =>
+                      setModalNuevaEntradaTercero((p) => (p ? { ...p, fincaId: Number(val) || 0 } : null))
+                    }
+                    placeholder="-- Seleccionar o buscar finca --"
+                    searchPlaceholder="Buscar finca o propietario..."
+                  />
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nombre de la nueva finca *"
+                      value={modalNuevaEntradaTercero.nuevaFincaNombre}
+                      onChange={(e) => setModalNuevaEntradaTercero((p) => (p ? { ...p, nuevaFincaNombre: e.target.value } : null))}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="Propietario (opcional)"
+                        value={modalNuevaEntradaTercero.nuevaFincaPropietario}
+                        onChange={(e) => setModalNuevaEntradaTercero((p) => (p ? { ...p, nuevaFincaPropietario: e.target.value } : null))}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '12.5px' }}
+                      />
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Precio/L USD (opcional)"
+                        value={modalNuevaEntradaTercero.nuevaFincaPrecioLitro}
+                        onChange={(e) => setModalNuevaEntradaTercero((p) => (p ? { ...p, nuevaFincaPrecioLitro: e.target.value } : null))}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '12.5px' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Tipo de Leche (solo si el módulo Búfala está habilitado en SaaS - Regla 4) */}
+              {tieneModuloBufala && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Tipo de Leche *
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {['VACA', 'BUFALA'].map((tipo) => {
+                      const active = modalNuevaEntradaTercero.tipoLeche === tipo;
+                      return (
+                        <button
+                          key={tipo}
+                          type="button"
+                          onClick={() => setModalNuevaEntradaTercero((p) => (p ? { ...p, tipoLeche: tipo } : null))}
+                          style={{
+                            padding: '9px',
+                            borderRadius: '10px',
+                            border: active ? '2px solid #4f46e5' : '1.5px solid #cbd5e1',
+                            background: active ? '#eef2ff' : '#ffffff',
+                            color: active ? '#3730a3' : '#475569',
+                            fontWeight: 800,
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {tipo === 'BUFALA' ? '🐃 BÚFALA' : '🥛 VACA'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Litros */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Litros Recibidos *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  placeholder="Ej: 450"
+                  value={modalNuevaEntradaTercero.litros}
+                  onChange={(e) => setModalNuevaEntradaTercero((p) => (p ? { ...p, litros: e.target.value } : null))}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '15px', fontWeight: 800 }}
+                />
+              </div>
+
+              {/* Observación */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Observación (opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Traído en camioneta particular..."
+                  value={modalNuevaEntradaTercero.observacion}
+                  onChange={(e) => setModalNuevaEntradaTercero((p) => (p ? { ...p, observacion: e.target.value } : null))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalNuevaEntradaTercero(null)}
+                  style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoEntradaTercero}
+                  style={{
+                    flex: 2,
+                    padding: '12px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+                    color: '#ffffff',
+                    fontWeight: 900,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
+                  }}
+                >
+                  {guardandoEntradaTercero ? 'Guardando...' : 'Registrar Entrada en Silos'}
                 </button>
               </div>
             </form>

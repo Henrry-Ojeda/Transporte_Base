@@ -4663,6 +4663,7 @@ namespace Transporte.Infrastructure.Repositories
         Task<int> GuardarControlTanquesDiarioAsync(ControlTanquesDiarioDto dto, int userId, string userName, string rol);
         Task<bool> ConfirmarAperturaTanquesAsync(DateTime fecha, int userId, string userName, string rol);
         Task<bool> ConfirmarCierreTanquesAsync(DateTime fecha, int userId, string userName, string rol);
+        Task<long> CrearEntradaTerceroAsync(CrearEntradaTerceroDto dto, int receptorUserId);
     }
 
     public class EntregasRepository : IEntregasRepository
@@ -5719,6 +5720,148 @@ namespace Transporte.Infrastructure.Repositories
 
             var rows = await connection.ExecuteAsync(sql, new { fecha = fecha.Date, userId, userName });
             return rows > 0;
+        }
+
+        public async Task<long> CrearEntradaTerceroAsync(CrearEntradaTerceroDto dto, int receptorUserId)
+        {
+            if (dto.Litros <= 0)
+                throw new ArgumentException("Los litros recibidos deben ser mayores a cero.");
+
+            if ((!dto.FincaId.HasValue || dto.FincaId.Value <= 0) && string.IsNullOrWhiteSpace(dto.NuevaFincaNombre))
+                throw new ArgumentException("Debe seleccionar una finca existente o ingresar el nombre de la nueva finca.");
+
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+            using var transaction = connection.BeginTransaction();
+
+            try
+            {
+                DateTime fechaOp = dto.Fecha == default ? DateTime.Today : dto.Fecha.Date;
+                string tipoLeche = string.IsNullOrWhiteSpace(dto.TipoLeche) ? "VACA" : dto.TipoLeche.Trim().ToUpper();
+
+                // 1. Conductor fijo OTROS
+                int? choferOtrosId = await connection.ExecuteScalarAsync<int?>(@"
+                    SELECT TOP 1 Id FROM TB_USUARIOS
+                    WHERE IsDeleted = 0 AND Activo = 1
+                      AND (UPPER(Username) = 'OTROS.OTROS' OR UPPER(NombreCompleto) = 'OTROS')
+                    ORDER BY Id ASC", transaction: transaction);
+                int usuarioIdOtros = choferOtrosId ?? receptorUserId;
+
+                // 2. Receptoría Principal (EsPrincipal = 1)
+                int? receptoriaId = await connection.ExecuteScalarAsync<int?>(@"
+                    SELECT TOP 1 Id FROM TB_COMPANIAS
+                    WHERE IsDeleted = 0 AND Activo = 1
+                      AND (ISNULL(EsPrincipal, 0) = 1 OR UPPER(Nombre) LIKE '%RECEPTORIA%' OR UPPER(Nombre) LIKE '%RECEPTORÍA%' OR UPPER(Nombre) LIKE '%PLANTA PRINCIPAL%')
+                    ORDER BY ISNULL(EsPrincipal, 0) DESC, Id ASC", transaction: transaction);
+                if (!receptoriaId.HasValue)
+                    throw new InvalidOperationException("No se encontró una Receptoría Principal configurada en TB_COMPANIAS.");
+
+                // 3. Ciclo operativo para la fecha
+                int? cicloId = await connection.ExecuteScalarAsync<int?>(@"
+                    SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS
+                    WHERE CAST(@fechaOp AS DATE) >= CAST(FechaInicio AS DATE)
+                      AND CAST(@fechaOp AS DATE) <= CAST(FechaFin AS DATE)
+                    ORDER BY Id DESC", new { fechaOp }, transaction: transaction);
+                if (!cicloId.HasValue)
+                {
+                    cicloId = await connection.ExecuteScalarAsync<int?>(@"
+                        SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS
+                        WHERE Estado IN ('ABIERTO', 'ACTIVO', 'ACTIVA')
+                        ORDER BY Id DESC", transaction: transaction);
+                }
+                int cicloFinal = cicloId ?? 1;
+
+                // 4. Resolver o crear Finca
+                int fincaId = dto.FincaId ?? 0;
+                if (fincaId <= 0)
+                {
+                    string nombreNuevo = dto.NuevaFincaNombre!.Trim();
+                    int? existenteId = await connection.ExecuteScalarAsync<int?>(@"
+                        SELECT TOP 1 Id FROM TB_FINCAS
+                        WHERE IsDeleted = 0 AND UPPER(LTRIM(RTRIM(Nombre))) = UPPER(@nombreNuevo)",
+                        new { nombreNuevo }, transaction: transaction);
+
+                    if (existenteId.HasValue && existenteId.Value > 0)
+                    {
+                        fincaId = existenteId.Value;
+                    }
+                    else
+                    {
+                        string prop = string.IsNullOrWhiteSpace(dto.NuevaFincaPropietario) ? nombreNuevo : dto.NuevaFincaPropietario.Trim();
+                        decimal precioLitro = dto.NuevaFincaPrecioLitro.HasValue && dto.NuevaFincaPrecioLitro.Value >= 0
+                            ? dto.NuevaFincaPrecioLitro.Value
+                            : 0m;
+
+                        fincaId = await connection.ExecuteScalarAsync<int>(@"
+                            INSERT INTO TB_FINCAS
+                            (Nombre, Propietario, PrecioLitroUSD, PrecioLitroAcidaUSD, TieneDosTiposLeche, TipoServicioId, Activo, IsDeleted, CreatedAt)
+                            VALUES
+                            (@nombreNuevo, @prop, @precioLitro, 0, 0, 1, 1, 0, GETDATE());
+                            SELECT CAST(SCOPE_IDENTITY() AS INT);",
+                            new { nombreNuevo, prop, precioLitro }, transaction: transaction);
+                    }
+                }
+
+                string obsTexto = string.IsNullOrWhiteSpace(dto.Observacion)
+                    ? "[ENTRADA TERCERO] Recepción directa en Receptoría"
+                    : $"[ENTRADA TERCERO] {dto.Observacion.Trim()}";
+
+                // 5. Crear Control de Viaje (como ruta sin ser ruta: conductor OTROS, estado FINALIZADO directo en Receptoría)
+                long controlRutaId = await connection.ExecuteScalarAsync<long>(@"
+                    INSERT INTO TB_CONTROL_RUTAS
+                    (Fecha, UsuarioId, CicloId, TotalLitrosFinca, TotalLitrosReceptoria, LitrosRecibidosReceptoria,
+                     DiferenciaLitros, DiferenciaReceptoria, MermaTotalLitros, PorcentajeMerma,
+                     Estado, ProcesoActualId, TipoDestino, CompaniaDestinoId, FechaLlegadaReceptoria,
+                     CerradoPor, Observacion, CreatedAt)
+                    VALUES
+                    (@fechaOp, @usuarioIdOtros, @cicloFinal, @litros, @litros, @litros,
+                     0, 0, 0, 0,
+                     'FINALIZADO', 4, 'RECEPTORIA', @receptoriaId, GETDATE(),
+                     @receptorUserId, @obsTexto, GETDATE());
+                    SELECT CAST(SCOPE_IDENTITY() AS BIGINT);",
+                    new { fechaOp, usuarioIdOtros, cicloFinal, litros = dto.Litros, receptoriaId = receptoriaId.Value, receptorUserId, obsTexto },
+                    transaction: transaction);
+
+                // 6. Registrar parada de finca para que entre en Liquidaciones y Reportes de Fincas
+                await connection.ExecuteAsync(@"
+                    INSERT INTO TB_RUTAS_RECOLECCION
+                    (ControlRutaId, UsuarioId, FincaId, CicloId, Fecha, Litros, TipoLeche, EsAcida, EsDiferido, Observacion, CreatedAt)
+                    VALUES
+                    (@controlRutaId, @usuarioIdOtros, @fincaId, @cicloFinal, @fechaOp, @litros, @tipoLeche, 0, 0, @obsTexto, GETDATE());",
+                    new { controlRutaId, usuarioIdOtros, fincaId, cicloFinal, fechaOp, litros = dto.Litros, tipoLeche, obsTexto },
+                    transaction: transaction);
+
+                // 7. Registrar ingreso en TB_CONTROL_COMPANIAS hacia Receptoría Principal (FINALIZADO)
+                long controlCompaniaId = await connection.ExecuteScalarAsync<long>(@"
+                    INSERT INTO TB_CONTROL_COMPANIAS
+                    (Fecha, UsuarioId, CompaniaId, CicloId, LitrosDespachados, LitrosRecibidosCompania,
+                     DiferenciaLitros, PorcentajeMerma, Estado, TipoLeche, Observacion,
+                     ControlRutaId, FechaSalida, FechaEntrega, CreatedAt, CreatedBy)
+                    VALUES
+                    (@fechaOp, @usuarioIdOtros, @receptoriaId, @cicloFinal, @litros, @litros,
+                     0, 0, 'FINALIZADO', @tipoLeche, @obsTexto,
+                     @controlRutaId, GETDATE(), GETDATE(), GETDATE(), @receptorUserId);
+                    SELECT CAST(SCOPE_IDENTITY() AS BIGINT);",
+                    new { fechaOp, usuarioIdOtros, receptoriaId = receptoriaId.Value, cicloFinal, litros = dto.Litros, tipoLeche, obsTexto, controlRutaId, receptorUserId },
+                    transaction: transaction);
+
+                // 8. Registrar entrada física confirmada en Silos (TB_ENTREGAS_COMPANIA) para Stock y Balance
+                await connection.ExecuteAsync(@"
+                    INSERT INTO TB_ENTREGAS_COMPANIA
+                    (CicloId, Fecha, CompaniaId, UsuarioId, Litros, Observacion, CreatedAt, CreatedBy, ControlRutaId, TipoLeche, ControlCompaniaId)
+                    VALUES
+                    (@cicloFinal, @fechaOp, @receptoriaId, @usuarioIdOtros, @litros, @obsTexto, GETDATE(), @receptorUserId, @controlRutaId, @tipoLeche, @controlCompaniaId);",
+                    new { cicloFinal, fechaOp, receptoriaId = receptoriaId.Value, usuarioIdOtros, litros = dto.Litros, obsTexto, receptorUserId, controlRutaId, tipoLeche, controlCompaniaId },
+                    transaction: transaction);
+
+                transaction.Commit();
+                return controlRutaId;
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
         }
     }
 

@@ -2895,6 +2895,18 @@ namespace Transporte.Core.DTOs
         public List<ViajeGpsResumenDto> Viajes { get; set; } = new();
         public List<CruceRutasDto> Cruces { get; set; } = new();
     }
+
+    public class CrearEntradaTerceroDto
+    {
+        public DateTime Fecha { get; set; }
+        public int? FincaId { get; set; }
+        public string? NuevaFincaNombre { get; set; }
+        public string? NuevaFincaPropietario { get; set; }
+        public decimal? NuevaFincaPrecioLitro { get; set; }
+        public int Litros { get; set; }
+        public string? TipoLeche { get; set; }
+        public string? Observacion { get; set; }
+    }
 }
 
 

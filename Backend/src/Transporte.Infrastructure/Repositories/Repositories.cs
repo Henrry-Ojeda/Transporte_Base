@@ -1274,7 +1274,9 @@ namespace Transporte.Infrastructure.Repositories
         Task<bool> EliminarCompaniaAsync(int id);
         Task<IEnumerable<dynamic>> ObtenerAbonosCompaniasAsync(int? companiaId = null);
         Task<int> CrearAbonoCompaniaAsync(GuardarAbonoCompaniaDto dto, int? usuarioId = null);
+        Task<bool> EliminarAbonoCompaniaAsync(int id);
         Task<IEnumerable<dynamic>> ObtenerResumenCobranzasCompaniasAsync();
+        Task<IEnumerable<dynamic>> ObtenerResumenCobranzasPorSemanaAsync(int? companiaId = null, int? cicloId = null);
 
         // Bancos
         Task<IEnumerable<BancoDto>> ObtenerBancosAsync();
@@ -1978,14 +1980,48 @@ namespace Transporte.Infrastructure.Repositories
             return rows > 0;
         }
 
+        private static async Task EnsureAbonosCompaniasSchemaAsync(SqlConnection connection)
+        {
+            const string ddl = @"
+                IF OBJECT_ID('dbo.TB_ABONOS_COMPANIAS', 'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.TB_ABONOS_COMPANIAS (
+                        Id INT IDENTITY(1,1) PRIMARY KEY,
+                        CompaniaId INT NOT NULL,
+                        CicloId INT NULL,
+                        Fecha DATETIME NOT NULL DEFAULT GETDATE(),
+                        MontoUSD DECIMAL(18,2) NOT NULL,
+                        MontoBs DECIMAL(18,2) NULL DEFAULT 0,
+                        TasaBcv DECIMAL(18,4) NULL DEFAULT 1,
+                        ReferenciaBancaria NVARCHAR(120) NULL,
+                        BancoId INT NULL,
+                        ControlCompaniaId BIGINT NULL,
+                        FechaLecheAbonada DATE NULL,
+                        LitrosAbonados INT NULL DEFAULT 0,
+                        Observaciones NVARCHAR(500) NULL,
+                        TipoPago NVARCHAR(50) NULL DEFAULT 'TRANSFERENCIA',
+                        CreatedBy INT NULL,
+                        CreatedAt DATETIME NOT NULL DEFAULT GETDATE()
+                    );
+                END
+                ELSE IF COL_LENGTH('dbo.TB_ABONOS_COMPANIAS', 'CicloId') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.TB_ABONOS_COMPANIAS ADD CicloId INT NULL;
+                END";
+            await connection.ExecuteAsync(ddl);
+        }
+
         public async Task<IEnumerable<dynamic>> ObtenerAbonosCompaniasAsync(int? companiaId = null)
         {
             using var connection = new SqlConnection(_connectionString);
+            await EnsureAbonosCompaniasSchemaAsync(connection);
             var sql = @"
                 SELECT 
                     a.Id,
                     a.CompaniaId,
                     c.Nombre AS CompaniaNombre,
+                    a.CicloId,
+                    cic.Codigo AS SemanaCodigo,
                     a.Fecha,
                     a.MontoUSD,
                     a.MontoBs,
@@ -2001,6 +2037,7 @@ namespace Transporte.Infrastructure.Repositories
                     a.CreatedAt
                 FROM TB_ABONOS_COMPANIAS a
                 INNER JOIN TB_COMPANIAS c ON a.CompaniaId = c.Id
+                LEFT JOIN TB_CICLOS_OPERATIVOS cic ON a.CicloId = cic.Id
                 LEFT JOIN TB_BANCOS b ON a.BancoId = b.Id
                 WHERE (@companiaId IS NULL OR a.CompaniaId = @companiaId)
                 ORDER BY a.Fecha DESC, a.Id DESC";
@@ -2010,47 +2047,77 @@ namespace Transporte.Infrastructure.Repositories
         public async Task<int> CrearAbonoCompaniaAsync(GuardarAbonoCompaniaDto dto, int? usuarioId = null)
         {
             using var connection = new SqlConnection(_connectionString);
-            var sql = @"
+            await EnsureAbonosCompaniasSchemaAsync(connection);
+
+            var items = (dto.DistribucionSemanas != null && dto.DistribucionSemanas.Any(x => x.MontoUSD > 0))
+                ? dto.DistribucionSemanas.Where(x => x.MontoUSD > 0).ToList()
+                : new List<AbonoSemanaItemDto> { new AbonoSemanaItemDto { CicloId = dto.CicloId ?? 0, MontoUSD = dto.MontoUSD } };
+
+            decimal totalUsdItems = items.Sum(x => x.MontoUSD);
+            decimal tasa = dto.TasaBcv.HasValue && dto.TasaBcv.Value > 0 ? dto.TasaBcv.Value : 1m;
+            decimal totalBs = dto.MontoBs.HasValue && dto.MontoBs.Value > 0 ? dto.MontoBs.Value : Math.Round(totalUsdItems * tasa, 2);
+
+            const string sql = @"
                 INSERT INTO TB_ABONOS_COMPANIAS (
-                    CompaniaId, Fecha, MontoUSD, MontoBs, TasaBcv, 
+                    CompaniaId, CicloId, Fecha, MontoUSD, MontoBs, TasaBcv, 
                     ReferenciaBancaria, BancoId, ControlCompaniaId, 
                     FechaLecheAbonada, LitrosAbonados, Observaciones, 
                     TipoPago, CreatedBy, CreatedAt
                 )
                 VALUES (
-                    @CompaniaId, @Fecha, @MontoUSD, @MontoBs, @TasaBcv,
+                    @CompaniaId, @CicloId, @Fecha, @MontoUSD, @MontoBs, @TasaBcv,
                     @ReferenciaBancaria, @BancoId, @ControlCompaniaId,
                     @FechaLecheAbonada, @LitrosAbonados, @Observaciones,
                     @TipoPago, @CreatedBy, GETDATE()
                 );
                 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
-            return await connection.ExecuteScalarAsync<int>(sql, new
+            int primerId = 0;
+            foreach (var it in items)
             {
-                CompaniaId = dto.CompaniaId,
-                Fecha = dto.Fecha ?? DateTime.UtcNow,
-                MontoUSD = dto.MontoUSD,
-                MontoBs = dto.MontoBs ?? 0m,
-                TasaBcv = dto.TasaBcv ?? 1m,
-                ReferenciaBancaria = dto.ReferenciaBancaria,
-                BancoId = dto.BancoId,
-                ControlCompaniaId = dto.ControlCompaniaId,
-                FechaLecheAbonada = dto.FechaLecheAbonada,
-                LitrosAbonados = dto.LitrosAbonados ?? 0,
-                Observaciones = dto.Observaciones,
-                TipoPago = dto.TipoPago ?? "TRANSFERENCIA",
-                CreatedBy = usuarioId
-            });
+                decimal proporcion = totalUsdItems > 0 ? (it.MontoUSD / totalUsdItems) : 1m;
+                decimal montoBsItem = Math.Round(totalBs * proporcion, 2);
+                int? cId = it.CicloId > 0 ? it.CicloId : (dto.CicloId.HasValue && dto.CicloId.Value > 0 ? dto.CicloId.Value : (int?)null);
+
+                int newId = await connection.ExecuteScalarAsync<int>(sql, new
+                {
+                    CompaniaId = dto.CompaniaId,
+                    CicloId = cId,
+                    Fecha = dto.Fecha ?? DateTime.UtcNow,
+                    MontoUSD = it.MontoUSD,
+                    MontoBs = montoBsItem,
+                    TasaBcv = tasa,
+                    ReferenciaBancaria = dto.ReferenciaBancaria,
+                    BancoId = dto.BancoId,
+                    ControlCompaniaId = dto.ControlCompaniaId,
+                    FechaLecheAbonada = dto.FechaLecheAbonada,
+                    LitrosAbonados = dto.LitrosAbonados ?? 0,
+                    Observaciones = dto.Observaciones,
+                    TipoPago = dto.TipoPago ?? "TRANSFERENCIA",
+                    CreatedBy = usuarioId
+                });
+                if (primerId == 0) primerId = newId;
+            }
+            return primerId;
+        }
+
+        public async Task<bool> EliminarAbonoCompaniaAsync(int id)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await EnsureAbonosCompaniasSchemaAsync(connection);
+            var rows = await connection.ExecuteAsync("DELETE FROM TB_ABONOS_COMPANIAS WHERE Id = @id", new { id });
+            return rows > 0;
         }
 
         public async Task<IEnumerable<dynamic>> ObtenerResumenCobranzasCompaniasAsync()
         {
             using var connection = new SqlConnection(_connectionString);
+            await EnsureAbonosCompaniasSchemaAsync(connection);
             var sql = @"
                 SELECT 
                     c.Id AS CompaniaId,
                     c.Nombre AS CompaniaNombre,
-                    c.PrecioLitroUSD,
+                    ISNULL(c.PrecioCompraLitroUSD, 0) AS PrecioLitroUSD,
                     ISNULL(desp.TotalLitrosDespachados, 0) AS TotalLitrosDespachados,
                     ISNULL(desp.TotalFacturadoUSD, 0) AS TotalFacturadoUSD,
                     ISNULL(abo.TotalAbonadoUSD, 0) AS TotalAbonadoUSD,
@@ -2060,12 +2127,20 @@ namespace Transporte.Infrastructure.Repositories
                 FROM TB_COMPANIAS c
                 LEFT JOIN (
                     SELECT 
-                        CompaniaId,
-                        SUM(ISNULL(LitrosRecibidosCompania, LitrosDespachados)) AS TotalLitrosDespachados,
-                        SUM(ISNULL(LitrosRecibidosCompania, LitrosDespachados) * ISNULL(PrecioLitroUSD, 0)) AS TotalFacturadoUSD,
-                        MAX(Fecha) AS UltimoDespachoFecha
-                    FROM TB_CONTROL_COMPANIAS
-                    GROUP BY CompaniaId
+                        cc.CompaniaId,
+                        SUM(ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados)) AS TotalLitrosDespachados,
+                        SUM(
+                            ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados) * 
+                            CASE 
+                                WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'BUFALA' AND ISNULL(c2.PrecioBufalaLitroUSD, 0) > 0 
+                                    THEN c2.PrecioBufalaLitroUSD
+                                ELSE ISNULL(c2.PrecioCompraLitroUSD, 0)
+                            END
+                        ) AS TotalFacturadoUSD,
+                        MAX(cc.Fecha) AS UltimoDespachoFecha
+                    FROM TB_CONTROL_COMPANIAS cc
+                    INNER JOIN TB_COMPANIAS c2 ON cc.CompaniaId = c2.Id
+                    GROUP BY cc.CompaniaId
                 ) desp ON c.Id = desp.CompaniaId
                 LEFT JOIN (
                     SELECT 
@@ -2076,8 +2151,79 @@ namespace Transporte.Infrastructure.Repositories
                     GROUP BY CompaniaId
                 ) abo ON c.Id = abo.CompaniaId
                 WHERE c.IsDeleted = 0
+                  AND ISNULL(c.EsPrincipal, 0) = 0
                 ORDER BY c.Nombre ASC";
             return await connection.QueryAsync(sql);
+        }
+
+        public async Task<IEnumerable<dynamic>> ObtenerResumenCobranzasPorSemanaAsync(int? companiaId = null, int? cicloId = null)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await EnsureAbonosCompaniasSchemaAsync(connection);
+            var sql = @"
+                WITH DespachosSem AS (
+                    SELECT 
+                        cc.CompaniaId,
+                        ISNULL(cc.CicloId, 0) AS CicloId,
+                        SUM(cc.LitrosDespachados) AS LitrosDespachados,
+                        SUM(ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados)) AS LitrosRecibidos,
+                        SUM(
+                            ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados) *
+                            CASE 
+                                WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'BUFALA' AND ISNULL(c.PrecioBufalaLitroUSD, 0) > 0 
+                                    THEN c.PrecioBufalaLitroUSD
+                                ELSE ISNULL(c.PrecioCompraLitroUSD, 0)
+                            END
+                        ) AS TotalFacturadoUSD,
+                        COUNT(*) AS CantidadDespachos
+                    FROM TB_CONTROL_COMPANIAS cc
+                    INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
+                    WHERE c.IsDeleted = 0
+                      AND ISNULL(c.EsPrincipal, 0) = 0
+                      AND (@companiaId IS NULL OR cc.CompaniaId = @companiaId)
+                      AND (@cicloId IS NULL OR cc.CicloId = @cicloId)
+                    GROUP BY cc.CompaniaId, ISNULL(cc.CicloId, 0)
+                ),
+                AbonosSem AS (
+                    SELECT 
+                        a.CompaniaId,
+                        ISNULL(a.CicloId, 0) AS CicloId,
+                        SUM(a.MontoUSD) AS TotalAbonadoUSD,
+                        MAX(a.Fecha) AS UltimoAbonoFecha
+                    FROM TB_ABONOS_COMPANIAS a
+                    WHERE (@companiaId IS NULL OR a.CompaniaId = @companiaId)
+                      AND (@cicloId IS NULL OR a.CicloId = @cicloId)
+                    GROUP BY a.CompaniaId, ISNULL(a.CicloId, 0)
+                ),
+                Pares AS (
+                    SELECT CompaniaId, CicloId FROM DespachosSem
+                    UNION
+                    SELECT CompaniaId, CicloId FROM AbonosSem
+                )
+                SELECT 
+                    p.CompaniaId,
+                    c.Nombre AS CompaniaNombre,
+                    ISNULL(c.PrecioCompraLitroUSD, 0) AS PrecioLitroUSD,
+                    ISNULL(c.PrecioBufalaLitroUSD, 0) AS PrecioBufalaLitroUSD,
+                    p.CicloId,
+                    ISNULL(cic.Codigo, 'Sin Semana') AS SemanaCodigo,
+                    cic.FechaInicio,
+                    cic.FechaFin,
+                    ISNULL(d.LitrosDespachados, 0) AS LitrosDespachados,
+                    ISNULL(d.LitrosRecibidos, 0) AS LitrosRecibidos,
+                    ISNULL(d.CantidadDespachos, 0) AS CantidadDespachos,
+                    ISNULL(d.TotalFacturadoUSD, 0) AS TotalFacturadoUSD,
+                    ISNULL(a.TotalAbonadoUSD, 0) AS TotalAbonadoUSD,
+                    (ISNULL(d.TotalFacturadoUSD, 0) - ISNULL(a.TotalAbonadoUSD, 0)) AS SaldoPendienteUSD,
+                    a.UltimoAbonoFecha
+                FROM Pares p
+                INNER JOIN TB_COMPANIAS c ON p.CompaniaId = c.Id
+                LEFT JOIN TB_CICLOS_OPERATIVOS cic ON p.CicloId = cic.Id
+                LEFT JOIN DespachosSem d ON p.CompaniaId = d.CompaniaId AND p.CicloId = d.CicloId
+                LEFT JOIN AbonosSem a ON p.CompaniaId = a.CompaniaId AND p.CicloId = a.CicloId
+                WHERE ISNULL(c.EsPrincipal, 0) = 0
+                ORDER BY p.CicloId DESC, c.Nombre ASC";
+            return await connection.QueryAsync(sql, new { companiaId, cicloId });
         }
 
         // --- BANCOS ---

@@ -206,7 +206,8 @@ namespace Transporte.API.Controllers
         {
             if (dto.CompaniaId <= 0)
                 return BadRequest(new { message = "Debe especificar la compañía." });
-            if (dto.MontoUSD <= 0)
+            var tieneDist = dto.DistribucionSemanas != null && dto.DistribucionSemanas.Any(x => x.MontoUSD > 0);
+            if (!tieneDist && dto.MontoUSD <= 0)
                 return BadRequest(new { message = "El monto cobrado debe ser mayor a 0." });
 
             var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -216,11 +217,28 @@ namespace Transporte.API.Controllers
             return Ok(new { id, message = "Abono de compañía registrado exitosamente." });
         }
 
+        [HttpDelete("companias/abonos/{id:int}")]
+        [HttpDelete("/api/companias/abonos/{id:int}")]
+        public async Task<IActionResult> EliminarAbonoCompania([FromRoute] int id)
+        {
+            var ok = await _catalogosRepository.EliminarAbonoCompaniaAsync(id);
+            if (!ok) return NotFound(new { message = "Abono no encontrado." });
+            return Ok(new { success = true, message = "Abono eliminado correctamente." });
+        }
+
         [HttpGet("companias/resumen-cobranzas")]
         [HttpGet("/api/companias/resumen-cobranzas")]
         public async Task<IActionResult> ObtenerResumenCobranzasCompanias()
         {
             var resumen = await _catalogosRepository.ObtenerResumenCobranzasCompaniasAsync();
+            return Ok(resumen);
+        }
+
+        [HttpGet("companias/resumen-cobranzas-semanas")]
+        [HttpGet("/api/companias/resumen-cobranzas-semanas")]
+        public async Task<IActionResult> ObtenerResumenCobranzasPorSemana([FromQuery] int? companiaId = null, [FromQuery] int? cicloId = null)
+        {
+            var resumen = await _catalogosRepository.ObtenerResumenCobranzasPorSemanaAsync(companiaId, cicloId);
             return Ok(resumen);
         }
 

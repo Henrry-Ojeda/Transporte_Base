@@ -21,11 +21,11 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 81,
-  patch: 2,
-  tag: 'v3.81.2',
+  minor: 82,
+  patch: 1,
+  tag: 'v3.82.1',
   ultimaActualizacion: '2026-11-19',
-  tipoUltimoCambio: 'DISEÑO',
+  tipoUltimoCambio: 'DISEÑO_LOGICA',
   descripcion: 'App Móvil y Backend v3.24.1: Muestra la fecha del ticket en las tarjetas de la App Móvil y habilita al chofer modificar su ticket abierto (fecha, ruta/modo libre y observación) online y offline.',
 };
 

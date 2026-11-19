@@ -2,6 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/api/client';
+import { catalogosApi } from '@/api/catalogos.api';
+import { esReceptoriaPrincipal } from '@/utils/procesoViaje';
 import { finanzasApi } from '@/api/finanzas.api';
 import { sistemaApi } from '@/api/sistema.api';
 import {
@@ -164,11 +166,12 @@ export const DashboardPage: React.FC = () => {
         queryParams = `fecha=${fechaFiltro}`;
       }
 
-      const [resRutas, resEntregas, resDespachos, resBalance] = await Promise.all([
+      const [resRutas, resEntregas, resDespachos, resBalance, resCompanias] = await Promise.all([
         apiClient.get<RutaItem[]>(`/rutas/hoy?${queryParams}`).catch(() => ({ data: [] })),
         apiClient.get<EntregaItem[]>(`/receptoria/hoy?${queryParams}`).catch(() => ({ data: [] })),
         apiClient.get<DespachoItem[]>(`/controlcompanias?${queryParams}`).catch(() => ({ data: [] })),
         apiClient.get<any>(`/receptoria/balance-volumetrico?${queryParams}`).catch(() => ({ data: null })),
+        catalogosApi.getCompanias(true).catch(() => []),
       ]);
 
       return {
@@ -176,6 +179,7 @@ export const DashboardPage: React.FC = () => {
         entregas: Array.isArray(resEntregas.data) ? resEntregas.data : [],
         despachos: Array.isArray(resDespachos.data) ? resDespachos.data : [],
         balance: resBalance.data,
+        companias: Array.isArray(resCompanias) ? resCompanias : [],
       };
     },
     staleTime: 1000 * 60 * 3,
@@ -203,10 +207,17 @@ export const DashboardPage: React.FC = () => {
       );
     };
 
+    const companiasCat = dashboardData?.companias || [];
     const esReceptoria = (item: any) => {
-      const cId = item.companiaId ?? item.CompaniaId;
-      const nom = String(item.companiaNombre ?? item.nombreCompania ?? item.nombre ?? '').toUpperCase();
-      return cId === 5028 || nom.includes('RECEPT') || nom.includes('SILO');
+      if (!item) return false;
+      if (esReceptoriaPrincipal(item)) return true;
+      const cId = Number(item.companiaId ?? item.CompaniaId ?? 0);
+      const nom = String(item.companiaNombre ?? item.nombreCompania ?? item.nombre ?? '').toUpperCase().trim();
+      const compCat = companiasCat.find(
+        (c: any) => (cId > 0 && Number(c.id) === cId) || (nom && String(c.nombre || '').toUpperCase().trim() === nom)
+      );
+      if (compCat && esReceptoriaPrincipal(compCat)) return true;
+      return esReceptoriaPrincipal(nom);
     };
 
     // 1. RECOLECCIÓN EN CAMPO
@@ -1079,10 +1090,10 @@ export const DashboardPage: React.FC = () => {
               <div className="kpi-content">
                 <span className="kpi-title">Merma Consolidada</span>
                 <div className="kpi-value" style={{ color: '#ea580c' }}>
-                  -{metricas.mermaGlobalLitros.toLocaleString()} <small>Lts</small>
+                  {metricas.mermaGlobalLitros > 0 ? `-${metricas.mermaGlobalLitros.toLocaleString()}` : Math.abs(metricas.mermaGlobalLitros).toLocaleString()} <small>Lts</small>
                 </div>
                 <span className="kpi-foot">
-                  {metricas.mermaGlobalPct.toFixed(2)}% Merma Global Choferes
+                  {Math.abs(metricas.mermaGlobalPct).toFixed(2)}% Merma Global Choferes
                 </span>
               </div>
             </div>

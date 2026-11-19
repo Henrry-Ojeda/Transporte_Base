@@ -216,6 +216,20 @@ export const useAuthStore = create<AuthState>()(
           return tabsPermitidosTaller.includes(tabId.toLowerCase());
         }
 
+        // ROL RECEPTOR / RECEPTORIA: Oculta Catálogos, Flota, Liquidación, Adelantos y del grupo Sistema solo ve Perfil y Tiempo de Sesión
+        if (rolUsuario === 'RECEPTOR' || rolUsuario === 'RECEPTORIA') {
+          const tabsPermitidosReceptoria = [
+            'dashboard',
+            'receptoria',
+            'entregas',
+            'balance',
+            'control-tanques',
+            'perfil',
+            'configuracion-sesion',
+          ];
+          return tabsPermitidosReceptoria.includes(tabId.toLowerCase());
+        }
+
         // ROL CHOFER: No ve Taller ni Repuestos
         if (rolUsuario === 'CHOFER') {
           if (['mantenimiento', 'repuestos'].includes(tabId.toLowerCase())) {

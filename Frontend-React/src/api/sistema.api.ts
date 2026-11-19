@@ -125,6 +125,16 @@ export const sistemaApi = {
     return res.data;
   },
 
+  getWidgetsDashboard: async (soloActivos = true): Promise<any[]> => {
+    const res = await apiClient.get<any[]>('/configuracion/widgets-dashboard', { params: { soloActivos } });
+    return Array.isArray(res.data) ? res.data : [];
+  },
+
+  toggleWidgetDashboard: async (id: number, activo: boolean): Promise<any> => {
+    const res = await apiClient.put(`/configuracion/widgets/${id}/toggle`, activo);
+    return res.data;
+  },
+
   // LICENCIA Y EMPRESA (SISTEMA TENANT)
   getEmpresaConfig: async (): Promise<any> => {
     const res = await apiClient.get('/empresa');

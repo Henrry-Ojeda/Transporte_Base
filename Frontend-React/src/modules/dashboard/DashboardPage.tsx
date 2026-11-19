@@ -145,6 +145,23 @@ export const DashboardPage: React.FC = () => {
     staleTime: 1000 * 60 * 5,
   });
 
+  // Visibilidad de las 4 secciones de métricas configurada en TB_DASHBOARD_WIDGETS
+  const { data: widgetsVisibles = [] } = useQuery<any[]>({
+    queryKey: ['dashboard-widgets-visibles'],
+    queryFn: () => sistemaApi.getWidgetsDashboard(false),
+    staleTime: 1000 * 60 * 2,
+  });
+
+  const puedeVerSeccion = (codigo: string): boolean => {
+    if (!widgetsVisibles || widgetsVisibles.length === 0) return true;
+    const seccion = widgetsVisibles.find((w) => String(w.codigo || '').toUpperCase() === codigo);
+    if (!seccion) {
+      const tieneSecciones = widgetsVisibles.some((w) => String(w.tipoWidget || '').toUpperCase() === 'SECCION_METRICAS');
+      return !tieneSecciones;
+    }
+    return seccion.activo !== false;
+  };
+
   const cicloSeleccionadoObj = useMemo(() => {
     return ciclos.find((c: any) => c.id === cicloSeleccionado) || null;
   }, [ciclos, cicloSeleccionado]);
@@ -648,7 +665,7 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* BLOQUE 1: MÉTRICAS DEL SERVICIO DE RUTA */}
-      {(filtroServicio === 'todos' || filtroServicio === 'ruta') && (
+      {puedeVerSeccion('DASHBOARD_METRICAS_RUTA') && (filtroServicio === 'todos' || filtroServicio === 'ruta') && (
         <div id="bloqueMetricsRuta" style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <h3
@@ -813,7 +830,7 @@ export const DashboardPage: React.FC = () => {
       )}
 
       {/* BLOQUE 2: MÉTRICAS DEL SERVICIO DE TRANSPORTE */}
-      {(filtroServicio === 'todos' || filtroServicio === 'transporte') && (
+      {puedeVerSeccion('DASHBOARD_METRICAS_TRANSPORTE') && (filtroServicio === 'todos' || filtroServicio === 'transporte') && (
         <div id="bloqueMetricsTransporte" style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <h3
@@ -967,7 +984,7 @@ export const DashboardPage: React.FC = () => {
       )}
 
       {/* BLOQUE 3: CONSOLIDADO GENERAL (RUTA + TRANSPORTE) */}
-      {filtroServicio === 'todos' && (
+      {puedeVerSeccion('DASHBOARD_METRICAS_CONSOLIDADO') && filtroServicio === 'todos' && (
         <div id="bloqueMetricsConsolidado" style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <h3
@@ -1181,7 +1198,9 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* TABLERO DE CONTROL 5 GRÁFICOS CRÍTICOS */}
-      {/* 1. GRÁFICO ANCHO COMPLETO: TENDENCIA OPERATIVA HISTÓRICA */}
+      {puedeVerSeccion('DASHBOARD_GRAFICOS') && (
+        <>
+          {/* 1. GRÁFICO ANCHO COMPLETO: TENDENCIA OPERATIVA HISTÓRICA */}
       <div className="content-card" style={{ marginBottom: '20px', padding: '20px' }}>
         <div
           className="card-head"
@@ -1498,6 +1517,8 @@ export const DashboardPage: React.FC = () => {
           </table>
         </div>
       </div>
+        </>
+      )}
     </section>
   );
 };

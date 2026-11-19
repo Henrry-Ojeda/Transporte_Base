@@ -9,12 +9,13 @@ import type { PermisoModuloDto, RolDto, CrearRolDto } from '@/types';
 
 export const PermisosPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const { isSuperAdmin, isAppHijo } = useAuthStore();
+  const { isSuperAdmin, isAdmin, isAppHijo } = useAuthStore();
   const esSuperAdmin = isSuperAdmin();
+  const esAdmin = isAdmin();
   const esHijo = isAppHijo();
 
-  // Pestaña activa: 'matriz' | 'roles'
-  const [tabActiva, setTabActiva] = useState<'matriz' | 'roles'>('matriz');
+  // Pestaña activa: 'matriz' | 'roles' | 'metricas'
+  const [tabActiva, setTabActiva] = useState<'matriz' | 'roles' | 'metricas'>('matriz');
 
   // Rol activo para la matriz de permisos
   const [rolActivo, setRolActivo] = useState<string>('OPERADOR');
@@ -39,6 +40,26 @@ export const PermisosPage: React.FC = () => {
   const { data: permisos = [], isLoading: cargandoPermisos, refetch: refetchPermisos } = useQuery<PermisoModuloDto[]>({
     queryKey: ['permisos-matriz'],
     queryFn: () => sistemaApi.getMatrizPermisos(),
+  });
+
+  // Query: Widgets / Secciones de Métricas del Dashboard (TB_DASHBOARD_WIDGETS)
+  const { data: widgetsDashboard = [], isLoading: cargandoWidgets } = useQuery<any[]>({
+    queryKey: ['dashboard-widgets-config'],
+    queryFn: () => sistemaApi.getWidgetsDashboard(false),
+    enabled: esAdmin,
+  });
+
+  const toggleWidgetMutation = useMutation({
+    mutationFn: ({ id, activo }: { id: number; activo: boolean }) =>
+      sistemaApi.toggleWidgetDashboard(id, activo),
+    onSuccess: (res) => {
+      toast.success(res?.message || 'Configuración de métricas actualizada');
+      queryClient.invalidateQueries({ queryKey: ['dashboard-widgets-config'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-widgets-visibles'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || 'Error al actualizar configuración de métricas');
+    },
   });
 
   // Mutación: Actualizar un permiso específico en la matriz
@@ -452,6 +473,29 @@ export const PermisosPage: React.FC = () => {
             </span>
           </button>
         )}
+
+        {esAdmin && (
+          <button
+            type="button"
+            onClick={() => setTabActiva('metricas')}
+            style={{
+              padding: '12px 20px',
+              fontSize: '14px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              border: 'none',
+              background: 'none',
+              borderBottom: tabActiva === 'metricas' ? '3px solid #2563eb' : '3px solid transparent',
+              color: tabActiva === 'metricas' ? '#1d4ed8' : '#64748b',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.2s',
+            }}
+          >
+            <i className="fa-solid fa-chart-column text-emerald-600"></i> Métricas Dashboard
+          </button>
+        )}
       </div>
 
       {/* CONTENIDO 1: MATRIZ DE PERMISOS */}
@@ -633,6 +677,91 @@ export const PermisosPage: React.FC = () => {
             searchPlaceholder="Buscar rol por código, nombre o descripción..."
             exportFileName="Catalogo_Roles_Sistema"
           />
+        </div>
+      )}
+
+      {/* CONTENIDO 3: CONFIGURACIÓN DE MÉTRICAS DEL DASHBOARD (TB_DASHBOARD_WIDGETS) */}
+      {tabActiva === 'metricas' && esAdmin && (
+        <div className="content-card" style={{ padding: '20px' }}>
+          <div style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
+              <i className="fa-solid fa-sliders text-blue-600 mr-2"></i>
+              Visibilidad de Bloques de Métricas en el Dashboard
+            </h3>
+            <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: '#64748b' }}>
+              Selecciona cuáles de las 4 secciones del Tablero de Control estarán visibles en el Dashboard. Se guarda automáticamente en <code>TB_DASHBOARD_WIDGETS</code>.
+            </p>
+          </div>
+
+          {cargandoWidgets ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>
+              <i className="fa-solid fa-spinner fa-spin mr-2"></i> Cargando configuración de métricas...
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '14px' }}>
+              {widgetsDashboard
+                .filter((w) => String(w.tipoWidget || '').toUpperCase() === 'SECCION_METRICAS')
+                .map((w) => {
+                  const activo = w.activo !== false;
+                  return (
+                    <div
+                      key={w.id}
+                      style={{
+                        border: activo ? '1.5px solid #10b981' : '1.5px solid #e2e8f0',
+                        background: activo ? '#f0fdf4' : '#f8fafc',
+                        borderRadius: '14px',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            style={{
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '10px',
+                              background: activo ? '#dcfce7' : '#e2e8f0',
+                              color: activo ? '#15803d' : '#64748b',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '16px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <i className={`fa-solid ${w.icono || 'fa-chart-pie'}`}></i>
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 800, fontSize: '14px', color: '#0f172a' }}>{w.titulo}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>{w.codigo}</div>
+                          </div>
+                        </div>
+
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flexShrink: 0 }}>
+                          <input
+                            type="checkbox"
+                            checked={activo}
+                            disabled={toggleWidgetMutation.isPending}
+                            onChange={(e) => toggleWidgetMutation.mutate({ id: w.id, activo: e.target.checked })}
+                            style={{ width: '18px', height: '18px', accentColor: '#10b981', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontSize: '12px', fontWeight: 800, color: activo ? '#15803d' : '#64748b' }}>
+                            {activo ? 'VISIBLE' : 'OCULTO'}
+                          </span>
+                        </label>
+                      </div>
+                      {w.subtitulo && (
+                        <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>{w.subtitulo}</p>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          )}
         </div>
       )}
 

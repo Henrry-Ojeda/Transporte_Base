@@ -10125,7 +10125,7 @@ export const AppMovilPage: React.FC = () => {
                         const capacidadCamion = Number(t.capacidadCamionLitros || dispositivo?.capacidadTanqueLitros || 6000);
                         const pctOcupacion = capacidadCamion > 0 ? Math.min(100, Math.round((ltsCargados / capacidadCamion) * 100)) : 0;
                         const paradas = (t as any).paradas || [];
-                        const totalParadas = paradas.length > 0 ? paradas.length : Number(t.totalFincasVisitadas || 1);
+                        const totalParadas = paradas.length > 0 ? paradas.length : Number((t as any).totalFincas || t.totalFincasVisitadas || (t as any).totalParadas || 1);
                         const choferNom = t.nombreConductor || t.choferNombre || (t as any).conductorNombre || choferEfectivoNombre;
                         const rutaNom = t.rutaLogisticaNombre || (t as any).rutaNombre || 'TODOS';
                         const fStr = t.fecha ? String(t.fecha).split('T')[0] : hoyStr;
@@ -13216,11 +13216,19 @@ export const AppMovilPage: React.FC = () => {
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
                             <span>Ruta: {t.rutaLogisticaNombre || 'Modo Libre'}</span>
                             <span>
-                              {paradas.filter((p: any) => Number(p.litros || p.litrosLeche || p.litrosCargados || 0) > 0).length > 0
-                                ? `${paradas.filter((p: any) => Number(p.litros || p.litrosLeche || p.litrosCargados || 0) > 0).length} Fincas Recolectadas`
-                                : ltsChofer > 0
-                                  ? `${Number((t as any).totalFincasVisitadas || 1)} ${Number((t as any).totalFincasVisitadas || 1) === 1 ? 'Finca' : 'Fincas'} • ${ltsChofer.toLocaleString()} Lts`
-                                  : '⏳ Chofer en ruta (0 Lts)'}
+                              {(() => {
+                                const paradasConLitros = paradas.filter((p: any) => Number(p.litros || p.litrosLeche || p.litrosCargados || 0) > 0).length;
+                                const cantFincas = paradasConLitros > 0
+                                  ? paradasConLitros
+                                  : Number((t as any).totalFincas || (t as any).totalFincasVisitadas || (t as any).totalParadas || 1);
+                                if (paradasConLitros > 0) {
+                                  return `${cantFincas} ${cantFincas === 1 ? 'Finca Recolectada' : 'Fincas Recolectadas'}`;
+                                }
+                                if (ltsChofer > 0) {
+                                  return `${cantFincas} ${cantFincas === 1 ? 'Finca' : 'Fincas'} • ${ltsChofer.toLocaleString()} Lts`;
+                                }
+                                return '⏳ Chofer en ruta (0 Lts)';
+                              })()}
                             </span>
                           </div>
                           {ltsRecibidos > 0 && (

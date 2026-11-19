@@ -6947,12 +6947,12 @@ namespace Transporte.Infrastructure.Repositories
             using var connection = new SqlConnection(_connectionString);
             var res = new DashboardAvanzadoDto();
 
-            // 1. Tendencia N Semanas (Ordenadas cronológicamente ASC)
+            // 1. Tendencia N Semanas (Solo semanas abiertas o con datos operativos reales, ordenadas cronológicamente ASC)
             var sqlSemanas = @"
                 WITH UltimosCiclos AS (
                     SELECT TOP (@semanas) c.Id AS CicloId, c.Codigo AS Semana
                     FROM TB_CICLOS_OPERATIVOS c
-                    WHERE (c.Estado IN ('ABIERTO', 'CERRADO') 
+                    WHERE (c.Estado = 'ABIERTO'
                            OR EXISTS (SELECT 1 FROM TB_RUTAS_RECOLECCION r WHERE r.CicloId = c.Id)
                            OR EXISTS (SELECT 1 FROM TB_CONTROL_RUTAS cr WHERE cr.CicloId = c.Id)
                            OR EXISTS (SELECT 1 FROM TB_CONTROL_COMPANIAS cc WHERE cc.CicloId = c.Id))
@@ -7060,6 +7060,10 @@ namespace Transporte.Infrastructure.Repositories
                 FROM SalidasCombined sc
                 INNER JOIN TB_COMPANIAS cp ON sc.CompaniaId = cp.Id
                 WHERE sc.CicloId IN (SELECT CicloId FROM UltimosCiclos)
+                  AND ISNULL(cp.EsPrincipal, 0) = 0
+                  AND UPPER(ISNULL(cp.Nombre, '')) NOT LIKE '%RECEPTORIA%'
+                  AND UPPER(ISNULL(cp.Nombre, '')) NOT LIKE '%RECEPTORÍA%'
+                  AND UPPER(ISNULL(cp.Nombre, '')) NOT LIKE '%PLANTA PRINCIPAL%'
                   AND (@usuarioId IS NULL OR sc.UsuarioId = @usuarioId)
                 GROUP BY cp.Nombre, cp.Id
                 ORDER BY Litros DESC";

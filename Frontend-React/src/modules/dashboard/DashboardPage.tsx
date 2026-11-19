@@ -145,6 +145,23 @@ export const DashboardPage: React.FC = () => {
     staleTime: 1000 * 60 * 5,
   });
 
+  // Visibilidad de las 4 secciones de métricas configurada en TB_DASHBOARD_WIDGETS
+  const { data: widgetsVisibles = [] } = useQuery<any[]>({
+    queryKey: ['dashboard-widgets-visibles'],
+    queryFn: () => sistemaApi.getWidgetsDashboard(false),
+    staleTime: 1000 * 60 * 2,
+  });
+
+  const puedeVerSeccion = (codigo: string): boolean => {
+    if (!widgetsVisibles || widgetsVisibles.length === 0) return true;
+    const seccion = widgetsVisibles.find((w) => String(w.codigo || '').toUpperCase() === codigo);
+    if (!seccion) {
+      const tieneSecciones = widgetsVisibles.some((w) => String(w.tipoWidget || '').toUpperCase() === 'SECCION_METRICAS');
+      return !tieneSecciones;
+    }
+    return seccion.activo !== false;
+  };
+
   const cicloSeleccionadoObj = useMemo(() => {
     return ciclos.find((c: any) => c.id === cicloSeleccionado) || null;
   }, [ciclos, cicloSeleccionado]);
@@ -350,35 +367,20 @@ export const DashboardPage: React.FC = () => {
   }, [rutas, entregas, despachos, dashboardData?.balance]);
 
   // Datos para Gráficos
-  // 1. Desempeño por Conductor (Métricas avanzadas históricas del backend o en vivo)
+  // 1. Desempeño por Conductor (Sincronizado con el día o semana seleccionada)
   const conductoresData = useMemo(() => {
-    if (dashboardAvanzado?.desempenoConductores && dashboardAvanzado.desempenoConductores.length > 0) {
-      const labels = dashboardAvanzado.desempenoConductores.slice(0, 8).map((c: any) => c.conductor);
-      const litros = dashboardAvanzado.desempenoConductores.slice(0, 8).map((c: any) => Number(c.litros || 0));
-      return {
-        labels: labels.length ? labels : ['Sin datos'],
-        datasets: [
-          {
-            label: 'Litros Recolectados',
-            data: litros.length ? litros : [0],
-            backgroundColor: 'rgba(59, 130, 246, 0.75)',
-            borderRadius: 6,
-          },
-        ],
-      };
-    }
-
     const map = new Map<string, { litros: number; viajes: number }>();
     rutas.forEach((r) => {
-      const chofer = r.conductorNombre || `Chofer #${r.conductorId || 'N/A'}`;
+      const chofer = r.conductorNombre || (r as any).nombreConductor || `Chofer #${r.conductorId || 'N/A'}`;
       const entry = map.get(chofer) || { litros: 0, viajes: 0 };
       entry.litros += r.litros || r.litrosLeche || 0;
       entry.viajes += 1;
       map.set(chofer, entry);
     });
 
-    const labels = Array.from(map.keys()).slice(0, 8);
-    const litros = labels.map((k) => map.get(k)?.litros || 0);
+    const sorted = Array.from(map.entries()).sort((a, b) => b[1].litros - a[1].litros).slice(0, 8);
+    const labels = sorted.map(([k]) => k);
+    const litros = sorted.map(([, v]) => v.litros);
     return {
       labels: labels.length ? labels : ['Sin datos'],
       datasets: [
@@ -390,7 +392,7 @@ export const DashboardPage: React.FC = () => {
         },
       ],
     };
-  }, [dashboardAvanzado, rutas]);
+  }, [rutas]);
 
   // 2. Distribución Global por Servicio
   const serviciosData = useMemo(() => {
@@ -408,29 +410,29 @@ export const DashboardPage: React.FC = () => {
     };
   }, [metricas]);
 
-  // 3. Destino Logístico
+  // 3. Destino Logístico (Excluye Receptoría Principal / Planta Matriz, sincronizado con el período)
   const companiasData = useMemo(() => {
-    if (dashboardAvanzado?.entregasPlantas && dashboardAvanzado.entregasPlantas.length > 0) {
-      const labels = dashboardAvanzado.entregasPlantas.slice(0, 5).map((p: any) => p.planta || p.compania || 'Planta');
-      const values = dashboardAvanzado.entregasPlantas.slice(0, 5).map((p: any) => Number(p.litros || 0));
-      return {
-        labels: labels.length ? labels : ['Sin datos'],
-        datasets: [
-          {
-            data: values.length ? values : [0],
-            backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899'],
-          },
-        ],
-      };
-    }
+    const companiasCat = dashboardData?.companias || [];
+    const esCompaniaReceptoria = (d: any) => {
+      if (esReceptoriaPrincipal(d)) return true;
+      const cId = Number(d?.companiaId ?? d?.CompaniaId ?? 0);
+      const nom = String(d?.companiaNombre ?? d?.nombreCompania ?? d?.nombre ?? '').toUpperCase().trim();
+      const compCat = companiasCat.find(
+        (c: any) => (cId > 0 && Number(c.id) === cId) || (nom && String(c.nombre || '').toUpperCase().trim() === nom)
+      );
+      return compCat ? esReceptoriaPrincipal(compCat) : false;
+    };
 
     const map = new Map<string, number>();
-    despachos.forEach((d) => {
-      const comp = d.companiaNombre || `Planta #${d.companiaId || '1'}`;
-      map.set(comp, (map.get(comp) || 0) + (d.litrosDespachados || 0));
-    });
-    const labels = Array.from(map.keys()).slice(0, 5);
-    const values = labels.map((k) => map.get(k) || 0);
+    despachos
+      .filter((d) => !esCompaniaReceptoria(d))
+      .forEach((d) => {
+        const comp = d.companiaNombre || (d as any).nombreCompania || `Planta #${d.companiaId || '1'}`;
+        map.set(comp, (map.get(comp) || 0) + (d.litrosDespachados || 0));
+      });
+    const sorted = Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const labels = sorted.map(([k]) => k);
+    const values = sorted.map(([, v]) => v);
     const hasValues = values.length > 0 && values.some((v) => v > 0);
     return {
       labels: hasValues ? labels : ['Sin datos'],
@@ -441,26 +443,10 @@ export const DashboardPage: React.FC = () => {
         },
       ],
     };
-  }, [dashboardAvanzado, despachos]);
+  }, [despachos, dashboardData?.companias]);
 
-  // 4. Leche Ácida por Finca
+  // 4. Leche Ácida por Finca (Sincronizado con el día o semana seleccionada)
   const acidaData = useMemo(() => {
-    if (dashboardAvanzado?.lecheAcidaFincas && dashboardAvanzado.lecheAcidaFincas.length > 0) {
-      const labels = dashboardAvanzado.lecheAcidaFincas.slice(0, 6).map((f: any) => f.finca || 'Finca');
-      const values = dashboardAvanzado.lecheAcidaFincas.slice(0, 6).map((f: any) => Number(f.litrosAcidos || 0));
-      return {
-        labels: labels.length ? labels : ['Sin incidencias'],
-        datasets: [
-          {
-            label: 'Litros Ácidos',
-            data: values.length ? values : [0],
-            backgroundColor: 'rgba(244, 63, 94, 0.8)',
-            borderRadius: 6,
-          },
-        ],
-      };
-    }
-
     const map = new Map<string, number>();
     rutas
       .filter((r) => r.esAcida)
@@ -468,8 +454,9 @@ export const DashboardPage: React.FC = () => {
         const finca = r.fincaNombre || `Finca #${r.fincaId || 'N/A'}`;
         map.set(finca, (map.get(finca) || 0) + (r.litros || r.litrosLeche || 0));
       });
-    const labels = Array.from(map.keys()).slice(0, 6);
-    const values = labels.map((k) => map.get(k) || 0);
+    const sorted = Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const labels = sorted.map(([k]) => k);
+    const values = sorted.map(([, v]) => v);
     return {
       labels: labels.length ? labels : ['Sin incidencias'],
       datasets: [
@@ -481,7 +468,7 @@ export const DashboardPage: React.FC = () => {
         },
       ],
     };
-  }, [dashboardAvanzado, rutas]);
+  }, [rutas]);
 
   // 5. Histórico Semanas (Tendencia Operativa Real 1:1 desde Backend)
   const tendenciaSemanasData = useMemo(() => {
@@ -678,7 +665,7 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* BLOQUE 1: MÉTRICAS DEL SERVICIO DE RUTA */}
-      {(filtroServicio === 'todos' || filtroServicio === 'ruta') && (
+      {puedeVerSeccion('DASHBOARD_METRICAS_RUTA') && (filtroServicio === 'todos' || filtroServicio === 'ruta') && (
         <div id="bloqueMetricsRuta" style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <h3
@@ -843,7 +830,7 @@ export const DashboardPage: React.FC = () => {
       )}
 
       {/* BLOQUE 2: MÉTRICAS DEL SERVICIO DE TRANSPORTE */}
-      {(filtroServicio === 'todos' || filtroServicio === 'transporte') && (
+      {puedeVerSeccion('DASHBOARD_METRICAS_TRANSPORTE') && (filtroServicio === 'todos' || filtroServicio === 'transporte') && (
         <div id="bloqueMetricsTransporte" style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <h3
@@ -997,7 +984,7 @@ export const DashboardPage: React.FC = () => {
       )}
 
       {/* BLOQUE 3: CONSOLIDADO GENERAL (RUTA + TRANSPORTE) */}
-      {filtroServicio === 'todos' && (
+      {puedeVerSeccion('DASHBOARD_METRICAS_CONSOLIDADO') && filtroServicio === 'todos' && (
         <div id="bloqueMetricsConsolidado" style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <h3
@@ -1211,7 +1198,9 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* TABLERO DE CONTROL 5 GRÁFICOS CRÍTICOS */}
-      {/* 1. GRÁFICO ANCHO COMPLETO: TENDENCIA OPERATIVA HISTÓRICA */}
+      {puedeVerSeccion('DASHBOARD_GRAFICOS') && (
+        <>
+          {/* 1. GRÁFICO ANCHO COMPLETO: TENDENCIA OPERATIVA HISTÓRICA */}
       <div className="content-card" style={{ marginBottom: '20px', padding: '20px' }}>
         <div
           className="card-head"
@@ -1528,6 +1517,8 @@ export const DashboardPage: React.FC = () => {
           </table>
         </div>
       </div>
+        </>
+      )}
     </section>
   );
 };

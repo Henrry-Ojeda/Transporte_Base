@@ -4,8 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import { finanzasApi } from '@/api/finanzas.api';
+import { operacionesApi } from '@/api/operaciones.api';
+import { catalogosApi } from '@/api/catalogos.api';
+import { useAuthStore } from '@/stores/authStore';
+import { esReceptoriaPrincipal } from '@/utils/procesoViaje';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { SemaforoToleranciaBadge } from '@/components/common/SemaforoToleranciaBadge';
 import type { CicloSemanalDto } from '@/types';
 
 const ANIOS_OPTIONS = [
@@ -107,9 +112,36 @@ export const SemanasPage: React.FC = () => {
   const [motivoReabrir, setMotivoReabrir] = useState('');
 
   // Queries
+  const hasTolerancia = useAuthStore((s) => s.hasTenantModule('MOD_TOLERANCIA_MERMA'));
   const { data: ciclosRaw = [], isLoading } = useQuery<any[]>({
     queryKey: ['ciclos-semanas'],
     queryFn: () => finanzasApi.getCiclos(),
+  });
+
+  const { data: toleranciaCompaniasCierre = [] } = useQuery<any[]>({
+    queryKey: ['cierre-tolerancia-companias', cicloCerrar?.id || cicloCerrar?.Id],
+    enabled: Boolean(modalCerrar && cicloCerrar && hasTolerancia),
+    queryFn: async () => {
+      const fIni = cicloCerrar?.fechaInicio ? String(cicloCerrar.fechaInicio).split('T')[0] : undefined;
+      const fFin = cicloCerrar?.fechaFin ? String(cicloCerrar.fechaFin).split('T')[0] : undefined;
+      const [despachos, companiasCat] = await Promise.all([
+        operacionesApi.getDespachosCompanias(undefined, undefined, fIni, fFin).catch(() => []),
+        catalogosApi.getCompanias(true).catch(() => []),
+      ]);
+      const mapa = new Map<string, { nombre: string; despachado: number; recibido: number; viajes: number }>();
+      (despachos || []).forEach((d: any) => {
+        const compId = Number(d.companiaId || d.CompaniaId || 0);
+        const compMatch = companiasCat.find((c: any) => c.id === compId);
+        if ((compMatch && esReceptoriaPrincipal(compMatch)) || esReceptoriaPrincipal(d)) return;
+        const nom = d.nombreCompania || d.companiaNombre || compMatch?.nombre || `Compañía #${compId}`;
+        const prev = mapa.get(nom) || { nombre: nom, despachado: 0, recibido: 0, viajes: 0 };
+        prev.despachado += Number(d.litrosDespachados || 0);
+        prev.recibido += Number(d.litrosRecibidosCompania || d.litrosConfirmados || d.litrosDespachados || 0);
+        prev.viajes += 1;
+        mapa.set(nom, prev);
+      });
+      return Array.from(mapa.values());
+    },
   });
 
   const ciclos = useMemo(() => {
@@ -2071,6 +2103,48 @@ export const SemanasPage: React.FC = () => {
                     * Si el volumen físico real medido en tanque difiere, puedes ajustar el número aquí antes de cerrar.
                   </small>
                 </div>
+
+                {hasTolerancia && toleranciaCompaniasCierre.length > 0 && (
+                  <div
+                    style={{
+                      marginBottom: '16px',
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      background: 'rgba(15, 23, 42, 0.45)',
+                      border: '1px solid rgba(148, 163, 184, 0.25)',
+                    }}
+                  >
+                    <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#e2e8f0', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <i className="fa-solid fa-traffic-light text-amber-400"></i>
+                      Tolerancia de Merma por Compañía (Cierre Semanal)
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {toleranciaCompaniasCierre.map((c: any) => (
+                        <div
+                          key={c.nombre}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            background: 'rgba(30, 41, 59, 0.8)',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#ffffff' }}>{c.nombre}</div>
+                            <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                              Enviado: {c.despachado.toLocaleString()} L • Recibido: {c.recibido.toLocaleString()} L ({c.viajes} despacho{c.viajes === 1 ? '' : 's'})
+                            </div>
+                          </div>
+                          <SemaforoToleranciaBadge litrosEsperados={c.despachado} litrosReales={c.recibido} compact />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                   <button

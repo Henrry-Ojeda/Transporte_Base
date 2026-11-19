@@ -7,6 +7,7 @@ import { sistemaApi } from '@/api/sistema.api';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/authStore';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
+import { SemaforoToleranciaBadge } from '@/components/common/SemaforoToleranciaBadge';
 import { CamionSelect, ChoferSelect, CompaniaSelect, TipoLecheSelect } from '@/components/selectors';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import Swal from 'sweetalert2';
@@ -1899,6 +1900,15 @@ export const ReceptoriaPage: React.FC = () => {
                                 ? `Confirmado en Silos (${Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || litrosRecogidos).toLocaleString()} Lts)`
                                 : `Descargado en Silos (${Number(c.litrosRecibidosReceptoria || litrosRecogidos).toLocaleString()} Lts) — Falta Confirmar`}
                             </div>
+                            {isConfirmadoFinalizado && (
+                              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                <SemaforoToleranciaBadge
+                                  litrosEsperados={litrosRecogidos}
+                                  litrosReales={Number(c.litrosRecibidosReceptoria || c.totalLitrosReceptoria || 0)}
+                                  compact
+                                />
+                              </div>
+                            )}
                             <button
                               type="button"
                               className="btn btn-sm"
@@ -2438,7 +2448,8 @@ export const ReceptoriaPage: React.FC = () => {
                           <strong style={{ color: '#0f172a', fontSize: '13.5px' }}>
                             Ticket #{f.id} • {f.nombreCompania || f.companiaNombre || compObj?.nombre || 'Planta'}
                           </strong>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                            <SemaforoToleranciaBadge litrosEsperados={desp} litrosReales={rec} compact />
                             {(hasBufala || f.tipoLeche || (f.observacion || '').toUpperCase().includes('[BUFAL') || (f.observacion || '').toUpperCase().includes('[VACA]')) && (
                               <span
                                 className="badge"
@@ -3770,7 +3781,14 @@ export const ReceptoriaPage: React.FC = () => {
                   />
                 </div>
 
-                {/* INDICADOR EN VIVO DE DIFERENCIA / MERMA / SOBRANTE */}
+                {/* INDICADOR EN VIVO DE DIFERENCIA / MERMA / SOBRANTE + SEMÁFORO DE TOLERANCIA */}
+                <div style={{ marginBottom: '10px' }}>
+                  <SemaforoToleranciaBadge
+                    litrosEsperados={despachados}
+                    litrosReales={Number(litrosConfirmadosInput || 0)}
+                    etiqueta="Semáforo Tolerancia"
+                  />
+                </div>
                 <div
                   style={{
                     marginBottom: '16px',

@@ -9356,7 +9356,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 LEFT JOIN TB_CAMIONES cam_plan ON cam_plan.Id = plc.CamionId
                 WHERE {whereFecha}
                   AND (@cicloId IS NULL OR cr.CicloId = @cicloId)
-                  AND (UPPER(@rol) LIKE '%ADMIN%' OR @rol IN ('SUPERVISOR', 'GERENTE') OR (cr.UsuarioId = @usuarioId AND CAST(cr.Fecha AS DATE) <= CAST(DATEADD(hour, -4, GETUTCDATE()) AS DATE)))
+                  AND (UPPER(@rol) LIKE '%ADMIN%' OR UPPER(@rol) IN ('SUPERVISOR', 'GERENTE', 'RECEPTOR', 'RECEPTORIA', 'FINANZAS') OR (cr.UsuarioId = @usuarioId AND CAST(cr.Fecha AS DATE) <= CAST(DATEADD(hour, -4, GETUTCDATE()) AS DATE)))
                 ORDER BY cr.Fecha DESC, cr.Id DESC";
 
             return await connection.QueryAsync<ControlRutaDto>(sql, new { inicio, fin, cicloId, rol, usuarioId });

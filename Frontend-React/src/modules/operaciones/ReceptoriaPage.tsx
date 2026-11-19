@@ -1693,6 +1693,43 @@ export const ReceptoriaPage: React.FC = () => {
                             </span>
                           </div>
 
+                          {(() => {
+                            const paradasCard = fincasTicketsMap[c.id] || [];
+                            if (paradasCard.length === 0) return null;
+                            let ltsRuta = 0;
+                            let cntRuta = 0;
+                            let ltsTransp = 0;
+                            let cntTransp = 0;
+                            paradasCard.forEach((p: any) => {
+                              const ltsP = Number(p.litros ?? p.Litros ?? p.litrosLeche ?? 0);
+                              if (ltsP <= 0) return;
+                              const cat = (fincasCatalogo || []).find((fc: any) => Number(fc.id) === Number(p.fincaId || p.FincaId || p.id));
+                              const tsId = Number(p.tipoServicioId || cat?.tipoServicioId || 1);
+                              if (tsId === 2) {
+                                ltsTransp += ltsP;
+                                cntTransp++;
+                              } else {
+                                ltsRuta += ltsP;
+                                cntRuta++;
+                              }
+                            });
+                            if (cntRuta === 0 && cntTransp === 0) return null;
+                            return (
+                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                                {cntRuta > 0 && (
+                                  <span style={{ fontSize: '10.5px', fontWeight: 800, padding: '2px 7px', borderRadius: '6px', background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                                    🛣️ Ruta: {ltsRuta.toLocaleString()} L ({cntRuta})
+                                  </span>
+                                )}
+                                {cntTransp > 0 && (
+                                  <span style={{ fontSize: '10.5px', fontWeight: 800, padding: '2px 7px', borderRadius: '6px', background: '#f3e8ff', color: '#7e22ce', border: '1px solid #d8b4fe' }}>
+                                    🚛 Transporte: {ltsTransp.toLocaleString()} L ({cntTransp})
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
+
                           {capacidad > 0 && (
                             <div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#64748b', marginBottom: '3px', fontWeight: 600 }}>
@@ -4156,6 +4193,8 @@ export const ReceptoriaPage: React.FC = () => {
                           const lts = Number(f.litros || f.litrosLeche || 0);
                           const nomFinca = f.fincaNombre || f.nombre || `Finca #${f.fincaId || fid}`;
                           const prop = f.propietarioNombre || f.propietario || '';
+                          const catF = (fincasCatalogo || []).find((fc: any) => Number(fc.id) === Number(f.fincaId || f.FincaId || f.id));
+                          const esTransp = Number(f.tipoServicioId || catF?.tipoServicioId || 1) === 2;
 
                           return (
                             <tr
@@ -4191,7 +4230,22 @@ export const ReceptoriaPage: React.FC = () => {
                                 />
                               </td>
                               <td style={{ padding: '10px' }}>
-                                <div style={{ fontWeight: 800, color: '#0f172a' }}>{nomFinca}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontWeight: 800, color: '#0f172a' }}>{nomFinca}</span>
+                                  <span
+                                    style={{
+                                      fontSize: '9.5px',
+                                      fontWeight: 800,
+                                      padding: '1px 6px',
+                                      borderRadius: '4px',
+                                      background: esTransp ? '#f3e8ff' : '#dbeafe',
+                                      color: esTransp ? '#7e22ce' : '#1d4ed8',
+                                      border: esTransp ? '1px solid #d8b4fe' : '1px solid #bfdbfe',
+                                    }}
+                                  >
+                                    {esTransp ? 'TRANSPORTE' : 'RUTA'}
+                                  </span>
+                                </div>
                                 {prop && <div style={{ fontSize: '11px', color: '#64748b' }}>{prop}</div>}
                               </td>
                               <td style={{ padding: '10px', textAlign: 'right', fontWeight: 900, color: '#0284c7', fontSize: '13px' }}>
@@ -4558,6 +4612,8 @@ export const ReceptoriaPage: React.FC = () => {
                           const lts = Number(f.litros || f.litrosLeche || 0);
                           const nomFinca = f.fincaNombre || f.nombre || `Finca #${f.fincaId || fid}`;
                           const prop = f.propietarioNombre || f.propietario || '';
+                          const catF = (fincasCatalogo || []).find((fc: any) => Number(fc.id) === Number(f.fincaId || f.FincaId || f.id));
+                          const esTransp = Number(f.tipoServicioId || catF?.tipoServicioId || 1) === 2;
 
                           return (
                             <tr
@@ -4593,7 +4649,22 @@ export const ReceptoriaPage: React.FC = () => {
                                 />
                               </td>
                               <td style={{ padding: '8px 10px' }}>
-                                <div style={{ fontWeight: 700, color: '#1e293b' }}>{nomFinca}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontWeight: 700, color: '#1e293b' }}>{nomFinca}</span>
+                                  <span
+                                    style={{
+                                      fontSize: '9.5px',
+                                      fontWeight: 800,
+                                      padding: '1px 6px',
+                                      borderRadius: '4px',
+                                      background: esTransp ? '#f3e8ff' : '#dbeafe',
+                                      color: esTransp ? '#7e22ce' : '#1d4ed8',
+                                      border: esTransp ? '1px solid #d8b4fe' : '1px solid #bfdbfe',
+                                    }}
+                                  >
+                                    {esTransp ? 'TRANSPORTE' : 'RUTA'}
+                                  </span>
+                                </div>
                                 {prop && <div style={{ fontSize: '10.5px', color: '#64748b' }}>{prop}</div>}
                               </td>
                               <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>

@@ -600,5 +600,42 @@ export const catalogosApi = {
     const res = await apiClient.put('/catalogos/empresa', dto);
     return res.data;
   },
+
+  // COBRANZAS Y ABONOS DE COMPAÑÍAS POR SEMANA
+  getResumenCobranzasCompanias: async (): Promise<any[]> => {
+    const res = await apiClient.get<any[]>('/companias/resumen-cobranzas');
+    return Array.isArray(res.data) ? res.data : [];
+  },
+  getResumenCobranzasSemanas: async (companiaId?: number, cicloId?: number): Promise<any[]> => {
+    const params: Record<string, any> = {};
+    if (companiaId) params.companiaId = companiaId;
+    if (cicloId) params.cicloId = cicloId;
+    const res = await apiClient.get<any[]>('/companias/resumen-cobranzas-semanas', { params });
+    return Array.isArray(res.data) ? res.data : [];
+  },
+  getAbonosCompanias: async (companiaId?: number): Promise<any[]> => {
+    const res = await apiClient.get<any[]>('/companias/abonos', { params: companiaId ? { companiaId } : undefined });
+    return Array.isArray(res.data) ? res.data : [];
+  },
+  crearAbonoCompania: async (dto: {
+    companiaId: number;
+    cicloId?: number;
+    fecha?: string;
+    montoUSD: number;
+    montoBs?: number;
+    tasaBcv?: number;
+    referenciaBancaria?: string;
+    bancoId?: number;
+    observaciones?: string;
+    tipoPago?: string;
+    distribucionSemanas?: Array<{ cicloId: number; montoUSD: number }>;
+  }): Promise<{ id: number; message: string }> => {
+    const res = await apiClient.post('/companias/abonos', dto);
+    return res.data;
+  },
+  eliminarAbonoCompania: async (id: number): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.delete(`/companias/abonos/${id}`);
+    return res.data;
+  },
 };
 

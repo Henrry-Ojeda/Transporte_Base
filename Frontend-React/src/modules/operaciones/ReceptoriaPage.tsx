@@ -95,6 +95,7 @@ export const ReceptoriaPage: React.FC = () => {
 
   // Modal Nueva Entrada por Tercero (Conductor OTROS / Camión OTROS)
   const [modalEntradaTercero, setModalEntradaTercero] = useState<boolean>(false);
+  const [editandoEntradaTerceroId, setEditandoEntradaTerceroId] = useState<number | null>(null);
   const [formEntradaTercero, setFormEntradaTercero] = useState({
     fecha: hoyStr,
     fincaId: 0,
@@ -114,8 +115,8 @@ export const ReceptoriaPage: React.FC = () => {
   });
 
   const crearEntradaTerceroMutation = useMutation({
-    mutationFn: () =>
-      operacionesApi.crearEntradaTercero({
+    mutationFn: () => {
+      const payload = {
         fecha: formEntradaTercero.fecha,
         fincaId: formEntradaTercero.crearFincaNueva ? undefined : formEntradaTercero.fincaId,
         nuevaFincaNombre: formEntradaTercero.crearFincaNueva ? formEntradaTercero.nuevaFincaNombre.trim() : undefined,
@@ -129,10 +130,21 @@ export const ReceptoriaPage: React.FC = () => {
         litros: Number(formEntradaTercero.litros),
         tipoLeche: hasBufala ? formEntradaTercero.tipoLeche : 'VACA',
         observacion: formEntradaTercero.observacion.trim() || undefined,
-      }),
+      };
+      if (editandoEntradaTerceroId) {
+        return operacionesApi.editarEntradaTercero(editandoEntradaTerceroId, payload);
+      }
+      return operacionesApi.crearEntradaTercero(payload);
+    },
     onSuccess: (res) => {
-      toast.success(res?.message || 'Ticket de entrada por tercero registrado y confirmado en silos.');
+      toast.success(
+        res?.message ||
+          (editandoEntradaTerceroId
+            ? 'Ticket de entrada por tercero actualizado.'
+            : 'Ticket de entrada por tercero creado (pendiente por confirmar).')
+      );
       setModalEntradaTercero(false);
+      setEditandoEntradaTerceroId(null);
       queryClient.invalidateQueries({ queryKey: ['viajes-activos-receptoria'] });
       queryClient.invalidateQueries({ queryKey: ['receptoria-hoy'] });
       queryClient.invalidateQueries({ queryKey: ['despachos-companias'] });
@@ -142,7 +154,7 @@ export const ReceptoriaPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard-data'] });
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.message || 'Error al registrar entrada por tercero');
+      toast.error(err?.response?.data?.message || 'Error al guardar entrada por tercero');
     },
   });
 
@@ -1458,6 +1470,7 @@ export const ReceptoriaPage: React.FC = () => {
               type="button"
               className="btn btn-sm btn-primary"
               onClick={() => {
+                setEditandoEntradaTerceroId(null);
                 setFormEntradaTercero({
                   fecha: filtroFecha || hoyStr,
                   fincaId: 0,
@@ -1958,9 +1971,50 @@ export const ReceptoriaPage: React.FC = () => {
                                 title="Verificar litros y Descargar en Silos o Recargar y Despachar a Compañía"
                               >
                                 <i className="fa-solid fa-arrow-down-to-bracket"></i>
-                                {ticketsFincasValidadas.has(c.id) ? 'Recibir Carga' : 'Verificar & Recibir'}
+                                {ticketsFincasValidadas.has(c.id) ? 'Recibir Carga' : 'Confirmar en Silos'}
                               </button>
                             </div>
+
+                            {String(c.observacion || '').includes('[ENTRADA TERCERO]') && (
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                onClick={async () => {
+                                  const fincasT = fincasTicketsMap[c.id] || (await operacionesApi.getFincasViaje(c.id).catch(() => []));
+                                  const primeraFinca = Array.isArray(fincasT) && fincasT.length > 0 ? fincasT[0] : null;
+                                  setEditandoEntradaTerceroId(c.id);
+                                  setFormEntradaTercero({
+                                    fecha: c.fecha ? String(c.fecha).split('T')[0] : filtroFecha || hoyStr,
+                                    fincaId: Number((primeraFinca as any)?.fincaId || 0),
+                                    crearFincaNueva: false,
+                                    nuevaFincaNombre: '',
+                                    nuevaFincaPropietario: '',
+                                    nuevaFincaPrecioLitro: '',
+                                    tipoLeche: String((primeraFinca as any)?.tipoLeche || 'VACA').toUpperCase(),
+                                    litros: String(litrosRecogidos || c.totalLitrosFinca || ''),
+                                    observacion: String(c.observacion || '').replace('[ENTRADA TERCERO]', '').trim(),
+                                  });
+                                  setModalEntradaTercero(true);
+                                }}
+                                style={{
+                                  width: '100%',
+                                  fontWeight: 800,
+                                  fontSize: '11.5px',
+                                  background: '#fef3c7',
+                                  color: '#b45309',
+                                  border: '1px solid #f59e0b',
+                                  padding: '6px 8px',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '5px',
+                                }}
+                              >
+                                <i className="fa-solid fa-pen"></i> Editar Entrada (Tercero)
+                              </button>
+                            )}
 
                             <button
                               type="button"
@@ -5264,10 +5318,12 @@ export const ReceptoriaPage: React.FC = () => {
             >
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900 }}>
-                  🚚 Nueva Entrada de Leche por Tercero
+                  {editandoEntradaTerceroId
+                    ? `✏️ Editar Entrada por Tercero #${editandoEntradaTerceroId}`
+                    : '🚚 Nueva Entrada de Leche por Tercero'}
                 </h3>
                 <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#c7d2fe' }}>
-                  Se registra como control de viaje (OTROS), suma a Silos/Stock y genera Liquidación
+                  Queda pendiente por confirmar en Silos (puedes editar antes de finalizar)
                 </p>
               </div>
               <button
@@ -5493,7 +5549,11 @@ export const ReceptoriaPage: React.FC = () => {
                     boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)',
                   }}
                 >
-                  {crearEntradaTerceroMutation.isPending ? 'Guardando...' : 'Registrar Entrada en Silos'}
+                  {crearEntradaTerceroMutation.isPending
+                    ? 'Guardando...'
+                    : editandoEntradaTerceroId
+                      ? 'Guardar Cambios'
+                      : 'Crear Ticket de Entrada'}
                 </button>
               </div>
             </form>

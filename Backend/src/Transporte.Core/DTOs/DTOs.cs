@@ -2442,9 +2442,16 @@ namespace Transporte.Core.DTOs
         public bool PuedeModificar { get; set; } = true;
     }
 
+    public class AbonoSemanaItemDto
+    {
+        public int CicloId { get; set; }
+        public decimal MontoUSD { get; set; }
+    }
+
     public class GuardarAbonoCompaniaDto
     {
         public int CompaniaId { get; set; }
+        public int? CicloId { get; set; }
         public DateTime? Fecha { get; set; }
         public decimal MontoUSD { get; set; }
         public decimal? MontoBs { get; set; }
@@ -2456,6 +2463,7 @@ namespace Transporte.Core.DTOs
         public int? LitrosAbonados { get; set; }
         public string? Observaciones { get; set; }
         public string? TipoPago { get; set; } = "TRANSFERENCIA";
+        public List<AbonoSemanaItemDto>? DistribucionSemanas { get; set; }
     }
 
     public class GuardarRutaLogisticaDto

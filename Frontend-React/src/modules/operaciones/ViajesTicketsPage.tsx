@@ -2972,6 +2972,7 @@ export const ViajesTicketsPage: React.FC = () => {
                       });
                     }}
                     placeholder="-- SELECCIONAR FINCA GANADERA --"
+                    autoFocus
                   />
                 </div>
 
@@ -2992,7 +2993,6 @@ export const ViajesTicketsPage: React.FC = () => {
                         placeholder="Ej: 450"
                         className="w-full h-11 pl-3 pr-12 rounded-xl border-[1.5px] border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 font-mono font-black text-lg text-slate-900 transition-all placeholder:text-slate-400 placeholder:font-normal"
                         required
-                        autoFocus
                       />
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400 pointer-events-none">
                         LTS
@@ -3296,6 +3296,7 @@ export const ViajesTicketsPage: React.FC = () => {
                         onChange={(e) => setFormEditarFinca({ ...formEditarFinca, litros: Number(e.target.value) })}
                         className="w-full h-11 pl-3 pr-12 rounded-xl border-[1.5px] border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 font-mono font-black text-lg text-slate-900 transition-all"
                         required
+                        autoFocus
                       />
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400 pointer-events-none">
                         LTS

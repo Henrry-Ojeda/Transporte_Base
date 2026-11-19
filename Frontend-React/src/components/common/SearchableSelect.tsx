@@ -21,6 +21,7 @@ interface SearchableSelectProps {
   className?: string;
   style?: React.CSSProperties;
   dropDirection?: 'auto' | 'down' | 'up';
+  autoFocus?: boolean;
 }
 
 export const SearchableSelect: React.FC<SearchableSelectProps> = ({
@@ -35,6 +36,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   className = '',
   style,
   dropDirection = 'down',
+  autoFocus = false,
 }) => {
   const selectedOption = options.find((opt) => String(opt.value) === String(value));
 
@@ -268,6 +270,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           placeholder={placeholder || searchPlaceholder}
           disabled={disabled}
           required={required && !selectedOption}
+          autoFocus={autoFocus}
           autoComplete="off"
           style={{
             width: '100%',
@@ -287,6 +290,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           {allowClear && (selectedOption || inputText) && !disabled && (
             <button
               type="button"
+              tabIndex={-1}
               onMouseDown={handleClear}
               style={{
                 background: 'none',

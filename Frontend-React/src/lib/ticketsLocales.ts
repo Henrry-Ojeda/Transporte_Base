@@ -184,4 +184,37 @@ export const ticketsLocales = {
     );
     escribir(KEY_PENDIENTES, lista);
   },
+
+  eliminarPorId: (localId: number) => {
+    const lista = ticketsLocales.listarPendientes().filter((t) => Number(t.localId) !== Number(localId));
+    escribir(KEY_PENDIENTES, lista);
+  },
+
+  /** Elimina automáticamente tickets locales pendientes con más de 24 horas de antigüedad. */
+  purgarExpirados24h: (): number => {
+    const TTL_MS = 24 * 60 * 60 * 1000;
+    const ahora = Date.now();
+    const lista = ticketsLocales.listarPendientes();
+    const vigentes = lista.filter((t) => {
+      const refStr = t.creadoEn || (t.payload?.fecha ? `${t.payload.fecha}T23:59:59` : '');
+      const refMs = refStr ? Date.parse(refStr) : NaN;
+      if (isNaN(refMs)) return true;
+      return ahora - refMs <= TTL_MS;
+    });
+    const eliminados = lista.length - vigentes.length;
+    if (eliminados > 0) {
+      escribir(KEY_PENDIENTES, vigentes);
+    }
+    // Limitar mapa de equivalencias a los últimos 100 registros
+    try {
+      const mapa = ticketsLocales.mapa();
+      const keys = Object.keys(mapa);
+      if (keys.length > 100) {
+        const recorte: Record<string, number> = {};
+        for (const k of keys.slice(-100)) recorte[k] = mapa[k];
+        escribir(KEY_MAPA, recorte);
+      }
+    } catch {}
+    return eliminados;
+  },
 };

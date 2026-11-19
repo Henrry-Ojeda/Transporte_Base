@@ -1456,22 +1456,37 @@ export const ReceptoriaPage: React.FC = () => {
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-outline"
-              onClick={() => setMostrarFormulario(!mostrarFormulario)}
+              className="btn btn-sm btn-primary"
+              onClick={() => {
+                setFormEntradaTercero({
+                  fecha: filtroFecha || hoyStr,
+                  fincaId: 0,
+                  crearFincaNueva: false,
+                  nuevaFincaNombre: '',
+                  nuevaFincaPropietario: '',
+                  nuevaFincaPrecioLitro: '',
+                  tipoLeche: 'VACA',
+                  litros: '',
+                  observacion: '',
+                });
+                setModalEntradaTercero(true);
+              }}
               style={{
                 height: '36px',
                 fontWeight: 700,
-                color: '#0284c7',
-                borderColor: '#7dd3fc',
-                background: '#f0f9ff',
+                background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+                color: '#ffffff',
+                border: 'none',
                 borderRadius: '8px',
+                padding: '0 16px',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
+                boxShadow: '0 2px 8px rgba(79,70,229,0.3)',
                 cursor: 'pointer',
               }}
             >
-              <i className="fa-solid fa-pen-to-square"></i> Registrar Entrega
+              <i className="fa-solid fa-plus-circle"></i> Nuevo Ticket Entrada (Tercero)
             </button>
             <button
               type="button"

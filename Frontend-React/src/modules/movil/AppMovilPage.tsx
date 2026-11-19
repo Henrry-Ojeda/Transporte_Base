@@ -810,6 +810,13 @@ export const AppMovilPage: React.FC = () => {
   // Viaje / Ticket Activo Asignado al Chofer (creado por Supervisor/Admin o por el chofer)
   const [viajeActivo, setViajeActivo] = useState<ControlRutaDto | null>(() => {
     try {
+      const ts = Number(localStorage.getItem('movil_viaje_activo_ts') || 0);
+      if (ts > 0 && Date.now() - ts > 24 * 60 * 60 * 1000) {
+        localStorage.removeItem('movil_viaje_activo');
+        localStorage.removeItem('movil_paradas_activo');
+        localStorage.removeItem('movil_viaje_activo_ts');
+        return null;
+      }
       const saved = localStorage.getItem('movil_viaje_activo');
       if (!saved) return null;
       const parsed = JSON.parse(saved);
@@ -828,6 +835,8 @@ export const AppMovilPage: React.FC = () => {
   });
   const [paradasViajeActivo, setParadasViajeActivo] = useState<any[]>(() => {
     try {
+      const ts = Number(localStorage.getItem('movil_viaje_activo_ts') || 0);
+      if (ts > 0 && Date.now() - ts > 24 * 60 * 60 * 1000) return [];
       const saved = localStorage.getItem('movil_paradas_activo');
       return saved ? JSON.parse(saved) : [];
     } catch {
@@ -1507,11 +1516,14 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
-  // Persistir viaje activo y paradas en LocalStorage (Solo guardar, no borrar por fallo de red)
+  // Persistir viaje activo y paradas en LocalStorage (con TTL de 24 horas)
   useEffect(() => {
     if (viajeActivo && viajeActivo.id) {
       try {
         localStorage.setItem('movil_viaje_activo', JSON.stringify(viajeActivo));
+        if (!localStorage.getItem('movil_viaje_activo_ts')) {
+          localStorage.setItem('movil_viaje_activo_ts', String(Date.now()));
+        }
       } catch {}
     }
   }, [viajeActivo]);
@@ -1524,8 +1536,41 @@ export const AppMovilPage: React.FC = () => {
     }
   }, [paradasViajeActivo]);
 
-  // Salvaguarda: Rehidratar viaje activo y paradas de LocalStorage si la memoria quedó vacía
+  // Salvaguarda: Rehidratar viaje activo y paradas de LocalStorage + Purga automática > 24h
   useEffect(() => {
+    // Purgar data offline y cachés con más de 24 horas al iniciar
+    try {
+      const TTL_MS = 24 * 60 * 60 * 1000;
+      const ahora = Date.now();
+      ticketsLocales.purgarExpirados24h();
+      dbLocal.purgarExpirados24h().catch(() => 0);
+
+      const tsViaje = Number(localStorage.getItem('movil_viaje_activo_ts') || 0);
+      if (tsViaje > 0 && ahora - tsViaje > TTL_MS) {
+        localStorage.removeItem('movil_viaje_activo');
+        localStorage.removeItem('movil_paradas_activo');
+        localStorage.removeItem('movil_viaje_activo_ts');
+        setViajeActivo(null);
+        setParadasViajeActivo([]);
+      }
+
+      const rawCargas = localStorage.getItem('movil_cargas');
+      if (rawCargas) {
+        const arrCargas = JSON.parse(rawCargas);
+        if (Array.isArray(arrCargas)) {
+          const vigentes = arrCargas.filter((c: any) => {
+            const ref = c?.timestamp || c?.fecha || '';
+            const ms = ref ? Date.parse(String(ref)) : NaN;
+            return isNaN(ms) || ahora - ms <= TTL_MS;
+          });
+          if (vigentes.length !== arrCargas.length) {
+            localStorage.setItem('movil_cargas', JSON.stringify(vigentes));
+            setCargas(vigentes);
+          }
+        }
+      }
+    } catch {}
+
     if (typeof window !== 'undefined') {
       const host = window.location.hostname.toLowerCase();
       const isCampoVerde = host.includes('campoverde');
@@ -3447,8 +3492,10 @@ export const AppMovilPage: React.FC = () => {
           await cargarRecoleccionesYSolicitudes(targetV.fecha ? targetV.fecha.split('T')[0] : hoyStr);
         }
       } else {
-        // PRESERVAR CACHÉ: Solo restaurar si el servidor no respondió (fallo de red) y el ticket sigue ABIERTO en ruta
-        const savedV = !servidorRespondioOk
+        // PRESERVAR CACHÉ: Solo restaurar si el servidor no respondió (fallo de red), tiene <= 24h y sigue ABIERTO
+        const tsCache = Number(localStorage.getItem('movil_viaje_activo_ts') || 0);
+        const cacheVigente = tsCache === 0 || Date.now() - tsCache <= 24 * 60 * 60 * 1000;
+        const savedV = !servidorRespondioOk && cacheVigente
           ? (localStorage.getItem('movil_viaje_activo_' + idBusqueda) || (esModoSupervision ? null : localStorage.getItem('movil_viaje_activo')))
           : null;
         if (savedV) {

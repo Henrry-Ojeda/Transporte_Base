@@ -257,6 +257,8 @@ class SyncEngine {
    * Registra la equivalencia ID local (negativo) -> ID real para sus cargas.
    */
   async sincronizarTicketsLocales(): Promise<number> {
+    ticketsLocales.purgarExpirados24h();
+    await dbLocal.purgarExpirados24h().catch(() => 0);
     const pendientes = ticketsLocales.listarPendientes();
     if (pendientes.length === 0) return 0;
 
@@ -303,6 +305,13 @@ class SyncEngine {
           // Fallback: si falló el paquete completo (ej. foto muy pesada o validación de una finca),
           // intentar crear primero el ticket vacío para que las fincas se suban una a una en sincronizarRecolecciones.
           if (status && status >= 400 && status < 500) {
+            const totalLtsPaquete = Array.isArray(t.fincas)
+              ? t.fincas.reduce((acc: number, f: any) => acc + Number(f?.litros || 0), 0)
+              : 0;
+            if (!Array.isArray(t.fincas) || t.fincas.length === 0 || totalLtsPaquete <= 0) {
+              ticketsLocales.eliminarPorId(t.localId);
+              continue;
+            }
             try {
               const resSolo = await operacionesApi.iniciarViaje({
                 fecha: t.payload?.fecha,

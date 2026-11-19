@@ -767,6 +767,53 @@ class LocalDatabase {
       total,
     };
   }
+
+  /** Purga automáticamente registros y cachés de IndexedDB con más de 24 horas de antigüedad. */
+  async purgarExpirados24h(): Promise<number> {
+    const TTL_MS = 24 * 60 * 60 * 1000;
+    const ahora = Date.now();
+    const db = await this.openDB();
+    const stores = [
+      'recolecciones',
+      'viajeCache',
+      'viajesChoferCache',
+      'combustibles',
+      'averias',
+      'descargasReceptoria',
+      'notificaciones',
+    ];
+    let eliminados = 0;
+
+    for (const storeName of stores) {
+      if (!db.objectStoreNames.contains(storeName)) continue;
+      await new Promise<void>((resolve) => {
+        try {
+          const tx = db.transaction(storeName, 'readwrite');
+          const store = tx.objectStore(storeName);
+          const req = store.openCursor();
+          req.onsuccess = (ev: Event) => {
+            const cursor = (ev.target as IDBRequest<IDBCursorWithValue | null>).result;
+            if (!cursor) {
+              resolve();
+              return;
+            }
+            const val: any = cursor.value;
+            const refStr = val?.creadoEn || val?.updatedAt || val?.fecha || val?.fechaEvento || '';
+            const refMs = refStr ? Date.parse(String(refStr)) : NaN;
+            if (!isNaN(refMs) && ahora - refMs > TTL_MS) {
+              cursor.delete();
+              eliminados++;
+            }
+            cursor.continue();
+          };
+          req.onerror = () => resolve();
+        } catch {
+          resolve();
+        }
+      });
+    }
+    return eliminados;
+  }
 }
 
 export const dbLocal = new LocalDatabase();

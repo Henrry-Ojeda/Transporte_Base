@@ -910,8 +910,17 @@ export const ReceptoriaPage: React.FC = () => {
     ...companiasUnicasHoy.map((cp) => ({ value: cp, label: cp }))
   ], [companiasUnicasHoy]);
 
-  const esDespachoReceptoria = (d: any): boolean =>
-    esReceptoriaPrincipal(d?.companiaNombre || d?.nombreCompania || d?.destino || '');
+  const esDespachoReceptoria = (d: any): boolean => {
+    if (!d) return false;
+    if (esReceptoriaPrincipal(d)) return true;
+    const nomDest = String(d?.companiaNombre || d?.nombreCompania || d?.destino || '').toUpperCase().trim();
+    const compId = Number(d?.companiaId || 0);
+    const compCatalogo = companias.find(
+      (c) => (compId > 0 && Number(c.id) === compId) || (nomDest && String(c.nombre || '').toUpperCase().trim() === nomDest)
+    );
+    if (compCatalogo && esReceptoriaPrincipal(compCatalogo)) return true;
+    return esReceptoriaPrincipal(nomDest);
+  };
 
   const esEntradaReceptoriaValida = (v: any): boolean => {
     if (!esTicketVisibleEnReceptoria(v)) return false;
@@ -1052,7 +1061,7 @@ export const ReceptoriaPage: React.FC = () => {
           _fincas: fincasSoloRuta,
         };
       });
-  }, [viajesActivos, filtroFecha, subFiltroEntradas, busquedaBandeja, fincasTicketsMap, conductores, usuarios, despachosCompanias, fincasCatalogo]);
+  }, [viajesActivos, filtroFecha, subFiltroEntradas, busquedaBandeja, fincasTicketsMap, conductores, usuarios, despachosCompanias, fincasCatalogo, companias]);
 
   // Bandeja 2: Salidas a queseras (En espera de verificación en planta)
   const salidasTransito = useMemo(() => {
@@ -1100,7 +1109,7 @@ export const ReceptoriaPage: React.FC = () => {
 
       return true;
     });
-  }, [despachosCompanias, filtroFecha, subFiltroSalidas, busquedaBandeja]);
+  }, [despachosCompanias, filtroFecha, subFiltroSalidas, busquedaBandeja, companias]);
 
   // Bandeja 2.1: Salidas confirmadas y finalizadas
   const salidasFinalizadas = useMemo(() => {
@@ -1141,7 +1150,7 @@ export const ReceptoriaPage: React.FC = () => {
 
       return true;
     });
-  }, [despachosCompanias, filtroFecha, subFiltroSalidas, busquedaBandeja]);
+  }, [despachosCompanias, filtroFecha, subFiltroSalidas, busquedaBandeja, companias]);
 
   const handleCambiarVista = (val: string) => {
     setFiltroEstado(val);

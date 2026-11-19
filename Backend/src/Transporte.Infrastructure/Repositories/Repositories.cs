@@ -9151,11 +9151,6 @@ namespace Transporte.Infrastructure.Repositories
                     sb.AppendLine("2. Localiza el Ticket / Control de Viaje correspondiente.");
                     sb.AppendLine("3. Haz clic en **`⚖️ Recibir en Receptoría`** o **`✏️ Editar`** para ingresar los litros reales medidos o ajustar la carga.");
                 }
-                return sb.ToString();
-            }
-
-            if (p.Contains("como registrar") || p.Contains("crear viaje") || p.Contains("nueva ruta") || p.Contains("iniciar viaje") || p.Contains("como crear"))
-            {
                 sb.AppendLine("🚀 **GUÍA PASO A PASO: Cómo Registrar un Viaje / Ruta de Recolección**\n");
                 sb.AppendLine("1. **Ir a la Vista:** En el menú lateral izquierdo, haz clic en **🚚 Rutas de Recolección** (o pulsa la tecla de acceso directo).");
                 sb.AppendLine("2. **Iniciar Viaje:** Haz clic en el botón superior azul **`+ Iniciar Nuevo Viaje / Registrar Ruta`**.");
@@ -9609,7 +9604,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     pt.Color AS ColorProceso,
                     pt.Icono AS IconoProceso,
                     cr.RutaLogisticaId,
-                    rl.Nombre AS RutaLogisticaNombre,
+                    COALESCE(rl.Nombre, CASE WHEN cr.Observacion LIKE '%[ENTRADA TERCERO]%' THEN (SELECT TOP 1 f.Nombre FROM TB_RUTAS_RECOLECCION rr INNER JOIN TB_FINCAS f ON rr.FincaId = f.Id WHERE rr.ControlRutaId = cr.Id) ELSE NULL END) AS RutaLogisticaNombre,
                     COALESCE(cam.Id, cam_plan.Id) AS CamionId,
                     COALESCE(cam.Placa, cam_plan.Placa) AS CamionPlaca,
                     COALESCE(cam.CapacidadLitros, cam_plan.CapacidadLitros) AS CapacidadCamionLitros,
@@ -9647,7 +9642,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                        pt.Color AS ColorProceso,
                        pt.Icono AS IconoProceso,
                        cr.RutaLogisticaId,
-                       rl.Nombre AS RutaLogisticaNombre,
+                       COALESCE(rl.Nombre, CASE WHEN cr.Observacion LIKE '%[ENTRADA TERCERO]%' THEN (SELECT TOP 1 f.Nombre FROM TB_RUTAS_RECOLECCION rr INNER JOIN TB_FINCAS f ON rr.FincaId = f.Id WHERE rr.ControlRutaId = cr.Id) ELSE NULL END) AS RutaLogisticaNombre,
                        COALESCE(cam.Id, cam_plan.Id) AS CamionId,
                        COALESCE(cam.Placa, cam_plan.Placa) AS CamionPlaca,
                        COALESCE(cam.CapacidadLitros, cam_plan.CapacidadLitros) AS CapacidadCamionLitros,
@@ -10133,7 +10128,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     pt.Color AS ColorProceso,
                     pt.Icono AS IconoProceso,
                     cr.RutaLogisticaId,
-                    rl.Nombre AS RutaLogisticaNombre,
+                    COALESCE(rl.Nombre, CASE WHEN cr.Observacion LIKE '%[ENTRADA TERCERO]%' THEN (SELECT TOP 1 f.Nombre FROM TB_RUTAS_RECOLECCION rr INNER JOIN TB_FINCAS f ON rr.FincaId = f.Id WHERE rr.ControlRutaId = cr.Id) ELSE NULL END) AS RutaLogisticaNombre,
                     COALESCE(cam.Id, cam_plan.Id) AS CamionId,
                     COALESCE(cam.Placa, cam_plan.Placa) AS CamionPlaca,
                     COALESCE(cam.CapacidadLitros, cam_plan.CapacidadLitros) AS CapacidadCamionLitros,
@@ -10206,7 +10201,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     pt.Color AS ColorProceso,
                     pt.Icono AS IconoProceso,
                     cr.RutaLogisticaId,
-                    rl.Nombre AS RutaLogisticaNombre,
+                    COALESCE(rl.Nombre, CASE WHEN cr.Observacion LIKE '%[ENTRADA TERCERO]%' THEN (SELECT TOP 1 f.Nombre FROM TB_RUTAS_RECOLECCION rr INNER JOIN TB_FINCAS f ON rr.FincaId = f.Id WHERE rr.ControlRutaId = cr.Id) ELSE NULL END) AS RutaLogisticaNombre,
                     COALESCE(cam.Id, cam_plan.Id) AS CamionId,
                     COALESCE(cam.Placa, cam_plan.Placa) AS CamionPlaca,
                     COALESCE(cam.CapacidadLitros, cam_plan.CapacidadLitros) AS CapacidadCamionLitros,

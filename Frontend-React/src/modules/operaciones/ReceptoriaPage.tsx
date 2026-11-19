@@ -1696,8 +1696,10 @@ export const ReceptoriaPage: React.FC = () => {
                   const capacidad = Number(c.capacidadCamionLitros || camionObj?.capacidadLitros || 5500);
                   const pctCapacidad = capacidad > 0 ? Math.min(100, Math.round((litrosRecogidos / capacidad) * 100)) : 0;
 
-                  // 4. Ruta Logística
-                  const rutaNombre = c.rutaLogisticaNombre || c.rutasLogisticasNombres || c.rutaNombre || 'TODOS';
+                  // 4. Ruta Logística (o Finca si es Entrada por Tercero)
+                  const esEntradaTercero = String(c.observacion || '').includes('[ENTRADA TERCERO]');
+                  const fincaTerceroNom = esEntradaTercero && c._fincas?.length > 0 ? (c._fincas[0].fincaNombre || c._fincas[0].nombre) : '';
+                  const rutaNombre = c.rutaLogisticaNombre || fincaTerceroNom || c.rutasLogisticasNombres || c.rutaNombre || 'TODOS';
 
                   // 5. Fechas y Horas
                   const fechaFmt = c.fecha ? new Date(c.fecha).toLocaleDateString('es-VE') : '';

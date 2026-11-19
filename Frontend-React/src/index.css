@@ -555,3 +555,29 @@ table.dataTable tbody tr:hover td,
   }
 }
 
+/* ============================================================================
+   PROTECCIÓN GLOBAL DE MODALES (DESKTOP, LAPTOP Y MÓVIL)
+   Evita que modales altos se corten arriba del viewport cuando están centrados
+   ============================================================================ */
+.modal-overlay,
+.modal-backdrop-custom,
+div.fixed.inset-0.flex.items-center,
+div[style*="position: fixed"][style*="inset: 0"][style*="align-items: center"],
+div[style*="position: fixed"][style*="top: 0"][style*="align-items: center"] {
+  overflow-y: auto !important;
+  align-items: safe center !important;
+  padding: 16px !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+.modal-overlay > div,
+.modal-backdrop-custom > div,
+div.fixed.inset-0.flex.items-center > div,
+div[style*="position: fixed"][style*="inset: 0"][style*="align-items: center"] > div,
+div[style*="position: fixed"][style*="top: 0"][style*="align-items: center"] > div {
+  margin: auto !important;
+  max-height: calc(100dvh - 32px) !important;
+  overflow-y: auto !important;
+}
+
+

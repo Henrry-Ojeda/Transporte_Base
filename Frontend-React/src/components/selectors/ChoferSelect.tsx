@@ -39,6 +39,8 @@ export const ChoferSelect: React.FC<ChoferSelectProps> = ({
     const opts: SelectOption[] = [];
     for (const u of choferes) {
       if (!u || !u.id || seen.has(u.id)) continue;
+      const rol = String(u.rol || '').trim().toUpperCase();
+      if (rol && rol !== 'CHOFER' && rol !== 'CONDUCTOR') continue;
       seen.add(u.id);
       opts.push({
         value: u.id,

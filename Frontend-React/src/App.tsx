@@ -140,10 +140,13 @@ const HomeRedirect: React.FC = () => {
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
   );
 
-  if (rol === 'CHOFER' || tieneDispositivoValido || (!isAuthenticated && isMobileDevice)) {
+  if (rol === 'CHOFER') {
     return <Navigate to="/movil" replace />;
   }
   if (!isAuthenticated) {
+    if (tieneDispositivoValido || isMobileDevice) {
+      return <Navigate to="/movil" replace />;
+    }
     return <Navigate to="/login" replace />;
   }
   return <Navigate to="/dashboard" replace />;

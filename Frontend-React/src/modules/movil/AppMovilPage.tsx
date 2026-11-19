@@ -13433,33 +13433,35 @@ export const AppMovilPage: React.FC = () => {
                             </button>
                           )}
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setModalDevolverTicket({
-                                open: true,
-                                ticketId: t.id,
-                                motivo: '',
-                              })
-                            }
-                            style={{
-                              background: '#fff1f2',
-                              color: '#e11d48',
-                              border: '1.5px solid #fecdd3',
-                              borderRadius: '10px',
-                              padding: '9px 12px',
-                              fontSize: '12px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '5px',
-                            }}
-                            title="Devolver ticket al chofer para corregir fincas o litros"
-                          >
-                            <i className="fa-solid fa-arrow-rotate-left"></i>
-                            <span>Devolver</span>
-                          </button>
+                          {!String(t.observacion || '').includes('[ENTRADA TERCERO]') && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setModalDevolverTicket({
+                                  open: true,
+                                  ticketId: t.id,
+                                  motivo: '',
+                                })
+                              }
+                              style={{
+                                background: '#fff1f2',
+                                color: '#e11d48',
+                                border: '1.5px solid #fecdd3',
+                                borderRadius: '10px',
+                                padding: '9px 12px',
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                              }}
+                              title="Devolver ticket al chofer para corregir fincas o litros"
+                            >
+                              <i className="fa-solid fa-arrow-rotate-left"></i>
+                              <span>Devolver</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     );

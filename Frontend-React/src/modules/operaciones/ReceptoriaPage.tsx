@@ -1924,30 +1924,38 @@ export const ReceptoriaPage: React.FC = () => {
                           </div>
                         ) : enviadoARecep ? (
                           <>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                              <button
-                                type="button"
-                                className="btn btn-sm"
-                                onClick={() => abrirModalValidarFincas(c)}
-                                style={{
-                                  fontSize: '11px',
-                                  fontWeight: 800,
-                                  padding: '6px 8px',
-                                  background: ticketsFincasValidadas.has(c.id) ? '#dcfce7' : '#f0fdf4',
-                                  color: ticketsFincasValidadas.has(c.id) ? '#15803d' : '#16a34a',
-                                  border: `1.5px solid ${ticketsFincasValidadas.has(c.id) ? '#86efac' : '#bbf7d0'}`,
-                                  borderRadius: '6px',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '4px',
-                                  cursor: 'pointer',
-                                }}
-                                title="Modal para validar que los litros y recibos de cada finca con litros estén correctos"
-                              >
-                                <i className={ticketsFincasValidadas.has(c.id) ? "fa-solid fa-circle-check text-green-600" : "fa-solid fa-clipboard-check text-emerald-600"}></i>
-                                {ticketsFincasValidadas.has(c.id) ? 'Fincas Auditadas' : 'Validar Fincas'}
-                              </button>
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: String(c.observacion || '').includes('[ENTRADA TERCERO]') ? '1fr' : '1fr 1fr',
+                                gap: '6px',
+                              }}
+                            >
+                              {!String(c.observacion || '').includes('[ENTRADA TERCERO]') && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm"
+                                  onClick={() => abrirModalValidarFincas(c)}
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    padding: '6px 8px',
+                                    background: ticketsFincasValidadas.has(c.id) ? '#dcfce7' : '#f0fdf4',
+                                    color: ticketsFincasValidadas.has(c.id) ? '#15803d' : '#16a34a',
+                                    border: `1.5px solid ${ticketsFincasValidadas.has(c.id) ? '#86efac' : '#bbf7d0'}`,
+                                    borderRadius: '6px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '4px',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Modal para validar que los litros y recibos de cada finca con litros estén correctos"
+                                >
+                                  <i className={ticketsFincasValidadas.has(c.id) ? "fa-solid fa-circle-check text-green-600" : "fa-solid fa-clipboard-check text-emerald-600"}></i>
+                                  {ticketsFincasValidadas.has(c.id) ? 'Fincas Auditadas' : 'Validar Fincas'}
+                                </button>
+                              )}
 
                               <button
                                 type="button"
@@ -2016,29 +2024,31 @@ export const ReceptoriaPage: React.FC = () => {
                               </button>
                             )}
 
-                            <button
-                              type="button"
-                              className="btn btn-sm"
-                              onClick={() => handleDevolverTicketAlChofer(c.id)}
-                              style={{
-                                width: '100%',
-                                fontWeight: 700,
-                                fontSize: '11px',
-                                background: '#fff1f2',
-                                color: '#be123c',
-                                border: '1px solid #fecdd3',
-                                padding: '5px 8px',
-                                borderRadius: '6px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '5px',
-                                cursor: 'pointer',
-                              }}
-                              title="Devolver ticket al chofer para que pueda agregar o modificar fincas"
-                            >
-                              <i className="fa-solid fa-arrow-rotate-left"></i> Devolver Ticket al Chofer
-                            </button>
+                            {!String(c.observacion || '').includes('[ENTRADA TERCERO]') && (
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                onClick={() => handleDevolverTicketAlChofer(c.id)}
+                                style={{
+                                  width: '100%',
+                                  fontWeight: 700,
+                                  fontSize: '11px',
+                                  background: '#fff1f2',
+                                  color: '#be123c',
+                                  border: '1px solid #fecdd3',
+                                  padding: '5px 8px',
+                                  borderRadius: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '5px',
+                                  cursor: 'pointer',
+                                }}
+                                title="Devolver ticket al chofer para que pueda agregar o modificar fincas"
+                              >
+                                <i className="fa-solid fa-arrow-rotate-left"></i> Devolver Ticket al Chofer
+                              </button>
+                            )}
                           </>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

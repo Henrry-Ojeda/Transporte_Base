@@ -11537,7 +11537,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 FROM TB_CONTROL_COMPANIAS cc
                 INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
                 WHERE cc.ControlRutaId = @controlRutaId
-                  AND (UPPER(ISNULL(c.Nombre, '')) LIKE '%RECEPTORIA%'
+                  AND (ISNULL(c.EsPrincipal, 0) = 1
+                    OR UPPER(ISNULL(c.Nombre, '')) LIKE '%RECEPTORIA%'
                     OR UPPER(ISNULL(c.Nombre, '')) LIKE '%RECEPTORÍA%'
                     OR UPPER(ISNULL(c.Nombre, '')) LIKE '%PLANTA PRINCIPAL%')",
                 new { controlRutaId });
@@ -11547,6 +11548,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 FROM TB_CONTROL_COMPANIAS cc
                 INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
                 WHERE cc.ControlRutaId = @controlRutaId
+                  AND ISNULL(c.EsPrincipal, 0) = 0
                   AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%RECEPTORIA%'
                   AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%RECEPTORÍA%'
                   AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%PLANTA PRINCIPAL%'",
@@ -11572,10 +11574,10 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 finalCompaniaDestinoId = null;
             }
 
-            // Solo queda pendiente en 1. Entradas (RECEPCIONADO / Proceso 3) si hay leche destinada a Receptoría
+            // Si hay leche destinada a Receptoría Principal, queda EN_RECEPTORIA (Proceso 2: En Silos / Por Recibir) hasta ser verificada en Planta
             bool tieneEntradaReceptoria = totalDespachadoReceptoria > 0 || (totalLitrosFinca - totalDespachadoExterno) > 0;
-            string estadoRuta = tieneEntradaReceptoria ? "RECEPCIONADO" : "FINALIZADO";
-            int procesoRuta = tieneEntradaReceptoria ? 3 : 4;
+            string estadoRuta = tieneEntradaReceptoria ? "EN_RECEPTORIA" : "FINALIZADO";
+            int procesoRuta = tieneEntradaReceptoria ? 2 : 4;
             string tipoDestinoRuta = (totalDespachadoReceptoria > 0 && totalDespachadoExterno > 0)
                 ? "RECEPTORIA_Y_COMPANIA"
                 : (tieneEntradaReceptoria ? "RECEPTORIA" : "COMPANIA_DIRECTA");
@@ -11593,7 +11595,8 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                     DiferenciaCompania = @dif,
                     MermaTotalLitros = @dif,
                     PorcentajeMerma = @merma,
-                    FechaEntregaCompania = GETDATE(),
+                    FechaLlegadaReceptoria = CASE WHEN @tieneEntradaReceptoria = 1 THEN ISNULL(FechaLlegadaReceptoria, GETDATE()) ELSE FechaLlegadaReceptoria END,
+                    FechaEntregaCompania = CASE WHEN @totalDespachadoExterno > 0 THEN GETDATE() ELSE NULL END,
                     ModifiedAt = GETDATE(),
                     ModifiedBy = @usuarioId
                 WHERE Id = @controlRutaId",

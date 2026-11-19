@@ -5092,6 +5092,7 @@ namespace Transporte.Infrastructure.Repositories
                     e.Fecha,
                     e.CompaniaId,
                     c.Nombre AS CompaniaNombre,
+                    ISNULL(c.EsPrincipal, 0) AS CompaniaEsPrincipal,
                     e.UsuarioId,
                     u.NombreCompleto AS ConductorNombre,
                     ISNULL(cam.Placa, u.VehiculoPlaca) AS CamionPlaca,
@@ -5163,7 +5164,8 @@ namespace Transporte.Infrastructure.Repositories
                 string? obs = (string?)item.Observacion;
                 string estado = (string?)item.RutaEstado ?? (string?)item.ControlCompaniaEstado ?? "FINALIZADO";
 
-                bool esReceptoria = compId == 5028 || compNombre.IndexOf("RECEPTORIA", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool compEsPrincipal = item.CompaniaEsPrincipal != null && Convert.ToBoolean(item.CompaniaEsPrincipal);
+                bool esReceptoria = compEsPrincipal || compId == 5028 || compNombre.IndexOf("RECEPTORIA", StringComparison.OrdinalIgnoreCase) >= 0 || compNombre.IndexOf("RECEPTORÍA", StringComparison.OrdinalIgnoreCase) >= 0 || compNombre.IndexOf("PLANTA PRINCIPAL", StringComparison.OrdinalIgnoreCase) >= 0;
 
                 int tipoProceso = 1;
                 string tipoProcesoNombre = "Finca ➔ Receptoría";
@@ -5180,7 +5182,7 @@ namespace Transporte.Infrastructure.Repositories
                 if (esReceptoria)
                 {
                     // Ingreso a Receptoría
-                    bool tieneEntregaCompMismaRuta = cRutaId.HasValue && entregasRaw.Any(x => (long?)x.ControlRutaId == cRutaId && (int)x.CompaniaId != 5028);
+                    bool tieneEntregaCompMismaRuta = cRutaId.HasValue && entregasRaw.Any(x => (long?)x.ControlRutaId == cRutaId && (int)x.CompaniaId != compId && !(x.CompaniaEsPrincipal != null && Convert.ToBoolean(x.CompaniaEsPrincipal)));
 
                     if (tieneEntregaCompMismaRuta)
                     {

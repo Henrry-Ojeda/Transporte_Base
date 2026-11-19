@@ -8036,10 +8036,12 @@ namespace Transporte.Infrastructure.Repositories
     {
         private readonly string _connectionString;
         private readonly string _geminiApiKey;
+        private readonly Transporte.Core.Interfaces.ITenantService? _tenantService;
         private static readonly HttpClient _httpClient = new HttpClient();
 
         public ChatRepository(IConfiguration configuration, Transporte.Core.Interfaces.ITenantService? tenantService = null)
         {
+            _tenantService = tenantService;
             _connectionString = tenantService?.GetConnectionString() 
                 ?? configuration.GetConnectionString("DefaultConnection")
                 ?? configuration.GetConnectionString("BD_TRANSPORTE")
@@ -8058,14 +8060,41 @@ namespace Transporte.Infrastructure.Repositories
                 "⚠️ ¿Dónde están los mayores problemas de merma?",
                 "🚜 ¿Cuáles fincas o choferes presentan descuadres?",
                 "💰 Estado de adelantos y préstamos pendientes por cobrar",
-                "🧪 Evaluar mermas por leche ácida o pérdida de calidad"
+                "🧪 Evaluar mermas por leche ácida o pérdida de calidad",
+                "🚛 Estado de la flota, combustible, mantenimientos y repuestos"
             });
         }
+
+        private bool PuedeTabla(string tabla, string? moduloRequerido = null)
+            => _tenantService == null || _tenantService.PuedeConsultarTablaAi(tabla, moduloRequerido);
 
         public async Task<ChatResponseDto> AnalizarDatosSistemaAsync(string mensaje)
         {
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
+
+            var tablasHabilitadas = new List<string>();
+            void RegistrarTabla(string t, string? mod = null)
+            {
+                if (PuedeTabla(t, mod)) tablasHabilitadas.Add(t);
+            }
+            RegistrarTabla("TB_CICLOS_OPERATIVOS");
+            RegistrarTabla("TB_CONTROL_RUTAS");
+            RegistrarTabla("TB_RUTAS_RECOLECCION");
+            RegistrarTabla("TB_FINCAS");
+            RegistrarTabla("TB_TIPO_SERVICIO");
+            RegistrarTabla("TB_USUARIOS");
+            RegistrarTabla("TB_CONTROL_COMPANIAS", "MOD_RECEPTORIA");
+            RegistrarTabla("TB_ENTREGAS_COMPANIA", "MOD_RECEPTORIA");
+            RegistrarTabla("TB_COMPANIAS", "MOD_RECEPTORIA");
+            RegistrarTabla("TB_ADELANTOS", "MOD_LIQUIDACIONES");
+            RegistrarTabla("TB_HISTORIAL_BCV", "MOD_HISTORIAL_BCV");
+            RegistrarTabla("TB_CAMIONES");
+            RegistrarTabla("TB_MANTENIMIENTO_CAMIONES", "MOD_MANTENIMIENTO");
+            RegistrarTabla("TB_COMBUSTIBLE_INVENTARIO", "MOD_COMBUSTIBLE");
+            RegistrarTabla("TB_COMBUSTIBLE_HISTORIAL", "MOD_COMBUSTIBLE");
+            RegistrarTabla("TB_INVENTARIO_REPUESTOS", "MOD_REPUESTOS");
+            RegistrarTabla("TB_MOVIMIENTOS_REPUESTOS", "MOD_REPUESTOS");
 
             // ====================================================
             // 0. BÚSQUEDA DIRECTA Y AUDITORÍA INTELIGENTE POR CIFRAS O ENTIDADES
@@ -8305,20 +8334,27 @@ namespace Transporte.Infrastructure.Repositories
             // ====================================================
 
             // 1. Ciclo Activo
-            var cicloActivo = await connection.QueryFirstOrDefaultAsync<dynamic>(
-                "SELECT TOP 1 Id, Codigo, FechaInicio, FechaFin, Estado FROM TB_CICLOS_OPERATIVOS WHERE Estado = 'ABIERTO' ORDER BY Id DESC")
-                ?? await connection.QueryFirstOrDefaultAsync<dynamic>(
-                "SELECT TOP 1 Id, Codigo, FechaInicio, FechaFin, Estado FROM TB_CICLOS_OPERATIVOS ORDER BY Id DESC");
+            dynamic? cicloActivo = null;
+            if (PuedeTabla("TB_CICLOS_OPERATIVOS"))
+            {
+                cicloActivo = await connection.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT TOP 1 Id, Codigo, FechaInicio, FechaFin, Estado FROM TB_CICLOS_OPERATIVOS WHERE Estado = 'ABIERTO' ORDER BY Id DESC")
+                    ?? await connection.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT TOP 1 Id, Codigo, FechaInicio, FechaFin, Estado FROM TB_CICLOS_OPERATIVOS ORDER BY Id DESC");
+            }
 
             int cicloId = cicloActivo?.Id ?? 0;
             string cicloCodigo = cicloActivo?.Codigo ?? "Sin Ciclo";
 
             // 2. Tasa BCV
-            decimal tasaBcv = await connection.ExecuteScalarAsync<decimal?>(
-                "SELECT TOP 1 TasaDolarBs FROM TB_HISTORIAL_BCV ORDER BY Fecha DESC, Id DESC") ?? 0m;
+            decimal tasaBcv = PuedeTabla("TB_HISTORIAL_BCV", "MOD_HISTORIAL_BCV")
+                ? await connection.ExecuteScalarAsync<decimal?>(
+                    "SELECT TOP 1 TasaDolarBs FROM TB_HISTORIAL_BCV ORDER BY Fecha DESC, Id DESC") ?? 0m
+                : 0m;
 
             // 3. Todos los Choferes/Conductores del sistema
-            var conductores = (await connection.QueryAsync<dynamic>(@"
+            var conductores = (PuedeTabla("TB_USUARIOS") && PuedeTabla("TB_RUTAS_RECOLECCION"))
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT u.Id, u.NombreCompleto, u.Username, u.Rol,
                     SUM(ISNULL(r.Litros, 0)) AS TotalLitrosRecolectados,
                     COUNT(DISTINCT r.FincaId) AS TotalFincasAtendidas,
@@ -8327,10 +8363,12 @@ namespace Transporte.Infrastructure.Repositories
                 LEFT JOIN TB_RUTAS_RECOLECCION r ON u.Id = r.UsuarioId AND r.CicloId = @cicloId
                 WHERE u.Rol IN ('CONDUCTOR', 'CHOFER', 'OPERADOR') OR u.Id IN (SELECT DISTINCT UsuarioId FROM TB_RUTAS_RECOLECCION WHERE CicloId = @cicloId AND UsuarioId IS NOT NULL)
                 GROUP BY u.Id, u.NombreCompleto, u.Username, u.Rol
-                ORDER BY TotalLitrosRecolectados DESC", new { cicloId })).ToList();
+                ORDER BY TotalLitrosRecolectados DESC", new { cicloId })).ToList()
+                : new List<dynamic>();
 
             // Desempeño por chofer en rutas
-            var choferesPorRutas = (await connection.QueryAsync<dynamic>(@"
+            var choferesPorRutas = (PuedeTabla("TB_RUTAS_RECOLECCION") && PuedeTabla("TB_USUARIOS") && PuedeTabla("TB_FINCAS"))
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT u.Id, u.NombreCompleto, u.Username,
                     SUM(r.Litros) AS TotalLitros,
                     COUNT(DISTINCT r.FincaId) AS TotalFincas,
@@ -8350,10 +8388,12 @@ namespace Transporte.Infrastructure.Repositories
                 INNER JOIN TB_FINCAS f ON r.FincaId = f.Id
                 WHERE r.CicloId = @cicloId
                 GROUP BY u.Id, u.NombreCompleto, u.Username
-                ORDER BY TotalLitros DESC", new { cicloId })).ToList();
+                ORDER BY TotalLitros DESC", new { cicloId })).ToList()
+                : new List<dynamic>();
 
             // 4. Todas las Fincas con métricas
-            var fincas = (await connection.QueryAsync<dynamic>(@"
+            var fincas = (PuedeTabla("TB_FINCAS") && PuedeTabla("TB_RUTAS_RECOLECCION"))
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT f.Id, f.Nombre, f.TipoServicioId, ts.Nombre AS TipoServicio,
                     ISNULL(SUM(r.Litros), 0) AS TotalLitros,
                     ISNULL(SUM(CASE WHEN r.EsAcida = 1 THEN r.Litros ELSE 0 END), 0) AS LitrosAcidos,
@@ -8362,10 +8402,12 @@ namespace Transporte.Infrastructure.Repositories
                 LEFT JOIN TB_TIPO_SERVICIO ts ON f.TipoServicioId = ts.Id
                 LEFT JOIN TB_RUTAS_RECOLECCION r ON f.Id = r.FincaId AND r.CicloId = @cicloId
                 GROUP BY f.Id, f.Nombre, f.TipoServicioId, ts.Nombre
-                ORDER BY TotalLitros DESC", new { cicloId })).ToList();
+                ORDER BY TotalLitros DESC", new { cicloId })).ToList()
+                : new List<dynamic>();
 
             // 5. Entregas a Plantas (Resumen de Receptoría / Compañías)
-            var entregas = (await connection.QueryAsync<dynamic>(@"
+            var entregas = (PuedeTabla("TB_ENTREGAS_COMPANIA", "MOD_RECEPTORIA") && PuedeTabla("TB_COMPANIAS", "MOD_RECEPTORIA"))
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT c.Nombre AS Planta, e.Litros, e.Fecha, ts.Nombre AS TipoServicio,
                     u.NombreCompleto AS Conductor
                 FROM TB_ENTREGAS_COMPANIA e
@@ -8373,10 +8415,12 @@ namespace Transporte.Infrastructure.Repositories
                 LEFT JOIN TB_TIPO_SERVICIO ts ON c.TipoServicioId = ts.Id
                 LEFT JOIN TB_USUARIOS u ON e.UsuarioId = u.Id
                 WHERE e.CicloId = @cicloId
-                ORDER BY e.Fecha DESC", new { cicloId })).ToList();
+                ORDER BY e.Fecha DESC", new { cicloId })).ToList()
+                : new List<dynamic>();
 
             // 6. TICKETS DETALLADOS DE SALIDA / DESPACHOS A COMPAÑÍAS (TB_CONTROL_COMPANIAS)
-            var despachosDetallados = (await connection.QueryAsync<dynamic>(@"
+            var despachosDetallados = PuedeTabla("TB_CONTROL_COMPANIAS", "MOD_RECEPTORIA")
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT TOP 300 cc.Id, cc.Fecha, u.NombreCompleto AS Conductor, c.Nombre AS Compania,
                        cc.LitrosDespachados, cc.LitrosRecibidosCompania, cc.DiferenciaLitros, cc.Estado, cc.Observacion,
                        co.Codigo AS CicloCodigo
@@ -8384,10 +8428,12 @@ namespace Transporte.Infrastructure.Repositories
                 LEFT JOIN TB_USUARIOS u ON cc.UsuarioId = u.Id
                 LEFT JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
                 LEFT JOIN TB_CICLOS_OPERATIVOS co ON cc.CicloId = co.Id
-                ORDER BY cc.Id DESC")).ToList();
+                ORDER BY cc.Id DESC")).ToList()
+                : new List<dynamic>();
 
             // 7. TICKETS DETALLADOS DE ENTREGAS A RECEPTORÍA Y COMPAÑÍAS (TB_ENTREGAS_COMPANIA)
-            var entregasDetalladas = (await connection.QueryAsync<dynamic>(@"
+            var entregasDetalladas = PuedeTabla("TB_ENTREGAS_COMPANIA", "MOD_RECEPTORIA")
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT TOP 300 e.Id, e.Fecha, u.NombreCompleto AS Conductor, c.Nombre AS Compania,
                        e.Litros, e.Observacion, co.Codigo AS CicloCodigo, ts.Nombre AS TipoServicio
                 FROM TB_ENTREGAS_COMPANIA e
@@ -8395,10 +8441,12 @@ namespace Transporte.Infrastructure.Repositories
                 LEFT JOIN TB_USUARIOS u ON e.UsuarioId = u.Id
                 LEFT JOIN TB_CICLOS_OPERATIVOS co ON e.CicloId = co.Id
                 LEFT JOIN TB_TIPO_SERVICIO ts ON c.TipoServicioId = ts.Id
-                ORDER BY e.Id DESC")).ToList();
+                ORDER BY e.Id DESC")).ToList()
+                : new List<dynamic>();
 
             // 8. CONTROLES DE VIAJES / ENTRADAS A RECEPTORÍA (TB_CONTROL_RUTAS)
-            var controlesRutasDetallados = (await connection.QueryAsync<dynamic>(@"
+            var controlesRutasDetallados = PuedeTabla("TB_CONTROL_RUTAS")
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT TOP 200 cr.Id, cr.Fecha, u.NombreCompleto AS Conductor,
                        cr.TotalLitrosFinca, cr.TotalLitrosReceptoria, cr.LitrosRecibidosReceptoria,
                        cr.DiferenciaLitros, cr.DiferenciaReceptoria, cr.Estado, cr.Observacion,
@@ -8406,33 +8454,41 @@ namespace Transporte.Infrastructure.Repositories
                 FROM TB_CONTROL_RUTAS cr
                 LEFT JOIN TB_USUARIOS u ON cr.UsuarioId = u.Id
                 LEFT JOIN TB_CICLOS_OPERATIVOS co ON cr.CicloId = co.Id
-                ORDER BY cr.Id DESC")).ToList();
+                ORDER BY cr.Id DESC")).ToList()
+                : new List<dynamic>();
 
             // 9. RECOLECCIONES INDIVIDUALES EN FINCAS (TB_RUTAS_RECOLECCION)
-            var recoleccionesDetalladas = (await connection.QueryAsync<dynamic>(@"
+            var recoleccionesDetalladas = PuedeTabla("TB_RUTAS_RECOLECCION")
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT TOP 250 r.Id, r.Fecha, u.NombreCompleto AS Conductor, f.Nombre AS Finca,
                        r.Litros, r.EsAcida, r.Observacion, co.Codigo AS CicloCodigo
                 FROM TB_RUTAS_RECOLECCION r
                 LEFT JOIN TB_USUARIOS u ON r.UsuarioId = u.Id
                 LEFT JOIN TB_FINCAS f ON r.FincaId = f.Id
                 LEFT JOIN TB_CICLOS_OPERATIVOS co ON r.CicloId = co.Id
-                ORDER BY r.Id DESC")).ToList();
+                ORDER BY r.Id DESC")).ToList()
+                : new List<dynamic>();
 
             // 10. Adelantos Activos
-            var adelantos = (await connection.QueryAsync<dynamic>(@"
+            var adelantos = PuedeTabla("TB_ADELANTOS", "MOD_LIQUIDACIONES")
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT a.Id, a.MontoTotalUSD, a.MontoPendienteUSD, a.FechaSolicitud,
                     f.Nombre AS Beneficiario, a.TipoEntidad
                 FROM TB_ADELANTOS a
                 INNER JOIN TB_FINCAS f ON a.EntidadId = f.Id
                 WHERE a.Estado = 'ACTIVO' AND a.MontoPendienteUSD > 0
-                ORDER BY a.MontoPendienteUSD DESC", new { cicloId })).ToList();
+                ORDER BY a.MontoPendienteUSD DESC", new { cicloId })).ToList()
+                : new List<dynamic>();
 
             // 11. Historial BCV últimas fechas
-            var historialBcv = (await connection.QueryAsync<dynamic>(
-                "SELECT TOP 5 TasaDolarBs, Fecha FROM TB_HISTORIAL_BCV ORDER BY Fecha DESC, Id DESC")).ToList();
+            var historialBcv = PuedeTabla("TB_HISTORIAL_BCV", "MOD_HISTORIAL_BCV")
+                ? (await connection.QueryAsync<dynamic>(
+                    "SELECT TOP 5 TasaDolarBs, Fecha FROM TB_HISTORIAL_BCV ORDER BY Fecha DESC, Id DESC")).ToList()
+                : new List<dynamic>();
 
             // 12. Histórico de Últimos 8 Ciclos (~2 meses)
-            var historicoCiclos = (await connection.QueryAsync<dynamic>(@"
+            var historicoCiclos = (PuedeTabla("TB_CICLOS_OPERATIVOS") && PuedeTabla("TB_RUTAS_RECOLECCION"))
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT TOP 8 c.Id, c.Codigo, c.FechaInicio, c.FechaFin,
                     ISNULL(SUM(r.Litros), 0) AS TotalLitrosRecolectados,
                     ISNULL(SUM(CASE WHEN r.EsAcida = 1 THEN r.Litros ELSE 0 END), 0) AS TotalLecheAcida,
@@ -8440,10 +8496,12 @@ namespace Transporte.Infrastructure.Repositories
                 FROM TB_CICLOS_OPERATIVOS c
                 INNER JOIN TB_RUTAS_RECOLECCION r ON c.Id = r.CicloId
                 GROUP BY c.Id, c.Codigo, c.FechaInicio, c.FechaFin
-                ORDER BY c.Id DESC")).ToList();
+                ORDER BY c.Id DESC")).ToList()
+                : new List<dynamic>();
 
             // 13. Histórico por chofer en los últimos 8 ciclos (~2 meses)
-            var historicoChoferesMeses = (await connection.QueryAsync<dynamic>(@"
+            var historicoChoferesMeses = (PuedeTabla("TB_RUTAS_RECOLECCION") && PuedeTabla("TB_USUARIOS") && PuedeTabla("TB_CICLOS_OPERATIVOS"))
+                ? (await connection.QueryAsync<dynamic>(@"
                 SELECT TOP 50 u.NombreCompleto AS Conductor, c.Codigo AS Ciclo,
                     SUM(r.Litros) AS TotalLitros,
                     COUNT(r.Id) AS TotalViajes,
@@ -8457,7 +8515,8 @@ namespace Transporte.Infrastructure.Repositories
                     ORDER BY CicloId DESC
                 )
                 GROUP BY u.NombreCompleto, c.Codigo, c.Id
-                ORDER BY c.Id DESC, TotalLitros DESC")).ToList();
+                ORDER BY c.Id DESC, TotalLitros DESC")).ToList()
+                : new List<dynamic>();
 
             // ====================================================
             // CONSTRUCCIÓN DEL CONTEXTO PARA GEMINI
@@ -8623,6 +8682,147 @@ namespace Transporte.Infrastructure.Repositories
             {
                 ctx.AppendLine($"Fecha: {((DateTime)b.Fecha).ToString("dd/MM/yyyy")} | Tasa: Bs. {b.TasaDolarBs:N2}");
             }
+            ctx.AppendLine();
+
+            // Flota, Mantenimiento, Combustible y Repuestos
+            if (PuedeTabla("TB_CAMIONES"))
+            {
+                try
+                {
+                    var camionesFlota = await connection.QueryAsync<dynamic>(@"
+                        SELECT c.Placa, c.MarcaModelo, c.Estado, c.Activo, ISNULL(c.OdometroActualKm, 0) AS OdometroActualKm,
+                               c.CapacidadLitros, u.NombreCompleto AS Chofer
+                        FROM TB_CAMIONES c
+                        LEFT JOIN TB_USUARIOS u ON c.UsuarioId = u.Id
+                        ORDER BY c.Placa ASC");
+
+                    ctx.AppendLine("--- FLOTA DE CAMIONES ---");
+                    if (camionesFlota.Any())
+                    {
+                        foreach (var cam in camionesFlota)
+                        {
+                            ctx.AppendLine($"Placa: {cam.Placa} | {cam.MarcaModelo ?? "Cisterna"} | Estado: {cam.Estado ?? (cam.Activo == true ? "ACTIVO" : "INACTIVO")} | Odómetro: {cam.OdometroActualKm:N0} Km | Cap: {cam.CapacidadLitros:N0} L | Chofer: {cam.Chofer ?? "Sin asignar"}");
+                        }
+                    }
+                    else
+                    {
+                        ctx.AppendLine("No hay camiones registrados.");
+                    }
+                    ctx.AppendLine();
+                }
+                catch { }
+            }
+
+            if (PuedeTabla("TB_MANTENIMIENTO_CAMIONES", "MOD_MANTENIMIENTO"))
+            {
+                try
+                {
+                    var mantenimientosRecientes = await connection.QueryAsync<dynamic>(@"
+                        SELECT TOP 20 m.Id, c.Placa, m.TipoEvento, m.Titulo, m.Estado, m.Urgencia,
+                               m.CostoTotalUSD, m.FechaEvento, m.OdometroKm, m.ProximoKmSugerido, m.TallerOMecanico
+                        FROM TB_MANTENIMIENTO_CAMIONES m
+                        INNER JOIN TB_CAMIONES c ON m.CamionId = c.Id
+                        ORDER BY m.FechaEvento DESC, m.Id DESC");
+
+                    ctx.AppendLine("--- HISTORIAL Y ALERTAS DE MANTENIMIENTO ---");
+                    if (mantenimientosRecientes.Any())
+                    {
+                        foreach (var mt in mantenimientosRecientes)
+                        {
+                            string fMt = mt.FechaEvento != null ? ((DateTime)mt.FechaEvento).ToString("dd/MM/yyyy") : "-";
+                            ctx.AppendLine($"#{mt.Id} | Placa: {mt.Placa} | {mt.TipoEvento}: {mt.Titulo} | Estado: {mt.Estado} ({mt.Urgencia ?? "MEDIA"}) | Costo: ${mt.CostoTotalUSD:N2} | Fecha: {fMt} | Km: {mt.OdometroKm ?? 0} | Próx Km: {mt.ProximoKmSugerido ?? 0}");
+                        }
+                    }
+                    else
+                    {
+                        ctx.AppendLine("Sin registros de mantenimiento.");
+                    }
+                    ctx.AppendLine();
+                }
+                catch { }
+            }
+
+            if (PuedeTabla("TB_COMBUSTIBLE_INVENTARIO", "MOD_COMBUSTIBLE") || PuedeTabla("TB_COMBUSTIBLE_HISTORIAL", "MOD_COMBUSTIBLE"))
+            {
+                try
+                {
+                    var invCombustible = PuedeTabla("TB_COMBUSTIBLE_INVENTARIO", "MOD_COMBUSTIBLE")
+                        ? await connection.QueryAsync<dynamic>(@"
+                            SELECT TipoCombustible, StockActualLitros, CapacidadTanqueAlmacen
+                            FROM TB_COMBUSTIBLE_INVENTARIO
+                            ORDER BY TipoCombustible ASC")
+                        : Enumerable.Empty<dynamic>();
+
+                    var histCombustible = PuedeTabla("TB_COMBUSTIBLE_HISTORIAL", "MOD_COMBUSTIBLE")
+                        ? await connection.QueryAsync<dynamic>(@"
+                            SELECT TOP 15 h.Fecha, h.TipoMovimiento, h.TipoCombustible, h.Litros, h.StockNuevoLitros,
+                                   c.Placa, h.Proveedor, h.OdometroKm, h.Observaciones
+                            FROM TB_COMBUSTIBLE_HISTORIAL h
+                            LEFT JOIN TB_CAMIONES c ON h.CamionId = c.Id
+                            ORDER BY h.Fecha DESC, h.Id DESC")
+                        : Enumerable.Empty<dynamic>();
+
+                    ctx.AppendLine("--- INVENTARIO Y MOVIMIENTOS DE COMBUSTIBLE ---");
+                    foreach (var ic in invCombustible)
+                    {
+                        decimal cap = ic.CapacidadTanqueAlmacen > 0 ? (decimal)ic.CapacidadTanqueAlmacen : 1m;
+                        decimal pct = Math.Round(((decimal)ic.StockActualLitros / cap) * 100m, 1);
+                        ctx.AppendLine($"Tanque {ic.TipoCombustible}: {ic.StockActualLitros:N0} L / {ic.CapacidadTanqueAlmacen:N0} L ({pct}% lleno)");
+                    }
+                    foreach (var hc in histCombustible)
+                    {
+                        string fHc = hc.Fecha != null ? ((DateTime)hc.Fecha).ToString("dd/MM/yyyy") : "-";
+                        string dest = hc.Placa != null ? $"Camión {hc.Placa}" : (hc.Proveedor != null ? $"Prov: {hc.Proveedor}" : "Ajuste");
+                        ctx.AppendLine($"  {fHc} | {hc.TipoMovimiento} | {hc.TipoCombustible}: {hc.Litros:N0} L | {dest} | Stock res: {hc.StockNuevoLitros:N0} L");
+                    }
+                    ctx.AppendLine();
+                }
+                catch { }
+            }
+
+            if (PuedeTabla("TB_INVENTARIO_REPUESTOS", "MOD_REPUESTOS") || PuedeTabla("TB_MOVIMIENTOS_REPUESTOS", "MOD_REPUESTOS"))
+            {
+                try
+                {
+                    var repuestosActivos = PuedeTabla("TB_INVENTARIO_REPUESTOS", "MOD_REPUESTOS")
+                        ? await connection.QueryAsync<dynamic>(@"
+                            SELECT Codigo, Nombre, Categoria, StockActual, StockMinimo, CostoUnitarioUSD, UbicacionAlmacen
+                            FROM TB_INVENTARIO_REPUESTOS
+                            WHERE Activo = 1
+                            ORDER BY Nombre ASC")
+                        : Enumerable.Empty<dynamic>();
+
+                    var movRepuestos = PuedeTabla("TB_MOVIMIENTOS_REPUESTOS", "MOD_REPUESTOS")
+                        ? await connection.QueryAsync<dynamic>(@"
+                            SELECT TOP 15 m.Fecha, m.TipoMovimiento, r.Codigo, r.Nombre, m.Cantidad, m.CostoUnitarioUSD, c.Placa
+                            FROM TB_MOVIMIENTOS_REPUESTOS m
+                            INNER JOIN TB_INVENTARIO_REPUESTOS r ON m.RepuestoId = r.Id
+                            LEFT JOIN TB_CAMIONES c ON m.CamionId = c.Id
+                            ORDER BY m.Fecha DESC, m.Id DESC")
+                        : Enumerable.Empty<dynamic>();
+
+                    ctx.AppendLine("--- INVENTARIO DE REPUESTOS Y KÁRDEX ---");
+                    decimal valorAlmacen = repuestosActivos.Sum(r => (decimal)r.StockActual * (decimal)r.CostoUnitarioUSD);
+                    int stockCritico = repuestosActivos.Count(r => (int)r.StockActual <= (int)r.StockMinimo);
+                    ctx.AppendLine($"Total ítems activos: {repuestosActivos.Count()} | En stock crítico: {stockCritico} | Valorizado: ${valorAlmacen:N2} USD");
+                    foreach (var rp in repuestosActivos.Take(25))
+                    {
+                        string alerta = (int)rp.StockActual <= (int)rp.StockMinimo ? " [STOCK CRÍTICO]" : "";
+                        ctx.AppendLine($"  [{rp.Codigo}] {rp.Nombre} ({rp.Categoria}): {rp.StockActual} unid (Mín: {rp.StockMinimo}) | ${rp.CostoUnitarioUSD:N2}{alerta}");
+                    }
+                    foreach (var mr in movRepuestos)
+                    {
+                        string fMr = mr.Fecha != null ? ((DateTime)mr.Fecha).ToString("dd/MM/yyyy") : "-";
+                        ctx.AppendLine($"  Mov {fMr} | {mr.TipoMovimiento} | {mr.Codigo} - {mr.Nombre} x{mr.Cantidad} | Camión: {mr.Placa ?? "Almacén"}");
+                    }
+                    ctx.AppendLine();
+                }
+                catch { }
+            }
+
+            ctx.AppendLine($"--- TABLAS HABILITADAS PARA ESTA EMPRESA ({tablasHabilitadas.Count}) ---");
+            ctx.AppendLine(string.Join(", ", tablasHabilitadas));
+            ctx.AppendLine();
 
             string contextoCompleto = ctx.ToString();
 

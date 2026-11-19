@@ -22,6 +22,7 @@ namespace Transporte.API.Multitenancy
         public DateTime FechaVencimiento { get; set; }
         public int DiasGracia { get; set; }
         public List<string> Modulos { get; set; } = new();
+        public List<string>? AiTablasPermitidas { get; set; }
     }
 
     public class TenantService : ITenantService
@@ -187,7 +188,7 @@ namespace Transporte.API.Multitenancy
                 using var db = new SqlConnection(masterConn);
                 
                 var emp = db.QueryFirstOrDefault<dynamic>(
-                    @"SELECT Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora
+                    @"SELECT Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora, AiTablasPermitidas
                       FROM TB_EMPRESAS
                       WHERE DominioPrincipal = @h 
                          OR SubdominioAlterno = @h 
@@ -200,7 +201,7 @@ namespace Transporte.API.Multitenancy
                 if (emp == null && (host == "localhost" || host == "127.0.0.1" || host == "84.247.178.194"))
                 {
                     emp = db.QueryFirstOrDefault<dynamic>(
-                        "SELECT Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora FROM TB_EMPRESAS WHERE Codigo = 'VERGEL_CARRILLO'");
+                        "SELECT Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora, AiTablasPermitidas FROM TB_EMPRESAS WHERE Codigo = 'VERGEL_CARRILLO'");
                 }
 
                 if (emp != null)
@@ -209,6 +210,20 @@ namespace Transporte.API.Multitenancy
                     var mods = db.Query<string>(
                         "SELECT ModuloCodigo FROM TB_EMPRESA_MODULOS WHERE EmpresaId = @empId AND Habilitado = 1",
                         new { empId }).AsList();
+
+                    List<string>? aiTablas = null;
+                    string? rawAiTablas = emp.AiTablasPermitidas as string;
+                    if (!string.IsNullOrWhiteSpace(rawAiTablas))
+                    {
+                        try
+                        {
+                            if (rawAiTablas.TrimStart().StartsWith("["))
+                                aiTablas = System.Text.Json.JsonSerializer.Deserialize<List<string>>(rawAiTablas);
+                            else
+                                aiTablas = rawAiTablas.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+                        }
+                        catch { aiTablas = null; }
+                    }
 
                     string effectiveConnStr = AdjustConnectionStringForEnvironment((string)emp.CadenaConexion);
 
@@ -221,7 +236,8 @@ namespace Transporte.API.Multitenancy
                         Estado = emp.Estado,
                         FechaVencimiento = emp.FechaVencimientoLicencia,
                         DiasGracia = emp.DiasGraciaMora,
-                        Modulos = mods
+                        Modulos = mods,
+                        AiTablasPermitidas = aiTablas
                     };
 
                     _tenantCache[host] = (tInfo, DateTime.UtcNow);
@@ -290,6 +306,17 @@ namespace Transporte.API.Multitenancy
             if (string.IsNullOrWhiteSpace(moduloCodigo)) return true;
             if (_currentTenant == null || _currentTenant.Modulos == null) return false;
             return _currentTenant.Modulos.Any(m => string.Equals(m, moduloCodigo, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public List<string>? GetAiTablasPermitidas() => _currentTenant?.AiTablasPermitidas;
+
+        public bool PuedeConsultarTablaAi(string tabla, string? moduloRequerido = null)
+        {
+            if (!string.IsNullOrWhiteSpace(moduloRequerido) && !TieneModulo(moduloRequerido))
+                return false;
+            var permitidas = _currentTenant?.AiTablasPermitidas;
+            if (permitidas == null) return true;
+            return permitidas.Any(t => string.Equals(t, tabla, StringComparison.OrdinalIgnoreCase));
         }
     }
 }

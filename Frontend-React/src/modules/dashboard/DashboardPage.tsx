@@ -1262,14 +1262,28 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
         <div style={{ position: 'relative', height: '320px', width: '100%' }}>
-          <Line
-            data={tendenciaSemanasData}
-            options={{
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { position: 'top' } },
-            }}
-          />
+          {tendenciaSemanasData.labels.length <= 1 ? (
+            <Bar
+              data={tendenciaSemanasData}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' } },
+                scales: { y: { beginAtZero: true } },
+              }}
+            />
+          ) : (
+            <Line
+              data={tendenciaSemanasData}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' } },
+                elements: { point: { radius: 5, hoverRadius: 7 } },
+                scales: { y: { beginAtZero: true } },
+              }}
+            />
+          )}
         </div>
       </div>
 

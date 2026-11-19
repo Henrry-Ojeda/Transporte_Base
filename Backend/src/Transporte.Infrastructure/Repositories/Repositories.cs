@@ -5080,10 +5080,16 @@ namespace Transporte.Infrastructure.Repositories
                 $"SELECT ISNULL(SUM(r.Litros), 0) FROM TB_RUTAS_RECOLECCION r WHERE {whereFincas}",
                 new { cId, fInicio, fFin });
 
-            // 3. Consulta de Merma en Rutas
+            // 3. Consulta de Merma en Rutas (solo viajes recibidos/finalizados con descarga en receptoría)
             string whereRutas = cId > 0 ? "cr.CicloId = @cId" : "cr.Fecha >= @fInicio AND cr.Fecha <= @fFin";
             result.TotalMermaRuta = await connection.ExecuteScalarAsync<decimal>(
-                $"SELECT ISNULL(SUM(cr.DiferenciaLitros), 0) FROM TB_CONTROL_RUTAS cr WHERE {whereRutas}",
+                $@"SELECT ISNULL(SUM(
+                    CASE 
+                        WHEN cr.ProcesoActualId >= 3 AND ISNULL(cr.TotalLitrosReceptoria, 0) > 0 
+                            THEN cr.TotalLitrosFinca - cr.TotalLitrosReceptoria
+                        ELSE 0 
+                    END
+                ), 0) FROM TB_CONTROL_RUTAS cr WHERE {whereRutas}",
                 new { cId, fInicio, fFin });
 
             // 4. Consultar todas las entregas/movimientos unificados en el ciclo o periodo
@@ -11061,6 +11067,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                 FROM TB_CONTROL_COMPANIAS cc
                 INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
                 WHERE cc.ControlRutaId = @controlRutaId
+                  AND ISNULL(c.EsPrincipal, 0) = 0
                   AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%RECEPTORIA%'
                   AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%RECEPTORÍA%'
                   AND UPPER(ISNULL(c.Nombre, '')) NOT LIKE '%PLANTA PRINCIPAL%';",

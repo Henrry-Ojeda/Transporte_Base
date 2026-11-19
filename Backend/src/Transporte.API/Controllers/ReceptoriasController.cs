@@ -215,5 +215,29 @@ namespace Transporte.API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Registra un ticket de entrada directo en Receptoría traído por un tercero (Conductor OTROS / Camión OTROS).
+        /// Genera el control de viaje, parada de recolección para liquidación de la finca y entrada confirmada en silos.
+        /// </summary>
+        [HttpPost("entrada-tercero")]
+        public async Task<IActionResult> CrearEntradaTercero([FromBody] CrearEntradaTerceroDto dto)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var rol = (User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER").ToUpper();
+
+            if (!rol.Contains("ADMIN") && rol != "SUPERVISOR" && rol != "RECEPTOR" && rol != "RECEPTORIA")
+                return StatusCode(403, new { message = "Solo Receptoría o Administración pueden registrar entradas de terceros." });
+
+            try
+            {
+                var controlRutaId = await _entregasRepository.CrearEntradaTerceroAsync(dto, userId);
+                return Ok(new { success = true, id = controlRutaId, message = $"Ticket de entrada por tercero #{controlRutaId} registrado y confirmado en silos." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }

@@ -232,7 +232,27 @@ namespace Transporte.API.Controllers
             try
             {
                 var controlRutaId = await _entregasRepository.CrearEntradaTerceroAsync(dto, userId);
-                return Ok(new { success = true, id = controlRutaId, message = $"Ticket de entrada por tercero #{controlRutaId} registrado y confirmado en silos." });
+                return Ok(new { success = true, id = controlRutaId, message = $"Ticket de entrada por tercero #{controlRutaId} creado (pendiente de confirmar en silos)." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPut("entrada-tercero/{id:long}")]
+        public async Task<IActionResult> EditarEntradaTercero([FromRoute] long id, [FromBody] CrearEntradaTerceroDto dto)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var rol = (User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER").ToUpper();
+
+            if (!rol.Contains("ADMIN") && rol != "SUPERVISOR" && rol != "RECEPTOR" && rol != "RECEPTORIA")
+                return StatusCode(403, new { message = "Solo Receptoría o Administración pueden editar entradas de terceros." });
+
+            try
+            {
+                await _entregasRepository.EditarEntradaTerceroAsync(id, dto, userId);
+                return Ok(new { success = true, id, message = $"Ticket de entrada por tercero #{id} actualizado correctamente." });
             }
             catch (Exception ex)
             {

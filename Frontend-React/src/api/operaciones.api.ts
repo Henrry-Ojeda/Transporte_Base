@@ -739,6 +739,23 @@ export const operacionesApi = {
     const res = await apiClient.post('/receptoria/entrada-tercero', dto);
     return res.data;
   },
+
+  editarEntradaTercero: async (
+    id: number,
+    dto: {
+      fecha: string;
+      fincaId?: number;
+      nuevaFincaNombre?: string;
+      nuevaFincaPropietario?: string;
+      nuevaFincaPrecioLitro?: number;
+      litros: number;
+      tipoLeche?: string;
+      observacion?: string;
+    }
+  ): Promise<{ success: boolean; id: number; message: string }> => {
+    const res = await apiClient.put(`/receptoria/entrada-tercero/${id}`, dto);
+    return res.data;
+  },
 };
 
 

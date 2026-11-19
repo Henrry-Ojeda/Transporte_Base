@@ -2179,6 +2179,7 @@ export const AppMovilPage: React.FC = () => {
   const [guardandoEntradaTercero, setGuardandoEntradaTercero] = useState(false);
   const [modalNuevaEntradaTercero, setModalNuevaEntradaTercero] = useState<{
     open: boolean;
+    editId?: number;
     fecha: string;
     fincaId: number;
     crearFincaNueva: boolean;
@@ -13319,6 +13320,46 @@ export const AppMovilPage: React.FC = () => {
                             <span>Timelapse</span>
                           </button>
 
+                          {!yaVerificado && String(t.observacion || '').includes('[ENTRADA TERCERO]') && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const fincasT = await operacionesApi.getFincasViaje(t.id).catch(() => []);
+                                const primera = Array.isArray(fincasT) && fincasT.length > 0 ? fincasT[0] : null;
+                                setModalNuevaEntradaTercero({
+                                  open: true,
+                                  editId: t.id,
+                                  fecha: t.fecha ? String(t.fecha).split('T')[0] : fechaReceptoria || hoyStr,
+                                  fincaId: Number((primera as any)?.fincaId || 0),
+                                  crearFincaNueva: false,
+                                  nuevaFincaNombre: '',
+                                  nuevaFincaPropietario: '',
+                                  nuevaFincaPrecioLitro: '',
+                                  tipoLeche: String((primera as any)?.tipoLeche || 'VACA').toUpperCase(),
+                                  litros: String(ltsChofer || ''),
+                                  observacion: String(t.observacion || '').replace('[ENTRADA TERCERO]', '').trim(),
+                                });
+                              }}
+                              style={{
+                                background: '#fef3c7',
+                                color: '#b45309',
+                                border: '1.5px solid #f59e0b',
+                                borderRadius: '10px',
+                                padding: '9px 10px',
+                                fontSize: '11.5px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <i className="fa-solid fa-pen"></i>
+                              <span>Editar</span>
+                            </button>
+                          )}
+
                           {enviadoARecep ? (
                             <button
                               type="button"
@@ -19455,10 +19496,12 @@ export const AppMovilPage: React.FC = () => {
             >
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900 }}>
-                  🚚 Entrada de Leche por Tercero
+                  {modalNuevaEntradaTercero.editId
+                    ? `✏️ Editar Entrada Tercero #${modalNuevaEntradaTercero.editId}`
+                    : '🚚 Entrada de Leche por Tercero'}
                 </h3>
                 <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#c7d2fe' }}>
-                  Suma directo a Silos, Stock y Liquidación de Finca
+                  Queda pendiente por confirmar en Silos (editable antes de finalizar)
                 </p>
               </div>
               <button
@@ -19489,7 +19532,7 @@ export const AppMovilPage: React.FC = () => {
                 }
                 setGuardandoEntradaTercero(true);
                 try {
-                  const res = await operacionesApi.crearEntradaTercero({
+                  const payload = {
                     fecha: modalNuevaEntradaTercero.fecha,
                     fincaId: modalNuevaEntradaTercero.crearFincaNueva ? undefined : modalNuevaEntradaTercero.fincaId,
                     nuevaFincaNombre: modalNuevaEntradaTercero.crearFincaNueva ? modalNuevaEntradaTercero.nuevaFincaNombre.trim() : undefined,
@@ -19500,8 +19543,11 @@ export const AppMovilPage: React.FC = () => {
                     litros: lts,
                     tipoLeche: tieneModuloBufala ? modalNuevaEntradaTercero.tipoLeche : 'VACA',
                     observacion: modalNuevaEntradaTercero.observacion.trim() || undefined,
-                  });
-                  toast.success(res?.message || 'Ticket de entrada por tercero registrado');
+                  };
+                  const res = modalNuevaEntradaTercero.editId
+                    ? await operacionesApi.editarEntradaTercero(modalNuevaEntradaTercero.editId, payload)
+                    : await operacionesApi.crearEntradaTercero(payload);
+                  toast.success(res?.message || (modalNuevaEntradaTercero.editId ? 'Entrada actualizada' : 'Ticket de entrada creado (pendiente por confirmar)'));
                   setModalNuevaEntradaTercero(null);
                   cargarDatosReceptoria(fechaReceptoria);
                 } catch (err: any) {
@@ -19713,7 +19759,11 @@ export const AppMovilPage: React.FC = () => {
                     boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
                   }}
                 >
-                  {guardandoEntradaTercero ? 'Guardando...' : 'Registrar Entrada en Silos'}
+                  {guardandoEntradaTercero
+                    ? 'Guardando...'
+                    : modalNuevaEntradaTercero.editId
+                      ? 'Guardar Cambios'
+                      : 'Crear Ticket de Entrada'}
                 </button>
               </div>
             </form>

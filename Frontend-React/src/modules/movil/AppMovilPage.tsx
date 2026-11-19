@@ -4225,9 +4225,18 @@ export const AppMovilPage: React.FC = () => {
         catalogosApi.getCompanias(true),
       ]);
       const listaTickets = Array.isArray(tickets) ? tickets : [];
+      const listaComps = Array.isArray(comps) ? comps : [];
+      const listaDespachos = Array.isArray(despachos) ? despachos : [];
+      const salidasExternas = listaDespachos.filter((d: any) => {
+        const compId = Number(d.companiaId || d.CompaniaId || 0);
+        const compMatch = compId > 0 ? listaComps.find((c) => c.id === compId) : undefined;
+        if (compMatch && esReceptoriaPrincipal(compMatch)) return false;
+        if (esReceptoriaPrincipal(d)) return false;
+        return true;
+      });
       setTicketsReceptoria(listaTickets.filter(esTicketVisibleEnReceptoria));
-      setDespachosSalidaReceptoria(Array.isArray(despachos) ? despachos : []);
-      setCompaniasReceptoria(Array.isArray(comps) ? comps : []);
+      setDespachosSalidaReceptoria(salidasExternas);
+      setCompaniasReceptoria(listaComps);
     } catch {
       console.warn('Error al cargar datos de receptoría móvil');
     } finally {

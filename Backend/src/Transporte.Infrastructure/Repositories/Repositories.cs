@@ -1277,6 +1277,8 @@ namespace Transporte.Infrastructure.Repositories
         Task<bool> EliminarAbonoCompaniaAsync(int id);
         Task<IEnumerable<dynamic>> ObtenerResumenCobranzasCompaniasAsync();
         Task<IEnumerable<dynamic>> ObtenerResumenCobranzasPorSemanaAsync(int? companiaId = null, int? cicloId = null);
+        Task<IEnumerable<dynamic>> ObtenerDespachosSemanaCompaniaAsync(int companiaId, int cicloId);
+        Task<bool> ActualizarPreciosDespachosSemanaAsync(ActualizarPreciosDespachosSemanaDto dto);
 
         // Bancos
         Task<IEnumerable<BancoDto>> ObtenerBancosAsync();
@@ -2007,6 +2009,10 @@ namespace Transporte.Infrastructure.Repositories
                 ELSE IF COL_LENGTH('dbo.TB_ABONOS_COMPANIAS', 'CicloId') IS NULL
                 BEGIN
                     ALTER TABLE dbo.TB_ABONOS_COMPANIAS ADD CicloId INT NULL;
+                END
+                IF COL_LENGTH('dbo.TB_CONTROL_COMPANIAS', 'PrecioLitroUSD') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.TB_CONTROL_COMPANIAS ADD PrecioLitroUSD DECIMAL(18,4) NULL;
                 END";
             await connection.ExecuteAsync(ddl);
         }
@@ -2167,13 +2173,21 @@ namespace Transporte.Infrastructure.Repositories
                         ISNULL(cc.CicloId, 0) AS CicloId,
                         SUM(cc.LitrosDespachados) AS LitrosDespachados,
                         SUM(ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados)) AS LitrosRecibidos,
+                        SUM(CASE WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) NOT IN ('BUFALA', 'ACIDA') THEN ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados) ELSE 0 END) AS LitrosVaca,
+                        SUM(CASE WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'BUFALA' THEN ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados) ELSE 0 END) AS LitrosBufala,
+                        SUM(CASE WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'ACIDA' THEN ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados) ELSE 0 END) AS LitrosAcida,
                         SUM(
                             ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados) *
-                            CASE 
-                                WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'BUFALA' AND ISNULL(c.PrecioBufalaLitroUSD, 0) > 0 
-                                    THEN c.PrecioBufalaLitroUSD
-                                ELSE ISNULL(c.PrecioCompraLitroUSD, 0)
-                            END
+                            COALESCE(
+                                NULLIF(cc.PrecioLitroUSD, 0),
+                                CASE 
+                                    WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'BUFALA' AND ISNULL(c.PrecioBufalaLitroUSD, 0) > 0 
+                                        THEN c.PrecioBufalaLitroUSD
+                                    WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'ACIDA' AND ISNULL(c.PrecioAcidaLitroUSD, 0) > 0 
+                                        THEN c.PrecioAcidaLitroUSD
+                                    ELSE ISNULL(c.PrecioCompraLitroUSD, 0)
+                                END
+                            )
                         ) AS TotalFacturadoUSD,
                         COUNT(*) AS CantidadDespachos
                     FROM TB_CONTROL_COMPANIAS cc
@@ -2205,12 +2219,16 @@ namespace Transporte.Infrastructure.Repositories
                     c.Nombre AS CompaniaNombre,
                     ISNULL(c.PrecioCompraLitroUSD, 0) AS PrecioLitroUSD,
                     ISNULL(c.PrecioBufalaLitroUSD, 0) AS PrecioBufalaLitroUSD,
+                    ISNULL(c.PrecioAcidaLitroUSD, 0) AS PrecioAcidaLitroUSD,
                     p.CicloId,
                     ISNULL(cic.Codigo, 'Sin Semana') AS SemanaCodigo,
                     cic.FechaInicio,
                     cic.FechaFin,
                     ISNULL(d.LitrosDespachados, 0) AS LitrosDespachados,
                     ISNULL(d.LitrosRecibidos, 0) AS LitrosRecibidos,
+                    ISNULL(d.LitrosVaca, 0) AS LitrosVaca,
+                    ISNULL(d.LitrosBufala, 0) AS LitrosBufala,
+                    ISNULL(d.LitrosAcida, 0) AS LitrosAcida,
                     ISNULL(d.CantidadDespachos, 0) AS CantidadDespachos,
                     ISNULL(d.TotalFacturadoUSD, 0) AS TotalFacturadoUSD,
                     ISNULL(a.TotalAbonadoUSD, 0) AS TotalAbonadoUSD,
@@ -2224,6 +2242,87 @@ namespace Transporte.Infrastructure.Repositories
                 WHERE ISNULL(c.EsPrincipal, 0) = 0
                 ORDER BY p.CicloId DESC, c.Nombre ASC";
             return await connection.QueryAsync(sql, new { companiaId, cicloId });
+        }
+
+        public async Task<IEnumerable<dynamic>> ObtenerDespachosSemanaCompaniaAsync(int companiaId, int cicloId)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await EnsureAbonosCompaniasSchemaAsync(connection);
+            var sql = @"
+                SELECT 
+                    cc.Id,
+                    cc.Fecha,
+                    UPPER(ISNULL(cc.TipoLeche, 'VACA')) AS TipoLeche,
+                    cc.LitrosDespachados,
+                    ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados) AS LitrosRecibidos,
+                    COALESCE(
+                        NULLIF(cc.PrecioLitroUSD, 0),
+                        CASE 
+                            WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'BUFALA' AND ISNULL(c.PrecioBufalaLitroUSD, 0) > 0 
+                                THEN c.PrecioBufalaLitroUSD
+                            WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'ACIDA' AND ISNULL(c.PrecioAcidaLitroUSD, 0) > 0 
+                                THEN c.PrecioAcidaLitroUSD
+                            ELSE ISNULL(c.PrecioCompraLitroUSD, 0)
+                        END
+                    ) AS PrecioLitroUSD,
+                    (
+                        ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados) *
+                        COALESCE(
+                            NULLIF(cc.PrecioLitroUSD, 0),
+                            CASE 
+                                WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'BUFALA' AND ISNULL(c.PrecioBufalaLitroUSD, 0) > 0 
+                                    THEN c.PrecioBufalaLitroUSD
+                                WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) = 'ACIDA' AND ISNULL(c.PrecioAcidaLitroUSD, 0) > 0 
+                                    THEN c.PrecioAcidaLitroUSD
+                                ELSE ISNULL(c.PrecioCompraLitroUSD, 0)
+                            END
+                        )
+                    ) AS MontoUSD,
+                    cc.Observacion
+                FROM TB_CONTROL_COMPANIAS cc
+                INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
+                WHERE cc.CompaniaId = @companiaId
+                  AND ISNULL(cc.CicloId, 0) = @cicloId
+                ORDER BY cc.Fecha ASC, cc.Id ASC";
+            return await connection.QueryAsync(sql, new { companiaId, cicloId });
+        }
+
+        public async Task<bool> ActualizarPreciosDespachosSemanaAsync(ActualizarPreciosDespachosSemanaDto dto)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await EnsureAbonosCompaniasSchemaAsync(connection);
+            await connection.OpenAsync();
+            using var tx = connection.BeginTransaction();
+            try
+            {
+                foreach (var item in dto.Items)
+                {
+                    if (item.DespachoId <= 0 || item.PrecioLitroUSD < 0) continue;
+                    await connection.ExecuteAsync(@"
+                        UPDATE TB_CONTROL_COMPANIAS
+                        SET PrecioLitroUSD = @PrecioLitroUSD,
+                            TipoLeche = COALESCE(NULLIF(@TipoLeche, ''), TipoLeche),
+                            ModifiedAt = GETDATE()
+                        WHERE Id = @DespachoId
+                          AND CompaniaId = @CompaniaId
+                          AND ISNULL(CicloId, 0) = @CicloId",
+                        new
+                        {
+                            item.PrecioLitroUSD,
+                            TipoLeche = item.TipoLeche?.Trim().ToUpperInvariant(),
+                            item.DespachoId,
+                            dto.CompaniaId,
+                            dto.CicloId
+                        }, tx);
+                }
+                tx.Commit();
+                return true;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
         }
 
         // --- BANCOS ---

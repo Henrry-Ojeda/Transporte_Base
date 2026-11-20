@@ -242,6 +242,24 @@ namespace Transporte.API.Controllers
             return Ok(resumen);
         }
 
+        [HttpGet("companias/{companiaId:int}/semanas/{cicloId:int}/despachos")]
+        [HttpGet("/api/companias/{companiaId:int}/semanas/{cicloId:int}/despachos")]
+        public async Task<IActionResult> ObtenerDespachosSemanaCompania([FromRoute] int companiaId, [FromRoute] int cicloId)
+        {
+            var despachos = await _catalogosRepository.ObtenerDespachosSemanaCompaniaAsync(companiaId, cicloId);
+            return Ok(despachos);
+        }
+
+        [HttpPut("companias/despachos/precios")]
+        [HttpPut("/api/companias/despachos/precios")]
+        public async Task<IActionResult> ActualizarPreciosDespachosSemana([FromBody] ActualizarPreciosDespachosSemanaDto dto)
+        {
+            if (dto.CompaniaId <= 0 || dto.Items == null || !dto.Items.Any())
+                return BadRequest(new { message = "Debe especificar la compañía y al menos un despacho." });
+            await _catalogosRepository.ActualizarPreciosDespachosSemanaAsync(dto);
+            return Ok(new { success = true, message = "Precios actualizados correctamente." });
+        }
+
         // ==========================================
         // 3. BANCOS (CRUD COMPLETO)
         // ==========================================

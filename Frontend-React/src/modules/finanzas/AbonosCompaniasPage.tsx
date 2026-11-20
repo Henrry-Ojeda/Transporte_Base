@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { catalogosApi } from '@/api/catalogos.api';
@@ -14,10 +14,15 @@ interface FilaSemanaCobro {
   companiaId: number;
   companiaNombre: string;
   precioLitroUSD: number;
+  precioBufalaLitroUSD: number;
+  precioAcidaLitroUSD: number;
   cicloId: number;
   semanaCodigo: string;
   litrosDespachados: number;
   litrosRecibidos: number;
+  litrosVaca: number;
+  litrosBufala: number;
+  litrosAcida: number;
   cantidadDespachos: number;
   totalFacturadoUSD: number;
   totalAbonadoUSD: number;
@@ -36,6 +41,17 @@ interface FilaCompaniaResumen {
   saldoPendienteUSD: number;
 }
 
+interface DespachoSemanaItem {
+  id: number;
+  fecha: string;
+  tipoLeche: string;
+  litrosDespachados: number;
+  litrosRecibidos: number;
+  precioLitroUSD: number;
+  montoUSD: number;
+  observacion?: string;
+}
+
 const fmtUSD = (val: number) =>
   `$${Number(val || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -43,6 +59,17 @@ const fmtBs = (val: number) =>
   `${Number(val || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs`;
 
 const fmtLitros = (val: number) => `${Number(val || 0).toLocaleString('es-VE')} L`;
+
+const badgeTipoLeche = (tipo: string) => {
+  const t = (tipo || 'VACA').toUpperCase();
+  if (t === 'BUFALA') {
+    return { bg: '#ede9fe', color: '#6d28d9', border: '#ddd6fe', label: 'Búfala' };
+  }
+  if (t === 'ACIDA') {
+    return { bg: '#fef3c7', color: '#b45309', border: '#fde68a', label: 'Ácida' };
+  }
+  return { bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe', label: 'Vaca' };
+};
 
 export const AbonosCompaniasPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -53,7 +80,19 @@ export const AbonosCompaniasPage: React.FC = () => {
   const [filtroSemana, setFiltroSemana] = useState<string>('');
   const [soloConSaldo, setSoloConSaldo] = useState<boolean>(false);
 
-  // Modal Registrar Abono (1 o varias semanas)
+  // Modal Detalle + Abono de UNA SEMANA ESPECÍFICA
+  const [semanaActiva, setSemanaActiva] = useState<FilaSemanaCobro | null>(null);
+  const [preciosEditados, setPreciosEditados] = useState<Record<number, string>>({});
+  const [tiposEditados, setTiposEditados] = useState<Record<number, string>>({});
+  const [semMontoUSD, setSemMontoUSD] = useState<string>('');
+  const [semTasaBcv, setSemTasaBcv] = useState<number>(0);
+  const [semMontoBsManual, setSemMontoBsManual] = useState<string>('');
+  const [semTipoPago, setSemTipoPago] = useState<string>('TRANSFERENCIA');
+  const [semBancoId, setSemBancoId] = useState<number>(0);
+  const [semReferencia, setSemReferencia] = useState<string>('');
+  const [semObs, setSemObs] = useState<string>('');
+
+  // Modal General Registrar Abono (para botón superior multi-semana)
   const [modalAbonoOpen, setModalAbonoOpen] = useState<boolean>(false);
   const [abonoCompaniaId, setAbonoCompaniaId] = useState<number>(0);
   const [abonoFecha, setAbonoFecha] = useState<string>(hoyStr);
@@ -65,20 +104,10 @@ export const AbonosCompaniasPage: React.FC = () => {
   const [abonoMontoBsManual, setAbonoMontoBsManual] = useState<string>('');
   const [montosPorSemana, setMontosPorSemana] = useState<Record<number, string>>({});
 
-  // Modal Detalle de Cuenta (Compañía + Semana, o Compañía general)
-  const [detalleCuenta, setDetalleCuenta] = useState<{
-    companiaId: number;
-    companiaNombre: string;
-    cicloId?: number;
-    semanaCodigo?: string;
-    litrosRecibidos: number;
-    cantidadDespachos: number;
-    totalFacturadoUSD: number;
-    totalAbonadoUSD: number;
-    saldoPendienteUSD: number;
-  } | null>(null);
+  // Modal Detalle Consolidado de Compañía (desde tab Resumen por Compañía)
+  const [detalleCompania, setDetalleCompania] = useState<FilaCompaniaResumen | null>(null);
 
-  // Modal Detalle de Abono individual (comprobante)
+  // Modal Comprobante individual de Abono
   const [detalleAbonoItem, setDetalleAbonoItem] = useState<any | null>(null);
 
   // Queries
@@ -108,6 +137,45 @@ export const AbonosCompaniasPage: React.FC = () => {
   });
   const tasaActual = Number(bcv?.tasa || 0) || 1;
 
+  // Query de despachos diarios de la semana abierta
+  const { data: despachosSemanaRaw = [], isLoading: cargandoDespachosSemana } = useQuery<any[]>({
+    queryKey: ['compania-semana-despachos', semanaActiva?.companiaId, semanaActiva?.cicloId],
+    queryFn: () =>
+      semanaActiva
+        ? catalogosApi.getDespachosSemanaCompania(semanaActiva.companiaId, semanaActiva.cicloId)
+        : Promise.resolve([]),
+    enabled: !!semanaActiva,
+  });
+
+  const despachosSemana: DespachoSemanaItem[] = useMemo(() => {
+    return (despachosSemanaRaw || []).map((d: any) => ({
+      id: Number(d.id ?? d.Id ?? 0),
+      fecha: d.fecha ?? d.Fecha ?? '',
+      tipoLeche: String(d.tipoLeche ?? d.TipoLeche ?? 'VACA').toUpperCase(),
+      litrosDespachados: Number(d.litrosDespachados ?? d.LitrosDespachados ?? 0),
+      litrosRecibidos: Number(d.litrosRecibidos ?? d.LitrosRecibidos ?? 0),
+      precioLitroUSD: Number(d.precioLitroUSD ?? d.PrecioLitroUSD ?? 0),
+      montoUSD: Number(d.montoUSD ?? d.MontoUSD ?? 0),
+      observacion: d.observacion ?? d.Observacion ?? '',
+    }));
+  }, [despachosSemanaRaw]);
+
+  useEffect(() => {
+    if (!semanaActiva || despachosSemana.length === 0) {
+      setPreciosEditados({});
+      setTiposEditados({});
+      return;
+    }
+    const pMap: Record<number, string> = {};
+    const tMap: Record<number, string> = {};
+    for (const d of despachosSemana) {
+      pMap[d.id] = d.precioLitroUSD.toFixed(2);
+      tMap[d.id] = d.tipoLeche;
+    }
+    setPreciosEditados(pMap);
+    setTiposEditados(tMap);
+  }, [semanaActiva?.id, despachosSemana]);
+
   const companiasExternas = useMemo(
     () => (companiasRaw || []).filter((c) => !esReceptoriaPrincipal(c)),
     [companiasRaw]
@@ -130,10 +198,15 @@ export const AbonosCompaniasPage: React.FC = () => {
           companiaId: compId,
           companiaNombre: r.companiaNombre ?? r.CompaniaNombre ?? `Compañía #${compId}`,
           precioLitroUSD: Number(r.precioLitroUSD ?? r.PrecioLitroUSD ?? 0),
+          precioBufalaLitroUSD: Number(r.precioBufalaLitroUSD ?? r.PrecioBufalaLitroUSD ?? 0),
+          precioAcidaLitroUSD: Number(r.precioAcidaLitroUSD ?? r.PrecioAcidaLitroUSD ?? 0),
           cicloId: cicId,
           semanaCodigo: r.semanaCodigo ?? r.SemanaCodigo ?? `Semana #${cicId}`,
           litrosDespachados: litrosDesp,
           litrosRecibidos: litrosRec,
+          litrosVaca: Number(r.litrosVaca ?? r.LitrosVaca ?? 0),
+          litrosBufala: Number(r.litrosBufala ?? r.LitrosBufala ?? 0),
+          litrosAcida: Number(r.litrosAcida ?? r.LitrosAcida ?? 0),
           cantidadDespachos: cantDesp,
           totalFacturadoUSD: facturado,
           totalAbonadoUSD: abonado,
@@ -142,6 +215,12 @@ export const AbonosCompaniasPage: React.FC = () => {
       })
       .filter((f) => f.cantidadDespachos > 0 || f.litrosRecibidos > 0 || f.litrosDespachados > 0);
   }, [resumenSemanasRaw]);
+
+  // Mantener sincronizada la semanaActiva si se actualizan precios o abonos
+  const semanaActivaActualizada = useMemo(() => {
+    if (!semanaActiva) return null;
+    return filasSemanas.find((f) => f.id === semanaActiva.id) || semanaActiva;
+  }, [filasSemanas, semanaActiva]);
 
   // Solo semanas que tienen despachos (para el selector de filtro)
   const semanasConDespachos = useMemo(() => {
@@ -203,17 +282,23 @@ export const AbonosCompaniasPage: React.FC = () => {
     });
   }, [abonosRaw, filtroCompania, filtroSemana]);
 
-  // Abonos asociados al modal de Detalle de Cuenta abierto
-  const abonosDetalleCuenta = useMemo(() => {
-    if (!detalleCuenta) return [];
+  // Abonos de la semana abierta en el modal de semana
+  const abonosDeSemanaActiva = useMemo(() => {
+    if (!semanaActivaActualizada) return [];
     return (abonosRaw || []).filter((a: any) => {
       const cId = Number(a.companiaId ?? a.CompaniaId ?? 0);
       const cicId = Number(a.cicloId ?? a.CicloId ?? 0);
-      if (cId !== detalleCuenta.companiaId) return false;
-      if (detalleCuenta.cicloId && cicId !== detalleCuenta.cicloId) return false;
-      return true;
+      return cId === semanaActivaActualizada.companiaId && cicId === semanaActivaActualizada.cicloId;
     });
-  }, [abonosRaw, detalleCuenta]);
+  }, [abonosRaw, semanaActivaActualizada]);
+
+  // Abonos de la compañía abierta en el modal consolidado
+  const abonosDeCompaniaDetalle = useMemo(() => {
+    if (!detalleCompania) return [];
+    return (abonosRaw || []).filter(
+      (a: any) => Number(a.companiaId ?? a.CompaniaId ?? 0) === detalleCompania.companiaId
+    );
+  }, [abonosRaw, detalleCompania]);
 
   // KPIs
   const kpis = useMemo(() => {
@@ -228,7 +313,69 @@ export const AbonosCompaniasPage: React.FC = () => {
     return { facturado, abonado, saldo, litros, companiasDeudoras, pctCobrado };
   }, [filasFiltradas]);
 
-  // Semanas con despachos de la compañía seleccionada en el modal
+  // Detectar cambios de precio en el modal de semana
+  const hayCambiosPrecioSemana = useMemo(() => {
+    return despachosSemana.some((d) => {
+      const pEdit = Number(preciosEditados[d.id]);
+      const tEdit = tiposEditados[d.id] || d.tipoLeche;
+      return (
+        (!isNaN(pEdit) && Math.abs(pEdit - d.precioLitroUSD) > 0.0001) ||
+        tEdit !== d.tipoLeche
+      );
+    });
+  }, [despachosSemana, preciosEditados, tiposEditados]);
+
+  // Totales en vivo de la semana mientras se editan precios
+  const totalesLiveSemana = useMemo(() => {
+    if (!semanaActivaActualizada) return { facturado: 0, abonado: 0, saldo: 0, vacaL: 0, vacaUSD: 0, bufalaL: 0, bufalaUSD: 0, acidaL: 0, acidaUSD: 0 };
+    if (despachosSemana.length === 0) {
+      return {
+        facturado: semanaActivaActualizada.totalFacturadoUSD,
+        abonado: semanaActivaActualizada.totalAbonadoUSD,
+        saldo: Math.max(0, semanaActivaActualizada.saldoPendienteUSD),
+        vacaL: semanaActivaActualizada.litrosVaca,
+        vacaUSD: 0,
+        bufalaL: semanaActivaActualizada.litrosBufala,
+        bufalaUSD: 0,
+        acidaL: semanaActivaActualizada.litrosAcida,
+        acidaUSD: 0,
+      };
+    }
+    let facturado = 0;
+    let vacaL = 0, vacaUSD = 0, bufalaL = 0, bufalaUSD = 0, acidaL = 0, acidaUSD = 0;
+    for (const d of despachosSemana) {
+      const p = Number(preciosEditados[d.id] ?? d.precioLitroUSD) || 0;
+      const t = (tiposEditados[d.id] ?? d.tipoLeche).toUpperCase();
+      const sub = d.litrosRecibidos * p;
+      facturado += sub;
+      if (t === 'BUFALA') {
+        bufalaL += d.litrosRecibidos;
+        bufalaUSD += sub;
+      } else if (t === 'ACIDA') {
+        acidaL += d.litrosRecibidos;
+        acidaUSD += sub;
+      } else {
+        vacaL += d.litrosRecibidos;
+        vacaUSD += sub;
+      }
+    }
+    const abonado = semanaActivaActualizada.totalAbonadoUSD;
+    const saldo = Math.max(0, facturado - abonado);
+    return { facturado, abonado, saldo, vacaL, vacaUSD, bufalaL, bufalaUSD, acidaL, acidaUSD };
+  }, [semanaActivaActualizada, despachosSemana, preciosEditados, tiposEditados]);
+
+  const abrirSemanaDetalle = (fila: FilaSemanaCobro, montoPrellenado?: number) => {
+    setSemanaActiva(fila);
+    setSemMontoUSD(montoPrellenado && montoPrellenado > 0 ? montoPrellenado.toFixed(2) : '');
+    setSemTasaBcv(tasaActual);
+    setSemMontoBsManual('');
+    setSemTipoPago('TRANSFERENCIA');
+    setSemBancoId(0);
+    setSemReferencia('');
+    setSemObs('');
+  };
+
+  // Semanas con despachos de la compañía seleccionada en el modal general
   const semanasDeCompaniaModal = useMemo(() => {
     if (!abonoCompaniaId) return [];
     return filasSemanas.filter((f) => f.companiaId === abonoCompaniaId);
@@ -244,7 +391,7 @@ export const AbonosCompaniasPage: React.FC = () => {
       ? Number(abonoMontoBsManual) || 0
       : Number((totalUsdModal * tasaEfectivaModal).toFixed(2));
 
-  const abrirModalAbono = (compId?: number, cicloId?: number, saldoSugerido?: number) => {
+  const abrirModalGeneral = (compId?: number) => {
     const cid = compId || (filtroCompania ? Number(filtroCompania) : 0);
     setAbonoCompaniaId(cid);
     setAbonoFecha(hoyStr);
@@ -254,17 +401,68 @@ export const AbonosCompaniasPage: React.FC = () => {
     setAbonoObs('');
     setAbonoTasaBcv(tasaActual);
     setAbonoMontoBsManual('');
-    if (cicloId && saldoSugerido && saldoSugerido > 0) {
-      setMontosPorSemana({ [cicloId]: saldoSugerido.toFixed(2) });
-    } else if (cicloId) {
-      setMontosPorSemana({ [cicloId]: '' });
-    } else {
-      setMontosPorSemana({});
-    }
+    setMontosPorSemana({});
     setModalAbonoOpen(true);
   };
 
-  const crearAbonoMutation = useMutation({
+  const guardarPreciosMutation = useMutation({
+    mutationFn: () => {
+      if (!semanaActivaActualizada) throw new Error('Sin semana seleccionada');
+      const items = despachosSemana.map((d) => ({
+        despachoId: d.id,
+        precioLitroUSD: Number(preciosEditados[d.id] ?? d.precioLitroUSD) || 0,
+        tipoLeche: tiposEditados[d.id] ?? d.tipoLeche,
+      }));
+      return catalogosApi.actualizarPreciosDespachosSemana({
+        companiaId: semanaActivaActualizada.companiaId,
+        cicloId: semanaActivaActualizada.cicloId,
+        items,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Precios de la semana actualizados correctamente');
+      queryClient.invalidateQueries({ queryKey: ['companias-cobranzas-semanas'] });
+      queryClient.invalidateQueries({ queryKey: ['compania-semana-despachos'] });
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Error al actualizar precios'),
+  });
+
+  const crearAbonoSemanaMutation = useMutation({
+    mutationFn: () => {
+      if (!semanaActivaActualizada) throw new Error('Sin semana seleccionada');
+      const monto = Number(semMontoUSD) || 0;
+      if (monto <= 0) throw new Error('Ingresa un monto USD mayor a 0');
+      const tasaEf = semTasaBcv > 0 ? semTasaBcv : tasaActual;
+      const montoBs =
+        semMontoBsManual !== '' ? Number(semMontoBsManual) || 0 : Number((monto * tasaEf).toFixed(2));
+
+      return catalogosApi.crearAbonoCompania({
+        companiaId: semanaActivaActualizada.companiaId,
+        cicloId: semanaActivaActualizada.cicloId,
+        fecha: hoyStr,
+        montoUSD: monto,
+        montoBs,
+        tasaBcv: tasaEf,
+        bancoId: semBancoId > 0 ? semBancoId : undefined,
+        tipoPago: semTipoPago,
+        referenciaBancaria: semReferencia.trim() || undefined,
+        observaciones: semObs.trim() || undefined,
+        distribucionSemanas: [{ cicloId: semanaActivaActualizada.cicloId, montoUSD: monto }],
+      });
+    },
+    onSuccess: (res) => {
+      toast.success(res?.message || 'Abono registrado exitosamente.');
+      setSemMontoUSD('');
+      setSemMontoBsManual('');
+      setSemReferencia('');
+      setSemObs('');
+      queryClient.invalidateQueries({ queryKey: ['companias-cobranzas-semanas'] });
+      queryClient.invalidateQueries({ queryKey: ['companias-abonos-historial'] });
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err?.message || 'Error al registrar abono'),
+  });
+
+  const crearAbonoGeneralMutation = useMutation({
     mutationFn: () => {
       const distribucion = Object.entries(montosPorSemana)
         .map(([cId, val]) => ({ cicloId: Number(cId), montoUSD: Number(val) || 0 }))
@@ -294,9 +492,7 @@ export const AbonosCompaniasPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['companias-cobranzas-semanas'] });
       queryClient.invalidateQueries({ queryKey: ['companias-abonos-historial'] });
     },
-    onError: (err: any) => {
-      toast.error(err?.response?.data?.message || err?.message || 'Error al registrar abono');
-    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err?.message || 'Error al registrar abono'),
   });
 
   const eliminarAbonoMutation = useMutation({
@@ -318,13 +514,7 @@ export const AbonosCompaniasPage: React.FC = () => {
     return (
       <div style={{ minWidth: '140px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', gap: '8px' }}>
-          <span
-            style={{
-              fontWeight: 800,
-              fontSize: '12.5px',
-              color: pagado ? '#15803d' : '#b91c1c',
-            }}
-          >
+          <span style={{ fontWeight: 800, fontSize: '12.5px', color: pagado ? '#15803d' : '#b91c1c' }}>
             {fmtUSD(Math.max(0, saldo))}
           </span>
           <span
@@ -337,7 +527,7 @@ export const AbonosCompaniasPage: React.FC = () => {
               color: pagado ? '#15803d' : parcial ? '#b45309' : '#b91c1c',
             }}
           >
-            {pagado ? 'Pagado' : parcial ? `Parcial (${pct}%)` : 'Pendiente'}
+            {pagado ? 'Cancelada' : parcial ? `Parcial (${pct}%)` : 'Pendiente'}
           </span>
         </div>
         <div style={{ width: '100%', height: '5px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden' }}>
@@ -364,7 +554,9 @@ export const AbonosCompaniasPage: React.FC = () => {
         <div>
           <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '13.5px' }}>{row.companiaNombre}</div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-            Tarifa base: <strong style={{ color: '#475569' }}>{fmtUSD(row.precioLitroUSD)} / L</strong>
+            Vaca: {fmtUSD(row.precioLitroUSD)}
+            {row.precioBufalaLitroUSD > 0 ? ` • Búf: ${fmtUSD(row.precioBufalaLitroUSD)}` : ''}
+            {row.precioAcidaLitroUSD > 0 ? ` • Ác: ${fmtUSD(row.precioAcidaLitroUSD)}` : ''}
           </div>
         </div>
       ),
@@ -391,14 +583,28 @@ export const AbonosCompaniasPage: React.FC = () => {
       ),
     },
     {
-      header: 'Despachos',
+      header: 'Leche Despachada',
       accessorKey: 'litrosRecibidos',
       sortable: true,
       cell: (row) => (
         <div>
           <strong style={{ color: '#0f172a', fontSize: '13px' }}>{fmtLitros(row.litrosRecibidos)}</strong>
-          <div style={{ fontSize: '11px', color: '#64748b' }}>
-            {row.cantidadDespachos} despacho{row.cantidadDespachos === 1 ? '' : 's'}
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '3px' }}>
+            {row.litrosVaca > 0 && (
+              <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#dbeafe', color: '#1d4ed8' }}>
+                Vaca: {row.litrosVaca.toLocaleString('es-VE')}L
+              </span>
+            )}
+            {row.litrosBufala > 0 && (
+              <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#ede9fe', color: '#6d28d9' }}>
+                Búfala: {row.litrosBufala.toLocaleString('es-VE')}L
+              </span>
+            )}
+            {row.litrosAcida > 0 && (
+              <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: '#fef3c7', color: '#b45309' }}>
+                Ácida: {row.litrosAcida.toLocaleString('es-VE')}L
+              </span>
+            )}
           </div>
         </div>
       ),
@@ -428,83 +634,93 @@ export const AbonosCompaniasPage: React.FC = () => {
     {
       header: 'Acciones',
       accessorKey: 'id',
-      cell: (row) => (
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <button
-            type="button"
-            title="Ver detalle de abonos y despachos"
-            onClick={() =>
-              setDetalleCuenta({
-                companiaId: row.companiaId,
-                companiaNombre: row.companiaNombre,
-                cicloId: row.cicloId,
-                semanaCodigo: row.semanaCodigo,
-                litrosRecibidos: row.litrosRecibidos,
-                cantidadDespachos: row.cantidadDespachos,
-                totalFacturadoUSD: row.totalFacturadoUSD,
-                totalAbonadoUSD: row.totalAbonadoUSD,
-                saldoPendienteUSD: row.saldoPendienteUSD,
-              })
-            }
-            style={{
-              padding: '6px 10px',
-              borderRadius: '8px',
-              fontSize: '12px',
-              fontWeight: 700,
-              background: '#f1f5f9',
-              border: '1px solid #cbd5e1',
-              color: '#334155',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '5px',
-            }}
-          >
-            <i className="fa-solid fa-eye"></i> Detalles
-          </button>
-          <button
-            type="button"
-            onClick={() => abrirModalAbono(row.companiaId, row.cicloId)}
-            style={{
-              padding: '6px 10px',
-              borderRadius: '8px',
-              fontSize: '12px',
-              fontWeight: 800,
-              background: 'linear-gradient(135deg, #059669, #047857)',
-              border: 'none',
-              color: '#ffffff',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '5px',
-            }}
-          >
-            <i className="fa-solid fa-hand-holding-dollar"></i> Abonar
-          </button>
-          {row.saldoPendienteUSD > 0.01 && (
+      cell: (row) => {
+        const tieneSaldo = row.saldoPendienteUSD > 0.01;
+        return (
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               type="button"
-              title="Pagar el 100% del saldo pendiente de esta semana"
-              onClick={() => abrirModalAbono(row.companiaId, row.cicloId, row.saldoPendienteUSD)}
+              title="Ver días despachados, precios y abonos de esta semana"
+              onClick={() => abrirSemanaDetalle(row)}
               style={{
                 padding: '6px 10px',
                 borderRadius: '8px',
                 fontSize: '12px',
-                fontWeight: 800,
-                background: 'linear-gradient(135deg, #0284c7, #0369a1)',
-                border: 'none',
-                color: '#ffffff',
+                fontWeight: 700,
+                background: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                color: '#0f172a',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '5px',
               }}
             >
-              <i className="fa-solid fa-check-double"></i> Cancelar Semana
+              <i className="fa-solid fa-folder-open"></i> Entrar
             </button>
-          )}
-        </div>
-      ),
+            {tieneSaldo ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => abrirSemanaDetalle(row)}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    background: 'linear-gradient(135deg, #059669, #047857)',
+                    border: 'none',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <i className="fa-solid fa-hand-holding-dollar"></i> Abonar
+                </button>
+                <button
+                  type="button"
+                  title="Cancelar el 100% del saldo pendiente de esta semana"
+                  onClick={() => abrirSemanaDetalle(row, row.saldoPendienteUSD)}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                    border: 'none',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <i className="fa-solid fa-check-double"></i> Cancelar Semana
+                </button>
+              </>
+            ) : (
+              <span
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: '8px',
+                  fontSize: '11.5px',
+                  fontWeight: 800,
+                  background: '#dcfce7',
+                  color: '#15803d',
+                  border: '1px solid #86efac',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <i className="fa-solid fa-circle-check"></i> Cancelada
+              </span>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -562,17 +778,7 @@ export const AbonosCompaniasPage: React.FC = () => {
         <div style={{ display: 'flex', gap: '6px' }}>
           <button
             type="button"
-            onClick={() =>
-              setDetalleCuenta({
-                companiaId: row.companiaId,
-                companiaNombre: row.companiaNombre,
-                litrosRecibidos: row.litrosRecibidos,
-                cantidadDespachos: row.cantidadDespachos,
-                totalFacturadoUSD: row.totalFacturadoUSD,
-                totalAbonadoUSD: row.totalAbonadoUSD,
-                saldoPendienteUSD: row.saldoPendienteUSD,
-              })
-            }
+            onClick={() => setDetalleCompania(row)}
             style={{
               padding: '6px 10px',
               borderRadius: '8px',
@@ -589,25 +795,27 @@ export const AbonosCompaniasPage: React.FC = () => {
           >
             <i className="fa-solid fa-eye"></i> Detalles
           </button>
-          <button
-            type="button"
-            onClick={() => abrirModalAbono(row.companiaId)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '8px',
-              fontSize: '12px',
-              fontWeight: 800,
-              background: 'linear-gradient(135deg, #059669, #047857)',
-              border: 'none',
-              color: '#ffffff',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '5px',
-            }}
-          >
-            <i className="fa-solid fa-hand-holding-dollar"></i> Abonar
-          </button>
+          {row.saldoPendienteUSD > 0.01 && (
+            <button
+              type="button"
+              onClick={() => abrirModalGeneral(row.companiaId)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 800,
+                background: 'linear-gradient(135deg, #059669, #047857)',
+                border: 'none',
+                color: '#ffffff',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+              }}
+            >
+              <i className="fa-solid fa-hand-holding-dollar"></i> Abonar
+            </button>
+          )}
         </div>
       ),
     },
@@ -769,7 +977,7 @@ export const AbonosCompaniasPage: React.FC = () => {
                 Cuentas por Cobrar y Abonos a Compañías
               </h2>
               <p style={{ margin: '2px 0 0 0', fontSize: '12.5px', color: '#94a3b8' }}>
-                Control de despachos por semana operativa, saldos pendientes y detalle de cobranzas en USD / Bs
+                Desglose por semana operativa, tipo de leche (Vaca / Búfala / Ácida), precios editables y detalle de cobranzas
               </p>
             </div>
           </div>
@@ -777,7 +985,7 @@ export const AbonosCompaniasPage: React.FC = () => {
 
         <button
           type="button"
-          onClick={() => abrirModalAbono()}
+          onClick={() => abrirModalGeneral()}
           style={{
             background: 'linear-gradient(135deg, #10b981, #059669)',
             color: '#ffffff',
@@ -793,7 +1001,7 @@ export const AbonosCompaniasPage: React.FC = () => {
             boxShadow: '0 6px 16px rgba(16, 185, 129, 0.3)',
           }}
         >
-          <i className="fa-solid fa-plus-circle"></i> Registrar Abono
+          <i className="fa-solid fa-plus-circle"></i> Registrar Abono (Varias Semanas)
         </button>
       </div>
 
@@ -954,8 +1162,525 @@ export const AbonosCompaniasPage: React.FC = () => {
         />
       )}
 
-      {/* MODAL DETALLE DE CUENTA (COMPAÑÍA / SEMANA + SUS ABONOS) */}
-      {detalleCuenta && (
+      {/* MODAL DETALLE Y ABONO DE UNA SEMANA ESPECÍFICA */}
+      {semanaActivaActualizada && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 9998,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '18px',
+              width: '100%',
+              maxWidth: '880px',
+              maxHeight: '92vh',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 50px rgba(0,0,0,0.4)',
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                padding: '16px 22px',
+                color: '#ffffff',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900 }}>
+                  <i className="fa-solid fa-calendar-week mr-2" style={{ color: '#38bdf8' }}></i>
+                  {semanaActivaActualizada.semanaCodigo} — {semanaActivaActualizada.companiaNombre}
+                </h3>
+                <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                  Despachos diarios, precios editables por tipo de leche y gestión de abonos de esta semana
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSemanaActiva(null)}
+                style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {/* KPIs de la semana */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Total Semana (USD / Bs)</div>
+                  <div style={{ fontSize: '19px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>
+                    {fmtUSD(totalesLiveSemana.facturado)}
+                  </div>
+                  <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569' }}>
+                    {fmtBs(totalesLiveSemana.facturado * tasaActual)}
+                  </div>
+                </div>
+                <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', textTransform: 'uppercase' }}>Abonado en Semana</div>
+                  <div style={{ fontSize: '19px', fontWeight: 900, color: '#059669', marginTop: '2px' }}>
+                    {fmtUSD(totalesLiveSemana.abonado)}
+                  </div>
+                  <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#15803d' }}>
+                    {abonosDeSemanaActiva.length} abono(s) registrado(s)
+                  </div>
+                </div>
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    background: totalesLiveSemana.saldo > 0.01 ? '#fef2f2' : '#f0fdf4',
+                    border: `1px solid ${totalesLiveSemana.saldo > 0.01 ? '#fecaca' : '#bbf7d0'}`,
+                  }}
+                >
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: totalesLiveSemana.saldo > 0.01 ? '#b91c1c' : '#15803d', textTransform: 'uppercase' }}>
+                    Saldo Pendiente
+                  </div>
+                  <div style={{ fontSize: '19px', fontWeight: 900, color: totalesLiveSemana.saldo > 0.01 ? '#dc2626' : '#059669', marginTop: '2px' }}>
+                    {fmtUSD(totalesLiveSemana.saldo)}
+                  </div>
+                  <div style={{ fontSize: '11.5px', fontWeight: 700, color: totalesLiveSemana.saldo > 0.01 ? '#b91c1c' : '#15803d' }}>
+                    {fmtBs(totalesLiveSemana.saldo * tasaActual)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumen por Tipo de Leche */}
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                {totalesLiveSemana.vacaL > 0 && (
+                  <div style={{ flex: 1, minWidth: '180px', padding: '10px 12px', borderRadius: '10px', background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#1d4ed8' }}>LECHE VACA</div>
+                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
+                      {fmtLitros(totalesLiveSemana.vacaL)} • {fmtUSD(totalesLiveSemana.vacaUSD)}
+                    </div>
+                  </div>
+                )}
+                {totalesLiveSemana.bufalaL > 0 && (
+                  <div style={{ flex: 1, minWidth: '180px', padding: '10px 12px', borderRadius: '10px', background: '#f5f3ff', border: '1px solid #ddd6fe' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#6d28d9' }}>LECHE BÚFALA</div>
+                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
+                      {fmtLitros(totalesLiveSemana.bufalaL)} • {fmtUSD(totalesLiveSemana.bufalaUSD)}
+                    </div>
+                  </div>
+                )}
+                {totalesLiveSemana.acidaL > 0 && (
+                  <div style={{ flex: 1, minWidth: '180px', padding: '10px 12px', borderRadius: '10px', background: '#fffbeb', border: '1px solid #fde68a' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#b45309' }}>LECHE ÁCIDA</div>
+                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
+                      {fmtLitros(totalesLiveSemana.acidaL)} • {fmtUSD(totalesLiveSemana.acidaUSD)}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 1. DESPACHOS POR DÍA DE LA SEMANA (CON PRECIO EDITABLE) */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                  <h4 style={{ margin: 0, fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
+                    <i className="fa-solid fa-truck-droplet mr-2" style={{ color: '#2563eb' }}></i>
+                    Días Despachados en esta Semana (puedes modificar tipo de leche y precio)
+                  </h4>
+                  {hayCambiosPrecioSemana && (
+                    <button
+                      type="button"
+                      disabled={guardarPreciosMutation.isPending}
+                      onClick={() => guardarPreciosMutation.mutate()}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                        color: '#ffffff',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <i className="fa-solid fa-floppy-disk mr-1"></i>
+                      {guardarPreciosMutation.isPending ? 'Guardando...' : 'Guardar Precios Modificados'}
+                    </button>
+                  )}
+                </div>
+
+                {cargandoDespachosSemana ? (
+                  <div style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>Cargando días despachados...</div>
+                ) : despachosSemana.length === 0 ? (
+                  <div style={{ padding: '16px', textAlign: 'center', background: '#f8fafc', borderRadius: '10px', color: '#64748b', fontSize: '12.5px' }}>
+                    No se encontraron despachos individuales en esta semana.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
+                          <th style={{ padding: '9px 12px', fontWeight: 800 }}>Fecha Envío</th>
+                          <th style={{ padding: '9px 12px', fontWeight: 800 }}>Tipo de Leche</th>
+                          <th style={{ padding: '9px 12px', fontWeight: 800 }}>Litros</th>
+                          <th style={{ padding: '9px 12px', fontWeight: 800 }}>Precio USD/L</th>
+                          <th style={{ padding: '9px 12px', fontWeight: 800 }}>Monto USD</th>
+                          <th style={{ padding: '9px 12px', fontWeight: 800 }}>Monto Bs (BCV)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {despachosSemana.map((d) => {
+                          const tEdit = tiposEditados[d.id] ?? d.tipoLeche;
+                          const pEdit = Number(preciosEditados[d.id] ?? d.precioLitroUSD) || 0;
+                          const subUSD = d.litrosRecibidos * pEdit;
+                          const subBs = subUSD * tasaActual;
+                          const badge = badgeTipoLeche(tEdit);
+                          return (
+                            <tr key={d.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '8px 12px', fontWeight: 700, color: '#0f172a' }}>
+                                {d.fecha ? new Date(d.fecha).toLocaleDateString('es-VE') : '-'}
+                              </td>
+                              <td style={{ padding: '8px 12px' }}>
+                                <select
+                                  value={tEdit}
+                                  onChange={(e) => {
+                                    const nuevoTipo = e.target.value;
+                                    setTiposEditados((prev) => ({ ...prev, [d.id]: nuevoTipo }));
+                                    // Sugerir precio base de ese tipo si existe
+                                    let precioSug = semanaActivaActualizada.precioLitroUSD;
+                                    if (nuevoTipo === 'BUFALA' && semanaActivaActualizada.precioBufalaLitroUSD > 0) {
+                                      precioSug = semanaActivaActualizada.precioBufalaLitroUSD;
+                                    } else if (nuevoTipo === 'ACIDA' && semanaActivaActualizada.precioAcidaLitroUSD > 0) {
+                                      precioSug = semanaActivaActualizada.precioAcidaLitroUSD;
+                                    }
+                                    setPreciosEditados((prev) => ({ ...prev, [d.id]: precioSug.toFixed(2) }));
+                                  }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    border: `1px solid ${badge.border}`,
+                                    background: badge.bg,
+                                    color: badge.color,
+                                    fontWeight: 800,
+                                    fontSize: '11.5px',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <option value="VACA">Leche Vaca</option>
+                                  <option value="BUFALA">Leche Búfala</option>
+                                  <option value="ACIDA">Leche Ácida</option>
+                                </select>
+                              </td>
+                              <td style={{ padding: '8px 12px', fontWeight: 800, color: '#334155' }}>
+                                {fmtLitros(d.litrosRecibidos)}
+                              </td>
+                              <td style={{ padding: '8px 12px' }}>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <span style={{ fontWeight: 800, color: '#64748b' }}>$</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={preciosEditados[d.id] ?? ''}
+                                    onChange={(e) =>
+                                      setPreciosEditados((prev) => ({ ...prev, [d.id]: e.target.value }))
+                                    }
+                                    style={{
+                                      width: '78px',
+                                      padding: '4px 7px',
+                                      borderRadius: '6px',
+                                      border: '1.5px solid #cbd5e1',
+                                      fontWeight: 800,
+                                      textAlign: 'right',
+                                    }}
+                                  />
+                                </div>
+                              </td>
+                              <td style={{ padding: '8px 12px', fontWeight: 800, color: '#0f172a' }}>{fmtUSD(subUSD)}</td>
+                              <td style={{ padding: '8px 12px', fontWeight: 600, color: '#475569' }}>{fmtBs(subBs)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. ABONOS QUE TIENE ESTA SEMANA */}
+              <div>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
+                  <i className="fa-solid fa-receipt mr-2" style={{ color: '#059669' }}></i>
+                  Abonos Registrados en esta Semana ({abonosDeSemanaActiva.length})
+                </h4>
+
+                {abonosDeSemanaActiva.length === 0 ? (
+                  <div style={{ padding: '14px', textAlign: 'center', background: '#f8fafc', borderRadius: '10px', border: '1px dashed #cbd5e1', color: '#64748b', fontSize: '12.5px' }}>
+                    Esta semana aún no tiene abonos registrados.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {abonosDeSemanaActiva.map((ab: any) => {
+                      const f = ab.fecha ?? ab.Fecha;
+                      const mUsd = Number(ab.montoUSD ?? ab.MontoUSD ?? 0);
+                      const mBs = Number(ab.montoBs ?? ab.MontoBs ?? 0);
+                      const ref = ab.referenciaBancaria ?? ab.ReferenciaBancaria;
+                      const obs = ab.observaciones ?? ab.Observaciones;
+                      return (
+                        <div
+                          key={ab.id ?? ab.Id}
+                          style={{
+                            padding: '10px 14px',
+                            borderRadius: '10px',
+                            border: '1px solid #e2e8f0',
+                            background: '#ffffff',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '10px',
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <strong style={{ color: '#059669', fontSize: '14px' }}>{fmtUSD(mUsd)}</strong>
+                              <span style={{ fontSize: '12px', color: '#475569', fontWeight: 600 }}>({fmtBs(mBs)})</span>
+                              <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                • {f ? new Date(f).toLocaleDateString('es-VE') : '-'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '11.5px', color: '#475569', marginTop: '2px' }}>
+                              <strong>{ab.tipoPago ?? ab.TipoPago ?? 'TRANSFERENCIA'}</strong>
+                              {(ab.bancoNombre ?? ab.BancoNombre) ? ` • ${ab.bancoNombre ?? ab.BancoNombre}` : ''}
+                              {ref ? ` • Ref: ${ref}` : ''}
+                              {obs ? ` • "${obs}"` : ''}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setDetalleAbonoItem(ab)}
+                              style={{
+                                padding: '4px 9px',
+                                borderRadius: '6px',
+                                border: '1px solid #bfdbfe',
+                                background: '#eff6ff',
+                                color: '#1d4ed8',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Comprobante
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const ok = await confirmDeleteOrDeactivate(
+                                  '¿Eliminar este abono?',
+                                  'El saldo de la semana se recalculará automáticamente.'
+                                );
+                                if (ok) eliminarAbonoMutation.mutate(ab.id ?? ab.Id);
+                              }}
+                              style={{
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                border: '1px solid #fecaca',
+                                background: '#fee2e2',
+                                color: '#b91c1c',
+                                fontSize: '11px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <i className="fa-solid fa-trash-can"></i>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 3. AGREGAR ABONO A ESTA SEMANA */}
+              {totalesLiveSemana.saldo <= 0.01 ? (
+                <div
+                  style={{
+                    padding: '14px 16px',
+                    borderRadius: '12px',
+                    background: '#f0fdf4',
+                    border: '1px solid #86efac',
+                    color: '#15803d',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <i className="fa-solid fa-circle-check" style={{ fontSize: '18px' }}></i>
+                  Esta semana ya se encuentra cancelada al 100%. No admite nuevas cancelaciones.
+                </div>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    crearAbonoSemanaMutation.mutate();
+                  }}
+                  style={{
+                    padding: '16px',
+                    borderRadius: '14px',
+                    background: '#f0fdf4',
+                    border: '1.5px solid #86efac',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: '#065f46' }}>
+                      <i className="fa-solid fa-plus-circle mr-2"></i>
+                      Agregar Abono a {semanaActivaActualizada.semanaCodigo}
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => setSemMontoUSD(totalesLiveSemana.saldo.toFixed(2))}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                        color: '#ffffff',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <i className="fa-solid fa-check-double mr-1"></i>
+                      Cancelar Semana Completa ({fmtUSD(totalesLiveSemana.saldo)})
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#065f46', marginBottom: '3px' }}>Monto USD *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required
+                        placeholder="0.00"
+                        value={semMontoUSD}
+                        onChange={(e) => setSemMontoUSD(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #34d399', fontWeight: 900, fontSize: '14px', background: '#ffffff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#166534', marginBottom: '3px' }}>Tasa BCV</label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={semTasaBcv || ''}
+                        onChange={(e) => setSemTasaBcv(Number(e.target.value) || 0)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #86efac', fontWeight: 800, background: '#ffffff' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#166534', marginBottom: '3px' }}>Monto Bs (auto/manual)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder={((Number(semMontoUSD) || 0) * (semTasaBcv || tasaActual)).toFixed(2)}
+                        value={semMontoBsManual}
+                        onChange={(e) => setSemMontoBsManual(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #86efac', fontWeight: 800, background: '#ffffff' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#334155', marginBottom: '3px' }}>Método de Pago</label>
+                      <SearchableSelect
+                        options={[
+                          { value: 'TRANSFERENCIA', label: 'Transferencia Bancaria' },
+                          { value: 'PAGO_MOVIL', label: 'Pago Móvil' },
+                          { value: 'EFECTIVO_USD', label: 'Efectivo USD' },
+                          { value: 'EFECTIVO_BS', label: 'Efectivo Bs' },
+                          { value: 'ZELLE', label: 'Zelle' },
+                        ]}
+                        value={semTipoPago}
+                        onChange={(val) => setSemTipoPago(String(val || 'TRANSFERENCIA'))}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#334155', marginBottom: '3px' }}>Banco (opcional)</label>
+                      <SearchableSelect
+                        options={[
+                          { value: 0, label: '-- Sin banco --' },
+                          ...bancos.map((b: any) => ({ value: b.id ?? b.Id, label: b.nombre ?? b.Nombre })),
+                        ]}
+                        value={semBancoId}
+                        onChange={(val) => setSemBancoId(Number(val) || 0)}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#334155', marginBottom: '3px' }}>Referencia</label>
+                      <input
+                        type="text"
+                        placeholder="Nro. referencia"
+                        value={semReferencia}
+                        onChange={(e) => setSemReferencia(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', fontSize: '13px' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      placeholder="Observaciones (opcional)"
+                      value={semObs}
+                      onChange={(e) => setSemObs(e.target.value)}
+                      style={{ flex: 1, minWidth: '200px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', fontSize: '13px' }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={crearAbonoSemanaMutation.isPending || (Number(semMontoUSD) || 0) <= 0}
+                      style={{
+                        padding: '9px 20px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #059669, #047857)',
+                        color: '#ffffff',
+                        fontWeight: 800,
+                        fontSize: '13px',
+                        cursor: crearAbonoSemanaMutation.isPending || (Number(semMontoUSD) || 0) <= 0 ? 'not-allowed' : 'pointer',
+                        opacity: crearAbonoSemanaMutation.isPending || (Number(semMontoUSD) || 0) <= 0 ? 0.65 : 1,
+                      }}
+                    >
+                      {crearAbonoSemanaMutation.isPending
+                        ? 'Guardando...'
+                        : `Guardar Abono (${fmtUSD(Number(semMontoUSD) || 0)})`}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DETALLE CONSOLIDADO DE COMPAÑÍA */}
+      {detalleCompania && (
         <div
           style={{
             position: 'fixed',
@@ -974,7 +1699,7 @@ export const AbonosCompaniasPage: React.FC = () => {
               background: '#ffffff',
               borderRadius: '18px',
               width: '100%',
-              maxWidth: '720px',
+              maxWidth: '680px',
               maxHeight: '90vh',
               overflow: 'hidden',
               display: 'flex',
@@ -994,158 +1719,65 @@ export const AbonosCompaniasPage: React.FC = () => {
             >
               <div>
                 <h3 style={{ margin: 0, fontSize: '16.5px', fontWeight: 900 }}>
-                  <i className="fa-solid fa-file-invoice-dollar mr-2" style={{ color: '#38bdf8' }}></i>
-                  Estado de Cuenta: {detalleCuenta.companiaNombre}
+                  Estado Consolidado: {detalleCompania.companiaNombre}
                 </h3>
                 <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
-                  {detalleCuenta.semanaCodigo ? detalleCuenta.semanaCodigo : 'Consolidado de todas las semanas con despachos'} •{' '}
-                  {fmtLitros(detalleCuenta.litrosRecibidos)} ({detalleCuenta.cantidadDespachos} despachos)
+                  {detalleCompania.cantidadSemanas} semanas • {fmtLitros(detalleCompania.litrosRecibidos)}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setDetalleCuenta(null)}
+                onClick={() => setDetalleCompania(null)}
                 style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer' }}
               >
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
-
-            <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Resumen financiero */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Total Facturado</div>
-                  <div style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>
-                    {fmtUSD(detalleCuenta.totalFacturadoUSD)}
-                  </div>
+            <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                <div style={{ padding: '12px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>FACTURADO</div>
+                  <div style={{ fontSize: '17px', fontWeight: 900 }}>{fmtUSD(detalleCompania.totalFacturadoUSD)}</div>
                 </div>
-                <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', textTransform: 'uppercase' }}>Total Abonado</div>
-                  <div style={{ fontSize: '18px', fontWeight: 900, color: '#059669', marginTop: '2px' }}>
-                    {fmtUSD(detalleCuenta.totalAbonadoUSD)}
-                  </div>
+                <div style={{ padding: '12px', borderRadius: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d' }}>ABONADO</div>
+                  <div style={{ fontSize: '17px', fontWeight: 900, color: '#059669' }}>{fmtUSD(detalleCompania.totalAbonadoUSD)}</div>
                 </div>
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '12px',
-                    background: detalleCuenta.saldoPendienteUSD > 0.01 ? '#fef2f2' : '#f0fdf4',
-                    border: `1px solid ${detalleCuenta.saldoPendienteUSD > 0.01 ? '#fecaca' : '#bbf7d0'}`,
-                  }}
-                >
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: detalleCuenta.saldoPendienteUSD > 0.01 ? '#b91c1c' : '#15803d', textTransform: 'uppercase' }}>
-                    Saldo Pendiente
-                  </div>
-                  <div style={{ fontSize: '18px', fontWeight: 900, color: detalleCuenta.saldoPendienteUSD > 0.01 ? '#dc2626' : '#059669', marginTop: '2px' }}>
-                    {fmtUSD(Math.max(0, detalleCuenta.saldoPendienteUSD))}
-                  </div>
+                <div style={{ padding: '12px', borderRadius: '10px', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#b91c1c' }}>SALDO</div>
+                  <div style={{ fontSize: '17px', fontWeight: 900, color: '#dc2626' }}>{fmtUSD(Math.max(0, detalleCompania.saldoPendienteUSD))}</div>
                 </div>
               </div>
-
-              {/* Lista de Abonos */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <h4 style={{ margin: 0, fontSize: '13.5px', fontWeight: 800, color: '#1e293b' }}>
-                    <i className="fa-solid fa-receipt mr-2" style={{ color: '#059669' }}></i>
-                    Abonos Registrados ({abonosDetalleCuenta.length})
-                  </h4>
-                  {detalleCuenta.saldoPendienteUSD > 0.01 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const dc = detalleCuenta;
-                        setDetalleCuenta(null);
-                        abrirModalAbono(dc.companiaId, dc.cicloId, dc.saldoPendienteUSD);
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        background: '#059669',
-                        color: '#ffffff',
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                      }}
+              <h4 style={{ margin: 0, fontSize: '13.5px', fontWeight: 800 }}>Historial de Abonos ({abonosDeCompaniaDetalle.length})</h4>
+              {abonosDeCompaniaDetalle.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: '10px' }}>
+                  Sin abonos registrados todavía.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {abonosDeCompaniaDetalle.map((ab: any) => (
+                    <div
+                      key={ab.id ?? ab.Id}
+                      style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                     >
-                      <i className="fa-solid fa-plus mr-1"></i> Registrar Abono
-                    </button>
-                  )}
+                      <div>
+                        <strong style={{ color: '#059669' }}>{fmtUSD(Number(ab.montoUSD ?? ab.MontoUSD ?? 0))}</strong>{' '}
+                        <span style={{ fontSize: '12px', color: '#475569' }}>({fmtBs(Number(ab.montoBs ?? ab.MontoBs ?? 0))})</span>{' '}
+                        <span className="badge" style={{ background: '#eff6ff', color: '#1d4ed8', fontSize: '10.5px' }}>
+                          {ab.semanaCodigo ?? ab.SemanaCodigo ?? 'General'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDetalleAbonoItem(ab)}
+                        style={{ padding: '4px 10px', borderRadius: '7px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Comprobante
+                      </button>
+                    </div>
+                  ))}
                 </div>
-
-                {abonosDetalleCuenta.length === 0 ? (
-                  <div style={{ padding: '24px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px', border: '1px dashed #cbd5e1', color: '#64748b', fontSize: '13px' }}>
-                    No se han registrado abonos para esta selección todavía.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {abonosDetalleCuenta.map((ab: any) => {
-                      const f = ab.fecha ?? ab.Fecha;
-                      const mUsd = Number(ab.montoUSD ?? ab.MontoUSD ?? 0);
-                      const mBs = Number(ab.montoBs ?? ab.MontoBs ?? 0);
-                      const tasa = Number(ab.tasaBcv ?? ab.TasaBcv ?? 0);
-                      const ref = ab.referenciaBancaria ?? ab.ReferenciaBancaria;
-                      const obs = ab.observaciones ?? ab.Observaciones;
-                      return (
-                        <div
-                          key={ab.id ?? ab.Id}
-                          style={{
-                            padding: '12px 14px',
-                            borderRadius: '12px',
-                            border: '1px solid #e2e8f0',
-                            background: '#ffffff',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: '12px',
-                          }}
-                        >
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                              <strong style={{ color: '#059669', fontSize: '14.5px' }}>{fmtUSD(mUsd)}</strong>
-                              <span style={{ fontSize: '12px', color: '#475569', fontWeight: 600 }}>({fmtBs(mBs)})</span>
-                              <span className="badge" style={{ background: '#eff6ff', color: '#1d4ed8', fontSize: '10.5px', fontWeight: 700 }}>
-                                {ab.semanaCodigo ?? ab.SemanaCodigo ?? 'General'}
-                              </span>
-                              <span style={{ fontSize: '11px', color: '#64748b' }}>
-                                • {f ? new Date(f).toLocaleDateString('es-VE') : '-'}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
-                              <strong>{ab.tipoPago ?? ab.TipoPago ?? 'TRANSFERENCIA'}</strong>
-                              {(ab.bancoNombre ?? ab.BancoNombre) ? ` • ${ab.bancoNombre ?? ab.BancoNombre}` : ''}
-                              {ref ? ` • Ref: ${ref}` : ''}
-                              {tasa > 0 ? ` • Tasa BCV: ${tasa.toLocaleString('es-VE', { minimumFractionDigits: 2 })}` : ''}
-                            </div>
-                            {obs && (
-                              <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '3px', fontStyle: 'italic' }}>
-                                "{obs}"
-                              </div>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setDetalleAbonoItem(ab)}
-                            style={{
-                              padding: '5px 10px',
-                              borderRadius: '8px',
-                              border: '1px solid #bfdbfe',
-                              background: '#eff6ff',
-                              color: '#1d4ed8',
-                              fontSize: '11.5px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Comprobante
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -1272,7 +1904,7 @@ export const AbonosCompaniasPage: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL REGISTRAR ABONO (1 O VARIAS SEMANAS) */}
+      {/* MODAL GENERAL REGISTRAR ABONO (VARIAS SEMANAS) */}
       {modalAbonoOpen && (
         <div
           style={{
@@ -1309,10 +1941,10 @@ export const AbonosCompaniasPage: React.FC = () => {
             >
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900 }}>
-                  💵 Registrar Abono de Compañía
+                  💵 Registrar Abono Distribuido (Varias Semanas)
                 </h3>
                 <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#a7f3d0' }}>
-                  Selecciona o distribuye el pago entre las semanas con despachos de esta compañía
+                  Distribuye un pago entre varias semanas pendientes de una compañía
                 </p>
               </div>
               <button
@@ -1335,7 +1967,7 @@ export const AbonosCompaniasPage: React.FC = () => {
                   toast.error('Ingresa el monto en USD en al menos una semana');
                   return;
                 }
-                crearAbonoMutation.mutate();
+                crearAbonoGeneralMutation.mutate();
               }}
               style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}
             >
@@ -1364,11 +1996,10 @@ export const AbonosCompaniasPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Semanas con despachos de la compañía */}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
                   <label style={{ fontSize: '12px', fontWeight: 800, color: '#065f46', margin: 0 }}>
-                    Semanas con despachos de esta compañía (ingresa el monto USD a abonar):
+                    Semanas pendientes de esta compañía:
                   </label>
                   {semanasDeCompaniaModal.some((s) => s.saldoPendienteUSD > 0.01) && (
                     <div style={{ display: 'flex', gap: '6px' }}>
@@ -1415,56 +2046,44 @@ export const AbonosCompaniasPage: React.FC = () => {
                     </div>
                   )}
                 </div>
+
                 {abonoCompaniaId <= 0 ? (
                   <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '10px', border: '1px dashed #cbd5e1', fontSize: '12.5px', color: '#64748b', textAlign: 'center' }}>
-                    Selecciona primero una compañía para ver sus semanas con despachos.
+                    Selecciona una compañía para ver sus semanas pendientes.
                   </div>
-                ) : semanasDeCompaniaModal.length === 0 ? (
-                  <div style={{ padding: '14px', background: '#fffbeb', borderRadius: '10px', border: '1px solid #fde68a', fontSize: '12.5px', color: '#92400e', textAlign: 'center' }}>
-                    Esta compañía aún no tiene semanas con despachos registrados.
+                ) : semanasDeCompaniaModal.filter((s) => s.saldoPendienteUSD > 0.01).length === 0 ? (
+                  <div style={{ padding: '14px', background: '#f0fdf4', borderRadius: '10px', border: '1px solid #bbf7d0', fontSize: '12.5px', color: '#15803d', textAlign: 'center', fontWeight: 700 }}>
+                    Esta compañía no tiene semanas con saldo pendiente.
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto', padding: '4px' }}>
-                    {semanasDeCompaniaModal.map((s) => {
-                      const ingresado = Number(montosPorSemana[s.cicloId] || 0);
-                      const saldoActual = Math.max(0, s.saldoPendienteUSD);
-                      const restante = Math.max(0, saldoActual - ingresado);
-                      return (
-                        <div
-                          key={s.cicloId}
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr auto',
-                            gap: '10px',
-                            alignItems: 'center',
-                            padding: '10px 12px',
-                            borderRadius: '10px',
-                            border: ingresado > 0 ? '1.5px solid #10b981' : '1px solid #e2e8f0',
-                            background: ingresado > 0 ? '#f0fdf4' : '#f8fafc',
-                          }}
-                        >
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a' }}>{s.semanaCodigo}</span>
-                              {saldoActual <= 0.01 && (
-                                <span style={{ fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '999px', background: '#dcfce7', color: '#15803d' }}>
-                                  Pagado
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ fontSize: '11.5px', color: '#475569', marginTop: '2px' }}>
-                              {fmtLitros(s.litrosRecibidos)} • Facturado: <strong>{fmtUSD(s.totalFacturadoUSD)}</strong> • Abonado:{' '}
-                              <strong>{fmtUSD(s.totalAbonadoUSD)}</strong> • Saldo:{' '}
-                              <strong style={{ color: saldoActual > 0.01 ? '#dc2626' : '#059669' }}>{fmtUSD(saldoActual)}</strong>
-                            </div>
-                            {ingresado > 0 && (
-                              <div style={{ fontSize: '11px', color: '#047857', fontWeight: 700, marginTop: '2px' }}>
-                                Saldo luego del abono: {fmtUSD(restante)}
+                    {semanasDeCompaniaModal
+                      .filter((s) => s.saldoPendienteUSD > 0.01)
+                      .map((s) => {
+                        const ingresado = Number(montosPorSemana[s.cicloId] || 0);
+                        const saldoActual = Math.max(0, s.saldoPendienteUSD);
+                        return (
+                          <div
+                            key={s.cicloId}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr auto',
+                              gap: '10px',
+                              alignItems: 'center',
+                              padding: '10px 12px',
+                              borderRadius: '10px',
+                              border: ingresado > 0 ? '1.5px solid #10b981' : '1px solid #e2e8f0',
+                              background: ingresado > 0 ? '#f0fdf4' : '#f8fafc',
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a' }}>{s.semanaCodigo}</div>
+                              <div style={{ fontSize: '11.5px', color: '#475569' }}>
+                                {fmtLitros(s.litrosRecibidos)} • Facturado: <strong>{fmtUSD(s.totalFacturadoUSD)}</strong> • Saldo:{' '}
+                                <strong style={{ color: '#dc2626' }}>{fmtUSD(saldoActual)}</strong>
                               </div>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {saldoActual > 0.01 && (
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1486,31 +2105,29 @@ export const AbonosCompaniasPage: React.FC = () => {
                               >
                                 Cancelar Semana
                               </button>
-                            )}
-                            <span style={{ fontWeight: 800, color: '#059669' }}>$</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              placeholder="0.00"
-                              value={montosPorSemana[s.cicloId] ?? ''}
-                              onChange={(e) =>
-                                setMontosPorSemana((prev) => ({
-                                  ...prev,
-                                  [s.cicloId]: e.target.value,
-                                }))
-                              }
-                              style={{ width: '105px', padding: '7px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 800, textAlign: 'right' }}
-                            />
+                              <span style={{ fontWeight: 800, color: '#059669' }}>$</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={montosPorSemana[s.cicloId] ?? ''}
+                                onChange={(e) =>
+                                  setMontosPorSemana((prev) => ({
+                                    ...prev,
+                                    [s.cicloId]: e.target.value,
+                                  }))
+                                }
+                                style={{ width: '105px', padding: '7px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 800, textAlign: 'right' }}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
                   </div>
                 )}
               </div>
 
-              {/* Resumen USD + Tasa BCV + Bolívares */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', padding: '12px', background: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
                 <div>
                   <span style={{ fontSize: '11px', fontWeight: 700, color: '#166534' }}>Total USD</span>
@@ -1539,7 +2156,6 @@ export const AbonosCompaniasPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Método de pago, banco, referencia y observaciones */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Método de Pago</label>
@@ -1595,7 +2211,7 @@ export const AbonosCompaniasPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={crearAbonoMutation.isPending || totalUsdModal <= 0}
+                  disabled={crearAbonoGeneralMutation.isPending || totalUsdModal <= 0}
                   style={{
                     padding: '10px 22px',
                     borderRadius: '10px',
@@ -1603,11 +2219,11 @@ export const AbonosCompaniasPage: React.FC = () => {
                     background: 'linear-gradient(135deg, #059669, #047857)',
                     color: '#ffffff',
                     fontWeight: 800,
-                    cursor: crearAbonoMutation.isPending || totalUsdModal <= 0 ? 'not-allowed' : 'pointer',
-                    opacity: crearAbonoMutation.isPending || totalUsdModal <= 0 ? 0.65 : 1,
+                    cursor: crearAbonoGeneralMutation.isPending || totalUsdModal <= 0 ? 'not-allowed' : 'pointer',
+                    opacity: crearAbonoGeneralMutation.isPending || totalUsdModal <= 0 ? 0.65 : 1,
                   }}
                 >
-                  {crearAbonoMutation.isPending ? 'Guardando...' : `Guardar Abono (${fmtUSD(totalUsdModal)})`}
+                  {crearAbonoGeneralMutation.isPending ? 'Guardando...' : `Guardar Abono (${fmtUSD(totalUsdModal)})`}
                 </button>
               </div>
             </form>

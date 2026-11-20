@@ -82,6 +82,7 @@ export const AbonosCompaniasPage: React.FC = () => {
 
   // Modal Detalle + Abono de UNA SEMANA ESPECÍFICA
   const [semanaActiva, setSemanaActiva] = useState<FilaSemanaCobro | null>(null);
+  const [modalAbonoSemanaOpen, setModalAbonoSemanaOpen] = useState<boolean>(false);
   const [preciosEditados, setPreciosEditados] = useState<Record<number, string>>({});
   const [tiposEditados, setTiposEditados] = useState<Record<number, string>>({});
   const [semMontoUSD, setSemMontoUSD] = useState<string>('');
@@ -377,6 +378,7 @@ export const AbonosCompaniasPage: React.FC = () => {
     setSemBancoId(0);
     setSemReferencia('');
     setSemObs('');
+    setModalAbonoSemanaOpen(Boolean(montoPrellenado && montoPrellenado > 0));
   };
 
   // Semanas con despachos de la compañía seleccionada en el modal general
@@ -456,6 +458,7 @@ export const AbonosCompaniasPage: React.FC = () => {
     },
     onSuccess: (res) => {
       toast.success(res?.message || 'Abono registrado exitosamente.');
+      setModalAbonoSemanaOpen(false);
       setSemMontoUSD('');
       setSemMontoBsManual('');
       setSemReferencia('');
@@ -1412,105 +1415,160 @@ export const AbonosCompaniasPage: React.FC = () => {
                 )}
               </div>
 
-              {/* 2. ABONOS QUE TIENE ESTA SEMANA */}
+              {/* 2. ABONOS QUE TIENE ESTA SEMANA (TABLA COMPACTA) */}
               <div>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
-                  <i className="fa-solid fa-receipt mr-2" style={{ color: '#059669' }}></i>
-                  Abonos Registrados en esta Semana ({abonosDeSemanaActiva.length})
-                </h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                  <h4 style={{ margin: 0, fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
+                    <i className="fa-solid fa-receipt mr-2" style={{ color: '#059669' }}></i>
+                    Historial de Abonos de esta Semana ({abonosDeSemanaActiva.length})
+                  </h4>
+                  {totalesLiveSemana.saldo > 0.01 && (
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSemMontoUSD('');
+                          setSemFecha(hoyStr);
+                          setSemTasaBcv(tasaActual);
+                          setSemMontoBsManual('');
+                          setModalAbonoSemanaOpen(true);
+                        }}
+                        style={{
+                          padding: '6px 13px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          background: 'linear-gradient(135deg, #059669, #047857)',
+                          color: '#ffffff',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                        }}
+                      >
+                        <i className="fa-solid fa-plus-circle"></i> Registrar Abono
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSemMontoUSD(totalesLiveSemana.saldo.toFixed(2));
+                          setSemFecha(hoyStr);
+                          setSemTasaBcv(tasaActual);
+                          setSemMontoBsManual('');
+                          setModalAbonoSemanaOpen(true);
+                        }}
+                        style={{
+                          padding: '6px 13px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                          color: '#ffffff',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                        }}
+                      >
+                        <i className="fa-solid fa-check-double"></i> Cancelar Semana ({fmtUSD(totalesLiveSemana.saldo)})
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {abonosDeSemanaActiva.length === 0 ? (
                   <div style={{ padding: '14px', textAlign: 'center', background: '#f8fafc', borderRadius: '10px', border: '1px dashed #cbd5e1', color: '#64748b', fontSize: '12.5px' }}>
                     Esta semana aún no tiene abonos registrados.
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {abonosDeSemanaActiva.map((ab: any) => {
-                      const f = ab.fecha ?? ab.Fecha;
-                      const mUsd = Number(ab.montoUSD ?? ab.MontoUSD ?? 0);
-                      const mBs = Number(ab.montoBs ?? ab.MontoBs ?? 0);
-                      const ref = ab.referenciaBancaria ?? ab.ReferenciaBancaria;
-                      const obs = ab.observaciones ?? ab.Observaciones;
-                      return (
-                        <div
-                          key={ab.id ?? ab.Id}
-                          style={{
-                            padding: '10px 14px',
-                            borderRadius: '10px',
-                            border: '1px solid #e2e8f0',
-                            background: '#ffffff',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: '10px',
-                          }}
-                        >
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                              <strong style={{ color: '#059669', fontSize: '14px' }}>{fmtUSD(mUsd)}</strong>
-                              <span style={{ fontSize: '12px', color: '#475569', fontWeight: 600 }}>({fmtBs(mBs)})</span>
-                              <span style={{ fontSize: '11px', color: '#64748b' }}>
-                                • {f ? new Date(f).toLocaleDateString('es-VE') : '-'}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: '11.5px', color: '#475569', marginTop: '2px' }}>
-                              <strong>{ab.tipoPago ?? ab.TipoPago ?? 'TRANSFERENCIA'}</strong>
-                              {(ab.bancoNombre ?? ab.BancoNombre) ? ` • ${ab.bancoNombre ?? ab.BancoNombre}` : ''}
-                              {ref ? ` • Ref: ${ref}` : ''}
-                              {obs ? ` • "${obs}"` : ''}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            <button
-                              type="button"
-                              onClick={() => setDetalleAbonoItem(ab)}
-                              style={{
-                                padding: '4px 9px',
-                                borderRadius: '6px',
-                                border: '1px solid #bfdbfe',
-                                background: '#eff6ff',
-                                color: '#1d4ed8',
-                                fontSize: '11px',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              Comprobante
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const ok = await confirmDeleteOrDeactivate(
-                                  '¿Eliminar este abono?',
-                                  'El saldo de la semana se recalculará automáticamente.'
-                                );
-                                if (ok) eliminarAbonoMutation.mutate(ab.id ?? ab.Id);
-                              }}
-                              style={{
-                                padding: '4px 8px',
-                                borderRadius: '6px',
-                                border: '1px solid #fecaca',
-                                background: '#fee2e2',
-                                color: '#b91c1c',
-                                fontSize: '11px',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              <i className="fa-solid fa-trash-can"></i>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
+                          <th style={{ padding: '8px 12px', fontWeight: 800 }}>Fecha</th>
+                          <th style={{ padding: '8px 12px', fontWeight: 800 }}>Método / Banco</th>
+                          <th style={{ padding: '8px 12px', fontWeight: 800 }}>Referencia</th>
+                          <th style={{ padding: '8px 12px', fontWeight: 800 }}>Monto USD</th>
+                          <th style={{ padding: '8px 12px', fontWeight: 800 }}>Monto Bs</th>
+                          <th style={{ padding: '8px 12px', fontWeight: 800, textAlign: 'right' }}>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {abonosDeSemanaActiva.map((ab: any) => {
+                          const f = ab.fecha ?? ab.Fecha;
+                          const mUsd = Number(ab.montoUSD ?? ab.MontoUSD ?? 0);
+                          const mBs = Number(ab.montoBs ?? ab.MontoBs ?? 0);
+                          const ref = ab.referenciaBancaria ?? ab.ReferenciaBancaria;
+                          const banco = ab.bancoNombre ?? ab.BancoNombre;
+                          return (
+                            <tr key={ab.id ?? ab.Id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '8px 12px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                                {f ? new Date(f).toLocaleDateString('es-VE') : '-'}
+                              </td>
+                              <td style={{ padding: '8px 12px' }}>
+                                <div style={{ fontWeight: 700, color: '#1e293b' }}>{ab.tipoPago ?? ab.TipoPago ?? 'TRANSFERENCIA'}</div>
+                                {banco && <div style={{ fontSize: '11px', color: '#64748b' }}>{banco}</div>}
+                              </td>
+                              <td style={{ padding: '8px 12px', color: '#475569' }}>{ref || '-'}</td>
+                              <td style={{ padding: '8px 12px', fontWeight: 800, color: '#059669' }}>{fmtUSD(mUsd)}</td>
+                              <td style={{ padding: '8px 12px', fontWeight: 600, color: '#475569' }}>{fmtBs(mBs)}</td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                <button
+                                  type="button"
+                                  title="Ver comprobante"
+                                  onClick={() => setDetalleAbonoItem(ab)}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid #bfdbfe',
+                                    background: '#eff6ff',
+                                    color: '#1d4ed8',
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    marginRight: '6px',
+                                  }}
+                                >
+                                  <i className="fa-solid fa-eye"></i>
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Eliminar abono"
+                                  onClick={async () => {
+                                    const ok = await confirmDeleteOrDeactivate(
+                                      '¿Eliminar este abono?',
+                                      'El saldo de la semana se recalculará automáticamente.'
+                                    );
+                                    if (ok) eliminarAbonoMutation.mutate(ab.id ?? ab.Id);
+                                  }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid #fecaca',
+                                    background: '#fee2e2',
+                                    color: '#b91c1c',
+                                    fontSize: '11px',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <i className="fa-solid fa-trash-can"></i>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
 
-              {/* 3. AGREGAR ABONO A ESTA SEMANA */}
-              {totalesLiveSemana.saldo <= 0.01 ? (
+              {totalesLiveSemana.saldo <= 0.01 && (
                 <div
                   style={{
-                    padding: '14px 16px',
+                    padding: '12px 16px',
                     borderRadius: '12px',
                     background: '#f0fdf4',
                     border: '1px solid #86efac',
@@ -1523,164 +1581,217 @@ export const AbonosCompaniasPage: React.FC = () => {
                   }}
                 >
                   <i className="fa-solid fa-circle-check" style={{ fontSize: '18px' }}></i>
-                  Esta semana ya se encuentra cancelada al 100%. No admite nuevas cancelaciones.
+                  Esta semana ya se encuentra cancelada al 100%.
                 </div>
-              ) : (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    crearAbonoSemanaMutation.mutate();
-                  }}
-                  style={{
-                    padding: '16px',
-                    borderRadius: '14px',
-                    background: '#f0fdf4',
-                    border: '1.5px solid #86efac',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: '#065f46' }}>
-                      <i className="fa-solid fa-plus-circle mr-2"></i>
-                      Agregar Abono a {semanaActivaActualizada.semanaCodigo}
-                    </h4>
-                    <button
-                      type="button"
-                      onClick={() => setSemMontoUSD(totalesLiveSemana.saldo.toFixed(2))}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        background: 'linear-gradient(135deg, #0284c7, #0369a1)',
-                        color: '#ffffff',
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <i className="fa-solid fa-check-double mr-1"></i>
-                      Cancelar Semana Completa ({fmtUSD(totalesLiveSemana.saldo)})
-                    </button>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: '10px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#065f46', marginBottom: '3px' }}>Fecha Abono *</label>
-                      <input
-                        type="date"
-                        required
-                        value={semFecha}
-                        onChange={(e) => setSemFecha(e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #86efac', fontWeight: 700, fontSize: '13px', background: '#ffffff' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#065f46', marginBottom: '3px' }}>Monto USD *</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        required
-                        placeholder="0.00"
-                        value={semMontoUSD}
-                        onChange={(e) => setSemMontoUSD(e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #34d399', fontWeight: 900, fontSize: '14px', background: '#ffffff' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#166534', marginBottom: '3px' }}>Tasa BCV</label>
-                      <input
-                        type="number"
-                        step="0.0001"
-                        value={semTasaBcv || ''}
-                        onChange={(e) => setSemTasaBcv(Number(e.target.value) || 0)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #86efac', fontWeight: 800, background: '#ffffff' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#166534', marginBottom: '3px' }}>Monto Bs (auto/manual)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        placeholder={((Number(semMontoUSD) || 0) * (semTasaBcv || tasaActual)).toFixed(2)}
-                        value={semMontoBsManual}
-                        onChange={(e) => setSemMontoBsManual(e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #86efac', fontWeight: 800, background: '#ffffff' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#334155', marginBottom: '3px' }}>Método de Pago</label>
-                      <SearchableSelect
-                        options={[
-                          { value: 'TRANSFERENCIA', label: 'Transferencia Bancaria' },
-                          { value: 'PAGO_MOVIL', label: 'Pago Móvil' },
-                          { value: 'EFECTIVO_USD', label: 'Efectivo USD' },
-                          { value: 'EFECTIVO_BS', label: 'Efectivo Bs' },
-                          { value: 'ZELLE', label: 'Zelle' },
-                        ]}
-                        value={semTipoPago}
-                        onChange={(val) => setSemTipoPago(String(val || 'TRANSFERENCIA'))}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#334155', marginBottom: '3px' }}>Banco (opcional)</label>
-                      <SearchableSelect
-                        options={[
-                          { value: 0, label: '-- Sin banco --' },
-                          ...bancos.map((b: any) => ({ value: b.id ?? b.Id, label: b.nombre ?? b.Nombre })),
-                        ]}
-                        value={semBancoId}
-                        onChange={(val) => setSemBancoId(Number(val) || 0)}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#334155', marginBottom: '3px' }}>Referencia</label>
-                      <input
-                        type="text"
-                        placeholder="Nro. referencia"
-                        value={semReferencia}
-                        onChange={(e) => setSemReferencia(e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', fontSize: '13px' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <input
-                      type="text"
-                      placeholder="Observaciones (opcional)"
-                      value={semObs}
-                      onChange={(e) => setSemObs(e.target.value)}
-                      style={{ flex: 1, minWidth: '200px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', fontSize: '13px' }}
-                    />
-                    <button
-                      type="submit"
-                      disabled={crearAbonoSemanaMutation.isPending || (Number(semMontoUSD) || 0) <= 0}
-                      style={{
-                        padding: '9px 20px',
-                        borderRadius: '10px',
-                        border: 'none',
-                        background: 'linear-gradient(135deg, #059669, #047857)',
-                        color: '#ffffff',
-                        fontWeight: 800,
-                        fontSize: '13px',
-                        cursor: crearAbonoSemanaMutation.isPending || (Number(semMontoUSD) || 0) <= 0 ? 'not-allowed' : 'pointer',
-                        opacity: crearAbonoSemanaMutation.isPending || (Number(semMontoUSD) || 0) <= 0 ? 0.65 : 1,
-                      }}
-                    >
-                      {crearAbonoSemanaMutation.isPending
-                        ? 'Guardando...'
-                        : `Guardar Abono (${fmtUSD(Number(semMontoUSD) || 0)})`}
-                    </button>
-                  </div>
-                </form>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REGISTRAR ABONO A SEMANA ESPECÍFICA */}
+      {modalAbonoSemanaOpen && semanaActivaActualizada && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.78)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '18px',
+              width: '100%',
+              maxWidth: '580px',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px rgba(0,0,0,0.4)',
+            }}
+          >
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+                padding: '16px 20px',
+                color: '#ffffff',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900 }}>
+                  💵 Registrar Abono — {semanaActivaActualizada.semanaCodigo}
+                </h3>
+                <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#a7f3d0' }}>
+                  {semanaActivaActualizada.companiaNombre} • Saldo pendiente: {fmtUSD(totalesLiveSemana.saldo)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalAbonoSemanaOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                crearAbonoSemanaMutation.mutate();
+              }}
+              style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setSemMontoUSD(totalesLiveSemana.saldo.toFixed(2))}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <i className="fa-solid fa-check-double mr-1"></i>
+                  Cancelar Semana Completa ({fmtUSD(totalesLiveSemana.saldo)})
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#065f46', marginBottom: '3px' }}>Fecha Abono *</label>
+                  <input
+                    type="date"
+                    required
+                    value={semFecha}
+                    onChange={(e) => setSemFecha(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: 700, fontSize: '13px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#065f46', marginBottom: '3px' }}>Monto USD *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    placeholder="0.00"
+                    value={semMontoUSD}
+                    onChange={(e) => setSemMontoUSD(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #34d399', fontWeight: 900, fontSize: '14px' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', padding: '10px', background: '#f0fdf4', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#166534', marginBottom: '3px' }}>Tasa BCV</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={semTasaBcv || ''}
+                    onChange={(e) => setSemTasaBcv(Number(e.target.value) || 0)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: '8px', border: '1px solid #86efac', fontWeight: 800, background: '#ffffff' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#166534', marginBottom: '3px' }}>Monto Bs (auto/manual)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder={((Number(semMontoUSD) || 0) * (semTasaBcv || tasaActual)).toFixed(2)}
+                    value={semMontoBsManual}
+                    onChange={(e) => setSemMontoBsManual(e.target.value)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: '8px', border: '1px solid #86efac', fontWeight: 800, background: '#ffffff' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#334155', marginBottom: '3px' }}>Método de Pago</label>
+                  <SearchableSelect
+                    options={[
+                      { value: 'TRANSFERENCIA', label: 'Transferencia Bancaria' },
+                      { value: 'PAGO_MOVIL', label: 'Pago Móvil' },
+                      { value: 'EFECTIVO_USD', label: 'Efectivo USD' },
+                      { value: 'EFECTIVO_BS', label: 'Efectivo Bs' },
+                      { value: 'ZELLE', label: 'Zelle' },
+                    ]}
+                    value={semTipoPago}
+                    onChange={(val) => setSemTipoPago(String(val || 'TRANSFERENCIA'))}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#334155', marginBottom: '3px' }}>Banco (opcional)</label>
+                  <SearchableSelect
+                    options={[
+                      { value: 0, label: '-- Sin banco --' },
+                      ...bancos.map((b: any) => ({ value: b.id ?? b.Id, label: b.nombre ?? b.Nombre })),
+                    ]}
+                    value={semBancoId}
+                    onChange={(val) => setSemBancoId(Number(val) || 0)}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <input
+                  type="text"
+                  placeholder="Nro. referencia / comprobante"
+                  value={semReferencia}
+                  onChange={(e) => setSemReferencia(e.target.value)}
+                  style={{ padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Observaciones (opcional)"
+                  value={semObs}
+                  onChange={(e) => setSemObs(e.target.value)}
+                  style={{ padding: '8px 10px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '13px' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalAbonoSemanaOpen(false)}
+                  style={{ padding: '9px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={crearAbonoSemanaMutation.isPending || (Number(semMontoUSD) || 0) <= 0}
+                  style={{
+                    padding: '9px 20px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #059669, #047857)',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: crearAbonoSemanaMutation.isPending || (Number(semMontoUSD) || 0) <= 0 ? 'not-allowed' : 'pointer',
+                    opacity: crearAbonoSemanaMutation.isPending || (Number(semMontoUSD) || 0) <= 0 ? 0.65 : 1,
+                  }}
+                >
+                  {crearAbonoSemanaMutation.isPending
+                    ? 'Guardando...'
+                    : `Guardar Abono (${fmtUSD(Number(semMontoUSD) || 0)})`}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

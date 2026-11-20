@@ -2170,7 +2170,7 @@ namespace Transporte.Infrastructure.Repositories
                 WITH DespachosSem AS (
                     SELECT 
                         cc.CompaniaId,
-                        ISNULL(cc.CicloId, 0) AS CicloId,
+                        COALESCE(NULLIF(cc.CicloId, 0), cicFecha.Id, 0) AS CicloId,
                         SUM(cc.LitrosDespachados) AS LitrosDespachados,
                         SUM(ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados)) AS LitrosRecibidos,
                         SUM(CASE WHEN UPPER(ISNULL(cc.TipoLeche, 'VACA')) NOT IN ('BUFALA', 'ACIDA') THEN ISNULL(cc.LitrosRecibidosCompania, cc.LitrosDespachados) ELSE 0 END) AS LitrosVaca,
@@ -2192,11 +2192,17 @@ namespace Transporte.Infrastructure.Repositories
                         COUNT(*) AS CantidadDespachos
                     FROM TB_CONTROL_COMPANIAS cc
                     INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
+                    OUTER APPLY (
+                        SELECT TOP 1 cicF.Id
+                        FROM TB_CICLOS_OPERATIVOS cicF
+                        WHERE CAST(cc.Fecha AS DATE) BETWEEN cicF.FechaInicio AND cicF.FechaFin
+                        ORDER BY cicF.Id DESC
+                    ) cicFecha
                     WHERE c.IsDeleted = 0
                       AND ISNULL(c.EsPrincipal, 0) = 0
                       AND (@companiaId IS NULL OR cc.CompaniaId = @companiaId)
-                      AND (@cicloId IS NULL OR cc.CicloId = @cicloId)
-                    GROUP BY cc.CompaniaId, ISNULL(cc.CicloId, 0)
+                      AND (@cicloId IS NULL OR COALESCE(NULLIF(cc.CicloId, 0), cicFecha.Id, 0) = @cicloId)
+                    GROUP BY cc.CompaniaId, COALESCE(NULLIF(cc.CicloId, 0), cicFecha.Id, 0)
                 ),
                 AbonosSem AS (
                     SELECT 
@@ -2281,8 +2287,14 @@ namespace Transporte.Infrastructure.Repositories
                     cc.Observacion
                 FROM TB_CONTROL_COMPANIAS cc
                 INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
+                OUTER APPLY (
+                    SELECT TOP 1 cicF.Id
+                    FROM TB_CICLOS_OPERATIVOS cicF
+                    WHERE CAST(cc.Fecha AS DATE) BETWEEN cicF.FechaInicio AND cicF.FechaFin
+                    ORDER BY cicF.Id DESC
+                ) cicFecha
                 WHERE cc.CompaniaId = @companiaId
-                  AND ISNULL(cc.CicloId, 0) = @cicloId
+                  AND COALESCE(NULLIF(cc.CicloId, 0), cicFecha.Id, 0) = @cicloId
                 ORDER BY cc.Fecha ASC, cc.Id ASC";
             return await connection.QueryAsync(sql, new { companiaId, cicloId });
         }
@@ -2304,8 +2316,7 @@ namespace Transporte.Infrastructure.Repositories
                             TipoLeche = COALESCE(NULLIF(@TipoLeche, ''), TipoLeche),
                             ModifiedAt = GETDATE()
                         WHERE Id = @DespachoId
-                          AND CompaniaId = @CompaniaId
-                          AND ISNULL(CicloId, 0) = @CicloId",
+                          AND CompaniaId = @CompaniaId",
                         new
                         {
                             item.PrecioLitroUSD,

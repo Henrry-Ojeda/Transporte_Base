@@ -78,7 +78,7 @@ export const AbonosCompaniasPage: React.FC = () => {
   const [tabActiva, setTabActiva] = useState<'resumen' | 'companias' | 'historial'>('resumen');
   const [filtroCompania, setFiltroCompania] = useState<string>('');
   const [filtroSemana, setFiltroSemana] = useState<string>('');
-  const [soloConSaldo, setSoloConSaldo] = useState<boolean>(false);
+  const [mostrarCanceladas, setMostrarCanceladas] = useState<boolean>(false);
 
   // Modal Detalle + Abono de UNA SEMANA ESPECÍFICA
   const [semanaActiva, setSemanaActiva] = useState<FilaSemanaCobro | null>(null);
@@ -223,11 +223,12 @@ export const AbonosCompaniasPage: React.FC = () => {
     return filasSemanas.find((f) => f.id === semanaActiva.id) || semanaActiva;
   }, [filasSemanas, semanaActiva]);
 
-  // Solo semanas que tienen despachos (para el selector de filtro)
+  // Solo semanas que tienen despachos (y saldo pendiente, salvo que se pida ver canceladas)
   const semanasConDespachos = useMemo(() => {
     const map = new Map<number, string>();
     for (const f of filasSemanas) {
       if (filtroCompania && String(f.companiaId) !== filtroCompania) continue;
+      if (!mostrarCanceladas && f.saldoPendienteUSD <= 0.01) continue;
       if (f.cicloId > 0 && !map.has(f.cicloId)) {
         map.set(f.cicloId, f.semanaCodigo);
       }
@@ -235,16 +236,16 @@ export const AbonosCompaniasPage: React.FC = () => {
     return Array.from(map.entries())
       .sort((a, b) => b[0] - a[0])
       .map(([id, codigo]) => ({ id, codigo }));
-  }, [filasSemanas, filtroCompania]);
+  }, [filasSemanas, filtroCompania, mostrarCanceladas]);
 
   const filasFiltradas = useMemo(() => {
     return filasSemanas.filter((f) => {
       if (filtroCompania && String(f.companiaId) !== filtroCompania) return false;
       if (filtroSemana && String(f.cicloId) !== filtroSemana) return false;
-      if (soloConSaldo && f.saldoPendienteUSD <= 0.01) return false;
+      if (!mostrarCanceladas && f.saldoPendienteUSD <= 0.01) return false;
       return true;
     });
-  }, [filasSemanas, filtroCompania, filtroSemana, soloConSaldo]);
+  }, [filasSemanas, filtroCompania, filtroSemana, mostrarCanceladas]);
 
   // Agrupado por Compañía
   const filasPorCompania: FilaCompaniaResumen[] = useMemo(() => {
@@ -277,11 +278,12 @@ export const AbonosCompaniasPage: React.FC = () => {
 
   const abonosFiltrados = useMemo(() => {
     return (abonosRaw || []).filter((a: any) => {
+      if (!mostrarCanceladas && String(a.tipoPago ?? a.TipoPago ?? '').toUpperCase() === 'CIERRE_HISTORICO') return false;
       if (filtroCompania && String(a.companiaId ?? a.CompaniaId) !== filtroCompania) return false;
       if (filtroSemana && String(a.cicloId ?? a.CicloId ?? 0) !== filtroSemana) return false;
       return true;
     });
-  }, [abonosRaw, filtroCompania, filtroSemana]);
+  }, [abonosRaw, filtroCompania, filtroSemana, mostrarCanceladas]);
 
   // Abonos de la semana abierta en el modal de semana
   const abonosDeSemanaActiva = useMemo(() => {
@@ -1007,34 +1009,36 @@ export const AbonosCompaniasPage: React.FC = () => {
         </button>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs enfocados en Dinero Sin Cobrar */}
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: '18px' }}>
-        <div className="kpi-card glass-blue">
-          <div className="kpi-icon-wrap"><i className="fa-solid fa-file-invoice-dollar"></i></div>
+        <div className="kpi-card glass-amber">
+          <div className="kpi-icon-wrap"><i className="fa-solid fa-scale-unbalanced"></i></div>
           <div className="kpi-content">
-            <span className="kpi-title">Total Facturado</span>
-            <div className="kpi-value">{fmtUSD(kpis.facturado)}</div>
-            <span className="kpi-foot">{kpis.litros.toLocaleString('es-VE')} Lts despachados</span>
+            <span className="kpi-title">Por Cobrar (Sin Cobrar)</span>
+            <div className="kpi-value" style={{ color: kpis.saldo > 0.01 ? '#dc2626' : '#059669' }}>
+              {fmtUSD(kpis.saldo)}
+            </div>
+            <span className="kpi-foot">
+              {kpis.companiasDeudoras} compañía(s) • {filasFiltradas.length} semana(s) activas
+            </span>
           </div>
         </div>
         <div className="kpi-card glass-emerald">
           <div className="kpi-icon-wrap"><i className="fa-solid fa-money-bill-trend-up"></i></div>
           <div className="kpi-content">
-            <span className="kpi-title">Total Abonado</span>
+            <span className="kpi-title">Abonos Parciales (Pendientes)</span>
             <div className="kpi-value">{fmtUSD(kpis.abonado)}</div>
             <span className="kpi-foot">
-              {abonosFiltrados.length} cobro(s) • {kpis.pctCobrado.toFixed(1)}% recuperado
+              {abonosFiltrados.length} cobro(s) • {kpis.pctCobrado.toFixed(1)}% de semanas abiertas
             </span>
           </div>
         </div>
-        <div className="kpi-card glass-amber">
-          <div className="kpi-icon-wrap"><i className="fa-solid fa-scale-unbalanced"></i></div>
+        <div className="kpi-card glass-blue">
+          <div className="kpi-icon-wrap"><i className="fa-solid fa-file-invoice-dollar"></i></div>
           <div className="kpi-content">
-            <span className="kpi-title">Por Cobrar (Saldo)</span>
-            <div className="kpi-value" style={{ color: kpis.saldo > 0.01 ? '#dc2626' : '#059669' }}>
-              {fmtUSD(kpis.saldo)}
-            </div>
-            <span className="kpi-foot">{kpis.companiasDeudoras} compañía(s) con deuda</span>
+            <span className="kpi-title">Facturado (Sin Liquidar)</span>
+            <div className="kpi-value">{fmtUSD(kpis.facturado)}</div>
+            <span className="kpi-foot">{kpis.litros.toLocaleString('es-VE')} Lts en semanas abiertas</span>
           </div>
         </div>
       </div>
@@ -1074,11 +1078,11 @@ export const AbonosCompaniasPage: React.FC = () => {
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 700, color: '#334155', paddingBottom: '8px' }}>
             <input
               type="checkbox"
-              checked={soloConSaldo}
-              onChange={(e) => setSoloConSaldo(e.target.checked)}
+              checked={mostrarCanceladas}
+              onChange={(e) => setMostrarCanceladas(e.target.checked)}
               style={{ width: '16px', height: '16px', accentColor: '#2563eb' }}
             />
-            Solo semanas con saldo pendiente
+            Mostrar semanas ya canceladas
           </label>
         </div>
 

@@ -2466,6 +2466,20 @@ namespace Transporte.Core.DTOs
         public List<AbonoSemanaItemDto>? DistribucionSemanas { get; set; }
     }
 
+    public class ActualizarPrecioDespachoItemDto
+    {
+        public long DespachoId { get; set; }
+        public decimal PrecioLitroUSD { get; set; }
+        public string? TipoLeche { get; set; }
+    }
+
+    public class ActualizarPreciosDespachosSemanaDto
+    {
+        public int CompaniaId { get; set; }
+        public int CicloId { get; set; }
+        public List<ActualizarPrecioDespachoItemDto> Items { get; set; } = new();
+    }
+
     public class GuardarRutaLogisticaDto
     {
         public string Codigo { get; set; } = string.Empty;

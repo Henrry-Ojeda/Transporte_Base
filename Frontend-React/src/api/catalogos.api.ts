@@ -637,5 +637,17 @@ export const catalogosApi = {
     const res = await apiClient.delete(`/companias/abonos/${id}`);
     return res.data;
   },
+  getDespachosSemanaCompania: async (companiaId: number, cicloId: number): Promise<any[]> => {
+    const res = await apiClient.get<any[]>(`/companias/${companiaId}/semanas/${cicloId}/despachos`);
+    return Array.isArray(res.data) ? res.data : [];
+  },
+  actualizarPreciosDespachosSemana: async (dto: {
+    companiaId: number;
+    cicloId: number;
+    items: Array<{ despachoId: number; precioLitroUSD: number; tipoLeche?: string }>;
+  }): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.put('/companias/despachos/precios', dto);
+    return res.data;
+  },
 };
 

@@ -85,6 +85,7 @@ export const AbonosCompaniasPage: React.FC = () => {
   const [preciosEditados, setPreciosEditados] = useState<Record<number, string>>({});
   const [tiposEditados, setTiposEditados] = useState<Record<number, string>>({});
   const [semMontoUSD, setSemMontoUSD] = useState<string>('');
+  const [semFecha, setSemFecha] = useState<string>(hoyStr);
   const [semTasaBcv, setSemTasaBcv] = useState<number>(0);
   const [semMontoBsManual, setSemMontoBsManual] = useState<string>('');
   const [semTipoPago, setSemTipoPago] = useState<string>('TRANSFERENCIA');
@@ -367,6 +368,7 @@ export const AbonosCompaniasPage: React.FC = () => {
   const abrirSemanaDetalle = (fila: FilaSemanaCobro, montoPrellenado?: number) => {
     setSemanaActiva(fila);
     setSemMontoUSD(montoPrellenado && montoPrellenado > 0 ? montoPrellenado.toFixed(2) : '');
+    setSemFecha(hoyStr);
     setSemTasaBcv(tasaActual);
     setSemMontoBsManual('');
     setSemTipoPago('TRANSFERENCIA');
@@ -439,7 +441,7 @@ export const AbonosCompaniasPage: React.FC = () => {
       return catalogosApi.crearAbonoCompania({
         companiaId: semanaActivaActualizada.companiaId,
         cicloId: semanaActivaActualizada.cicloId,
-        fecha: hoyStr,
+        fecha: semFecha || hoyStr,
         montoUSD: monto,
         montoBs,
         tasaBcv: tasaEf,
@@ -1193,8 +1195,9 @@ export const AbonosCompaniasPage: React.FC = () => {
             {/* Header */}
             <div
               style={{
+                flexShrink: 0,
                 background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-                padding: '16px 22px',
+                padding: '14px 22px',
                 color: '#ffffff',
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -1202,89 +1205,78 @@ export const AbonosCompaniasPage: React.FC = () => {
               }}
             >
               <div>
-                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900 }}>
+                <h3 style={{ margin: 0, fontSize: '16.5px', fontWeight: 900 }}>
                   <i className="fa-solid fa-calendar-week mr-2" style={{ color: '#38bdf8' }}></i>
                   {semanaActivaActualizada.semanaCodigo} — {semanaActivaActualizada.companiaNombre}
                 </h3>
-                <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
-                  Despachos diarios, precios editables por tipo de leche y gestión de abonos de esta semana
+                <p style={{ margin: '2px 0 0 0', fontSize: '11.5px', color: '#94a3b8' }}>
+                  Desglose de envíos, precios editables y control de abonos de esta semana
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setSemanaActiva(null)}
-                style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '18px', cursor: 'pointer', padding: '4px' }}
               >
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
 
             {/* Body */}
-            <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              {/* KPIs de la semana */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Total Semana (USD / Bs)</div>
-                  <div style={{ fontSize: '19px', fontWeight: 900, color: '#0f172a', marginTop: '2px' }}>
-                    {fmtUSD(totalesLiveSemana.facturado)}
+            <div style={{ flex: 1, minHeight: 0, padding: '18px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Barra Resumen Compacta + Tipos de Leche */}
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  <div>
+                    <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>Total Facturado</div>
+                    <div style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a' }}>{fmtUSD(totalesLiveSemana.facturado)}</div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>{fmtBs(totalesLiveSemana.facturado * tasaActual)}</div>
                   </div>
-                  <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569' }}>
-                    {fmtBs(totalesLiveSemana.facturado * tasaActual)}
+                  <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '12px' }}>
+                    <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#15803d', textTransform: 'uppercase' }}>Abonado</div>
+                    <div style={{ fontSize: '18px', fontWeight: 900, color: '#059669' }}>{fmtUSD(totalesLiveSemana.abonado)}</div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#15803d' }}>{abonosDeSemanaActiva.length} abono(s)</div>
                   </div>
-                </div>
-                <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', textTransform: 'uppercase' }}>Abonado en Semana</div>
-                  <div style={{ fontSize: '19px', fontWeight: 900, color: '#059669', marginTop: '2px' }}>
-                    {fmtUSD(totalesLiveSemana.abonado)}
-                  </div>
-                  <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#15803d' }}>
-                    {abonosDeSemanaActiva.length} abono(s) registrado(s)
-                  </div>
-                </div>
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '12px',
-                    background: totalesLiveSemana.saldo > 0.01 ? '#fef2f2' : '#f0fdf4',
-                    border: `1px solid ${totalesLiveSemana.saldo > 0.01 ? '#fecaca' : '#bbf7d0'}`,
-                  }}
-                >
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: totalesLiveSemana.saldo > 0.01 ? '#b91c1c' : '#15803d', textTransform: 'uppercase' }}>
-                    Saldo Pendiente
-                  </div>
-                  <div style={{ fontSize: '19px', fontWeight: 900, color: totalesLiveSemana.saldo > 0.01 ? '#dc2626' : '#059669', marginTop: '2px' }}>
-                    {fmtUSD(totalesLiveSemana.saldo)}
-                  </div>
-                  <div style={{ fontSize: '11.5px', fontWeight: 700, color: totalesLiveSemana.saldo > 0.01 ? '#b91c1c' : '#15803d' }}>
-                    {fmtBs(totalesLiveSemana.saldo * tasaActual)}
+                  <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '12px' }}>
+                    <div style={{ fontSize: '10.5px', fontWeight: 800, color: totalesLiveSemana.saldo > 0.01 ? '#b91c1c' : '#15803d', textTransform: 'uppercase' }}>
+                      Saldo Pendiente
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: 900, color: totalesLiveSemana.saldo > 0.01 ? '#dc2626' : '#059669' }}>
+                      {fmtUSD(totalesLiveSemana.saldo)}
+                    </div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: totalesLiveSemana.saldo > 0.01 ? '#b91c1c' : '#15803d' }}>
+                      {fmtBs(totalesLiveSemana.saldo * tasaActual)}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Resumen por Tipo de Leche */}
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                {totalesLiveSemana.vacaL > 0 && (
-                  <div style={{ flex: 1, minWidth: '180px', padding: '10px 12px', borderRadius: '10px', background: '#eff6ff', border: '1px solid #bfdbfe' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#1d4ed8' }}>LECHE VACA</div>
-                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
-                      {fmtLitros(totalesLiveSemana.vacaL)} • {fmtUSD(totalesLiveSemana.vacaUSD)}
-                    </div>
-                  </div>
-                )}
-                {totalesLiveSemana.bufalaL > 0 && (
-                  <div style={{ flex: 1, minWidth: '180px', padding: '10px 12px', borderRadius: '10px', background: '#f5f3ff', border: '1px solid #ddd6fe' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#6d28d9' }}>LECHE BÚFALA</div>
-                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
-                      {fmtLitros(totalesLiveSemana.bufalaL)} • {fmtUSD(totalesLiveSemana.bufalaUSD)}
-                    </div>
-                  </div>
-                )}
-                {totalesLiveSemana.acidaL > 0 && (
-                  <div style={{ flex: 1, minWidth: '180px', padding: '10px 12px', borderRadius: '10px', background: '#fffbeb', border: '1px solid #fde68a' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#b45309' }}>LECHE ÁCIDA</div>
-                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
-                      {fmtLitros(totalesLiveSemana.acidaL)} • {fmtUSD(totalesLiveSemana.acidaUSD)}
-                    </div>
+                {(totalesLiveSemana.vacaL > 0 || totalesLiveSemana.bufalaL > 0 || totalesLiveSemana.acidaL > 0) && (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingTop: '8px', borderTop: '1px dashed #cbd5e1' }}>
+                    {totalesLiveSemana.vacaL > 0 && (
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, padding: '3px 10px', borderRadius: '999px', background: '#dbeafe', color: '#1d4ed8' }}>
+                        Vaca: {fmtLitros(totalesLiveSemana.vacaL)} ({fmtUSD(totalesLiveSemana.vacaUSD)})
+                      </span>
+                    )}
+                    {totalesLiveSemana.bufalaL > 0 && (
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, padding: '3px 10px', borderRadius: '999px', background: '#ede9fe', color: '#6d28d9' }}>
+                        Búfala: {fmtLitros(totalesLiveSemana.bufalaL)} ({fmtUSD(totalesLiveSemana.bufalaUSD)})
+                      </span>
+                    )}
+                    {totalesLiveSemana.acidaL > 0 && (
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, padding: '3px 10px', borderRadius: '999px', background: '#fef3c7', color: '#b45309' }}>
+                        Ácida: {fmtLitros(totalesLiveSemana.acidaL)} ({fmtUSD(totalesLiveSemana.acidaUSD)})
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -1569,7 +1561,17 @@ export const AbonosCompaniasPage: React.FC = () => {
                     </button>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#065f46', marginBottom: '3px' }}>Fecha Abono *</label>
+                      <input
+                        type="date"
+                        required
+                        value={semFecha}
+                        onChange={(e) => setSemFecha(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #86efac', fontWeight: 700, fontSize: '13px', background: '#ffffff' }}
+                      />
+                    </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#065f46', marginBottom: '3px' }}>Monto USD *</label>
                       <input

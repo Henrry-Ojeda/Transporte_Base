@@ -53,10 +53,11 @@ namespace Transporte.Infrastructure.Repositories
             return new SqlConnection(connStr);
         }
 
-        private static bool _tablesChecked = false;
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _ensuredLogisticaTables = new();
         private async Task EnsureTablesAsync(IDbConnection connection)
         {
-            if (_tablesChecked) return;
+            var dbKey = connection.Database ?? "default";
+            if (_ensuredLogisticaTables.ContainsKey(dbKey)) return;
             try
             {
                 var sql = @"
@@ -93,7 +94,7 @@ namespace Transporte.Infrastructure.Repositories
                         );
                     END;";
                 await connection.ExecuteAsync(sql);
-                _tablesChecked = true;
+                _ensuredLogisticaTables[dbKey] = true;
             }
             catch { /* Tolerante */ }
         }

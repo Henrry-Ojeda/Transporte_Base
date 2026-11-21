@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -11,64 +11,75 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { SessionMonitor } from '@/components/common/SessionMonitor';
 import { TenantModuleMonitor } from '@/components/common/TenantModuleMonitor';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { setOnLogoutListener, useAuthStore } from '@/stores/authStore';
 
-// Dashboard
-import { DashboardPage } from '@/modules/dashboard/DashboardPage';
+// Helper para lazy-loading limpio de exportaciones nombradas o default
+const lazyNamed = <T extends Record<string, any>>(
+  loader: () => Promise<T>,
+  exportName: keyof T
+) =>
+  lazy(async () => {
+    const mod = await loader();
+    return { default: mod[exportName] as React.ComponentType<any> };
+  });
 
-// Operaciones
-import { RutasLogisticaPage } from '@/modules/operaciones/RutasLogisticaPage';
-import { PlanificacionRutasChoferesPage } from '@/modules/operaciones/PlanificacionRutasChoferesPage';
-import { RecoleccionRutasPage } from '@/modules/operaciones/RecoleccionRutasPage';
-import { ViajesTicketsPage } from '@/modules/operaciones/ViajesTicketsPage';
-import { ReceptoriaPage } from '@/modules/operaciones/ReceptoriaPage';
-import { BalanceLechePage } from '@/modules/operaciones/BalanceLechePage';
-import { PlanificacionRutasPage } from '@/modules/operaciones/PlanificacionRutasPage';
-import { BufalaPage } from '@/modules/operaciones/BufalaPage';
-import { EvolucionFincasPage } from '@/modules/operaciones/EvolucionFincasPage';
-import { ControlTanquesPage } from '@/modules/operaciones/ControlTanquesPage';
-import { MapaRutasPage } from '@/modules/operaciones/MapaRutasPage';
+// Dashboard & Operaciones (Code-Splitting por ruta)
+const DashboardPage = lazyNamed(() => import('@/modules/dashboard/DashboardPage'), 'DashboardPage');
+const RutasLogisticaPage = lazyNamed(() => import('@/modules/operaciones/RutasLogisticaPage'), 'RutasLogisticaPage');
+const PlanificacionRutasChoferesPage = lazyNamed(() => import('@/modules/operaciones/PlanificacionRutasChoferesPage'), 'PlanificacionRutasChoferesPage');
+const RecoleccionRutasPage = lazyNamed(() => import('@/modules/operaciones/RecoleccionRutasPage'), 'RecoleccionRutasPage');
+const ViajesTicketsPage = lazyNamed(() => import('@/modules/operaciones/ViajesTicketsPage'), 'ViajesTicketsPage');
+const ReceptoriaPage = lazyNamed(() => import('@/modules/operaciones/ReceptoriaPage'), 'ReceptoriaPage');
+const BalanceLechePage = lazyNamed(() => import('@/modules/operaciones/BalanceLechePage'), 'BalanceLechePage');
+const BufalaPage = lazyNamed(() => import('@/modules/operaciones/BufalaPage'), 'BufalaPage');
+const EvolucionFincasPage = lazyNamed(() => import('@/modules/operaciones/EvolucionFincasPage'), 'EvolucionFincasPage');
+const ControlTanquesPage = lazyNamed(() => import('@/modules/operaciones/ControlTanquesPage'), 'ControlTanquesPage');
+const MapaRutasPage = lazyNamed(() => import('@/modules/operaciones/MapaRutasPage'), 'MapaRutasPage');
 
 // Catálogos
-import { FincasPage } from '@/modules/catalogos/FincasPage';
-import { PropietariosPage } from '@/modules/catalogos/PropietariosPage';
-import { ConductoresPage } from '@/modules/catalogos/ConductoresPage';
-import { CamionesPage } from '@/modules/catalogos/CamionesPage';
-import { CompaniasPage } from '@/modules/catalogos/CompaniasPage';
-import { BancosPage } from '@/modules/catalogos/BancosPage';
-import { EmpresaPage } from '@/modules/catalogos/EmpresaPage';
+const FincasPage = lazyNamed(() => import('@/modules/catalogos/FincasPage'), 'FincasPage');
+const PropietariosPage = lazyNamed(() => import('@/modules/catalogos/PropietariosPage'), 'PropietariosPage');
+const ConductoresPage = lazyNamed(() => import('@/modules/catalogos/ConductoresPage'), 'ConductoresPage');
+const CamionesPage = lazyNamed(() => import('@/modules/catalogos/CamionesPage'), 'CamionesPage');
+const CompaniasPage = lazyNamed(() => import('@/modules/catalogos/CompaniasPage'), 'CompaniasPage');
+const BancosPage = lazyNamed(() => import('@/modules/catalogos/BancosPage'), 'BancosPage');
+const EmpresaPage = lazyNamed(() => import('@/modules/catalogos/EmpresaPage'), 'EmpresaPage');
 
 // Flota & Mantenimiento
-import { CombustiblePage } from '@/modules/combustible/CombustiblePage';
-import { MantenimientoPage } from '@/modules/mantenimiento/MantenimientoPage';
-import { RepuestosPage } from '@/modules/repuestos/RepuestosPage';
+const CombustiblePage = lazyNamed(() => import('@/modules/combustible/CombustiblePage'), 'CombustiblePage');
+const MantenimientoPage = lazyNamed(() => import('@/modules/mantenimiento/MantenimientoPage'), 'MantenimientoPage');
+const RepuestosPage = lazyNamed(() => import('@/modules/repuestos/RepuestosPage'), 'RepuestosPage');
 
 // Liquidación & Finanzas
-import { SemanasPage } from '@/modules/finanzas/SemanasPage';
-import { LiquidacionesPage } from '@/modules/finanzas/LiquidacionesPage';
-import { PagosPersonalPage } from '@/modules/finanzas/PagosPersonalPage';
-import { HistorialPagosPage } from '@/modules/finanzas/HistorialPagosPage';
-import { AdministracionGeneralPage } from '@/modules/finanzas/AdministracionGeneralPage';
+const SemanasPage = lazyNamed(() => import('@/modules/finanzas/SemanasPage'), 'SemanasPage');
+const LiquidacionesPage = lazyNamed(() => import('@/modules/finanzas/LiquidacionesPage'), 'LiquidacionesPage');
+const PagosPersonalPage = lazyNamed(() => import('@/modules/finanzas/PagosPersonalPage'), 'PagosPersonalPage');
+const HistorialPagosPage = lazyNamed(() => import('@/modules/finanzas/HistorialPagosPage'), 'HistorialPagosPage');
+const AdministracionGeneralPage = lazyNamed(() => import('@/modules/finanzas/AdministracionGeneralPage'), 'AdministracionGeneralPage');
 
 // Adelantos
-import { AdelantosFincasPage } from '@/modules/finanzas/AdelantosFincasPage';
-import { AdelantosPersonalPage } from '@/modules/finanzas/AdelantosPersonalPage';
-import { AbonosCompaniasPage } from '@/modules/finanzas/AbonosCompaniasPage';
-import { AdelantosReceptoriaPage } from '@/modules/finanzas/AdelantosReceptoriaPage';
-import { AbonosAmortizacionesPage } from '@/modules/finanzas/AbonosAmortizacionesPage';
-import { HistorialAdelantosPage } from '@/modules/finanzas/HistorialAdelantosPage';
+const AdelantosFincasPage = lazyNamed(() => import('@/modules/finanzas/AdelantosFincasPage'), 'AdelantosFincasPage');
+const AbonosCompaniasPage = lazyNamed(() => import('@/modules/finanzas/AbonosCompaniasPage'), 'AbonosCompaniasPage');
+const OtrosAdelantosPage = lazyNamed(() => import('@/modules/finanzas/OtrosAdelantosPage'), 'OtrosAdelantosPage');
 
 // Sistema & Reportes
-import { ReportesPage } from '@/modules/sistema/ReportesPage';
-import { HistorialBcvPage } from '@/modules/sistema/HistorialBcvPage';
-import { GestionDataPage } from '@/modules/data/GestionDataPage';
-import { UsuariosPage } from '@/modules/sistema/UsuariosPage';
-import { PerfilPage } from '@/modules/sistema/PerfilPage';
-import { DatosBancariosPage } from '@/modules/sistema/DatosBancariosPage';
-import { PermisosPage } from '@/modules/sistema/PermisosPage';
-import { ConfiguracionPage } from '@/modules/sistema/ConfiguracionPage';
-import { TiempoSesionPage } from '@/modules/sistema/TiempoSesionPage';
-import { AppMovilPage } from '@/modules/movil/AppMovilPage';
-import { setOnLogoutListener, useAuthStore } from '@/stores/authStore';
+const ReportesPage = lazyNamed(() => import('@/modules/sistema/ReportesPage'), 'ReportesPage');
+const HistorialBcvPage = lazyNamed(() => import('@/modules/sistema/HistorialBcvPage'), 'HistorialBcvPage');
+const GestionDataPage = lazyNamed(() => import('@/modules/data/GestionDataPage'), 'GestionDataPage');
+const UsuariosPage = lazyNamed(() => import('@/modules/sistema/UsuariosPage'), 'UsuariosPage');
+const MiCuentaPage = lazyNamed(() => import('@/modules/sistema/MiCuentaPage'), 'MiCuentaPage');
+const PermisosPage = lazyNamed(() => import('@/modules/sistema/PermisosPage'), 'PermisosPage');
+const ConfiguracionPage = lazyNamed(() => import('@/modules/sistema/ConfiguracionPage'), 'ConfiguracionPage');
+const AppMovilPage = lazyNamed(() => import('@/modules/movil/AppMovilPage'), 'AppMovilPage');
+
+const RouteFallback: React.FC = () => (
+  <div className="flex items-center justify-center min-h-[55vh]">
+    <div className="flex flex-col items-center gap-3 text-slate-500">
+      <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      <span className="text-xs font-semibold tracking-wide uppercase">Cargando módulo...</span>
+    </div>
+  </div>
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -80,12 +91,10 @@ const queryClient = new QueryClient({
   },
 });
 
-// Limpiar todas las consultas en vuelo y caché al cerrar sesión
 setOnLogoutListener(() => {
   queryClient.clear();
 });
 
-// Redirección de seguridad si se accede a la UI desde un dominio de backend DuckDNS
 if (typeof window !== 'undefined') {
   const currentHost = window.location.hostname.toLowerCase();
   if (currentHost.includes('queseracampoverde.duckdns.org')) {
@@ -95,7 +104,6 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Redirección inteligente de raíz: choferes y móviles siempre a /app directamente sin pasar por login
 const HomeRedirect: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -126,7 +134,6 @@ const HomeRedirect: React.FC = () => {
     }
   }
 
-  // Si el usuario en sesión es de otra empresa, forzar logout inmediato para no mezclar datos
   if (isAuthenticated && user) {
     const userCod = ((user as any)?.empresaCodigo || '').toUpperCase();
     if ((isCampoVerde && userCod.includes('VERGEL')) || (isVergel && userCod.includes('CAMPO'))) {
@@ -152,7 +159,6 @@ const HomeRedirect: React.FC = () => {
   return <Navigate to="/dashboard" replace />;
 };
 
-// Componente global para sincronizar el logo de la empresa como icono de la app (PWA, Favicon y Móvil)
 const DynamicAppIconSync: React.FC = () => {
   React.useEffect(() => {
     try {
@@ -185,90 +191,87 @@ export const App: React.FC = () => {
         <BrowserRouter>
           <SessionMonitor />
           <TenantModuleMonitor />
-          <Routes>
-          {/* Redirección raíz autónoma: choferes y móviles van a /movil directamente (resiliente offline) */}
-          <Route index element={<HomeRedirect />} />
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              <Route index element={<HomeRedirect />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/movil" element={<AppMovilPage />} />
+              <Route path="/app" element={<AppMovilPage />} />
 
-          {/* Ruta Pública de Login */}
-          <Route path="/login" element={<LoginPage />} />
+              <Route
+                element={
+                  <ProtectedRoute>
+                    <MainLayout />
+                  </ProtectedRoute>
+                }
+              >
+                {/* Operaciones */}
+                <Route path="/dashboard" element={<ProtectedRoute requiredTabId="dashboard"><DashboardPage /></ProtectedRoute>} />
+                <Route path="/rutas" element={<ProtectedRoute requiredTabId="rutas"><RecoleccionRutasPage /></ProtectedRoute>} />
+                <Route path="/viajes" element={<ProtectedRoute requiredTabId="viajes"><ViajesTicketsPage /></ProtectedRoute>} />
+                <Route path="/receptoria" element={<ProtectedRoute requiredTabId="receptoria" requiredTenantModule="MOD_RECEPTORIA"><ReceptoriaPage /></ProtectedRoute>} />
+                <Route path="/balance" element={<ProtectedRoute requiredTabId="balance"><BalanceLechePage /></ProtectedRoute>} />
+                <Route path="/evolucion-fincas" element={<ProtectedRoute requiredTabId="evolucion-fincas"><EvolucionFincasPage /></ProtectedRoute>} />
+                <Route path="/control-tanques" element={<ProtectedRoute requiredTabId="control-tanques" requiredTenantModule="MOD_CONTROL_TANQUES"><ControlTanquesPage /></ProtectedRoute>} />
+                <Route path="/planificacion-rutas" element={<ProtectedRoute requiredTabId="rutas-planificacion" requiredTenantModule="MOD_LOGISTICA_RUTAS"><RutasLogisticaPage /></ProtectedRoute>} />
+                <Route path="/planificacion-rutas-choferes" element={<ProtectedRoute requiredTabId="planificacion-rutas-choferes" requiredTenantModule="MOD_LOGISTICA_RUTAS"><PlanificacionRutasChoferesPage /></ProtectedRoute>} />
+                <Route path="/mapa-rutas" element={<ProtectedRoute requiredTabId="mapa-rutas" requiredTenantModule="MOD_MAPA_RUTAS"><MapaRutasPage /></ProtectedRoute>} />
+                <Route path="/bufala" element={<ProtectedRoute requiredTabId="bufala" requiredTenantModule="MOD_LECHE_BUFALA"><BufalaPage /></ProtectedRoute>} />
 
-          {/* Terminal / App Móvil Offline para Conductores y Dispositivos Vinculados */}
-          <Route path="/movil" element={<AppMovilPage />} />
-          <Route path="/app" element={<AppMovilPage />} />
+                {/* Catálogos */}
+                <Route path="/fincas" element={<ProtectedRoute requiredTabId="fincas"><FincasPage /></ProtectedRoute>} />
+                <Route path="/propietarios" element={<ProtectedRoute requiredTabId="propietarios"><PropietariosPage /></ProtectedRoute>} />
+                <Route path="/conductores" element={<ProtectedRoute requiredTabId="conductores"><ConductoresPage /></ProtectedRoute>} />
+                <Route path="/camiones" element={<ProtectedRoute requiredTabId="camiones"><CamionesPage /></ProtectedRoute>} />
+                <Route path="/companias" element={<ProtectedRoute requiredTabId="companias"><CompaniasPage /></ProtectedRoute>} />
+                <Route path="/bancos" element={<ProtectedRoute requiredTabId="bancos"><BancosPage /></ProtectedRoute>} />
+                <Route path="/empresa" element={<ProtectedRoute requiredTabId="empresa"><EmpresaPage /></ProtectedRoute>} />
 
-          {/* Rutas Protegidas dentro de MainLayout */}
-          <Route
-            element={
-              <ProtectedRoute>
-                <MainLayout />
-              </ProtectedRoute>
-            }
-          >
-            {/* Operaciones */}
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/rutas" element={<RecoleccionRutasPage />} />
-            <Route path="/viajes" element={<ViajesTicketsPage />} />
-            <Route path="/receptoria" element={<ReceptoriaPage />} />
-            <Route path="/balance" element={<BalanceLechePage />} />
-            <Route path="/evolucion-fincas" element={<EvolucionFincasPage />} />
-            <Route path="/control-tanques" element={<ProtectedRoute requiredTenantModule="MOD_CONTROL_TANQUES"><ControlTanquesPage /></ProtectedRoute>} />
-            <Route path="/planificacion-rutas" element={<ProtectedRoute requiredTenantModule="MOD_LOGISTICA_RUTAS"><RutasLogisticaPage /></ProtectedRoute>} />
-            <Route path="/planificacion-rutas-choferes" element={<ProtectedRoute requiredTenantModule="MOD_LOGISTICA_RUTAS"><PlanificacionRutasChoferesPage /></ProtectedRoute>} />
-            <Route path="/mapa-rutas" element={<ProtectedRoute requiredTenantModule="MOD_MAPA_RUTAS"><MapaRutasPage /></ProtectedRoute>} />
-            <Route path="/bufala" element={<ProtectedRoute requiredTenantModule="MOD_LECHE_BUFALA"><BufalaPage /></ProtectedRoute>} />
+                {/* Flota & Taller */}
+                <Route path="/combustible" element={<ProtectedRoute requiredTabId="combustible" requiredTenantModule="MOD_COMBUSTIBLE"><CombustiblePage /></ProtectedRoute>} />
+                <Route path="/mantenimiento" element={<ProtectedRoute requiredTabId="mantenimiento" requiredTenantModule="MOD_MANTENIMIENTO"><MantenimientoPage /></ProtectedRoute>} />
+                <Route path="/repuestos" element={<ProtectedRoute requiredTabId="repuestos" requiredTenantModule="MOD_REPUESTOS"><RepuestosPage /></ProtectedRoute>} />
 
-            {/* Catálogos */}
-            <Route path="/fincas" element={<FincasPage />} />
-            <Route path="/propietarios" element={<PropietariosPage />} />
-            <Route path="/conductores" element={<ConductoresPage />} />
-            <Route path="/camiones" element={<CamionesPage />} />
-            <Route path="/companias" element={<CompaniasPage />} />
-            <Route path="/bancos" element={<BancosPage />} />
-            <Route path="/empresa" element={<EmpresaPage />} />
+                {/* Liquidación & Pagos */}
+                <Route path="/semanas" element={<ProtectedRoute requiredTabId="semanas" requiredTenantModule="MOD_LIQUIDACIONES"><SemanasPage /></ProtectedRoute>} />
+                <Route path="/liquidaciones" element={<ProtectedRoute requiredTabId="liquidaciones" requiredTenantModule="MOD_LIQUIDACIONES"><LiquidacionesPage /></ProtectedRoute>} />
+                <Route path="/pagos-personal" element={<ProtectedRoute requiredTabId="pagos-personal" requiredTenantModule="MOD_PAGOS_PERSONAL"><PagosPersonalPage /></ProtectedRoute>} />
+                <Route path="/historial-pagos" element={<ProtectedRoute requiredTabId="historial-pagos" requiredTenantModule="MOD_LIQUIDACIONES"><HistorialPagosPage /></ProtectedRoute>} />
+                <Route path="/administracion" element={<ProtectedRoute requiredTabId="administracion"><AdministracionGeneralPage /></ProtectedRoute>} />
 
-            {/* Flota & Mantenimiento */}
-            <Route path="/combustible" element={<ProtectedRoute requiredTenantModule="MOD_COMBUSTIBLE"><CombustiblePage /></ProtectedRoute>} />
-            <Route path="/mantenimiento" element={<ProtectedRoute requiredTenantModule="MOD_MANTENIMIENTO"><MantenimientoPage /></ProtectedRoute>} />
-            <Route path="/repuestos" element={<ProtectedRoute requiredTenantModule="MOD_REPUESTOS"><RepuestosPage /></ProtectedRoute>} />
+                {/* Adelantos & Cobranzas */}
+                <Route path="/adelantos-fincas" element={<ProtectedRoute requiredTabId="adelantos-fincas" requiredTenantModule="MOD_LIQUIDACIONES"><AdelantosFincasPage /></ProtectedRoute>} />
+                <Route path="/abonos-companias" element={<ProtectedRoute requiredTabId="abonos-companias"><AbonosCompaniasPage /></ProtectedRoute>} />
+                <Route path="/otros-adelantos" element={<ProtectedRoute requiredTabId="adelantos"><OtrosAdelantosPage /></ProtectedRoute>} />
+                <Route path="/adelantos-personal" element={<ProtectedRoute requiredTabId="adelantos-personal" requiredTenantModule="MOD_LIQUIDACIONES"><OtrosAdelantosPage defaultTab="personal" /></ProtectedRoute>} />
+                <Route path="/adelantos-receptoria" element={<ProtectedRoute requiredTabId="adelantos-receptoria"><OtrosAdelantosPage defaultTab="receptoria" /></ProtectedRoute>} />
+                <Route path="/abonos-amortizaciones" element={<ProtectedRoute requiredTabId="abonos"><OtrosAdelantosPage defaultTab="amortizaciones" /></ProtectedRoute>} />
+                <Route path="/historial-adelantos" element={<ProtectedRoute requiredTabId="historial-adelantos" requiredTenantModule="MOD_LIQUIDACIONES"><OtrosAdelantosPage defaultTab="historial" /></ProtectedRoute>} />
 
-            {/* Liquidación & Finanzas */}
-            <Route path="/semanas" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><SemanasPage /></ProtectedRoute>} />
-            <Route path="/liquidaciones" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><LiquidacionesPage /></ProtectedRoute>} />
-            <Route path="/pagos-personal" element={<ProtectedRoute requiredTenantModule="MOD_PAGOS_PERSONAL"><PagosPersonalPage /></ProtectedRoute>} />
-            <Route path="/historial-pagos" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><HistorialPagosPage /></ProtectedRoute>} />
-            <Route path="/administracion" element={<AdministracionGeneralPage />} />
+                {/* Reportes */}
+                <Route path="/reportes" element={<ProtectedRoute requiredTabId="reportes"><ReportesPage /></ProtectedRoute>} />
+                <Route path="/historial-bcv" element={<ProtectedRoute requiredTabId="historial-bcv" requiredTenantModule="MOD_HISTORIAL_BCV"><HistorialBcvPage /></ProtectedRoute>} />
 
-            {/* Adelantos */}
-            <Route path="/adelantos-fincas" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><AdelantosFincasPage /></ProtectedRoute>} />
-            <Route path="/adelantos-personal" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><AdelantosPersonalPage /></ProtectedRoute>} />
-            <Route path="/abonos-companias" element={<AbonosCompaniasPage />} />
-            <Route path="/adelantos-receptoria" element={<AdelantosReceptoriaPage />} />
-            <Route path="/abonos-amortizaciones" element={<AbonosAmortizacionesPage />} />
-            <Route path="/historial-adelantos" element={<ProtectedRoute requiredTenantModule="MOD_LIQUIDACIONES"><HistorialAdelantosPage /></ProtectedRoute>} />
+                {/* Sistema & Mi Cuenta */}
+                <Route path="/mi-cuenta" element={<ProtectedRoute requiredTabId="perfil"><MiCuentaPage /></ProtectedRoute>} />
+                <Route path="/perfil" element={<ProtectedRoute requiredTabId="perfil"><MiCuentaPage defaultTab="perfil" /></ProtectedRoute>} />
+                <Route path="/datos-bancarios" element={<ProtectedRoute requiredTabId="datos-bancarios"><MiCuentaPage defaultTab="banco" /></ProtectedRoute>} />
+                <Route path="/perfil/banco" element={<ProtectedRoute requiredTabId="datos-bancarios"><MiCuentaPage defaultTab="banco" /></ProtectedRoute>} />
+                <Route path="/tiempo-sesion" element={<ProtectedRoute requiredTabId="configuracion-sesion"><MiCuentaPage defaultTab="sesion" /></ProtectedRoute>} />
+                <Route path="/data" element={<ProtectedRoute requiredTabId="data"><GestionDataPage /></ProtectedRoute>} />
+                <Route path="/gestion-data" element={<ProtectedRoute requiredTabId="data"><GestionDataPage /></ProtectedRoute>} />
+                <Route path="/usuarios" element={<ProtectedRoute requiredTabId="usuarios"><UsuariosPage /></ProtectedRoute>} />
+                <Route path="/permisos" element={<ProtectedRoute requiredTabId="permisos"><PermisosPage /></ProtectedRoute>} />
+                <Route path="/configuracion" element={<ProtectedRoute requiredTabId="configuracion-sistema"><ConfiguracionPage /></ProtectedRoute>} />
+              </Route>
 
-            {/* Reportes */}
-            <Route path="/reportes" element={<ReportesPage />} />
-            <Route path="/historial-bcv" element={<ProtectedRoute requiredTenantModule="MOD_HISTORIAL_BCV"><HistorialBcvPage /></ProtectedRoute>} />
-
-            {/* Sistema */}
-            <Route path="/perfil" element={<PerfilPage />} />
-            <Route path="/datos-bancarios" element={<DatosBancariosPage />} />
-            <Route path="/perfil/banco" element={<DatosBancariosPage />} />
-            <Route path="/data" element={<GestionDataPage />} />
-            <Route path="/gestion-data" element={<GestionDataPage />} />
-            <Route path="/usuarios" element={<UsuariosPage />} />
-            <Route path="/permisos" element={<PermisosPage />} />
-            <Route path="/configuracion" element={<ConfiguracionPage />} />
-            <Route path="/tiempo-sesion" element={<TiempoSesionPage />} />
-          </Route>
-
-          {/* Ruta no encontrada */}
-          <Route path="*" element={<HomeRedirect />} />
-        </Routes>
-        <Toaster position="top-right" richColors closeButton />
-      </BrowserRouter>
-    </QueryClientProvider>
-  </ErrorBoundary>
+              <Route path="*" element={<HomeRedirect />} />
+            </Routes>
+          </Suspense>
+          <Toaster position="top-right" richColors closeButton />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 };
 

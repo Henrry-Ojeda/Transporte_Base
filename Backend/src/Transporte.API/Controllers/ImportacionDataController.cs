@@ -633,14 +633,34 @@ namespace Transporte.API.Controllers
             }
         }
 
+        private static readonly HashSet<string> _entidadesPermitidas = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "PROPIETARIOS", "FINCAS", "COMPANIAS", "BANCOS", "CHOFERES", "CAMIONES"
+        };
+
+        private static readonly HashSet<string> _mimePermitidos = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+            "text/csv",
+            "text/csv; charset=utf-8",
+            "application/pdf",
+            "application/json",
+            "text/plain"
+        };
+
         /// <summary>
         /// Descarga la plantilla oficial en Excel (.xlsx) o CSV (.csv) con encabezado Content-Disposition explícito
         /// </summary>
         [HttpGet("descargar-plantilla/{entidad}")]
-        [AllowAnonymous]
+        [Authorize]
         public IActionResult DescargarPlantilla(string entidad, [FromQuery] string formato = "xlsx")
         {
             var ent = (entidad ?? "").Trim().ToUpperInvariant().Replace("TB_", "");
+            if (!_entidadesPermitidas.Contains(ent))
+            {
+                return BadRequest(new { message = "Entidad de plantilla no permitida." });
+            }
             var ext = formato.Trim().ToLowerInvariant() == "csv" ? "csv" : "xlsx";
             var filename = $"Plantilla_Importacion_{ent}.{ext}";
 
@@ -683,7 +703,7 @@ namespace Transporte.API.Controllers
         /// Recibe contenido en Base64 y lo devuelve como archivo adjunto nativo con Content-Disposition.
         /// </summary>
         [HttpPost("descargar-archivo")]
-        [AllowAnonymous]
+        [Authorize]
         public IActionResult DescargarArchivo([FromForm] string base64Content, [FromForm] string nombreArchivo, [FromForm] string? contentType)
         {
             if (string.IsNullOrWhiteSpace(base64Content) || string.IsNullOrWhiteSpace(nombreArchivo))
@@ -691,12 +711,35 @@ namespace Transporte.API.Controllers
                 return BadRequest(new { message = "Contenido o nombre de archivo inválido." });
             }
 
-            var type = string.IsNullOrWhiteSpace(contentType) 
-                ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
-                : contentType;
+            if (base64Content.Length > 20 * 1024 * 1024)
+            {
+                return BadRequest(new { message = "El archivo excede el tamaño máximo permitido (15 MB)." });
+            }
 
-            var bytes = Convert.FromBase64String(base64Content);
-            return File(bytes, type, nombreArchivo);
+            var type = string.IsNullOrWhiteSpace(contentType)
+                ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                : contentType.Trim();
+
+            if (!_mimePermitidos.Contains(type))
+            {
+                return BadRequest(new { message = "Tipo de contenido no permitido." });
+            }
+
+            var safeFileName = Path.GetFileName(nombreArchivo.Trim());
+            if (string.IsNullOrWhiteSpace(safeFileName))
+            {
+                return BadRequest(new { message = "Nombre de archivo inválido." });
+            }
+
+            try
+            {
+                var bytes = Convert.FromBase64String(base64Content);
+                return File(bytes, type, safeFileName);
+            }
+            catch (FormatException)
+            {
+                return BadRequest(new { message = "Contenido Base64 inválido." });
+            }
         }
     }
 

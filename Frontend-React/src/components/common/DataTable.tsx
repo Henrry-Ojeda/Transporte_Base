@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import * as XLSX from 'xlsx';
+import { exportToExcel } from '@/utils/excelExport';
 
 export interface ColumnDef<T> {
   header: React.ReactNode;
@@ -94,12 +94,9 @@ export function DataTable<T extends Record<string, any>>({
     }
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (!sortedData.length) return;
-    const ws = XLSX.utils.json_to_sheet(sortedData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Datos');
-    XLSX.writeFile(wb, `${exportFileName || 'exportacion'}.xlsx`);
+    await exportToExcel(sortedData, exportFileName || 'exportacion', 'Datos');
   };
 
   return (

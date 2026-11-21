@@ -94,11 +94,13 @@ namespace Transporte.API.Controllers
             var secretKey = _config["Jwt:SecretKey"] ?? _config["Jwt:Key"] ?? "ClaveSecretaSuperSeguraParaRutasDeLeche2026_JWT_Token_Key_MuyLargaParaHmacSha256!";
             var key = Encoding.UTF8.GetBytes(secretKey);
             
+            string tenantCode = _tenantService.GetTenantCode();
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Role, user.Rol)
+                new Claim(ClaimTypes.Role, user.Rol),
+                new Claim("empresa_codigo", tenantCode)
             };
 
             foreach (var perm in permisos)
@@ -121,7 +123,6 @@ namespace Transporte.API.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
             var tokenString = tokenHandler.WriteToken(token);
 
-            string tenantCode = _tenantService.GetTenantCode();
             bool isHijo = !string.IsNullOrEmpty(tenantCode) && !tenantCode.Equals("PRODUCTO_BASE", StringComparison.OrdinalIgnoreCase);
             bool isSuperAdminReal = user.Rol.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase);
             string rolDisplay = isHijo && isSuperAdminReal ? "ADMIN" : user.Rol;
@@ -230,9 +231,8 @@ namespace Transporte.API.Controllers
             string tenantCode = _tenantService.GetTenantCode();
             string tenantName = _tenantService.GetTenantName();
 
-            // Generar código único de 6 dígitos numéricos (ej. 849215)
-            var random = new Random();
-            string codigo = random.Next(100000, 999999).ToString();
+            // Generar código único criptográficamente seguro de 6 dígitos numéricos (ej. 849215)
+            string codigo = System.Security.Cryptography.RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
 
             // Guardar en DB_SAAS_MASTER para resolución ciega e inmediata
             string masterHost = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production" 
@@ -317,11 +317,27 @@ namespace Transporte.API.Controllers
                 WHERE Id = @vincId",
                 new { vincId, DeviceId = dto.DeviceId ?? "App Móvil" });
 
-            // Obtener nombre comercial
+            // Obtener datos del tenant destino desde DB_SAAS_MASTER
             var empresa = await db.QueryFirstOrDefaultAsync<dynamic>(
-                "SELECT NombreComercial FROM TB_EMPRESAS WHERE Codigo = @tenantCode",
+                "SELECT Id, NombreComercial, ConnectionString FROM TB_EMPRESAS WHERE Codigo = @tenantCode",
                 new { tenantCode });
             string empresaNombre = empresa?.NombreComercial ?? tenantCode;
+            string? tenantConnStr = empresa?.ConnectionString != null
+                ? Multitenancy.TenantService.AdjustConnectionStringForEnvironment((string)empresa.ConnectionString)
+                : null;
+
+            List<string> modulosTenant = new();
+            if (empresa?.Id != null)
+            {
+                int empId = (int)empresa.Id;
+                var mods = await db.QueryAsync<string>(@"
+                    SELECT m.Codigo 
+                    FROM TB_EMPRESA_MODULOS em
+                    INNER JOIN TB_MODULOS m ON em.ModuloId = m.Id
+                    WHERE em.EmpresaId = @empId AND em.Habilitado = 1 AND m.Activo = 1",
+                    new { empId });
+                modulosTenant = mods.ToList();
+            }
 
             // Generar JWT firmado
             var tokenHandler = new JwtSecurityTokenHandler();
@@ -358,17 +374,31 @@ namespace Transporte.API.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
             var tokenString = tokenHandler.WriteToken(token);
 
-            var usuarioDb = await _usuariosRepository.ObtenerUsuarioPorIdAsync(usuarioId);
-            bool permisoCrear = usuarioDb?.PermisoCrearViaje ?? false;
-
-            var empresaCfg = await _catalogosRepository.ObtenerEmpresaConfigAsync();
+            bool permisoCrear = false;
+            string? logoUrl = null;
+            if (!string.IsNullOrWhiteSpace(tenantConnStr))
+            {
+                using var tenantDb = new Microsoft.Data.SqlClient.SqlConnection(tenantConnStr);
+                permisoCrear = await tenantDb.QueryFirstOrDefaultAsync<bool?>(
+                    "SELECT PermisoCrearViaje FROM TB_USUARIOS WHERE Id = @usuarioId",
+                    new { usuarioId }) ?? false;
+                logoUrl = await tenantDb.QueryFirstOrDefaultAsync<string?>(
+                    "SELECT TOP 1 LogoUrl FROM TB_EMPRESA_CONFIG");
+            }
+            else
+            {
+                var usuarioDb = await _usuariosRepository.ObtenerUsuarioPorIdAsync(usuarioId);
+                permisoCrear = usuarioDb?.PermisoCrearViaje ?? false;
+                var empresaCfg = await _catalogosRepository.ObtenerEmpresaConfigAsync();
+                logoUrl = empresaCfg?.LogoUrl;
+            }
 
             return Ok(new VincularDispositivoResponseDto
             {
                 Token = tokenString,
                 EmpresaCodigo = tenantCode,
                 EmpresaNombre = empresaNombre,
-                EmpresaLogo = empresaCfg?.LogoUrl,
+                EmpresaLogo = logoUrl,
                 Id = usuarioId,
                 Username = username,
                 NombreCompleto = nombreCompleto,
@@ -378,7 +408,9 @@ namespace Transporte.API.Controllers
                 PlacaCamion = placaCamion,
                 CapacidadTanqueLitros = capacidadTanqueLitros,
                 Permisos = permisos,
-                ModulosHabilitados = _tenantService.GetModulosActivos().Any() ? _tenantService.GetModulosActivos() : new[] { "MOD_LOGISTICA_RUTAS", "MOD_APP_MOVIL" }
+                ModulosHabilitados = modulosTenant.Any()
+                    ? modulosTenant
+                    : (_tenantService.GetModulosActivos().Any() ? _tenantService.GetModulosActivos() : new[] { "MOD_LOGISTICA_RUTAS", "MOD_APP_MOVIL" })
             });
         }
     }

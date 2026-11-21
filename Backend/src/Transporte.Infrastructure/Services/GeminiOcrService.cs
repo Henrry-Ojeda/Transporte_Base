@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Transporte.Core.DTOs;
+using Transporte.Core.Interfaces;
 
 namespace Transporte.Infrastructure.Services
 {
@@ -21,10 +22,12 @@ namespace Transporte.Infrastructure.Services
     {
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
+        private readonly ITenantService? _tenantService;
 
-        public GeminiOcrService(IConfiguration configuration, HttpClient httpClient)
+        public GeminiOcrService(IConfiguration configuration, HttpClient httpClient, ITenantService? tenantService = null)
         {
             _httpClient = httpClient;
+            _tenantService = tenantService;
             _apiKey = configuration["Gemini:ApiKey"] 
                 ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY") 
                 ?? string.Empty;
@@ -45,7 +48,9 @@ namespace Transporte.Infrastructure.Services
                     $"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={_apiKey}"
                 };
 
-                var promptText = $@"IMPORTANTE: Analiza minuciosamente la imagen de esta planilla de recolección de leche de 'TRANSPORTE VERGEL CARRILLO C.A.'.
+                var empresaNombre = _tenantService?.GetTenantName();
+                if (string.IsNullOrWhiteSpace(empresaNombre)) empresaNombre = "EMPRESA DE TRANSPORTE";
+                var promptText = $@"IMPORTANTE: Analiza minuciosamente la imagen de esta planilla de recolección de leche de '{empresaNombre}'.
 TEN EN CUENTA QUE LA IMAGEN PUEDE ESTAR ROTADA 90° O ESTAR EN VERTICAL/HORIZONTAL. LÉELA EN LA ORIENTACIÓN CORRECTA.
 
 REGLA CRÍTICA DE ALINEACIÓN FILA POR FILA (SECCIÓN MATERA):

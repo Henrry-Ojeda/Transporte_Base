@@ -22,12 +22,22 @@ try {
   console.warn('No se pudo leer version.ts, usando fallback:', version);
 }
 
-// 2. Obtener la lista real de assets compilados en dist/assets
+// 2. Obtener la lista real de assets core + móvil en dist/assets (sin pre-cachear chunks pesados de escritorio en el móvil)
 let assetFiles = [];
 if (fs.existsSync(assetsDir)) {
   const files = fs.readdirSync(assetsDir);
   assetFiles = files
-    .filter((f) => !f.endsWith('.map'))
+    .filter((f) => {
+      if (f.endsWith('.map')) return false;
+      return (
+        f.startsWith('index-') ||
+        f.startsWith('vendor-react-') ||
+        f.startsWith('vendor-query-') ||
+        f.startsWith('vendor-ui-') ||
+        f.startsWith('rolldown-runtime-') ||
+        f.startsWith('AppMovilPage-')
+      );
+    })
     .map((f) => `/assets/${f}`);
 }
 

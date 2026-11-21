@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 export const ConfiguracionPage: React.FC = () => {
   const queryClient = useQueryClient();
   const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin());
+  const tieneTolerancia = useAuthStore((state) => state.hasTenantModule('MOD_TOLERANCIA_MERMA'));
 
   const [toleranciaMerma, setToleranciaMerma] = useState<string>('1.50');
   const [diaCorteSemana, setDiaCorteSemana] = useState<string>('DOMINGO');
@@ -90,7 +91,9 @@ export const ConfiguracionPage: React.FC = () => {
   // Mutación para guardar parámetros
   const guardarMutation = useMutation({
     mutationFn: async () => {
-      await sistemaApi.guardarParametro('TOLERANCIA_MERMA_PCT', toleranciaMerma);
+      if (tieneTolerancia) {
+        await sistemaApi.guardarParametro('TOLERANCIA_MERMA_PCT', toleranciaMerma);
+      }
       await sistemaApi.guardarParametro('DIA_CORTE_SEMANA', diaCorteSemana);
       await sistemaApi.guardarParametro('ALERTA_COMBUSTIBLE_MIN_LITROS', alertaCombustibleMin);
       await sistemaApi.guardarParametro('ALERTA_MANTENIMIENTO_KM', alertaKmSugerido);
@@ -271,7 +274,8 @@ export const ConfiguracionPage: React.FC = () => {
       {/* SUB-TAB 1: PARÁMETROS DE NEGOCIO */}
       {subTab === 'parametros' && (
         <>
-          {/* TARJETA ESPECIAL: SEMÁFORO DE TOLERANCIA DE MERMA */}
+          {/* TARJETA ESPECIAL: SEMÁFORO DE TOLERANCIA DE MERMA (solo si MOD_TOLERANCIA_MERMA está activo) */}
+          {tieneTolerancia && (
           <div
             style={{
               background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
@@ -387,6 +391,7 @@ export const ConfiguracionPage: React.FC = () => {
               </div>
             </div>
           </div>
+          )}
 
           {/* FORMULARIO DE PARÁMETROS GLOBALES */}
           <div className="content-card" style={{ padding: '24px', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>

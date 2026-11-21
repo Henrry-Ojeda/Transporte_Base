@@ -85,7 +85,7 @@ export const TenantModuleMonitor: React.FC = () => {
       } catch (err) {
         console.warn('Error en TenantModuleMonitor:', err);
       }
-    }, 4000);
+    }, 30000);
 
     return () => clearInterval(timer);
   }, [isAuthenticated, syncModulosTenant]);

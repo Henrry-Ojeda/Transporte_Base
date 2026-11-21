@@ -1,12 +1,24 @@
 @import "tailwindcss";
 @import "./original-app.css" layer(components);
 
+:root {
+  --ds-slate-exec: #0f172a;
+  --ds-surface: #f8fafc;
+  --ds-card-border: #e2e8f0;
+  --ds-brand: #2563eb;
+  --ds-brand-hover: #1d4ed8;
+  --ds-finance: #059669;
+  --ds-amber: #d97706;
+  --ds-danger: #dc2626;
+}
+
 @layer base {
   body {
-    background-color: var(--bg-main, #f8fafc);
+    background-color: var(--ds-surface, #f8fafc);
     color: var(--text-body, #334155);
     font-family: var(--font-body, 'Inter', sans-serif);
     -webkit-font-smoothing: antialiased;
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -579,5 +591,61 @@ div[style*="position: fixed"][style*="top: 0"][style*="align-items: center"] > d
   max-height: calc(100dvh - 32px) !important;
   overflow-y: auto !important;
 }
+
+/* ============================================================================
+   DESIGN SYSTEM SAAS UNIFICADO — TRANSPORTE V2
+   Paleta aprobada: Slate #0F172A | Azul #2563EB | Esmeralda #059669 | Fondo #F8FAFC
+   ============================================================================ */
+.view-header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+  color: #ffffff !important;
+  padding: 18px 22px !important;
+  border-radius: 16px !important;
+  margin-bottom: 20px !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.view-header .view-title {
+  color: #ffffff !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em !important;
+}
+
+.view-header .view-subtitle {
+  color: #94a3b8 !important;
+}
+
+.content-card,
+.kpi-card {
+  border-radius: 16px !important;
+  border-color: var(--ds-card-border, #e2e8f0) !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+}
+
+.kpi-value {
+  font-variant-numeric: tabular-nums !important;
+  letter-spacing: -0.02em !important;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  border-color: #1d4ed8 !important;
+  color: #ffffff !important;
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22) !important;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.06) !important;
+}
+
+.filter-pills-bar .filter-pill.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border-color: #2563eb !important;
+}
+
 
 

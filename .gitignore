@@ -17,6 +17,8 @@
 publish/
 [Pp]ublish/
 publish_linux/
+publish_api/
+Backend/publish*/
 *.zip
 
 ## Database backups & Large binary files (sensitive / large)

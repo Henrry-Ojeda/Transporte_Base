@@ -1,12 +1,14 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Multitenancy;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 
 namespace Transporte.API.Controllers
 {
     [Authorize]
+    [RequireTenantModule("MOD_RECEPTORIA")]
     [ApiController]
     [Route("api/[controller]")]
     [Route("api/entregas")]

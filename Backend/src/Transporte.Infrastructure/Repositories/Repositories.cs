@@ -1480,8 +1480,12 @@ namespace Transporte.Infrastructure.Repositories
             return fincaId;
         }
 
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _ensuredHistorialPrecios = new();
+
         private async Task EnsureTableHistorialPreciosExistsAsync(IDbConnection connection)
         {
+            var dbKey = connection.Database ?? "default";
+            if (_ensuredHistorialPrecios.ContainsKey(dbKey)) return;
             var sqlTable = @"
                 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TB_HISTORIAL_LOG_PRECIOS')
                 BEGIN
@@ -1500,6 +1504,7 @@ namespace Transporte.Infrastructure.Repositories
                     );
                 END";
             await connection.ExecuteAsync(sqlTable);
+            _ensuredHistorialPrecios[dbKey] = true;
         }
 
         public async Task<bool> ActualizarFincaAsync(int id, EditarFincaDto dto, int? usuarioId = null, string? usuarioNombre = null)
@@ -1982,8 +1987,12 @@ namespace Transporte.Infrastructure.Repositories
             return rows > 0;
         }
 
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _ensuredAbonosSchema = new();
+
         private static async Task EnsureAbonosCompaniasSchemaAsync(SqlConnection connection)
         {
+            var dbKey = connection.Database ?? "default";
+            if (_ensuredAbonosSchema.ContainsKey(dbKey)) return;
             const string ddl = @"
                 IF OBJECT_ID('dbo.TB_ABONOS_COMPANIAS', 'U') IS NULL
                 BEGIN
@@ -2015,6 +2024,7 @@ namespace Transporte.Infrastructure.Repositories
                     ALTER TABLE dbo.TB_CONTROL_COMPANIAS ADD PrecioLitroUSD DECIMAL(18,4) NULL;
                 END";
             await connection.ExecuteAsync(ddl);
+            _ensuredAbonosSchema[dbKey] = true;
         }
 
         public async Task<IEnumerable<dynamic>> ObtenerAbonosCompaniasAsync(int? companiaId = null)
@@ -9159,15 +9169,6 @@ namespace Transporte.Infrastructure.Repositories
             ctx.AppendLine();
 
             // Fincas
-            ctx.AppendLine("--- FINCAS Y PRODUCCIÓN (CICLO ACTUAL) ---");
-            foreach (var f in fincas.Take(30))
-            {
-                ctx.AppendLine($"Finca: {f.Nombre} | Servicio: {f.TipoServicio ?? "No definido"} | Litros: {f.TotalLitros:N0} | Ácida: {f.LitrosAcidos:N0} | Viajes: {f.TotalViajes}");
-            }
-            ctx.AppendLine();
-
-            // Histórico de Últimos 2 Meses (8 Semanas)
-            ctx.AppendLine("--- HISTÓRICO DE ÚLTIMOS 2 MESES (ÚLTIMOS 8 CICLOS OPERATIVOS) ---");
             decimal totalRec2Meses = 0;
             decimal totalEnt2Meses = 0;
             decimal totalAcida2Meses = 0;
@@ -14572,7 +14573,6 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
     {
         private readonly string _connectionString;
         private readonly Transporte.Core.Interfaces.ITenantService? _tenantService;
-        private static bool _tableEnsured = false;
 
         public NotificacionesRepository(IConfiguration configuration, Transporte.Core.Interfaces.ITenantService? tenantService = null)
         {
@@ -14588,9 +14588,12 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
             return new SqlConnection(connStr);
         }
 
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _ensuredNotifTables = new();
+
         private async Task EnsureTableAsync(IDbConnection connection)
         {
-            if (_tableEnsured) return;
+            var dbKey = connection.Database ?? "default";
+            if (_ensuredNotifTables.ContainsKey(dbKey)) return;
             try
             {
                 var sql = @"
@@ -14625,7 +14628,7 @@ RESPUESTA DEL ASISTENTE VIRTUAL (100% ESPAÑOL, DIRECTO A LOS DATOS EXACTOS, SIN
                         CREATE INDEX IX_TB_PUSH_SUBSCRIPTIONS_UsuarioId ON TB_PUSH_SUBSCRIPTIONS(UsuarioId, Activo);
                     END";
                 await connection.ExecuteAsync(sql);
-                _tableEnsured = true;
+                _ensuredNotifTables[dbKey] = true;
             }
             catch { /* Tolerante */ }
         }

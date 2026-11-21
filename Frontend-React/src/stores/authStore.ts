@@ -243,6 +243,8 @@ export const useAuthStore = create<AuthState>()(
           'dashboard': ['DASHBOARD_VER'],
           'rutas': ['RUTAS_VER'],
           'viajes': ['CONTROL_RUTAS_VER', 'RUTAS_VER'],
+          'control-rutas': ['CONTROL_RUTAS_VER', 'RUTAS_VER'],
+          'mapa-rutas': ['RUTAS_PLANIFICACION_VER', 'RUTAS_VER'],
           'entregas': ['ENTREGAS_VER'],
           'receptoria': ['ENTREGAS_VER'],
           'balance': ['BALANCE_LECHE_VER'],
@@ -265,12 +267,15 @@ export const useAuthStore = create<AuthState>()(
           // Flota & Mantenimiento
           'combustible': ['COMBUSTIBLE_VER', 'CAMIONES_VER'],
           'mantenimiento': ['HISTORIAL_CAMIONES_VER', 'CAMIONES_VER'],
+          'historial-camiones': ['HISTORIAL_CAMIONES_VER', 'CAMIONES_VER'],
           'repuestos': ['REPUESTOS_VER', 'CAMIONES_VER'],
 
           // Finanzas & Liquidación
           'semanas': ['CICLOS_VER'],
+          'liquidacion': ['LIQUIDACIONES_VER'],
           'liquidaciones': ['LIQUIDACIONES_VER'],
           'pagos-personal': ['PAGOS_PERSONAL_VER', 'LIQUIDACIONES_VER'],
+          'pagos-usuarios': ['PAGOS_PERSONAL_VER', 'LIQUIDACIONES_VER'],
           'historial-pagos': ['LIQUIDACIONES_VER', 'PAGOS_PERSONAL_VER'],
           'administracion': ['LIQUIDACIONES_VER', 'EMPRESA_VER'],
 
@@ -278,6 +283,7 @@ export const useAuthStore = create<AuthState>()(
           'adelantos': ['ADELANTOS_VER', 'ADELANTOS_FINCAS_VER'],
           'adelantos-fincas': ['ADELANTOS_FINCAS_VER', 'ADELANTOS_VER'],
           'adelantos-personal': ['ADELANTOS_PERSONAL_VER', 'ADELANTOS_VER'],
+          'adelantos-usuarios': ['ADELANTOS_PERSONAL_VER', 'ADELANTOS_VER'],
           'abonos-companias': ['ABONOS_COMPANIAS_VER', 'ADELANTOS_VER'],
           'adelantos-receptoria': ['ADELANTOS_VER', 'ENTREGAS_VER'],
           'abonos': ['ADELANTOS_VER'],
@@ -285,6 +291,7 @@ export const useAuthStore = create<AuthState>()(
 
           // Gestión de Data
           'data': ['EMPRESA_VER', 'FINCAS_VER', 'PROPIETARIOS_VER'],
+          'gestion-data': ['EMPRESA_VER', 'FINCAS_VER', 'PROPIETARIOS_VER'],
 
           // Reportes
           'reportes': ['REPORTES_VER'],

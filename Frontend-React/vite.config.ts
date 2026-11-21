@@ -30,6 +30,7 @@ export default defineConfig({
       : 'dist',
     emptyOutDir: true,
     sourcemap: false,
+    manifest: true,
     rollupOptions: {
       output: {
         manualChunks(id) {

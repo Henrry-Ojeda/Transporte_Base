@@ -22,28 +22,51 @@ try {
   console.warn('No se pudo leer version.ts, usando fallback:', version);
 }
 
-// 2. Obtener la lista real de assets core + móvil en dist/assets (sin pre-cachear chunks pesados de escritorio en el móvil)
+// 2. Obtener el grafo completo de assets core + móvil desde dist/.vite/manifest.json
+//    (garantiza que TODOS los chunks compartidos que importa AppMovilPage queden pre-cacheados para modo offline)
 let assetFiles = [];
-if (fs.existsSync(assetsDir)) {
+const manifestPath = path.join(distDir, '.vite', 'manifest.json');
+if (fs.existsSync(manifestPath)) {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    const visited = new Set();
+    const collected = new Set();
+
+    const collectDeps = (key) => {
+      if (!key || visited.has(key)) return;
+      visited.add(key);
+      const entry = manifest[key];
+      if (!entry) return;
+      if (entry.file) collected.add(`/${entry.file.replace(/^\/+/, '')}`);
+      if (Array.isArray(entry.css)) {
+        entry.css.forEach((c) => collected.add(`/${c.replace(/^\/+/, '')}`));
+      }
+      if (Array.isArray(entry.imports)) {
+        entry.imports.forEach((imp) => collectDeps(imp));
+      }
+    };
+
+    collectDeps('index.html');
+    collectDeps('src/modules/movil/AppMovilPage.tsx');
+    assetFiles = Array.from(collected);
+  } catch (err) {
+    console.warn('[SW-Inject] Error leyendo manifest.json, usando fallback de dist/assets:', err);
+  }
+}
+
+if (assetFiles.length === 0 && fs.existsSync(assetsDir)) {
   const files = fs.readdirSync(assetsDir);
   assetFiles = files
     .filter((f) => {
       if (f.endsWith('.map')) return false;
-      return (
-        f.startsWith('index-') ||
-        f.startsWith('vendor-react-') ||
-        f.startsWith('vendor-query-') ||
-        f.startsWith('vendor-ui-') ||
-        f.startsWith('rolldown-runtime-') ||
-        f.startsWith('AppMovilPage-')
-      );
+      return !f.startsWith('vendor-excel-') && !f.startsWith('ReportesPage-') && !f.startsWith('LeafletMapPicker-');
     })
     .map((f) => `/assets/${f}`);
 }
 
-console.log(`[SW-Inject] Encontrados ${assetFiles.length} assets en dist/assets.`);
+console.log(`[SW-Inject] Encontrados ${assetFiles.length} assets core+móvil en grafo de dependencias.`);
 
-// 3. Lista completa de activos a pre-cachear en offline
+// 3. Lista completa de activos a pre-cachear en offline (locales primero, CDN al final)
 const staticAssets = [
   '/',
   '/app',
@@ -52,8 +75,8 @@ const staticAssets = [
   '/index.html',
   '/manifest.json',
   '/favicon.svg',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
   ...assetFiles,
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
 ];
 
 // 4. Leer sw.js y reemplazar CACHE_NAME y STATIC_ASSETS

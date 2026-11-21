@@ -369,13 +369,26 @@ export const ViajesTicketsPage: React.FC = () => {
     const listRutas = (viajesRutas || []).map((r) => {
       const pId = Number(r.procesoActualId || (r.estadoProceso === 'CERRADO' || r.estado === 'FINALIZADO' ? 4 : 1));
       const ltsFinca = Number(r.totalLitrosFinca ?? r.totalLitrosRecogidos ?? 0);
-      const tieneRecepReal = (r as any).litrosRecibidosReceptoria != null || Number(r.totalLitrosReceptoria ?? 0) > 0 || Number(r.litrosEntregadosCompania ?? 0) > 0 || pId >= 2;
-      const ltsRec = tieneRecepReal
-        ? Number(r.totalLitrosReceptoria ?? (r as any).litrosRecibidosReceptoria ?? r.litrosEntregadosCompania ?? 0)
-        : 0;
-      const dif = tieneRecepReal
-        ? Number(r.diferenciaLitros ?? (r as any).diferenciaReceptoria ?? (ltsRec - ltsFinca))
-        : 0;
+      const recRecep = Number(r.totalLitrosReceptoria ?? (r as any).litrosRecibidosReceptoria ?? 0);
+      const recComp = Number(r.litrosEntregadosCompania ?? 0);
+      const tipoDest = String((r as any).tipoDestino || '').toUpperCase();
+      const tieneRecepReal =
+        (r as any).litrosRecibidosReceptoria != null ||
+        recRecep > 0 ||
+        recComp > 0 ||
+        pId >= 2;
+      let ltsRec = 0;
+      if (tieneRecepReal) {
+        if (tipoDest === 'RECEPTORIA_Y_COMPANIA') {
+          ltsRec = recRecep + recComp;
+        } else if (tipoDest === 'COMPANIA') {
+          ltsRec = recComp > 0 ? recComp : recRecep;
+        } else {
+          ltsRec = recRecep > 0 ? recRecep : recComp;
+        }
+      }
+      // Convención de signo en UI: Recibido - Finca (negativo = merma/pérdida, positivo = sobrante)
+      const dif = tieneRecepReal ? ltsRec - ltsFinca : 0;
       const pct = ltsFinca > 0 ? (Math.abs(dif) / ltsFinca) * 100 : 0;
 
       return {
@@ -405,7 +418,8 @@ export const ViajesTicketsPage: React.FC = () => {
       const pId = stUpper === 'FINALIZADO' ? 4 : stUpper === 'CAMINO A COMPAÑIA' || stUpper === 'EN VIA' ? 3 : 1;
       const ltsDesp = Number(c.litrosDespachados || 0);
       const ltsRec = c.litrosRecibidosCompania != null ? Number(c.litrosRecibidosCompania) : ltsDesp;
-      const dif = c.diferenciaLitros != null ? Number(c.diferenciaLitros) : ltsDesp - ltsRec;
+      // Convención de signo en UI: Recibido - Despachado (negativo = merma/pérdida)
+      const dif = ltsRec - ltsDesp;
       const pct = c.porcentajeMerma != null ? Number(c.porcentajeMerma) : ltsDesp > 0 ? (Math.abs(dif) / ltsDesp) * 100 : 0;
       const origen = esSubTicket ? 'SUB_DESPACHO' : 'RECEPTORIA';
 
@@ -464,7 +478,7 @@ export const ViajesTicketsPage: React.FC = () => {
 
   // Cálculos de KPIs 1:1 con app.js (L27930 - L28120)
   const kpis = useMemo(() => {
-    const total = dataConsolidada.length;
+    let total = 0;
     let abiertos = 0;
     let receptoria = 0;
     let entregados = 0;
@@ -481,15 +495,16 @@ export const ViajesTicketsPage: React.FC = () => {
     const idsRutasEnAllData = new Set(dataConsolidada.filter((v) => !v._esSubTicket).map((v) => Number(v.id)));
 
     dataConsolidada.forEach((v) => {
+      if (v._esSubTicket && v._parentTicketId && idsRutasEnAllData.has(Number(v._parentTicketId))) {
+        return;
+      }
+
+      total++;
       const p = v.procesoActualId || 1;
       if (p === 1) abiertos++;
       else if (p === 2) receptoria++;
       else if (p === 3) entregados++;
       else if (p === 4) finalizados++;
-
-      if (v._esSubTicket && v._parentTicketId && idsRutasEnAllData.has(Number(v._parentTicketId))) {
-        return;
-      }
 
       if (v._origen === 'RECEPTORIA') {
         countComp++;

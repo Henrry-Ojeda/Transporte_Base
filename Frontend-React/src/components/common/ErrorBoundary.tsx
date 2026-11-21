@@ -73,16 +73,34 @@ export class ErrorBoundary extends Component<Props, State> {
               {this.props.fallbackTitle || 'Rutas Móvil — Recuperación Activa'}
             </h2>
 
-            <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 20px 0', lineHeight: '1.4' }}>
+            <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 14px 0', lineHeight: '1.4' }}>
               Se protegió la aplicación de una pantalla en blanco. Los datos guardados en tu teléfono siguen seguros.
             </p>
+
+            {this.state.error?.message && (
+              <p
+                style={{
+                  fontSize: '11px',
+                  color: '#64748b',
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  margin: '0 0 16px 0',
+                  wordBreak: 'break-word',
+                  fontFamily: 'monospace',
+                }}
+              >
+                {this.state.error.message}
+              </p>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button
                 type="button"
                 onClick={() => {
                   this.setState({ hasError: false, error: null });
-                  window.location.href = '/app';
+                  const target = window.location.pathname.includes('/movil') ? '/movil' : '/app';
+                  window.location.replace(target);
                 }}
                 style={{
                   width: '100%',

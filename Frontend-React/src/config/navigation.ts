@@ -33,8 +33,8 @@ export const NAV_GROUPS: NavGroupDef[] = [
     items: [
       { name: 'Principal', href: '/dashboard', tabId: 'dashboard', icon: 'fa-solid fa-chart-pie' },
       { name: 'Recolección en Ruta', href: '/rutas', tabId: 'rutas', icon: 'fa-solid fa-route' },
-      { name: 'Control de Viajes / Tickets', href: '/viajes', tabId: 'viajes', icon: 'fa-solid fa-clipboard-check' },
       { name: 'Entregas Receptoría', href: '/receptoria', tabId: 'receptoria', icon: 'fa-solid fa-truck-ramp-box', requiredTenantModule: 'MOD_RECEPTORIA' },
+      { name: 'Control de Viajes', href: '/viajes', tabId: 'viajes', icon: 'fa-solid fa-clipboard-check' },
       {
         name: 'Balance Silos',
         tabId: 'balance',

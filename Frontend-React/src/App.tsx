@@ -59,22 +59,17 @@ const AdministracionGeneralPage = lazyNamed(() => import('@/modules/finanzas/Adm
 
 // Adelantos
 const AdelantosFincasPage = lazyNamed(() => import('@/modules/finanzas/AdelantosFincasPage'), 'AdelantosFincasPage');
-const AdelantosPersonalPage = lazyNamed(() => import('@/modules/finanzas/AdelantosPersonalPage'), 'AdelantosPersonalPage');
 const AbonosCompaniasPage = lazyNamed(() => import('@/modules/finanzas/AbonosCompaniasPage'), 'AbonosCompaniasPage');
-const AdelantosReceptoriaPage = lazyNamed(() => import('@/modules/finanzas/AdelantosReceptoriaPage'), 'AdelantosReceptoriaPage');
-const AbonosAmortizacionesPage = lazyNamed(() => import('@/modules/finanzas/AbonosAmortizacionesPage'), 'AbonosAmortizacionesPage');
-const HistorialAdelantosPage = lazyNamed(() => import('@/modules/finanzas/HistorialAdelantosPage'), 'HistorialAdelantosPage');
+const OtrosAdelantosPage = lazyNamed(() => import('@/modules/finanzas/OtrosAdelantosPage'), 'OtrosAdelantosPage');
 
 // Sistema & Reportes
 const ReportesPage = lazyNamed(() => import('@/modules/sistema/ReportesPage'), 'ReportesPage');
 const HistorialBcvPage = lazyNamed(() => import('@/modules/sistema/HistorialBcvPage'), 'HistorialBcvPage');
 const GestionDataPage = lazyNamed(() => import('@/modules/data/GestionDataPage'), 'GestionDataPage');
 const UsuariosPage = lazyNamed(() => import('@/modules/sistema/UsuariosPage'), 'UsuariosPage');
-const PerfilPage = lazyNamed(() => import('@/modules/sistema/PerfilPage'), 'PerfilPage');
-const DatosBancariosPage = lazyNamed(() => import('@/modules/sistema/DatosBancariosPage'), 'DatosBancariosPage');
+const MiCuentaPage = lazyNamed(() => import('@/modules/sistema/MiCuentaPage'), 'MiCuentaPage');
 const PermisosPage = lazyNamed(() => import('@/modules/sistema/PermisosPage'), 'PermisosPage');
 const ConfiguracionPage = lazyNamed(() => import('@/modules/sistema/ConfiguracionPage'), 'ConfiguracionPage');
-const TiempoSesionPage = lazyNamed(() => import('@/modules/sistema/TiempoSesionPage'), 'TiempoSesionPage');
 const AppMovilPage = lazyNamed(() => import('@/modules/movil/AppMovilPage'), 'AppMovilPage');
 
 const RouteFallback: React.FC = () => (
@@ -246,26 +241,28 @@ export const App: React.FC = () => {
 
                 {/* Adelantos & Cobranzas */}
                 <Route path="/adelantos-fincas" element={<ProtectedRoute requiredTabId="adelantos-fincas" requiredTenantModule="MOD_LIQUIDACIONES"><AdelantosFincasPage /></ProtectedRoute>} />
-                <Route path="/adelantos-personal" element={<ProtectedRoute requiredTabId="adelantos-personal" requiredTenantModule="MOD_LIQUIDACIONES"><AdelantosPersonalPage /></ProtectedRoute>} />
                 <Route path="/abonos-companias" element={<ProtectedRoute requiredTabId="abonos-companias"><AbonosCompaniasPage /></ProtectedRoute>} />
-                <Route path="/adelantos-receptoria" element={<ProtectedRoute requiredTabId="adelantos-receptoria"><AdelantosReceptoriaPage /></ProtectedRoute>} />
-                <Route path="/abonos-amortizaciones" element={<ProtectedRoute requiredTabId="abonos"><AbonosAmortizacionesPage /></ProtectedRoute>} />
-                <Route path="/historial-adelantos" element={<ProtectedRoute requiredTabId="historial-adelantos" requiredTenantModule="MOD_LIQUIDACIONES"><HistorialAdelantosPage /></ProtectedRoute>} />
+                <Route path="/otros-adelantos" element={<ProtectedRoute requiredTabId="adelantos"><OtrosAdelantosPage /></ProtectedRoute>} />
+                <Route path="/adelantos-personal" element={<ProtectedRoute requiredTabId="adelantos-personal" requiredTenantModule="MOD_LIQUIDACIONES"><OtrosAdelantosPage defaultTab="personal" /></ProtectedRoute>} />
+                <Route path="/adelantos-receptoria" element={<ProtectedRoute requiredTabId="adelantos-receptoria"><OtrosAdelantosPage defaultTab="receptoria" /></ProtectedRoute>} />
+                <Route path="/abonos-amortizaciones" element={<ProtectedRoute requiredTabId="abonos"><OtrosAdelantosPage defaultTab="amortizaciones" /></ProtectedRoute>} />
+                <Route path="/historial-adelantos" element={<ProtectedRoute requiredTabId="historial-adelantos" requiredTenantModule="MOD_LIQUIDACIONES"><OtrosAdelantosPage defaultTab="historial" /></ProtectedRoute>} />
 
                 {/* Reportes */}
                 <Route path="/reportes" element={<ProtectedRoute requiredTabId="reportes"><ReportesPage /></ProtectedRoute>} />
                 <Route path="/historial-bcv" element={<ProtectedRoute requiredTabId="historial-bcv" requiredTenantModule="MOD_HISTORIAL_BCV"><HistorialBcvPage /></ProtectedRoute>} />
 
-                {/* Sistema */}
-                <Route path="/perfil" element={<ProtectedRoute requiredTabId="perfil"><PerfilPage /></ProtectedRoute>} />
-                <Route path="/datos-bancarios" element={<ProtectedRoute requiredTabId="datos-bancarios"><DatosBancariosPage /></ProtectedRoute>} />
-                <Route path="/perfil/banco" element={<ProtectedRoute requiredTabId="datos-bancarios"><DatosBancariosPage /></ProtectedRoute>} />
+                {/* Sistema & Mi Cuenta */}
+                <Route path="/mi-cuenta" element={<ProtectedRoute requiredTabId="perfil"><MiCuentaPage /></ProtectedRoute>} />
+                <Route path="/perfil" element={<ProtectedRoute requiredTabId="perfil"><MiCuentaPage defaultTab="perfil" /></ProtectedRoute>} />
+                <Route path="/datos-bancarios" element={<ProtectedRoute requiredTabId="datos-bancarios"><MiCuentaPage defaultTab="banco" /></ProtectedRoute>} />
+                <Route path="/perfil/banco" element={<ProtectedRoute requiredTabId="datos-bancarios"><MiCuentaPage defaultTab="banco" /></ProtectedRoute>} />
+                <Route path="/tiempo-sesion" element={<ProtectedRoute requiredTabId="configuracion-sesion"><MiCuentaPage defaultTab="sesion" /></ProtectedRoute>} />
                 <Route path="/data" element={<ProtectedRoute requiredTabId="data"><GestionDataPage /></ProtectedRoute>} />
                 <Route path="/gestion-data" element={<ProtectedRoute requiredTabId="data"><GestionDataPage /></ProtectedRoute>} />
                 <Route path="/usuarios" element={<ProtectedRoute requiredTabId="usuarios"><UsuariosPage /></ProtectedRoute>} />
                 <Route path="/permisos" element={<ProtectedRoute requiredTabId="permisos"><PermisosPage /></ProtectedRoute>} />
                 <Route path="/configuracion" element={<ProtectedRoute requiredTabId="configuracion-sistema"><ConfiguracionPage /></ProtectedRoute>} />
-                <Route path="/tiempo-sesion" element={<ProtectedRoute requiredTabId="configuracion-sesion"><TiempoSesionPage /></ProtectedRoute>} />
               </Route>
 
               <Route path="*" element={<HomeRedirect />} />

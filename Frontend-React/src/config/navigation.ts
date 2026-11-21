@@ -113,10 +113,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
     items: [
       { name: 'Adelantos a Fincas', href: '/adelantos-fincas', tabId: 'adelantos-fincas', icon: 'fa-solid fa-leaf', requiredTenantModule: 'MOD_LIQUIDACIONES' },
       { name: 'Abonos a Compañías', href: '/abonos-companias', tabId: 'abonos-companias', icon: 'fa-solid fa-building' },
-      { name: 'Adelantos Personal & Chofer', href: '/adelantos-personal', tabId: 'adelantos-personal', icon: 'fa-solid fa-hand-holding-dollar', color: '#fbbf24', requiredTenantModule: 'MOD_LIQUIDACIONES' },
-      { name: 'Adelantos Receptoría', href: '/adelantos-receptoria', tabId: 'adelantos-receptoria', icon: 'fa-solid fa-truck-droplet', color: '#2563eb' },
-      { name: 'Abonos & Amortizaciones', href: '/abonos-amortizaciones', tabId: 'abonos', icon: 'fa-solid fa-coins', color: '#f59e0b' },
-      { name: 'Historial de Adelantos', href: '/historial-adelantos', tabId: 'historial-adelantos', icon: 'fa-solid fa-clock-rotate-left', color: '#0d9488', requiredTenantModule: 'MOD_LIQUIDACIONES' },
+      { name: 'Otros Adelantos & Historial', href: '/otros-adelantos', tabId: 'adelantos', icon: 'fa-solid fa-clock-rotate-left', color: '#0d9488' },
     ],
   },
   {
@@ -140,14 +137,11 @@ export const NAV_GROUPS: NavGroupDef[] = [
     groupIconClass: 'icon-sis',
     color: '#64748b',
     items: [
-      { name: 'Mi Perfil de Usuario', href: '/perfil', tabId: 'perfil', icon: 'fa-solid fa-id-badge', color: '#0ea5e9' },
-      { name: 'Datos Bancarios & Pago Móvil', href: '/datos-bancarios', tabId: 'datos-bancarios', icon: 'fa-solid fa-building-columns', color: '#10b981' },
       { name: 'Usuarios & Roles', href: '/usuarios', tabId: 'usuarios', icon: 'fa-solid fa-user-gear' },
       { name: 'Módulos & Permisos', href: '/permisos', tabId: 'permisos', icon: 'fa-solid fa-shield-halved', color: '#38bdf8' },
       { name: 'Datos de Empresa', href: '/empresa', tabId: 'empresa', icon: 'fa-solid fa-building-flag', color: '#38bdf8' },
       { name: 'Parametrización Global', href: '/configuracion', tabId: 'configuracion-sistema', icon: 'fa-solid fa-sliders', color: '#a855f7' },
       { name: 'Gestión de Data (Excel)', href: '/gestion-data', tabId: 'data', icon: 'fa-solid fa-file-excel', color: '#10b981' },
-      { name: 'Tiempo de Sesión', href: '/tiempo-sesion', tabId: 'configuracion-sesion', icon: 'fa-solid fa-stopwatch', color: '#f43f5e' },
     ],
   },
 ];

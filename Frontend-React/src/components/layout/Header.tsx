@@ -133,7 +133,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
     queryKey: ['mis-notificaciones'],
     queryFn: () => notificacionesApi.getMisNotificaciones(30),
     enabled: !!user,
-    refetchInterval: 3500,
+    refetchInterval: 20000,
   });
 
   // 2. Query Paradas en Vivo para Administradores y Supervisores
@@ -151,7 +151,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
       }
     },
     enabled: !!user && esAdminOSupervisor,
-    refetchInterval: 3500,
+    refetchInterval: 20000,
   });
 
   // Consolidación reactiva de notificaciones
@@ -680,10 +680,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
             transition: 'all 0.2s ease',
           }}
         >
-          {/* Zona clickeable hacia el Perfil */}
+          {/* Zona clickeable hacia Mi Cuenta */}
           <div
-            onClick={() => navigate('/perfil')}
-            title="Ir a Mi Perfil de Usuario"
+            onClick={() => navigate('/mi-cuenta')}
+            title="Ir a Mi Cuenta (Perfil, Datos Bancarios y Sesión)"
             className="header-user-trigger"
             style={{
               display: 'flex',

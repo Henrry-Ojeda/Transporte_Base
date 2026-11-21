@@ -189,6 +189,20 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+// Middleware global de excepciones para evitar filtrar detalles internos o stack traces
+app.UseExceptionHandler(errApp =>
+{
+    errApp.Run(async context =>
+    {
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new
+        {
+            message = "Ocurrió un error interno en el servidor. Intenta nuevamente o contacta soporte."
+        });
+    });
+});
+
 // Redirección estricta: Dominios backend DuckDNS no sirven la UI Web; redirigen a sus dominios oficiales en Vercel
 app.Use(async (context, next) =>
 {
@@ -257,8 +271,8 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// Endpoint de diagnóstico del Entorno y Base de Datos
-app.MapGet("/api/system/environment", (IConfiguration config, IWebHostEnvironment env) =>
+// Endpoint de diagnóstico del Entorno y Base de Datos (solo Admin/SuperAdmin)
+app.MapGet("/api/system/environment", [Microsoft.AspNetCore.Authorization.Authorize(Roles = "ADMIN,SUPERADMIN")] (IConfiguration config, IWebHostEnvironment env) =>
 {
     var connStr = config.GetConnectionString("DefaultConnection") 
                   ?? config.GetConnectionString("BD_TRANSPORTE") 

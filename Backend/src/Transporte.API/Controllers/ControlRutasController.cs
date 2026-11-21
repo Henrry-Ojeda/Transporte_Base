@@ -510,7 +510,6 @@ namespace Transporte.API.Controllers
         /// Revierte el proceso de un viaje/ticket a un estado anterior (ej. En Ruta) registrando el motivo en auditoría.
         /// </summary>
         [HttpPost("{id:long}/revertir-proceso")]
-        [HttpGet("{id:long}/revertir-proceso")]
         public async Task<IActionResult> RevertirProceso([FromRoute] long id, [FromBody] RevertirProcesoViajeDto? dto = null)
         {
             int userId = 1;

@@ -2,29 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { APP_VERSION } from '@/config/version';
+import { NAV_GROUPS, type NavSubItem, type NavGroupDef } from '@/config/navigation';
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
-}
-
-interface NavSubItem {
-  name: string;
-  href?: string;
-  tabId: string;
-  icon: string;
-  color?: string;
-  subItems?: NavSubItem[];
-}
-
-interface NavGroupDef {
-  id: string;
-  title: string;
-  shortTitle: string;
-  iconClass: string;
-  groupIconClass: string;
-  color: string;
-  items: NavSubItem[];
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
@@ -38,17 +20,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     if (item.subItems && item.subItems.length > 0) {
       return item.subItems.some(sub => isItemVisible(sub));
     }
-    if (item.tabId === 'bufala' && !hasTenantModule('MOD_LECHE_BUFALA')) return false;
-    if (item.tabId === 'combustible' && !hasTenantModule('MOD_COMBUSTIBLE')) return false;
-    if (item.tabId === 'historial-camiones' && !hasTenantModule('MOD_MANTENIMIENTO')) return false;
-    if (item.tabId === 'repuestos' && !hasTenantModule('MOD_REPUESTOS')) return false;
-    if (item.tabId === 'control-tanques' && !hasTenantModule('MOD_CONTROL_TANQUES')) return false;
-    if (item.tabId === 'planificacion-rutas-choferes' && !hasTenantModule('MOD_LOGISTICA_RUTAS')) return false;
-    if (item.tabId === 'rutas-planificacion' && !hasTenantModule('MOD_LOGISTICA_RUTAS')) return false;
-    if (item.tabId === 'liquidacion' && !hasTenantModule('MOD_LIQUIDACIONES')) return false;
-    if (item.tabId === 'pagos-usuarios' && !hasTenantModule('MOD_PAGOS_PERSONAL')) return false;
-    if (item.tabId === 'historial-bcv' && !hasTenantModule('MOD_HISTORIAL_BCV')) return false;
-    if (item.tabId === 'mapa-rutas' && !hasTenantModule('MOD_MAPA_RUTAS')) return false;
+    if (item.requiredTenantModule && !hasTenantModule(item.requiredTenantModule)) {
+      return false;
+    }
     return canAccessTab(item.tabId);
   };
 
@@ -105,135 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  const groups: NavGroupDef[] = [
-    {
-      id: 'grp-operaciones',
-      title: 'Operaciones',
-      shortTitle: 'OPERACIONES',
-      iconClass: 'fa-solid fa-bolt-lightning',
-      groupIconClass: 'icon-op',
-      color: '#4f46e5',
-      items: [
-        { name: 'Principal', href: '/dashboard', tabId: 'dashboard', icon: 'fa-solid fa-chart-pie' },
-        { name: 'Recolección en Ruta', href: '/rutas', tabId: 'rutas', icon: 'fa-solid fa-route' },
-        { name: 'Entregas Receptoría', href: '/receptoria', tabId: 'receptoria', icon: 'fa-solid fa-truck-ramp-box' },
-        {
-          name: 'Balance Silos',
-          tabId: 'balance',
-          icon: 'fa-solid fa-cubes-stacked',
-          color: '#2563eb',
-          subItems: [
-            { name: 'Balance General Silos', href: '/balance', tabId: 'balance', icon: 'fa-solid fa-chart-line' },
-            { name: 'Formulario Silos-01', href: '/control-tanques', tabId: 'control-tanques', icon: 'fa-solid fa-clipboard-list', color: '#6366f1' },
-          ],
-        },
-        { name: 'Control de Viajes / Tickets', href: '/viajes', tabId: 'control-rutas', icon: 'fa-solid fa-clipboard-check' },
-        { name: 'Mapa de Rutas & GPS', href: '/mapa-rutas', tabId: 'mapa-rutas', icon: 'fa-solid fa-map-location-dot', color: '#0d9488' },
-        { name: 'Trazabilidad Búfala', href: '/bufala', tabId: 'bufala', icon: 'fa-solid fa-gem', color: '#0d9488' },
-        { name: 'Evolución Fincas & Flota', href: '/evolucion-fincas', tabId: 'evolucion-fincas', icon: 'fa-solid fa-arrow-trend-up', color: '#10b981' },
-        {
-          name: 'Logísticas',
-          tabId: 'rutas-planificacion',
-          icon: 'fa-solid fa-map-location-dot',
-          color: '#3b82f6',
-          subItems: [
-            { name: 'Circuitos y Rutas Base', href: '/planificacion-rutas', tabId: 'rutas-planificacion', icon: 'fa-solid fa-route' },
-            { name: 'Planificación de Rutas-choferes', href: '/planificacion-rutas-choferes', tabId: 'planificacion-rutas-choferes', icon: 'fa-solid fa-calendar-check', color: '#10b981' },
-          ],
-        },
-      ],
-    },
-    {
-      id: 'grp-catalogos',
-      title: 'Catálogos & Flota',
-      shortTitle: 'CATÁLOGOS',
-      iconClass: 'fa-solid fa-folder-tree',
-      groupIconClass: 'icon-cat',
-      color: '#16a34a',
-      items: [
-        { name: 'Fincas', href: '/fincas', tabId: 'fincas', icon: 'fa-solid fa-seedling' },
-        { name: 'Propietarios', href: '/propietarios', tabId: 'propietarios', icon: 'fa-solid fa-users' },
-        { name: 'Conductores', href: '/conductores', tabId: 'conductores', icon: 'fa-solid fa-id-card' },
-        { name: 'Camiones (Flota)', href: '/camiones', tabId: 'camiones', icon: 'fa-solid fa-truck-front' },
-        { name: 'Compañías', href: '/companias', tabId: 'companias', icon: 'fa-solid fa-building' },
-        { name: 'Bancos', href: '/bancos', tabId: 'bancos', icon: 'fa-solid fa-building-columns' },
-        { name: 'Datos de Empresa', href: '/empresa', tabId: 'empresa', icon: 'fa-solid fa-building-flag', color: '#38bdf8' },
-      ],
-    },
-    {
-      id: 'grp-flota',
-      title: 'Flota & Mantenimiento',
-      shortTitle: 'FLOTA',
-      iconClass: 'fa-solid fa-screwdriver-wrench',
-      groupIconClass: 'icon-op',
-      color: '#d97706',
-      items: [
-        { name: 'Gestión de Combustible', href: '/combustible', tabId: 'combustible', icon: 'fa-solid fa-gas-pump', color: '#ef4444' },
-        { name: 'Historial & Mantenimiento', href: '/mantenimiento', tabId: 'historial-camiones', icon: 'fa-solid fa-wrench', color: '#f59e0b' },
-        { name: 'Inventario de Repuestos', href: '/repuestos', tabId: 'repuestos', icon: 'fa-solid fa-boxes-stacked', color: '#10b981' },
-      ],
-    },
-    {
-      id: 'grp-finanzas',
-      title: 'Liquidación',
-      shortTitle: 'LIQUIDACIÓN',
-      iconClass: 'fa-solid fa-calculator',
-      groupIconClass: 'icon-fin',
-      color: '#9333ea',
-      items: [
-        { name: 'Semanas Operativas', href: '/semanas', tabId: 'semanas', icon: 'fa-regular fa-calendar-check' },
-        { name: 'Liquidación Fincas', href: '/liquidaciones', tabId: 'liquidacion', icon: 'fa-solid fa-file-invoice-dollar' },
-        { name: 'Pagos Choferes & Personal', href: '/pagos-personal', tabId: 'pagos-usuarios', icon: 'fa-solid fa-money-check-dollar', color: '#38bdf8' },
-        { name: 'Historial de Pagos', href: '/historial-pagos', tabId: 'historial-pagos', icon: 'fa-solid fa-receipt', color: '#6366f1' },
-        { name: 'Administración General', href: '/administracion', tabId: 'administracion', icon: 'fa-solid fa-scale-balanced', color: '#10b981' },
-      ],
-    },
-    {
-      id: 'grp-adelantos',
-      title: 'Adelantos',
-      shortTitle: 'ADELANTOS',
-      iconClass: 'fa-solid fa-hand-holding-dollar',
-      groupIconClass: 'icon-ade',
-      color: '#ea580c',
-      items: [
-        { name: 'Adelantos a Fincas', href: '/adelantos-fincas', tabId: 'adelantos-fincas', icon: 'fa-solid fa-leaf' },
-        { name: 'Adelantos Personal & Chofer', href: '/adelantos-personal', tabId: 'adelantos-usuarios', icon: 'fa-solid fa-hand-holding-dollar', color: '#fbbf24' },
-        { name: 'Abonos a Compañías', href: '/abonos-companias', tabId: 'abonos-companias', icon: 'fa-solid fa-building' },
-        { name: 'Adelantos Receptoría', href: '/adelantos-receptoria', tabId: 'adelantos-receptoria', icon: 'fa-solid fa-truck-droplet', color: '#2563eb' },
-        { name: 'Abonos & Amortizaciones', href: '/abonos-amortizaciones', tabId: 'abonos', icon: 'fa-solid fa-coins', color: '#f59e0b' },
-        { name: 'Historial de Adelantos', href: '/historial-adelantos', tabId: 'historial-adelantos', icon: 'fa-solid fa-clock-rotate-left', color: '#0d9488' },
-      ],
-    },
-    {
-      id: 'grp-reportes',
-      title: 'Reportes',
-      shortTitle: 'REPORTES',
-      iconClass: 'fa-solid fa-chart-line',
-      groupIconClass: 'icon-rep',
-      color: '#0284c7',
-      items: [
-        { name: 'Reportes Generales', href: '/reportes', tabId: 'reportes', icon: 'fa-solid fa-square-poll-vertical' },
-        { name: 'Historial Tasas BCV', href: '/historial-bcv', tabId: 'historial-bcv', icon: 'fa-solid fa-coins' },
-      ],
-    },
-    {
-      id: 'grp-sistema',
-      title: 'Sistema',
-      shortTitle: 'SISTEMA',
-      iconClass: 'fa-solid fa-gears',
-      groupIconClass: 'icon-sis',
-      color: '#64748b',
-      items: [
-        { name: 'Mi Perfil de Usuario', href: '/perfil', tabId: 'perfil', icon: 'fa-solid fa-id-badge', color: '#0ea5e9' },
-        { name: 'Datos Bancarios & Pago Móvil', href: '/datos-bancarios', tabId: 'datos-bancarios', icon: 'fa-solid fa-building-columns', color: '#10b981' },
-        { name: 'Usuarios & Roles', href: '/usuarios', tabId: 'usuarios', icon: 'fa-solid fa-user-gear' },
-        { name: 'Módulos & Permisos', href: '/permisos', tabId: 'permisos', icon: 'fa-solid fa-shield-halved', color: '#38bdf8' },
-        { name: 'Parametrización Global', href: '/configuracion', tabId: 'configuracion-sistema', icon: 'fa-solid fa-sliders', color: '#a855f7' },
-        { name: 'Gestión de Data (Excel)', href: '/gestion-data', tabId: 'gestion-data', icon: 'fa-solid fa-file-excel', color: '#10b981' },
-        { name: 'Tiempo de Sesión', href: '/tiempo-sesion', tabId: 'configuracion-sesion', icon: 'fa-solid fa-stopwatch', color: '#f43f5e' },
-      ],
-    },
-  ];
+  const groups = NAV_GROUPS;
 
   // Identificar qué grupo tiene la ruta actual activa
   const isGroupActive = (grp: NavGroupDef) => {

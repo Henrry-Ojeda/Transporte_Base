@@ -125,7 +125,7 @@ namespace Transporte.API.Multitenancy
                     {
                         "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LECHE_BUFALA",
                         "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE",
-                        "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES",
+                        "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_PAGOS_PERSONAL",
                         "MOD_HISTORIAL_BCV", "MOD_ASISTENTE_IA", "MOD_APP_MOVIL", "MOD_TOLERANCIA_MERMA"
                     }
                 };
@@ -275,8 +275,8 @@ namespace Transporte.API.Multitenancy
                 Estado = "ACTIVA",
                 FechaVencimiento = DateTime.UtcNow.AddYears(1),
                 Modulos = isCampo 
-                    ? new List<string> { "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE", "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_HISTORIAL_BCV", "MOD_APP_MOVIL", "MOD_TOLERANCIA_MERMA" }
-                    : new List<string> { "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LECHE_BUFALA", "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE", "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_HISTORIAL_BCV", "MOD_ASISTENTE_IA", "MOD_APP_MOVIL", "MOD_TOLERANCIA_MERMA" }
+                    ? new List<string> { "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE", "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_PAGOS_PERSONAL", "MOD_HISTORIAL_BCV", "MOD_APP_MOVIL", "MOD_TOLERANCIA_MERMA" }
+                    : new List<string> { "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LECHE_BUFALA", "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE", "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_PAGOS_PERSONAL", "MOD_HISTORIAL_BCV", "MOD_ASISTENTE_IA", "MOD_APP_MOVIL", "MOD_TOLERANCIA_MERMA" }
             };
 
             // Cachear fallback por 5 segundos para reintentar prontamente la conexión con DB_SAAS_MASTER

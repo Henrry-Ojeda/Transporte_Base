@@ -36,7 +36,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   const queryClient = useQueryClient();
   const [sincronizandoBcv, setSincronizandoBcv] = useState(false);
   const userRol = String(user?.rol || '').toUpperCase();
-  const puedeVerYGestionarBcv = !['CHOFER', 'RECEPTOR'].includes(userRol);
+  const puedeVerYGestionarBcv = !['CHOFER', 'RECEPTOR', 'RECEPTORIA'].includes(userRol);
 
   // Query Tasa BCV (Solo para usuarios autorizados; Chofer y Receptor no gestionan montos ni tasas)
   const { data: bcvData, isLoading: loadingBcv, refetch: refetchBcv } = useQuery<BcvResponse>({

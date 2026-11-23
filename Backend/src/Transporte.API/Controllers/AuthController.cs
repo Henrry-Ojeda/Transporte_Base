@@ -310,13 +310,6 @@ namespace Transporte.API.Controllers
             string? placaCamion = (string?)registro.PlacaCamion;
             decimal capacidadTanqueLitros = Convert.ToDecimal(registro.CapacidadLitros ?? 0);
 
-            // Marcar código como usado
-            await db.ExecuteAsync(@"
-                UPDATE TB_DISPOSITIVOS_VINCULACION 
-                SET Usado = 1, DeviceId = @DeviceId, FechaVinculacion = GETDATE()
-                WHERE Id = @vincId",
-                new { vincId, DeviceId = dto.DeviceId ?? "App Móvil" });
-
             // Obtener datos del tenant destino desde DB_SAAS_MASTER
             var empresa = await db.QueryFirstOrDefaultAsync<dynamic>(
                 "SELECT Id, NombreComercial, CadenaConexion FROM TB_EMPRESAS WHERE Codigo = @tenantCode",
@@ -330,11 +323,8 @@ namespace Transporte.API.Controllers
             if (empresa?.Id != null)
             {
                 int empId = (int)empresa.Id;
-                var mods = await db.QueryAsync<string>(@"
-                    SELECT m.Codigo 
-                    FROM TB_EMPRESA_MODULOS em
-                    INNER JOIN TB_MODULOS m ON em.ModuloId = m.Id
-                    WHERE em.EmpresaId = @empId AND em.Habilitado = 1 AND m.Activo = 1",
+                var mods = await db.QueryAsync<string>(
+                    "SELECT ModuloCodigo FROM TB_EMPRESA_MODULOS WHERE EmpresaId = @empId AND Habilitado = 1",
                     new { empId });
                 modulosTenant = mods.ToList();
             }
@@ -392,6 +382,13 @@ namespace Transporte.API.Controllers
                 var empresaCfg = await _catalogosRepository.ObtenerEmpresaConfigAsync();
                 logoUrl = empresaCfg?.LogoUrl;
             }
+
+            // Marcar código como usado solo cuando toda la consulta fue exitosa
+            await db.ExecuteAsync(@"
+                UPDATE TB_DISPOSITIVOS_VINCULACION 
+                SET Usado = 1, DeviceId = @DeviceId, FechaVinculacion = GETDATE()
+                WHERE Id = @vincId",
+                new { vincId, DeviceId = dto.DeviceId ?? "App Móvil" });
 
             return Ok(new VincularDispositivoResponseDto
             {

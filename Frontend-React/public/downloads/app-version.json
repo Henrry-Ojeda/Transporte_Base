@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "apkUrl": "https://transporte-vergel-carrillo.vercel.app/downloads/transporte-vergel-carrillo.apk",
-  "notas": "v1.0.2: Tema claro limpio (igual a App Web Móvil), SQLite Offline-First, GPS cada 1 min y auto-limpieza."
+  "notas": "v1.0.3: Nuevo icono oficial de Transporte Vergel & Carrillo, tema claro y offline-first."
 }

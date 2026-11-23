@@ -1,5 +1,5 @@
 // Service Worker para Rutas Móvil (Offline-First / PWA Ultra-Resiliente)
-const CACHE_NAME = 'rutas-movil-v3.92.1';
+const CACHE_NAME = 'rutas-movil-v3.93.1';
 const STATIC_ASSETS = [
   "/",
   "/app",
@@ -8,25 +8,26 @@ const STATIC_ASSETS = [
   "/index.html",
   "/manifest.json",
   "/favicon.svg",
-  "/assets/index-6TslSztR.js",
+  "/assets/index-MEobfcFD.js",
   "/assets/index-vYPATTof.css",
   "/assets/rolldown-runtime-XKyaHtl9.js",
   "/assets/vendor-react-DSDxgrxa.js",
   "/assets/vendor-query-DagBFWEK.js",
   "/assets/vendor-ui-Bdtx0q-o.js",
-  "/assets/AppMovilPage-BBURDExU.js",
-  "/assets/catalogos.api-CGHNqLPQ.js",
-  "/assets/operaciones.api-HlMHGZo2.js",
-  "/assets/sistema.api-yUiCwPaG.js",
-  "/assets/mantenimiento.api-C4CqP7Pt.js",
-  "/assets/combustible.api-BZnH9dcw.js",
-  "/assets/mapaRutas.api-CHNQpoC9.js",
-  "/assets/finanzas.api-Vz6PU1Ii.js",
+  "/assets/AppMovilPage-CSulix-p.js",
+  "/assets/html2canvas-DtUBZbwz.js",
+  "/assets/catalogos.api-CMLPG1l2.js",
+  "/assets/operaciones.api-BZgTYLPe.js",
+  "/assets/sistema.api-D-DQmT97.js",
+  "/assets/mantenimiento.api-B1Qf1Ra1.js",
+  "/assets/combustible.api-CroO8KOb.js",
+  "/assets/mapaRutas.api-DdlziGZu.js",
+  "/assets/finanzas.api-uGpLEDaN.js",
   "/assets/procesoViaje-B_koeYnq.js",
   "/assets/SearchableSelect-CGAex7sk.js",
-  "/assets/SemaforoToleranciaBadge-DZ4DAuM5.js",
+  "/assets/SemaforoToleranciaBadge-DMqi5kXr.js",
   "/assets/timelapseUtils-Cs4wXsq0.js",
-  "/assets/CompaniaSelect-DFy87qMp.js",
+  "/assets/CompaniaSelect-Dfq9fL4q.js",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
 ];
 

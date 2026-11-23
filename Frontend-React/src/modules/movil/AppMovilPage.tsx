@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import html2canvas from 'html2canvas';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import { AUTH_TOKEN_KEY } from '@/api/client';
@@ -5068,6 +5069,118 @@ export const AppMovilPage: React.FC = () => {
     }
   };
 
+  const [tasaBcvReporte, setTasaBcvReporte] = useState<number>(0);
+  const reporteCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const reporteDiariosContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const formatearNumeroReporte = (num: number, dec = 0) => {
+    const val = Number(num || 0);
+    return val.toLocaleString('es-VE', {
+      minimumFractionDigits: dec,
+      maximumFractionDigits: dec,
+    });
+  };
+
+  const formatearFechaReporte = (fStr: string) => {
+    if (!fStr) return '-';
+    const clean = String(fStr).split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return clean;
+  };
+
+  const recortarEspacioBlancoInferiorMovil = (sourceCanvas: HTMLCanvasElement, paddingBottomPx = 20): HTMLCanvasElement => {
+    const { width, height } = sourceCanvas;
+    const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx || width === 0 || height === 0) return sourceCanvas;
+    const imgData = ctx.getImageData(0, 0, width, height).data;
+    let lastNonWhiteRow = height - 1;
+    for (let y = height - 1; y >= 0; y--) {
+      let rowHasContent = false;
+      const rowOffset = y * width * 4;
+      for (let x = 0; x < width; x += 2) {
+        const idx = rowOffset + x * 4;
+        if (imgData[idx] < 246 || imgData[idx + 1] < 246 || imgData[idx + 2] < 246 || imgData[idx + 3] < 250) {
+          rowHasContent = true;
+          break;
+        }
+      }
+      if (rowHasContent) {
+        lastNonWhiteRow = y;
+        break;
+      }
+    }
+    const croppedHeight = Math.min(height, lastNonWhiteRow + 1 + paddingBottomPx);
+    if (croppedHeight >= height - 4) return sourceCanvas;
+    const trimmed = document.createElement('canvas');
+    trimmed.width = width;
+    trimmed.height = croppedHeight;
+    const tCtx = trimmed.getContext('2d');
+    if (!tCtx) return sourceCanvas;
+    tCtx.fillStyle = '#ffffff';
+    tCtx.fillRect(0, 0, width, croppedHeight);
+    tCtx.drawImage(sourceCanvas, 0, 0, width, croppedHeight, 0, 0, width, croppedHeight);
+    return trimmed;
+  };
+
+  const ejecutarCapturaMovil = async (elemento: HTMLElement | null, nombreArchivo: string) => {
+    if (!elemento) return;
+    try {
+      toast.info('Generando captura en alta definición...');
+      const rawCanvas = await html2canvas(elemento, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        ignoreElements: (el) => el.classList.contains('no-capture'),
+        onclone: (clonedDoc, clonedEl) => {
+          clonedDoc.querySelectorAll('.no-capture').forEach((n) => {
+            (n as HTMLElement).style.display = 'none';
+          });
+          clonedEl.style.height = 'auto';
+          clonedEl.style.minHeight = '0';
+          clonedEl.style.paddingBottom = '8px';
+        },
+      });
+      const canvas = recortarEspacioBlancoInferiorMovil(rawCanvas, 20);
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        // 1. Intentar copiar al portapapeles (igual que en Web)
+        try {
+          if (navigator.clipboard && window.ClipboardItem) {
+            const item = new ClipboardItem({ 'image/png': blob });
+            await navigator.clipboard.write([item]);
+            toast.success('¡Imagen copiada al portapapeles! Lista para pegar en WhatsApp.', { duration: 4000 });
+            return;
+          }
+        } catch {
+          // Fallback en móvil
+        }
+        // 2. Intentar Web Share API en móvil si soporta archivos (WhatsApp directo)
+        try {
+          const file = new File([blob], `${nombreArchivo}.png`, { type: 'image/png' });
+          if (navigator.share && (navigator as any).canShare?.({ files: [file] })) {
+            await navigator.share({ files: [file], title: nombreArchivo });
+            toast.success('¡Captura compartida!');
+            return;
+          }
+        } catch {
+          // Si cancela o no soporta, descargar PNG
+        }
+        // 3. Descarga directa .png
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${nombreArchivo}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success(`Captura descargada como ${nombreArchivo}.png`);
+      }, 'image/png');
+    } catch (err: any) {
+      console.error('Error al capturar:', err);
+      toast.error('No se pudo generar la captura: ' + (err?.message || ''));
+    }
+  };
+
   // Consultar Reporte
   const handleConsultarReporte = async () => {
     if (!isOnline) {
@@ -5091,7 +5204,12 @@ export const AppMovilPage: React.FC = () => {
         const total = lista.reduce((a: number, b: any) => a + Number(b.totalLitros || b.TotalLitros || b.litros || b.litrosRecibidos || 0), 0);
         res = { items: lista, totalLitros: total, raw };
       } else if (tipoReporte === 'FINCAS') {
-        const raw: any = await sistemaApi.getReporteFincas(repFechaInicio, repFechaFin, repFincaId || undefined);
+        const [raw, bcvRes]: [any, any] = await Promise.all([
+          sistemaApi.getReporteFincas(repFechaInicio, repFechaFin, repFincaId || undefined),
+          sistemaApi.getBcvHoy().catch(() => null),
+        ]);
+        const tasaHoy = Number(bcvRes?.tasaDolarBs ?? bcvRes?.tasa ?? bcvRes?.TasaDolarBs ?? 0);
+        if (tasaHoy > 0) setTasaBcvReporte(tasaHoy);
         const baseLista = Array.isArray(raw) ? raw : (raw?.fincas || raw?.items || []);
         const lista = repFincaId
           ? baseLista.filter((f: any) => String(f.id || f.Id || f.fincaId || f.FincaId) === String(repFincaId))
@@ -11204,13 +11322,36 @@ export const AppMovilPage: React.FC = () => {
                   </div>
 
                   {tipoReporte === 'DIARIOS' ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div ref={reporteDiariosContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: '#ffffff' }}>
+                      <div className="no-capture" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          onClick={() => ejecutarCapturaMovil(reporteDiariosContainerRef.current, `Reporte_Diario_${repFechaInicio}_al_${repFechaFin}`)}
+                          style={{
+                            background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                            border: 'none',
+                            color: '#ffffff',
+                            fontWeight: 800,
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            boxShadow: '0 2px 6px rgba(37,99,235,0.3)',
+                          }}
+                        >
+                          <i className="fa-solid fa-camera"></i> Capturar Todo (4 Tablas)
+                        </button>
+                      </div>
                       {tablasDiarios.map((t, tIdx) => (
                         <div
                           key={tIdx}
+                          ref={(el) => { reporteCardRefs.current[`diario_${tIdx}`] = el; }}
                           style={{
-                            border: '1px solid #cbd5e1',
-                            borderRadius: '12px',
+                            border: '1.5px solid #000000',
+                            borderRadius: '10px',
                             overflow: 'hidden',
                             background: '#ffffff',
                             boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
@@ -11291,6 +11432,27 @@ export const AppMovilPage: React.FC = () => {
                           >
                             <span>TOTAL</span>
                             <span>{Number(t.total || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="no-capture" style={{ padding: '8px 10px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                              type="button"
+                              onClick={() => ejecutarCapturaMovil(reporteCardRefs.current[`diario_${tIdx}`], `${t.titulo.replace(/\s+/g, '_')}_${repFechaInicio}`)}
+                              style={{
+                                background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                                border: 'none',
+                                color: '#ffffff',
+                                fontWeight: 700,
+                                padding: '6px 12px',
+                                borderRadius: '6px',
+                                fontSize: '11.5px',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                              }}
+                            >
+                              <i className="fa-solid fa-camera"></i> Capturar Imagen
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -11583,86 +11745,203 @@ export const AppMovilPage: React.FC = () => {
                         })
                       ) : tipoReporte === 'FINCAS' ? (
                         items.slice(0, 50).map((row: any, idx: number) => {
-                          const lts = Number(row.totalLitros || row.TotalLitros || row.litros || row.Litros || 0);
-                          const titulo = row.nombre || row.Nombre || row.fincaNombre || row.FincaNombre || `Finca #${idx + 1}`;
-                          const prop = row.propietario || row.Propietario || '';
                           const detalle: any[] = row.detalle || row.Detalle || [];
+                          let totalLitrosBuena = 0;
+                          let totalLitrosMala = 0;
+                          detalle.forEach((d: any) => {
+                            const obs = (d.observacion || d.Observacion || '').toUpperCase();
+                            const isAcida = Boolean(d.esAcida) || obs.includes('ACID') || obs.includes('MALA') || String(d.tipoLeche || '').includes('ACID');
+                            const ltsD = Number(d.litros || d.Litros || 0);
+                            if (isAcida) totalLitrosMala += ltsD;
+                            else totalLitrosBuena += ltsD;
+                          });
+                          if (detalle.length === 0) {
+                            totalLitrosBuena = Number(row.totalLitros || row.TotalLitros || row.litros || row.Litros || 0);
+                          }
+
+                          const nomOriginal = (row.nombre || row.Nombre || row.fincaNombre || row.FincaNombre || `Finca #${idx + 1}`).trim();
+                          const soloNombreFinca = nomOriginal.split(' - ')[0].split(' (')[0].trim().toUpperCase();
+                          const precioBuena = Number(row.precioLitroUSD ?? row.PrecioLitroUSD ?? 0);
+                          const tienePrecioAcida = Number(row.precioLitroAcidaUSD || row.PrecioLitroAcidaUSD || 0) > 0;
+                          const precioMala = tienePrecioAcida ? Number(row.precioLitroAcidaUSD || row.PrecioLitroAcidaUSD) : 0.65;
+                          const tasaFinca = Number(row.tasaBcv || row.TasaBcv || tasaBcvReporte || 0);
+
+                          const usdBuena = totalLitrosBuena * precioBuena;
+                          const usdMala = totalLitrosMala * (tienePrecioAcida ? precioMala : 0);
+                          const fincaTotalUSD = usdBuena + usdMala;
+                          const fincaTotalBs = fincaTotalUSD * tasaFinca;
+                          const tieneLecheMala = totalLitrosMala > 0;
+
+                          const nomNorm = nomOriginal.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+                          const esBufala =
+                            nomOriginal.includes('(Búfala)') ||
+                            nomOriginal.includes('(Bufala)') ||
+                            nomNorm.includes('BUFAL') ||
+                            (precioBuena === 0 && Number(row.precioBufalaLitroUSD || row.PrecioBufalaLitroUSD || 0) > 0);
+                          const cardHeaderBg = esBufala
+                            ? 'linear-gradient(135deg, #065f46 0%, #047857 100%)'
+                            : 'linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%)';
 
                           return (
                             <div
                               key={idx}
+                              ref={(el) => { reporteCardRefs.current[`finca_${idx}`] = el; }}
                               style={{
-                                background: '#f8fafc',
+                                background: '#ffffff',
+                                border: '1.5px solid #cbd5e1',
                                 borderRadius: '12px',
-                                padding: '12px',
-                                border: '1px solid #e2e8f0',
-                                fontSize: '12px',
+                                boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
+                                marginBottom: '10px',
+                                overflow: 'hidden',
                               }}
                             >
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontWeight: 800, color: '#1e293b' }}>
-                                <div>
-                                  <span>{titulo}</span>
-                                  {prop && <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>Prop: {prop}</div>}
-                                </div>
-                                <span style={{ color: '#059669', fontWeight: 900, whiteSpace: 'nowrap', marginLeft: '8px', fontSize: '13.5px' }}>
-                                  {lts.toLocaleString()} L
-                                </span>
-                              </div>
-
-                              {/* Desglose diario de la finca (siempre visible cuando se selecciona finca o si hay detalle) */}
-                              {detalle.length > 0 && (repFincaId || items.length <= 5) && (
-                                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #cbd5e1', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                  <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>
-                                    📅 Detalle Diario ({detalle.length} {detalle.length === 1 ? 'día' : 'días'})
-                                  </div>
-                                  {detalle.map((det: any, dIdx: number) => {
-                                    const dLts = Number(det.litros ?? det.Litros ?? 0);
-                                    const dFecha = (det.fecha || det.Fecha) ? String(det.fecha || det.Fecha).split('T')[0] : '';
-                                    const dTipo = String(det.tipoLeche || det.TipoLeche || 'VACA').toUpperCase();
-                                    const dObs = String(det.observacion || det.Observacion || '').replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '').trim();
-                                    return (
-                                      <div
-                                        key={dIdx}
+                              <div style={{ width: '100%', overflowX: 'auto' }}>
+                                <table style={{ width: '100%', marginBottom: 0, borderCollapse: 'collapse', fontSize: '12px' }}>
+                                  <thead>
+                                    <tr>
+                                      <th
+                                        colSpan={3}
                                         style={{
-                                          background: '#ffffff',
-                                          borderRadius: '8px',
-                                          padding: '6px 9px',
-                                          border: '1px solid #e2e8f0',
-                                          display: 'flex',
-                                          justifyContent: 'space-between',
-                                          alignItems: 'center',
-                                          fontSize: '11.5px',
+                                          background: cardHeaderBg,
+                                          color: '#ffffff',
+                                          fontSize: '14px',
+                                          fontWeight: 900,
+                                          textAlign: 'center',
+                                          padding: '11px 12px',
+                                          letterSpacing: '0.03em',
+                                          border: '2px solid #000000',
                                         }}
                                       >
-                                        <div>
-                                          <div style={{ fontWeight: 700, color: '#0f172a' }}>
-                                            {dFecha || `Día #${dIdx + 1}`}
-                                            <span style={{
-                                              marginLeft: '6px',
-                                              fontSize: '9.5px',
-                                              fontWeight: 800,
-                                              padding: '1px 5px',
-                                              borderRadius: '4px',
-                                              background: dTipo.includes('BUF') ? '#f3e8ff' : '#dbeafe',
-                                              color: dTipo.includes('BUF') ? '#7e22ce' : '#1d4ed8',
-                                            }}>
-                                              {dTipo}
-                                            </span>
-                                          </div>
-                                          {dObs && (
-                                            <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
-                                              {dObs}
-                                            </div>
-                                          )}
-                                        </div>
-                                        <span style={{ fontWeight: 900, color: '#0284c7', whiteSpace: 'nowrap' }}>
-                                          {dLts.toLocaleString()} L
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
+                                        {soloNombreFinca} ({esBufala ? 'LECHE DE BÚFALA' : 'LECHE DE VACA'})
+                                      </th>
+                                    </tr>
+                                    <tr style={{ background: '#e2e8f0', color: '#000000', fontWeight: 900, fontSize: '11.5px' }}>
+                                      <th style={{ width: '33%', textAlign: 'center', padding: '8px 6px', background: '#e2e8f0', color: '#000000', fontWeight: 900, border: '1.5px solid #000000' }}>
+                                        FECHA
+                                      </th>
+                                      <th style={{ width: '33%', textAlign: 'center', padding: '8px 6px', background: '#e2e8f0', color: '#000000', fontWeight: 900, border: '1.5px solid #000000' }}>
+                                        LITROS
+                                      </th>
+                                      <th style={{ width: '34%', textAlign: 'center', padding: '8px 6px', background: '#e2e8f0', color: '#000000', fontWeight: 900, border: '1.5px solid #000000' }}>
+                                        OBSERVACION
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {detalle.length === 0 ? (
+                                      <tr>
+                                        <td colSpan={3} style={{ color: '#94a3b8', fontStyle: 'italic', padding: '14px', textAlign: 'center', border: '1px solid #000000' }}>
+                                          Sin registros en este período
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      detalle.map((d: any, dIdx: number) => {
+                                        const obs = (d.observacion || d.Observacion || '').toUpperCase();
+                                        const isAcida = Boolean(d.esAcida) || obs.includes('ACID') || obs.includes('MALA') || String(d.tipoLeche || '').includes('ACID');
+                                        const obsLimpia = (d.observacion || d.Observacion || '')
+                                          .replace(/Asignada en inicio de ruta\s*\[ORIGEN_PLANIFICACION\]/gi, '')
+                                          .replace(/\[ORIGEN_(M[OÓ]VIL|PLANIFICACION)\]/gi, '')
+                                          .replace(/\[\s*BUFAL[AO]\s*\]/gi, '')
+                                          .replace(/\bBUFAL[AO]\b/gi, '')
+                                          .trim();
+                                        let obsDisplay = obsLimpia;
+                                        if (isAcida && !obsLimpia.toUpperCase().includes('ACID') && !obsLimpia.toUpperCase().includes('MALA')) {
+                                          obsDisplay = obsLimpia ? `ÁCIDA - ${obsLimpia}` : 'ÁCIDA';
+                                        }
+                                        return (
+                                          <tr key={dIdx} style={{ borderBottom: '1px solid #000000' }}>
+                                            <td style={{ fontWeight: 700, color: '#000000', textAlign: 'center', border: '1px solid #000000', padding: '7px 8px' }}>
+                                              {formatearFechaReporte(d.fecha || d.Fecha)}
+                                            </td>
+                                            <td style={{ fontWeight: 900, color: '#000000', textAlign: 'center', border: '1px solid #000000', padding: '7px 8px' }}>
+                                              {formatearNumeroReporte(Number(d.litros || d.Litros || 0))}
+                                            </td>
+                                            <td
+                                              style={{
+                                                color: isAcida ? '#dc2626' : '#000000',
+                                                fontWeight: isAcida ? 900 : 700,
+                                                textAlign: 'center',
+                                                border: '1px solid #000000',
+                                                padding: '7px 8px',
+                                              }}
+                                            >
+                                              {obsDisplay || '-'}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })
+                                    )}
+                                  </tbody>
+                                  <tfoot style={{ background: '#047857', color: '#ffffff', fontWeight: 800 }}>
+                                    <tr style={{ borderTop: '1.5px solid #000000' }}>
+                                      <td style={{ color: '#ffffff', fontWeight: 800, textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                        {tieneLecheMala ? 'TOTAL BUENA' : 'TOTAL'}
+                                      </td>
+                                      <td style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff', textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                        {formatearNumeroReporte(totalLitrosBuena)}
+                                      </td>
+                                      <td style={{ fontWeight: 800, color: '#ffffff', textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                        $ {formatearNumeroReporte(precioBuena, 2)} / Lt
+                                      </td>
+                                    </tr>
+                                    {tieneLecheMala && (
+                                      <tr style={{ background: 'rgba(0,0,0,0.12)' }}>
+                                        <td style={{ color: '#fef08a', fontWeight: 800, textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                          TOTAL MALA/ACIDA
+                                        </td>
+                                        <td style={{ fontSize: '13px', fontWeight: 800, color: '#fef08a', textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                          {formatearNumeroReporte(totalLitrosMala)}
+                                        </td>
+                                        <td style={{ fontWeight: 800, color: '#fef08a', textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                          {tienePrecioAcida ? `$ ${formatearNumeroReporte(precioMala, 2)} / Lt` : 'Sin precio'}
+                                        </td>
+                                      </tr>
+                                    )}
+                                    <tr>
+                                      <td style={{ color: '#ffffff', fontWeight: 800, textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                        Valor Dolar
+                                      </td>
+                                      <td style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff', textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                        {formatearNumeroReporte(fincaTotalUSD, 2)}
+                                      </td>
+                                      <td style={{ border: '1px solid #000000' }}>&nbsp;</td>
+                                    </tr>
+                                    <tr>
+                                      <td style={{ color: '#ffffff', fontWeight: 800, textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                        Valor Bs
+                                      </td>
+                                      <td style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff', textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                        {formatearNumeroReporte(fincaTotalBs, 2)}
+                                      </td>
+                                      <td style={{ fontWeight: 800, color: '#ffffff', textAlign: 'center', padding: '7px 8px', border: '1px solid #000000' }}>
+                                        {formatearNumeroReporte(tasaFinca, 4)}
+                                      </td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              </div>
+                              <div className="no-capture" style={{ padding: '10px 12px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => ejecutarCapturaMovil(reporteCardRefs.current[`finca_${idx}`], `Finca_${soloNombreFinca}_${repFechaInicio}`)}
+                                  style={{
+                                    background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                                    border: 'none',
+                                    color: '#ffffff',
+                                    fontWeight: 700,
+                                    padding: '7px 14px',
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    boxShadow: '0 2px 6px rgba(37,99,235,0.3)',
+                                  }}
+                                >
+                                  <i className="fa-solid fa-camera"></i> Capturar Imagen
+                                </button>
+                              </div>
                             </div>
                           );
                         })

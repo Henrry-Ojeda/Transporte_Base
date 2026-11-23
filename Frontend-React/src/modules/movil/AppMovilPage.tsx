@@ -906,17 +906,54 @@ export const AppMovilPage: React.FC = () => {
     return esDestinoReceptoriaPrincipal(d);
   };
 
-  // Persistir despachos activos en LocalStorage
+  // Persistir despachos activos en LocalStorage (con protección anti-quota y sin fotos Base64 pesadas)
   useEffect(() => {
-    if (despachoActivo) {
-      localStorage.setItem('movil_despacho_activo', JSON.stringify(despachoActivo));
-    } else {
-      localStorage.removeItem('movil_despacho_activo');
+    const aligerarDespacho = (d: any) => {
+      if (!d || typeof d !== 'object') return d;
+      const copia = { ...d };
+      if (typeof copia.fotoReciboUrl === 'string' && copia.fotoReciboUrl.length > 500) {
+        copia.fotoReciboUrl = '';
+      }
+      if (typeof copia.fotoComprobante === 'string' && copia.fotoComprobante.length > 500) {
+        copia.fotoComprobante = '';
+      }
+      if (Array.isArray(copia.fincas)) {
+        copia.fincas = copia.fincas.map((f: any) => ({
+          ...f,
+          fotoComprobante: typeof f?.fotoComprobante === 'string' && f.fotoComprobante.length > 500 ? '' : f?.fotoComprobante,
+          fotoReciboUrl: typeof f?.fotoReciboUrl === 'string' && f.fotoReciboUrl.length > 500 ? '' : f?.fotoReciboUrl,
+        }));
+      }
+      return copia;
+    };
+
+    try {
+      if (despachoActivo) {
+        localStorage.setItem('movil_despacho_activo', JSON.stringify(aligerarDespacho(despachoActivo)));
+      } else {
+        localStorage.removeItem('movil_despacho_activo');
+      }
+    } catch {
+      try { localStorage.removeItem('movil_despacho_activo'); } catch {}
     }
-    if (despachosActivos && despachosActivos.length > 0) {
-      localStorage.setItem('movil_despachos_activos', JSON.stringify(despachosActivos));
-    } else {
-      localStorage.removeItem('movil_despachos_activos');
+
+    try {
+      if (despachosActivos && despachosActivos.length > 0) {
+        const ligeros = despachosActivos.slice(0, 20).map(aligerarDespacho);
+        localStorage.setItem('movil_despachos_activos', JSON.stringify(ligeros));
+      } else {
+        localStorage.removeItem('movil_despachos_activos');
+      }
+    } catch {
+      // Si la cuota está llena, liberar cachés prescindibles y reintentar con los últimos 5 despachos
+      try {
+        localStorage.removeItem('movil_despachos_activos');
+        localStorage.removeItem('movil_fincas_cache');
+        localStorage.removeItem('movil_planificaciones_cache');
+        if (despachosActivos && despachosActivos.length > 0) {
+          localStorage.setItem('movil_despachos_activos', JSON.stringify(despachosActivos.slice(0, 5).map(aligerarDespacho)));
+        }
+      } catch {}
     }
   }, [despachoActivo, despachosActivos]);
 
@@ -3099,8 +3136,10 @@ export const AppMovilPage: React.FC = () => {
     setViajeSeleccionadoId(v.id);
     setViajeActivo(v);
     try {
+    try {
       localStorage.setItem('movil_viaje_seleccionado_id', String(v.id));
       localStorage.setItem('movil_viaje_activo', JSON.stringify(v));
+    } catch {}
     } catch {}
 
     if (v.camionId || v.camionPlaca) {
@@ -6130,7 +6169,8 @@ export const AppMovilPage: React.FC = () => {
             tipoLeche: formCarga.tipoLeche,
             observacion: obsLimpia || undefined,
             temperatura: formCarga.temperatura ? Number(formCarga.temperatura) : undefined,
-            fotoComprobante: formCarga.fotoRecibo || undefined,
+            fotoComprobante: formCarga.fotoRecibo && formCarga.fotoRecibo !== '[EN_INDEXEDDB]' ? formCarga.fotoRecibo : undefined,
+            fotosEvidenciaJson: formCarga.fotosEvidencia && formCarga.fotosEvidencia.length > 0 ? JSON.stringify(formCarga.fotosEvidencia) : undefined,
             latitud: gpsCaptura?.latitud,
             longitud: gpsCaptura?.longitud,
             precisionMetros: gpsCaptura?.precisionMetros,

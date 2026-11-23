@@ -6,6 +6,7 @@ import apiClient from '@/api/client';
 import { bcvApi } from '@/api/bcv.api';
 import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.api';
 import Swal from 'sweetalert2';
+import { QrDescargaAppModal, esTenantVergelCarrillo } from '@/components/common/QrDescargaAppModal';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -35,6 +36,8 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   const rolVisible = esHijo && (user?.rol === 'SUPERADMIN' || user?.esSuperAdmin) ? 'ADMIN' : (user?.rol || 'ADMIN');
   const queryClient = useQueryClient();
   const [sincronizandoBcv, setSincronizandoBcv] = useState(false);
+  const [modalQrApp, setModalQrApp] = useState(false);
+  const mostrarQrVergel = esTenantVergelCarrillo(user?.empresaCodigo);
   const userRol = String(user?.rol || '').toUpperCase();
   const puedeVerYGestionarBcv = !['CHOFER', 'RECEPTOR', 'RECEPTORIA'].includes(userRol);
 
@@ -461,6 +464,32 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
       </div>
 
       <div className="nav-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {mostrarQrVergel && (
+          <>
+            <button
+              type="button"
+              onClick={() => setModalQrApp(true)}
+              title="QR para descargar App Móvil (Vergel & Carrillo)"
+              style={{
+                background: '#eff6ff',
+                border: '1.5px solid #bfdbfe',
+                color: '#1d4ed8',
+                borderRadius: '10px',
+                padding: '6px 11px',
+                fontSize: '12px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <i className="fa-solid fa-qrcode"></i>
+              <span className="hidden sm:inline">App Móvil QR</span>
+            </button>
+            <QrDescargaAppModal open={modalQrApp} onClose={() => setModalQrApp(false)} />
+          </>
+        )}
         {/* CAMPANA DE NOTIFICACIONES */}
         <div style={{ position: 'relative' }} ref={notifRef}>
           <button

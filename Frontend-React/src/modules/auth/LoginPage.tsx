@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { User, Lock, Eye, EyeOff, LogIn, AlertTriangle, Loader2, Building2, Hash, Smartphone, KeyRound } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, LogIn, AlertTriangle, Loader2, Building2, Hash, Smartphone, KeyRound, QrCode } from 'lucide-react';
+import { QrDescargaAppModal, esTenantVergelCarrillo } from '@/components/common/QrDescargaAppModal';
 import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/api/auth.api';
 import { isTokenExpired, AUTH_TOKEN_KEY } from '@/api/client';
@@ -17,6 +18,8 @@ export const LoginPage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [modalQrApp, setModalQrApp] = useState(false);
+  const mostrarQrVergel = esTenantVergelCarrillo();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [empresaNombre, setEmpresaNombre] = useState<string>(defaultNombre);
@@ -522,7 +525,36 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
         )}
+
+        {mostrarQrVergel && (
+          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #e2e8f0', textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={() => setModalQrApp(true)}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: '12px',
+                border: '1.5px solid #bfdbfe',
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                fontSize: '13px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}
+            >
+              <QrCode className="w-4 h-4" />
+              <span>Descargar App Móvil (QR)</span>
+            </button>
+          </div>
+        )}
       </div>
+
+      <QrDescargaAppModal open={modalQrApp} onClose={() => setModalQrApp(false)} />
 
       <div className="relative z-10 mt-6 text-center" style={{ marginTop: '1.5rem', textAlign: 'center' }}>
         <p className="text-xs text-slate-500 font-medium" style={{ fontSize: '0.75rem', color: '#64748b' }}>

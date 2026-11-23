@@ -50,3 +50,6 @@ yarn-error.log*
 .env*
 
 appsettings.Development.json
+
+# Binarios APK pesados (desplegados directo a Vercel)
+Frontend-React/public/downloads/*.apk

@@ -1,5 +1,5 @@
 // Service Worker para Rutas Móvil (Offline-First / PWA Ultra-Resiliente)
-const CACHE_NAME = 'rutas-movil-v3.94.1';
+const CACHE_NAME = 'rutas-movil-v3.94.2';
 const STATIC_ASSETS = [
   "/",
   "/app",
@@ -8,26 +8,26 @@ const STATIC_ASSETS = [
   "/index.html",
   "/manifest.json",
   "/favicon.svg",
-  "/assets/index-C-X0BUYE.js",
+  "/assets/index-J4PCj7rH.js",
   "/assets/index-vYPATTof.css",
   "/assets/rolldown-runtime-XKyaHtl9.js",
-  "/assets/vendor-react-DwpNyZ3Y.js",
+  "/assets/vendor-react-BIutCXrD.js",
   "/assets/vendor-query-DagBFWEK.js",
-  "/assets/vendor-ui-BHql_9h4.js",
-  "/assets/AppMovilPage-sgfGXxFv.js",
+  "/assets/vendor-ui-DhijAt8n.js",
+  "/assets/AppMovilPage-DOA4k4HP.js",
   "/assets/html2canvas-DtUBZbwz.js",
-  "/assets/catalogos.api-Dg7sTpA2.js",
-  "/assets/operaciones.api-DxkpRWhV.js",
-  "/assets/sistema.api-C3dPwF5e.js",
-  "/assets/mantenimiento.api-DfN3phag.js",
-  "/assets/combustible.api-CajGxCFK.js",
-  "/assets/mapaRutas.api-q4MfR3jM.js",
-  "/assets/finanzas.api-joKzCZ9X.js",
+  "/assets/catalogos.api-DNR_1EFy.js",
+  "/assets/operaciones.api-qgUezfui.js",
+  "/assets/sistema.api-C4IJEhd2.js",
+  "/assets/mantenimiento.api-CE_RLyYp.js",
+  "/assets/combustible.api-BsJPBxUw.js",
+  "/assets/mapaRutas.api-0XG9GBTX.js",
+  "/assets/finanzas.api-DAESgKLM.js",
   "/assets/procesoViaje-B_koeYnq.js",
-  "/assets/SearchableSelect-Bjx2b8sk.js",
-  "/assets/SemaforoToleranciaBadge-4qDn2n6T.js",
-  "/assets/timelapseUtils-BVWMQ8W0.js",
-  "/assets/CompaniaSelect-DO2OiAYA.js",
+  "/assets/SearchableSelect-DF1Iyixj.js",
+  "/assets/SemaforoToleranciaBadge-CO833b8H.js",
+  "/assets/timelapseUtils-Ge39tCfF.js",
+  "/assets/CompaniaSelect-C73h4VKo.js",
   "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
 ];
 
@@ -63,6 +63,12 @@ self.addEventListener('fetch', (event) => {
 
   // Solo interceptar peticiones HTTP / HTTPS y de método GET (ignorar extensiones chrome-extension, etc.)
   if (req.method !== 'GET' || !url.protocol.startsWith('http')) {
+    return;
+  }
+
+  // 1. Peticiones a API Backend: Network-First con respuesta JSON offline controlada
+  // No interceptar descargas de APK / binarios en /downloads/
+  if (url.pathname.startsWith('/downloads/') || url.pathname.endsWith('.apk')) {
     return;
   }
 

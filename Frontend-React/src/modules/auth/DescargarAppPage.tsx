@@ -109,7 +109,7 @@ export const DescargarAppPage: React.FC = () => {
             }}
           >
             <Download size={18} />
-            <span>Descargar APK (v1.0.3)</span>
+            <span>Descargar APK (v1.0.5)</span>
           </a>
 
           <button
@@ -150,7 +150,7 @@ export const DescargarAppPage: React.FC = () => {
           >
             <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <FolderDown size={14} color="#2563eb" />
-              <span>¿Ya descargó (71.13 MB) y no abrió el instalador?</span>
+              <span>¿Ya descargó (62.6 MB) y no abrió el instalador?</span>
             </div>
             1. Abre la app <b>Mis Archivos</b> (o <b>Descargas</b>) en tu teléfono.
             <br />

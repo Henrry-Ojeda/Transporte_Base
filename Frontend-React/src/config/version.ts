@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 92,
+  minor: 93,
   patch: 1,
-  tag: 'v3.92.1',
+  tag: 'v3.93.1',
   ultimaActualizacion: '2026-11-22',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil v3.92.1: Corrige limpieza de registros offline (movil_cargas_local + IndexedDB), permite eliminar registros offline individuales desde Modificar y habilita la eliminación de tickets 0 L / locales en modo offline con sincronización diferida.',
+  descripcion: 'App Móvil Admin v3.93.1: Agrega modelo exacto 1:1 de Web y botón Capturar Imagen (html2canvas) en Reporte Diario y Reporte Finca.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

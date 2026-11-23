@@ -1456,7 +1456,7 @@ export const AppMovilPage: React.FC = () => {
       }
 
       movilAuditLog.registrar({
-        tipo: 'DELETE',
+        tipo: 'REGISTRO_ELIMINADO',
         ticketId: viajeActivo?.id,
         detalle: `Eliminada data offline pendiente (${pendientesTotalCount} registros)`,
       });
@@ -1536,7 +1536,7 @@ export const AppMovilPage: React.FC = () => {
       }
 
       movilAuditLog.registrar({
-        tipo: 'DELETE',
+        tipo: 'REGISTRO_ELIMINADO',
         ticketId: viajeActivo?.id,
         fincaId,
         fincaNombre: coincidencias[0].fincaNombre,
@@ -1650,7 +1650,7 @@ export const AppMovilPage: React.FC = () => {
       }
 
       movilAuditLog.registrar({
-        tipo: 'DELETE',
+        tipo: 'REGISTRO_ELIMINADO',
         ticketId: idNum,
         detalle: encoladoOffline
           ? `Ticket #${ticket.codigoTicket || idNum} eliminado offline (pendiente borrar en Web)`

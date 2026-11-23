@@ -7978,44 +7978,7 @@ export const AppMovilPage: React.FC = () => {
         )}
       </header>
 
-      {/* Barra de Instalación si no es PWA */}
-      {!esInstalada && (
-        <div
-          style={{
-            background: 'linear-gradient(90deg, #ecfdf5, #f0fdf4)',
-            borderBottom: '1px solid #a7f3d0',
-            padding: '8px 16px',
-            color: '#065f46',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontSize: '11.5px',
-            fontWeight: 700,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <i className="fa-solid fa-mobile-screen text-emerald-600"></i>
-            <span>Instala la app en tu pantalla para abrirla directo</span>
-          </div>
-          <button
-            type="button"
-            onClick={handleInstalarApp}
-            style={{
-              background: '#059669',
-              color: '#ffffff',
-              border: 'none',
-              padding: '3px 10px',
-              borderRadius: '6px',
-              fontSize: '11px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              boxShadow: '0 2px 4px rgba(5, 150, 105, 0.25)',
-            }}
-          >
-            Instalar
-          </button>
-        </div>
-      )}
+      {/* Barra de instalación PWA removida por solicitud del usuario */}
 
       {/* CONTENIDO SEGÚN LA PESTAÑA ACTIVA */}
       <main style={{ padding: '16px', maxWidth: '600px', margin: '0 auto' }}>

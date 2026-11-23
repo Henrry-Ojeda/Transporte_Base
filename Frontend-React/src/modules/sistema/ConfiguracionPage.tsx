@@ -13,6 +13,7 @@ export const ConfiguracionPage: React.FC = () => {
   const [diaCorteSemana, setDiaCorteSemana] = useState<string>('DOMINGO');
   const [alertaCombustibleMin, setAlertaCombustibleMin] = useState<string>('500');
   const [alertaKmSugerido, setAlertaKmSugerido] = useState<string>('500');
+  const [balanceIncluirDiferidos, setBalanceIncluirDiferidos] = useState<string>('false');
   const [subTab, setSubTab] = useState<'parametros' | 'tiposLeche' | 'navegacion' | 'licencia'>('parametros');
 
   // Consulta de parámetros
@@ -85,6 +86,7 @@ export const ConfiguracionPage: React.FC = () => {
       setDiaCorteSemana(getVal('DIA_CORTE_SEMANA', 'DOMINGO'));
       setAlertaCombustibleMin(getVal('ALERTA_COMBUSTIBLE_MIN_LITROS', '500'));
       setAlertaKmSugerido(getVal('ALERTA_MANTENIMIENTO_KM', '500'));
+      setBalanceIncluirDiferidos(getVal('BALANCE_INCLUIR_DIFERIDOS', 'false'));
     }
   }, [parametros]);
 
@@ -97,6 +99,7 @@ export const ConfiguracionPage: React.FC = () => {
       await sistemaApi.guardarParametro('DIA_CORTE_SEMANA', diaCorteSemana);
       await sistemaApi.guardarParametro('ALERTA_COMBUSTIBLE_MIN_LITROS', alertaCombustibleMin);
       await sistemaApi.guardarParametro('ALERTA_MANTENIMIENTO_KM', alertaKmSugerido);
+      await sistemaApi.guardarParametro('BALANCE_INCLUIR_DIFERIDOS', balanceIncluirDiferidos);
     },
     onSuccess: () => {
       Swal.fire({
@@ -416,6 +419,24 @@ export const ConfiguracionPage: React.FC = () => {
                 </select>
                 <small style={{ color: '#64748b', fontSize: '11px', marginTop: '4px', display: 'block' }}>
                   Día utilizado como límite de agrupación en nóminas y conciliaciones.
+                </small>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                  Litros Diferidos en Balance de Silos
+                </label>
+                <select
+                  value={balanceIncluirDiferidos}
+                  onChange={(e) => setBalanceIncluirDiferidos(e.target.value)}
+                  className="form-input"
+                  style={{ width: '100%', height: '40px', fontWeight: 700, borderRadius: '8px' }}
+                >
+                  <option value="false">No sumar diferidos (solo volumen neto del ciclo)</option>
+                  <option value="true">Sí sumar diferidos (volumen físico total)</option>
+                </select>
+                <small style={{ color: '#64748b', fontSize: '11px', marginTop: '4px', display: 'block' }}>
+                  Define si los litros diferidos al siguiente ciclo se suman o se excluyen del Balance General de Silos.
                 </small>
               </div>
 

@@ -21,12 +21,12 @@ export interface VersionInfo {
 
 export const VERSION_DATA: VersionInfo = {
   major: 3,
-  minor: 93,
-  patch: 3,
-  tag: 'v3.93.3',
+  minor: 94,
+  patch: 1,
+  tag: 'v3.94.1',
   ultimaActualizacion: '2026-11-22',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Web v3.93.3: Normaliza fotos Base64 y agrega manejo onError en tabla Recolección para imágenes corruptas/incompletas.',
+  descripcion: 'Web Vergel & Carrillo v3.94.1: Agrega botón y modal QR exclusivo en Login y Header para descargar/abrir la App Móvil.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

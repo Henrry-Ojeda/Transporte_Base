@@ -6,8 +6,8 @@ interface QrDescargaAppModalProps {
   onClose: () => void;
 }
 
-const STORAGE_KEY_URL_APP = 'vergel_app_movil_descarga_url';
-const DEFAULT_URL_APP = 'https://transporte-vergel-carrillo.vercel.app/movil';
+const STORAGE_KEY_URL_APP = 'vergel_app_movil_descarga_url_v2';
+const DEFAULT_URL_APP = 'https://transporte-vergel-carrillo.vercel.app/descargar-app';
 
 export const esTenantVergelCarrillo = (empresaCodigo?: string | null): boolean => {
   if (typeof window !== 'undefined') {
@@ -182,8 +182,7 @@ export const QrDescargaAppModal: React.FC<QrDescargaAppModalProps> = ({ open, on
             </button>
             <a
               href={urlEfectiva}
-              target="_blank"
-              rel="noopener noreferrer"
+              download="transporte-vergel-carrillo.apk"
               style={{
                 flex: 1,
                 height: '40px',

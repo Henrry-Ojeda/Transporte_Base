@@ -6,6 +6,7 @@ import apiClient from '@/api/client';
 import { updateAppIcon } from '@/utils/pwaIcons';
 
 import { LoginPage } from '@/modules/auth/LoginPage';
+import { DescargarAppPage } from '@/modules/auth/DescargarAppPage';
 import { ProtectedRoute } from '@/components/common/ProtectedRoute';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { SessionMonitor } from '@/components/common/SessionMonitor';
@@ -195,6 +196,7 @@ export const App: React.FC = () => {
             <Routes>
               <Route index element={<HomeRedirect />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/descargar-app" element={<DescargarAppPage />} />
               <Route path="/movil" element={<AppMovilPage />} />
               <Route path="/app" element={<AppMovilPage />} />
 

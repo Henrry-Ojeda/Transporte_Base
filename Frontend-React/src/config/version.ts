@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 94,
-  patch: 1,
-  tag: 'v3.94.1',
-  ultimaActualizacion: '2026-11-22',
+  patch: 2,
+  tag: 'v3.94.2',
+  ultimaActualizacion: '2026-11-23',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Web Vergel & Carrillo v3.94.1: Agrega botón y modal QR exclusivo en Login y Header para descargar/abrir la App Móvil.',
+  descripcion: 'Web Vergel & Carrillo v3.94.2: Página pública blanca /descargar-app para descargar APK v1.0.2 sin bloqueo de Custom Tab y exclusión de /downloads/ en Service Worker.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

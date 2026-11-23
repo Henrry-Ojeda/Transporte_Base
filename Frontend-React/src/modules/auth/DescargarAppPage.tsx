@@ -65,7 +65,7 @@ export const DescargarAppPage: React.FC = () => {
             Transporte Vergel &amp; Carrillo
           </h1>
           <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', opacity: 0.9 }}>
-            App Móvil Oficial Android • v1.0.7 (62 MB)
+            App Móvil Oficial Android • v1.0.8 (62 MB)
           </p>
         </div>
 
@@ -109,7 +109,7 @@ export const DescargarAppPage: React.FC = () => {
             }}
           >
             <Download size={18} />
-            <span>Descargar APK (v1.0.7)</span>
+            <span>Descargar APK (v1.0.8)</span>
           </a>
 
           <button

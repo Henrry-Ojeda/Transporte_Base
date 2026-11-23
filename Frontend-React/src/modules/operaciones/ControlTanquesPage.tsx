@@ -158,6 +158,15 @@ export const ControlTanquesPage: React.FC = () => {
             porTipoLeche,
             detalle,
           };
+        })
+        .sort((a, b) => {
+          const fechaA = String(a.fecha || '').split('T')[0];
+          const fechaB = String(b.fecha || '').split('T')[0];
+          if (fechaA !== fechaB) return fechaA.localeCompare(fechaB);
+          const prioA = a.tipoMovimiento === 'ENTRADA' ? 0 : 1;
+          const prioB = b.tipoMovimiento === 'ENTRADA' ? 0 : 1;
+          if (prioA !== prioB) return prioA - prioB;
+          return (a.id || 0) - (b.id || 0);
         });
     } catch {
       return [];

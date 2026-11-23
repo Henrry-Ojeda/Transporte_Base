@@ -24,7 +24,8 @@ export const ReceptoriaPage: React.FC = () => {
   const [filtroFecha, setFiltroFecha] = useState<string>(hoyStr);
   const [filtroEstado, setFiltroEstado] = useState<string>('TODOS');
   const [busquedaBandeja, setBusquedaBandeja] = useState<string>('');
-  const [segmentoActivo, setSegmentoActivo] = useState<'TODOS' | 'ENTRADAS' | 'SALIDAS' | 'FORM' | 'HISTORIAL'>('TODOS');
+  const [segmentoActivo, setSegmentoActivo] = useState<'ENTRADAS' | 'SALIDAS' | 'HISTORIAL'>('ENTRADAS');
+  const [filtroMovimientoTabla, setFiltroMovimientoTabla] = useState<'TODOS' | 'ENTRADAS' | 'SALIDAS'>('TODOS');
   const [subFiltroEntradas, setSubFiltroEntradas] = useState<'TODAS' | 'EN_SILOS' | 'RECEPCIONADAS'>('TODAS');
   const [subFiltroSalidas, setSubFiltroSalidas] = useState<'TODAS' | 'EN_TRANSITO' | 'FINALIZADAS'>('TODAS');
   const [mostrarFormulario, setMostrarFormulario] = useState<boolean>(false);
@@ -684,6 +685,83 @@ export const ReceptoriaPage: React.FC = () => {
     }
   };
 
+  const handleDiferirFincaReceptoria = async (f: any) => {
+    const rutaId = Number(f.id || 0);
+    const maxLitros = Number(f.litros || f.litrosLeche || 0);
+    if (!rutaId || maxLitros <= 0) {
+      toast.error('No se encontró el registro de ruta de esta finca.');
+      return;
+    }
+
+    const { value: formValues } = await Swal.fire({
+      title: `Diferir Litros — ${f.fincaNombre || f.nombre || 'Finca'}`,
+      html: `
+        <div style="text-align:left; font-size:13px; color:#475569;">
+          <p style="margin-bottom:10px;">
+            Suma al volumen del camión en ruta, pero <strong>pospone el pago</strong> para el siguiente ciclo semanal.
+          </p>
+          <label style="display:block; font-weight:700; margin-bottom:4px;">Litros a diferir (máx. ${maxLitros.toLocaleString()} L):</label>
+          <input id="swal-litros-diferir" type="number" min="1" max="${maxLitros}" step="any" value="${maxLitros}" class="swal2-input" style="margin:0 0 10px 0; width:100%;" />
+          <label style="display:block; font-weight:700; margin-bottom:4px;">Motivo (opcional):</label>
+          <input id="swal-motivo-diferir" type="text" placeholder="Ej: Diferido en Receptoría" class="swal2-input" style="margin:0; width:100%;" />
+        </div>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Diferir Litros',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#d97706',
+      preConfirm: () => {
+        const ltsEl = document.getElementById('swal-litros-diferir') as HTMLInputElement | null;
+        const motEl = document.getElementById('swal-motivo-diferir') as HTMLInputElement | null;
+        const val = Number(ltsEl?.value || 0);
+        if (!Number.isFinite(val) || val <= 0 || val > maxLitros) {
+          Swal.showValidationMessage(`Ingrese un valor entre 1 y ${maxLitros} litros.`);
+          return null;
+        }
+        return { litrosDiferir: val, motivo: motEl?.value?.trim() || 'Diferido desde Receptoría' };
+      },
+    });
+
+    if (!formValues) return;
+
+    try {
+      await operacionesApi.diferirLitros(rutaId, formValues);
+      toast.success(`Se difirieron ${formValues.litrosDiferir.toLocaleString()} L para el siguiente ciclo.`);
+      setFincasViajeVerificar((prev) =>
+        prev.map((item) =>
+          Number(item.id) === rutaId
+            ? { ...item, esDiferido: true, litrosDiferidos: formValues.litrosDiferir }
+            : item
+        )
+      );
+      queryClient.invalidateQueries({ queryKey: ['receptoria-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-hoy'] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'No se pudieron diferir los litros');
+    }
+  };
+
+  const handleRevertirDiferirReceptoria = async (f: any) => {
+    const rutaId = Number(f.id || 0);
+    if (!rutaId) return;
+    try {
+      await operacionesApi.revertirDiferimiento(rutaId);
+      toast.success('Diferimiento revertido a liquidación normal.');
+      setFincasViajeVerificar((prev) =>
+        prev.map((item) =>
+          Number(item.id) === rutaId
+            ? { ...item, esDiferido: false, litrosDiferidos: 0 }
+            : item
+        )
+      );
+      queryClient.invalidateQueries({ queryKey: ['receptoria-hoy'] });
+      queryClient.invalidateQueries({ queryKey: ['rutas-hoy'] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Error al revertir diferimiento');
+    }
+  };
+
   const abrirModalValidarFincasDesdeDespacho = (despacho: any) => {
     setDespachoSeleccionado(despacho);
     setLitrosConfirmadosInput(Number(despacho.litrosDespachados || (despacho as any).LitrosDespachados || 0));
@@ -923,9 +1001,26 @@ export const ReceptoriaPage: React.FC = () => {
     return rutasHoy.reduce((acc, r) => acc + Number(r.litros || r.Litros || 0), 0);
   }, [rutasHoy]);
 
+  const esCompaniaReceptoria = (item: any) => {
+    if (!item) return false;
+    if (esReceptoriaPrincipal(item)) return true;
+    const cId = Number(item.companiaId ?? item.CompaniaId ?? 0);
+    const nom = String(item.companiaNombre ?? item.nombreCompania ?? item.nombre ?? '').toUpperCase().trim();
+    const compCat = companias.find(
+      (c) => (cId > 0 && Number(c.id) === cId) || (nom && String(c.nombre || '').toUpperCase().trim() === nom)
+    );
+    if (compCat && esReceptoriaPrincipal(compCat)) return true;
+    return esReceptoriaPrincipal(nom);
+  };
+
   const esSalidaMovimiento = (e: any) => {
     const tipo = clasificarEntrega(e).tipo;
-    return tipo === 'SALIDA_RECEPTORIA' || tipo === 'LLEGADA_COMPANIA';
+    if (tipo === 'SALIDA_RECEPTORIA') return true;
+    if (tipo === 'LLEGADA_COMPANIA') {
+      // Si la recepción es en la propia Planta Matriz / Receptoría (ej: CAMPO VERDE), es ENTRADA (+); si es planta externa (ej: Flor de Aragua), es SALIDA (-)
+      return !esCompaniaReceptoria(e);
+    }
+    return false;
   };
 
   const totalEntradasReceptoria = useMemo(() => {
@@ -933,14 +1028,14 @@ export const ReceptoriaPage: React.FC = () => {
       if (esSalidaMovimiento(e)) return acc;
       return acc + Math.abs(Number(e.litros || e.Litros || 0));
     }, 0);
-  }, [entregasHoy]);
+  }, [entregasHoy, companias]);
 
   const totalSalidasReceptoria = useMemo(() => {
     return entregasHoy.reduce((acc, e) => {
       if (!esSalidaMovimiento(e)) return acc;
       return acc + Math.abs(Number(e.litros || e.Litros || 0));
     }, 0);
-  }, [entregasHoy]);
+  }, [entregasHoy, companias]);
 
   const totalLitrosReceptoria = totalEntradasReceptoria - totalSalidasReceptoria;
   const diferenciaBalance = totalEntradasReceptoria - totalSalidasReceptoria;
@@ -949,6 +1044,12 @@ export const ReceptoriaPage: React.FC = () => {
   // Filtrado y ordenamiento de la tabla
   const entregasFiltradas = useMemo(() => {
     let items = entregasHoy.slice();
+
+    if (filtroMovimientoTabla === 'ENTRADAS') {
+      items = items.filter((e) => !esSalidaMovimiento(e));
+    } else if (filtroMovimientoTabla === 'SALIDAS') {
+      items = items.filter((e) => esSalidaMovimiento(e));
+    }
 
     if (filtroChoferTabla) {
       items = items.filter((e) =>
@@ -978,18 +1079,28 @@ export const ReceptoriaPage: React.FC = () => {
       if (sortColumn === 'litros') {
         valA = Number(a.litros || 0);
         valB = Number(b.litros || 0);
+      } else if (sortColumn === 'fecha') {
+        valA = String(a.fecha || '').split('T')[0];
+        valB = String(b.fecha || '').split('T')[0];
       }
-      if (valA === valB) return 0;
+      if (valA === valB) {
+        const ticketA = Number(a.controlRutaId || a.despachoId || a.id || 0);
+        const ticketB = Number(b.controlRutaId || b.despachoId || b.id || 0);
+        return sortAsc ? ticketA - ticketB : ticketB - ticketA;
+      }
       if (valA == null) return 1;
       if (valB == null) return -1;
       return sortAsc ? (valA > valB ? 1 : -1) : (valA < valB ? 1 : -1);
     });
 
     return items;
-  }, [entregasHoy, filtroChoferTabla, filtroCompaniaTabla, busquedaTabla, sortColumn, sortAsc]);
+  }, [entregasHoy, companias, filtroMovimientoTabla, filtroChoferTabla, filtroCompaniaTabla, busquedaTabla, sortColumn, sortAsc]);
 
   const totalFiltradoLts = useMemo(() => {
-    return entregasFiltradas.reduce((acc, e) => acc + Number(e.litros || 0), 0);
+    return entregasFiltradas.reduce((acc, e) => {
+      const val = Math.abs(Number(e.litros || e.Litros || 0));
+      return acc + (esSalidaMovimiento(e) ? -val : val);
+    }, 0);
   }, [entregasFiltradas]);
 
   const totalPages = Math.max(1, Math.ceil(entregasFiltradas.length / (pageSize === -1 ? 999999 : pageSize)));
@@ -1271,7 +1382,7 @@ export const ReceptoriaPage: React.FC = () => {
   const handleCambiarVista = (val: string) => {
     setFiltroEstado(val);
     if (val === 'TODOS') {
-      setSegmentoActivo('TODOS');
+      setSegmentoActivo('ENTRADAS');
       setSubFiltroEntradas('TODAS');
       setSubFiltroSalidas('TODAS');
     } else if (val === 'EN_ESPERA' || val === 'ENTRADAS_ESPERA') {
@@ -1534,43 +1645,38 @@ export const ReceptoriaPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ACCESOS RÁPIDOS POR SEGMENTOS OPERATIVOS */}
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
-          {[
-            { id: 'TODOS', label: 'Todos', icon: 'fa-layer-group', count: conteosEntradas.total + conteosSalidas.total, color: '#334155', bg: '#f1f5f9' },
-            { id: 'ENTRADAS', label: '1. Entradas', icon: 'fa-truck-ramp-box', count: conteosEntradas.total, color: '#0284c7', bg: '#e0f2fe' },
-            { id: 'SALIDAS', label: '2. Salidas', icon: 'fa-building-wheat', count: conteosSalidas.total, color: '#9333ea', bg: '#f3e8ff' },
-            { id: 'FORM', label: 'Formulario de Entrega', icon: 'fa-edit', count: null },
-            { id: 'HISTORIAL', label: 'Historial de Entregas', icon: 'fa-table-list', count: null },
-          ].map((seg) => {
-            const esActivo = segmentoActivo === seg.id;
-            return (
-              <button
-                key={seg.id}
-                type="button"
-                className="btn btn-sm"
-                onClick={() => {
-                  setSegmentoActivo(seg.id as any);
-                  if (seg.id === 'FORM') setMostrarFormulario(true);
-                }}
-                style={{
-                  borderRadius: '20px',
-                  fontWeight: 700,
-                  padding: '5px 15px',
-                  fontSize: '12.5px',
-                  border: `1.5px solid ${esActivo ? '#0284c7' : '#cbd5e1'}`,
-                  background: esActivo ? '#0284c7' : '#ffffff',
-                  color: esActivo ? '#ffffff' : '#475569',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
-                <i className={`fa-solid ${seg.icon}`} style={{ color: esActivo ? '#ffffff' : (seg.color || '#64748b') }}></i>
-                {seg.label}
-                {seg.count !== null && (
+        {/* ACCESOS RÁPIDOS POR SEGMENTOS OPERATIVOS (3 PESTAÑAS LIMPIAS) */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {[
+              { id: 'ENTRADAS', label: '1. Entradas a Silos', icon: 'fa-truck-ramp-box', count: conteosEntradas.total, color: '#0284c7', bg: '#e0f2fe' },
+              { id: 'SALIDAS', label: '2. Salidas a Plantas', icon: 'fa-building-wheat', count: conteosSalidas.total, color: '#9333ea', bg: '#f3e8ff' },
+              { id: 'HISTORIAL', label: '3. Control Diario / Historial', icon: 'fa-table-list', count: entregasHoy.length, color: '#0f766e', bg: '#ccfbf1' },
+            ].map((seg) => {
+              const esActivo = segmentoActivo === seg.id;
+              return (
+                <button
+                  key={seg.id}
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setSegmentoActivo(seg.id as any)}
+                  style={{
+                    borderRadius: '20px',
+                    fontWeight: 700,
+                    padding: '6px 16px',
+                    fontSize: '12.5px',
+                    border: `1.5px solid ${esActivo ? seg.color : '#cbd5e1'}`,
+                    background: esActivo ? seg.color : '#ffffff',
+                    color: esActivo ? '#ffffff' : '#475569',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <i className={`fa-solid ${seg.icon}`} style={{ color: esActivo ? '#ffffff' : seg.color }}></i>
+                  {seg.label}
                   <span
                     className="badge"
                     style={{
@@ -1582,14 +1688,27 @@ export const ReceptoriaPage: React.FC = () => {
                   >
                     {seg.count}
                   </span>
-                )}
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Barra Resumen Stock/Balance en Tiempo Real */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', fontSize: '12px', fontWeight: 700 }}>
+            <span style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '4px 10px', borderRadius: '8px' }}>
+              Entradas: +{totalEntradasReceptoria.toLocaleString('es-VE')} L
+            </span>
+            <span style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', padding: '4px 10px', borderRadius: '8px' }}>
+              Salidas: -{totalSalidasReceptoria.toLocaleString('es-VE')} L
+            </span>
+            <span style={{ background: '#f8fafc', color: diferenciaBalance < 0 ? '#dc2626' : '#0f172a', border: '1px solid #cbd5e1', padding: '4px 10px', borderRadius: '8px' }}>
+              Stock Día: {diferenciaBalance > 0 ? `+${diferenciaBalance.toLocaleString('es-VE')}` : diferenciaBalance.toLocaleString('es-VE')} L
+            </span>
+          </div>
         </div>
 
         {/* BANDEJA 1: ENTRADAS - CAMIONES EN ESPERA */}
-        {(segmentoActivo === 'TODOS' || segmentoActivo === 'ENTRADAS') && (
+        {segmentoActivo === 'ENTRADAS' && (
           <div
             id="cardBandejaEnEspera"
             className="content-card"
@@ -1611,40 +1730,6 @@ export const ReceptoriaPage: React.FC = () => {
                 <span className="badge" style={{ background: '#e0f2fe', color: '#0284c7', fontWeight: 800, border: '1px solid #bae6fd' }}>
                   {camionesEnEspera.length} {camionesEnEspera.length === 1 ? 'Camión' : 'Camiones'}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFormEntradaTercero({
-                      fecha: filtroFecha || hoyStr,
-                      fincaId: 0,
-                      crearFincaNueva: false,
-                      nuevaFincaNombre: '',
-                      nuevaFincaPropietario: '',
-                      nuevaFincaPrecioLitro: '',
-                      tipoLeche: 'VACA',
-                      litros: '',
-                      observacion: '',
-                    });
-                    setModalEntradaTercero(true);
-                  }}
-                  style={{
-                    background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)',
-                  }}
-                >
-                  <i className="fa-solid fa-plus-circle"></i>
-                  <span>Nueva Entrada (Tercero)</span>
-                </button>
               </div>
 
               {/* Sub-filtros interactivos de Entradas */}
@@ -1759,6 +1844,18 @@ export const ReceptoriaPage: React.FC = () => {
                               <span>{fechaFmt || hoyStr}</span>
                               {horaSalida && <span>• Salida: {horaSalida}</span>}
                               {horaLlegada && <span style={{ color: '#0369a1', fontWeight: 700 }}>• Llegada: {horaLlegada}</span>}
+                              <span
+                                style={{
+                                  background: esEntradaTercero || String((c as any).tipoServicioNombre || '').toUpperCase().includes('TRANSP') ? '#f3e8ff' : '#e0f2fe',
+                                  color: esEntradaTercero || String((c as any).tipoServicioNombre || '').toUpperCase().includes('TRANSP') ? '#7e22ce' : '#0369a1',
+                                  padding: '1px 7px',
+                                  borderRadius: '6px',
+                                  fontSize: '10px',
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {esEntradaTercero || String((c as any).tipoServicioNombre || '').toUpperCase().includes('TRANSP') ? 'TRANSPORTE' : 'RUTA'}
+                              </span>
                             </div>
                           </div>
 
@@ -2133,7 +2230,7 @@ export const ReceptoriaPage: React.FC = () => {
         )}
 
         {/* BANDEJA 2: SALIDAS - DESPACHOS A COMPAÑÍAS Y QUESERAS */}
-        {(segmentoActivo === 'TODOS' || segmentoActivo === 'SALIDAS') && (
+        {segmentoActivo === 'SALIDAS' && (
           <div
             id="cardBandejaEnTransito"
             className="content-card"
@@ -2360,6 +2457,39 @@ export const ReceptoriaPage: React.FC = () => {
                             {ticketsFincasValidadas.has(Number(d.controlRutaId)) ? '✅ Fincas & Recibos Auditados' : '📋 Auditar Fincas & Recibos'}
                           </button>
                         )}
+
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => {
+                            setDespachoAEditar({
+                              id: d.id,
+                              fecha: d.fecha ? String(d.fecha).split('T')[0] : hoyStr,
+                              litrosDespachados: despachados,
+                              tipoLeche: d.tipoLeche || 'VACA',
+                              observacion: d.observacion || '',
+                            });
+                            setModalEditarDespacho(true);
+                          }}
+                          style={{
+                            width: '100%',
+                            fontWeight: 700,
+                            fontSize: '11.5px',
+                            background: '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            color: '#1d4ed8',
+                            padding: '7px',
+                            borderRadius: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            cursor: 'pointer',
+                          }}
+                          title="Editar fecha, litros o detalles antes de que el chofer confirme"
+                        >
+                          <i className="fa-solid fa-pen-to-square"></i> Editar Ticket
+                        </button>
 
                         <button
                           type="button"
@@ -2722,7 +2852,32 @@ export const ReceptoriaPage: React.FC = () => {
           <span style={{ fontWeight: 800, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <i className="fa-solid fa-magnifying-glass"></i> BÚSQUEDA Y CONTROL DE ENTREGAS EN RECEPTORÍA
           </span>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '13px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '4px', background: 'rgba(15,23,42,0.35)', padding: '3px', borderRadius: '8px' }}>
+              {[
+                { id: 'TODOS', label: 'Todas' },
+                { id: 'ENTRADAS', label: 'Entradas (+)' },
+                { id: 'SALIDAS', label: 'Salidas (-)' },
+              ].map((fm) => (
+                <button
+                  key={fm.id}
+                  type="button"
+                  onClick={() => { setFiltroMovimientoTabla(fm.id as any); setCurrentPage(1); }}
+                  style={{
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '4px 10px',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    background: filtroMovimientoTabla === fm.id ? '#ffffff' : 'transparent',
+                    color: filtroMovimientoTabla === fm.id ? '#0369a1' : '#e2e8f0',
+                  }}
+                >
+                  {fm.label}
+                </button>
+              ))}
+            </div>
             <span
               style={{
                 background: 'rgba(15, 23, 42, 0.55)',
@@ -4225,9 +4380,10 @@ export const ReceptoriaPage: React.FC = () => {
             style={{
               background: '#ffffff',
               borderRadius: '16px',
-              maxWidth: '860px',
+              maxWidth: '1060px',
               width: '100%',
-              maxHeight: '92vh',
+              height: '90vh',
+              maxHeight: '94vh',
               display: 'flex',
               flexDirection: 'column',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
@@ -4239,18 +4395,19 @@ export const ReceptoriaPage: React.FC = () => {
               style={{
                 background: 'linear-gradient(135deg, #1e3a8a, #2563eb)',
                 color: '#ffffff',
-                padding: '16px 22px',
+                padding: '12px 20px',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                flexShrink: 0,
               }}
             >
               <div>
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '15.5px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <i className="fa-solid fa-clipboard-check"></i>
                   Validación de Litros y Recibos por Finca — Ticket #{viajeParaRecibir.id}
                 </h3>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#bfdbfe', fontWeight: 500 }}>
+                <p style={{ margin: '2px 0 0', fontSize: '11.5px', color: '#bfdbfe', fontWeight: 500 }}>
                   Cisterna: {viajeParaRecibir.camionPlaca || 'Camión Cisterna'} • Conductor: {viajeParaRecibir.choferNombre || 'Asignado'} • Reportado: {(Number(viajeParaRecibir.totalLitrosRecogidos || viajeParaRecibir.totalLitrosFinca || 0)).toLocaleString()} Lts
                 </p>
               </div>
@@ -4264,46 +4421,42 @@ export const ReceptoriaPage: React.FC = () => {
             </div>
 
             {/* CONTENIDO DEL MODAL */}
-            <div style={{ padding: '18px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {/* Banner de instrucción obligatoria */}
-              <div style={{ background: '#eff6ff', border: '1.5px solid #bfdbfe', borderLeft: '4px solid #2563eb', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', color: '#1e40af' }}>
-                <div style={{ fontWeight: 800, marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <i className="fa-solid fa-circle-info"></i> Paso 1 Obligatorio: Verificación Previa de Recibos y Litros en Fincas
-                </div>
-                Antes de validar los litros entregados por el chofer y dar entrada a Receptoría, revise y confirme que los litros reportados y comprobantes coincidan con los recibos físicos o digitales de campo. Puede marcar una a una o presionar <b>"Seleccionar Todas las Fincas"</b>.
+            <div style={{ padding: '12px 18px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '10px', overflow: 'hidden' }}>
+              {/* Banner de instrucción compacto */}
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderLeft: '4px solid #2563eb', padding: '6px 12px', borderRadius: '8px', fontSize: '11.5px', color: '#1e40af', flexShrink: 0 }}>
+                <i className="fa-solid fa-circle-info" style={{ marginRight: '6px' }}></i>
+                <strong>Paso 1:</strong> Confirme que los litros y recibos coincidan antes de dar entrada a Receptoría (o difiera al siguiente ciclo si aplica).
               </div>
 
-              {/* KPIs de Control */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Fincas Recolectadas</span>
-                  <div style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a' }}>{fincasViajeVerificar.length} <small style={{ fontSize: '11px', color: '#64748b' }}>con leche</small></div>
+              {/* KPIs de Control compactos */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', flexShrink: 0 }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Fincas</span>
+                  <strong style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>{fincasViajeVerificar.length}</strong>
                 </div>
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Fincas Validadas</span>
-                  <div style={{ fontSize: '20px', fontWeight: 900, color: fincasVerificadasIds.size === fincasViajeVerificar.length && fincasViajeVerificar.length > 0 ? '#16a34a' : '#2563eb' }}>
-                    {fincasVerificadasIds.size} <small style={{ fontSize: '11px', color: '#64748b' }}>de {fincasViajeVerificar.length}</small>
-                  </div>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Validadas</span>
+                  <strong style={{ fontSize: '15px', fontWeight: 900, color: fincasVerificadasIds.size === fincasViajeVerificar.length && fincasViajeVerificar.length > 0 ? '#16a34a' : '#2563eb' }}>
+                    {fincasVerificadasIds.size}/{fincasViajeVerificar.length}
+                  </strong>
                 </div>
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Litros Validados</span>
-                  <div style={{ fontSize: '20px', fontWeight: 900, color: '#0284c7' }}>
-                    {fincasViajeVerificar.filter((f, idx) => fincasVerificadasIds.has(Number(f.id || f.fincaId || idx))).reduce((acc, f) => acc + Number(f.litros || f.litrosLeche || 0), 0).toLocaleString()} <small style={{ fontSize: '11px', color: '#64748b' }}>Lts</small>
-                  </div>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Litros Val.</span>
+                  <strong style={{ fontSize: '15px', fontWeight: 900, color: '#0284c7' }}>
+                    {fincasViajeVerificar.filter((f, idx) => fincasVerificadasIds.has(Number(f.id || f.fincaId || idx))).reduce((acc, f) => acc + Number(f.litros || f.litrosLeche || 0), 0).toLocaleString()} L
+                  </strong>
                 </div>
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Estado Auditoría</span>
-                  <div style={{ marginTop: '2px' }}>
-                    {fincasVerificadasIds.size === fincasViajeVerificar.length && fincasViajeVerificar.length > 0 ? (
-                      <span className="badge" style={{ background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', fontSize: '11.5px', fontWeight: 800 }}>
-                        <i className="fa-solid fa-circle-check mr-1"></i> 100% Verificado
-                      </span>
-                    ) : (
-                      <span className="badge" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: '11.5px', fontWeight: 800 }}>
-                        <i className="fa-solid fa-clock mr-1"></i> {fincasViajeVerificar.length - fincasVerificadasIds.size} Pendientes
-                      </span>
-                    )}
-                  </div>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Estado</span>
+                  {fincasVerificadasIds.size === fincasViajeVerificar.length && fincasViajeVerificar.length > 0 ? (
+                    <span className="badge" style={{ background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', fontSize: '10.5px', fontWeight: 800 }}>
+                      <i className="fa-solid fa-circle-check mr-1"></i> Completo
+                    </span>
+                  ) : (
+                    <span className="badge" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: '10.5px', fontWeight: 800 }}>
+                      {fincasViajeVerificar.length - fincasVerificadasIds.size} Pend.
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -4365,7 +4518,7 @@ export const ReceptoriaPage: React.FC = () => {
                   No hay paradas con leche recolectada en este ticket (las fincas sin litros se omiten de la validación).
                 </div>
               ) : (
-                <div style={{ maxHeight: '340px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff' }}>
+                <div style={{ flex: 1, minHeight: '280px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                     <thead style={{ background: '#f1f5f9', position: 'sticky', top: 0, zIndex: 2 }}>
                       <tr style={{ borderBottom: '1.5px solid #cbd5e1', textAlign: 'left' }}>
@@ -4388,6 +4541,7 @@ export const ReceptoriaPage: React.FC = () => {
                         <th style={{ padding: '10px', fontWeight: 700, color: '#475569', textAlign: 'right' }}>Litros Recibo</th>
                         <th style={{ padding: '10px', fontWeight: 700, color: '#475569', textAlign: 'center' }}>Tipo / Condición</th>
                         <th style={{ padding: '10px', fontWeight: 700, color: '#475569', textAlign: 'center' }}>Comprobante / Foto</th>
+                        <th style={{ padding: '10px', fontWeight: 700, color: '#475569', textAlign: 'center' }}>Diferir Ciclo</th>
                         <th style={{ padding: '10px', fontWeight: 700, color: '#475569', textAlign: 'center' }}>Estado</th>
                       </tr>
                     </thead>
@@ -4475,7 +4629,7 @@ export const ReceptoriaPage: React.FC = () => {
                                   </div>
                                 )}
                               </td>
-                              <td style={{ padding: '10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                                <td style={{ padding: '10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                                 {foto ? (
                                   <button
                                     type="button"
@@ -4500,6 +4654,52 @@ export const ReceptoriaPage: React.FC = () => {
                                   </button>
                                 ) : (
                                   <span style={{ color: '#94a3b8', fontSize: '11px' }}>Sin foto</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '7px 10px', textAlign: 'center', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                                {f.esDiferido || Number(f.litrosDiferidos || 0) > 0 ? (
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap' }}>
+                                      <i className="fa-solid fa-clock-rotate-left"></i> {Number(f.litrosDiferidos || lts).toLocaleString()} L
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRevertirDiferirReceptoria(f)}
+                                      style={{
+                                        fontSize: '10px',
+                                        fontWeight: 700,
+                                        color: '#dc2626',
+                                        background: '#fff1f2',
+                                        border: '1px solid #fecdd3',
+                                        borderRadius: '4px',
+                                        padding: '2px 6px',
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      Revertir
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDiferirFincaReceptoria(f)}
+                                    style={{
+                                      padding: '3px 8px',
+                                      fontSize: '11px',
+                                      fontWeight: 700,
+                                      borderRadius: '6px',
+                                      color: '#b45309',
+                                      border: '1px solid #fcd34d',
+                                      background: '#fffbeb',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                    title="Posponer pago de estos litros para el siguiente ciclo semanal"
+                                  >
+                                    <i className="fa-solid fa-clock-rotate-left"></i> Diferir
+                                  </button>
                                 )}
                               </td>
                               <td style={{ padding: '10px', textAlign: 'center' }}>

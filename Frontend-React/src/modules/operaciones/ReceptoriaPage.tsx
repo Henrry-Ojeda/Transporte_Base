@@ -834,17 +834,33 @@ export const ReceptoriaPage: React.FC = () => {
     }
   });
 
-  // Cálculo de totales y balance
+  // Cálculo de totales y balance (Entradas '+' vs Salidas '-')
   const totalLitrosRuta = useMemo(() => {
     return rutasHoy.reduce((acc, r) => acc + Number(r.litros || r.Litros || 0), 0);
   }, [rutasHoy]);
 
-  const totalLitrosReceptoria = useMemo(() => {
-    return entregasHoy.reduce((acc, e) => acc + Number(e.litros || e.Litros || 0), 0);
+  const esSalidaMovimiento = (e: any) => {
+    const tipo = clasificarEntrega(e).tipo;
+    return tipo === 'SALIDA_RECEPTORIA' || tipo === 'LLEGADA_COMPANIA';
+  };
+
+  const totalEntradasReceptoria = useMemo(() => {
+    return entregasHoy.reduce((acc, e) => {
+      if (esSalidaMovimiento(e)) return acc;
+      return acc + Math.abs(Number(e.litros || e.Litros || 0));
+    }, 0);
   }, [entregasHoy]);
 
-  const diferenciaBalance = totalLitrosReceptoria - totalLitrosRuta;
-  const pctMermaGlobal = totalLitrosRuta > 0 ? (Math.abs(diferenciaBalance) / totalLitrosRuta) * 100 : 0;
+  const totalSalidasReceptoria = useMemo(() => {
+    return entregasHoy.reduce((acc, e) => {
+      if (!esSalidaMovimiento(e)) return acc;
+      return acc + Math.abs(Number(e.litros || e.Litros || 0));
+    }, 0);
+  }, [entregasHoy]);
+
+  const totalLitrosReceptoria = totalEntradasReceptoria - totalSalidasReceptoria;
+  const diferenciaBalance = totalEntradasReceptoria - totalSalidasReceptoria;
+  const pctMermaGlobal = totalEntradasReceptoria > 0 ? (Math.abs(diferenciaBalance) / totalEntradasReceptoria) * 100 : 0;
 
   // Clasificador de proceso por entrega
   const clasificarEntrega = (e: any) => {
@@ -2710,14 +2726,26 @@ export const ReceptoriaPage: React.FC = () => {
             <span
               style={{
                 background: 'rgba(15, 23, 42, 0.55)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
+                border: '1px solid rgba(52, 211, 153, 0.45)',
                 padding: '5px 12px',
                 borderRadius: '8px',
                 fontWeight: 600,
                 color: '#ffffff',
               }}
             >
-              Total del Día: <strong style={{ color: '#fde047', fontWeight: 800, fontSize: '15px' }}>{totalLitrosReceptoria.toLocaleString('es-VE')}</strong> Lts
+              Entradas: <strong style={{ color: '#34d399', fontWeight: 800, fontSize: '15px' }}>+{totalEntradasReceptoria.toLocaleString('es-VE')}</strong> Lts
+            </span>
+            <span
+              style={{
+                background: 'rgba(15, 23, 42, 0.55)',
+                border: '1px solid rgba(248, 113, 113, 0.45)',
+                padding: '5px 12px',
+                borderRadius: '8px',
+                fontWeight: 600,
+                color: '#ffffff',
+              }}
+            >
+              Salidas: <strong style={{ color: '#fca5a5', fontWeight: 800, fontSize: '15px' }}>-{totalSalidasReceptoria.toLocaleString('es-VE')}</strong> Lts
             </span>
             <span
               style={{
@@ -2732,10 +2760,10 @@ export const ReceptoriaPage: React.FC = () => {
                 gap: '6px',
               }}
             >
-              Diferencia:{' '}
+              Balance:{' '}
               <strong
                 style={{
-                  color: diferenciaBalance === 0 ? '#34d399' : diferenciaBalance < 0 ? '#f87171' : '#60a5fa',
+                  color: diferenciaBalance === 0 ? '#34d399' : diferenciaBalance < 0 ? '#f87171' : '#fde047',
                   fontWeight: 800,
                   fontSize: '15px',
                 }}
@@ -3077,10 +3105,10 @@ export const ReceptoriaPage: React.FC = () => {
                         </span>
                       </td>
 
-                      {/* 5. ENTREGADO */}
+                      {/* 5. ENTREGADO (Entradas '+' / Salidas '-') */}
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
-                        <span style={{ fontWeight: 800, fontSize: '14.5px', color: meta.litrosColor }}>
-                          {numLitros < 0 ? '-' : numLitros > 0 ? '+' : ''}{Math.abs(numLitros).toLocaleString('es-VE')}{' '}
+                        <span style={{ fontWeight: 800, fontSize: '14.5px', color: esSalidaMovimiento(e) ? '#dc2626' : meta.litrosColor }}>
+                          {esSalidaMovimiento(e) ? '-' : numLitros > 0 ? '+' : ''}{Math.abs(numLitros).toLocaleString('es-VE')}{' '}
                           <small style={{ fontSize: '11px', color: '#475569', fontWeight: 600 }}>Lts</small>
                         </span>
                       </td>

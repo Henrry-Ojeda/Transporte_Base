@@ -6303,6 +6303,7 @@ namespace Transporte.Infrastructure.Repositories
 
             var sqlReceptorias = @"
                 WITH EntregasUnificadas AS (
+                    -- Solo ENTRADAS a receptoría (EsPrincipal = 1 o despachos directos con ControlRutaId) para evitar sumar doblemente salidas a plantas externas
                     SELECT 
                         cc.Fecha, 
                         COALESCE(NULLIF(cc.LitrosRecibidosCompania, 0), cc.LitrosDespachados, 0) AS Litros,
@@ -6311,6 +6312,7 @@ namespace Transporte.Infrastructure.Repositories
                     INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
                     WHERE cc.Fecha >= @fechaInicio AND cc.Fecha <= @fechaFin
                       AND (cc.LitrosDespachados > 0 OR cc.LitrosRecibidosCompania > 0)
+                      AND (ISNULL(c.EsPrincipal, 0) = 1 OR cc.ControlRutaId IS NOT NULL)
                     UNION ALL
                     SELECT 
                         e.Fecha, 
@@ -6320,6 +6322,7 @@ namespace Transporte.Infrastructure.Repositories
                     INNER JOIN TB_COMPANIAS c ON e.CompaniaId = c.Id
                     WHERE e.Fecha >= @fechaInicio AND e.Fecha <= @fechaFin
                       AND e.Litros > 0
+                      AND (ISNULL(c.EsPrincipal, 0) = 1 OR e.ControlRutaId IS NOT NULL)
                       AND (e.ControlCompaniaId IS NULL OR NOT EXISTS (SELECT 1 FROM TB_CONTROL_COMPANIAS cc0 WHERE cc0.Id = e.ControlCompaniaId))
                       AND NOT EXISTS (
                           SELECT 1 FROM TB_CONTROL_COMPANIAS cc2 
@@ -6353,20 +6356,40 @@ namespace Transporte.Infrastructure.Repositories
                     SELECT 
                         cc.Fecha, 
                         COALESCE(NULLIF(cc.LitrosRecibidosCompania, 0), cc.LitrosDespachados, 0) AS Litros,
-                        c.TipoServicioId
+                        CASE 
+                            WHEN cc.ControlRutaId IS NOT NULL AND (
+                                SELECT ISNULL(SUM(CASE WHEN ISNULL(ff.TipoServicioId, 1) = 2 THEN rr.Litros ELSE 0 END), 0)
+                                FROM TB_RUTAS_RECOLECCION rr
+                                INNER JOIN TB_FINCAS ff ON rr.FincaId = ff.Id
+                                WHERE rr.ControlRutaId = cc.ControlRutaId AND rr.FincaId != 68
+                            ) = COALESCE(NULLIF(cc.LitrosRecibidosCompania, 0), cc.LitrosDespachados, 0)
+                            THEN 2
+                            ELSE c.TipoServicioId
+                        END AS TipoServicioEfectivo
                     FROM TB_CONTROL_COMPANIAS cc
                     INNER JOIN TB_COMPANIAS c ON cc.CompaniaId = c.Id
                     WHERE cc.Fecha >= @fechaInicio AND cc.Fecha <= @fechaFin
                       AND (cc.LitrosDespachados > 0 OR cc.LitrosRecibidosCompania > 0)
+                      AND (ISNULL(c.EsPrincipal, 0) = 1 OR cc.ControlRutaId IS NOT NULL)
                     UNION ALL
                     SELECT 
                         e.Fecha, 
                         e.Litros,
-                        c.TipoServicioId
+                        CASE 
+                            WHEN e.ControlRutaId IS NOT NULL AND (
+                                SELECT ISNULL(SUM(CASE WHEN ISNULL(ff.TipoServicioId, 1) = 2 THEN rr.Litros ELSE 0 END), 0)
+                                FROM TB_RUTAS_RECOLECCION rr
+                                INNER JOIN TB_FINCAS ff ON rr.FincaId = ff.Id
+                                WHERE rr.ControlRutaId = e.ControlRutaId AND rr.FincaId != 68
+                            ) = e.Litros
+                            THEN 2
+                            ELSE c.TipoServicioId
+                        END AS TipoServicioEfectivo
                     FROM TB_ENTREGAS_COMPANIA e
                     INNER JOIN TB_COMPANIAS c ON e.CompaniaId = c.Id
                     WHERE e.Fecha >= @fechaInicio AND e.Fecha <= @fechaFin
                       AND e.Litros > 0
+                      AND (ISNULL(c.EsPrincipal, 0) = 1 OR e.ControlRutaId IS NOT NULL)
                       AND (e.ControlCompaniaId IS NULL OR NOT EXISTS (SELECT 1 FROM TB_CONTROL_COMPANIAS cc0 WHERE cc0.Id = e.ControlCompaniaId))
                       AND NOT EXISTS (
                           SELECT 1 FROM TB_CONTROL_COMPANIAS cc2 
@@ -6382,7 +6405,7 @@ namespace Transporte.Infrastructure.Repositories
                 )
                 SELECT CONVERT(varchar(10), Fecha, 120) AS Fecha, ISNULL(SUM(Litros), 0) AS Litros
                 FROM EntregasUnificadas
-                WHERE TipoServicioId = 2
+                WHERE TipoServicioEfectivo = 2
                 GROUP BY Fecha
                 ORDER BY Fecha";
 
@@ -7593,6 +7616,7 @@ namespace Transporte.Infrastructure.Repositories
                     SUM(sc.Litros) AS Litros
                 FROM SalidasCombined sc
                 INNER JOIN TB_COMPANIAS cp ON sc.CompaniaId = cp.Id
+                WHERE ISNULL(cp.EsPrincipal, 0) = 0
                 WHERE sc.CicloId IN (SELECT CicloId FROM UltimosCiclos)
                   AND ISNULL(cp.EsPrincipal, 0) = 0
                   AND UPPER(ISNULL(cp.Nombre, '')) NOT LIKE '%RECEPTORIA%'

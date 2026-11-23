@@ -319,11 +319,11 @@ namespace Transporte.API.Controllers
 
             // Obtener datos del tenant destino desde DB_SAAS_MASTER
             var empresa = await db.QueryFirstOrDefaultAsync<dynamic>(
-                "SELECT Id, NombreComercial, ConnectionString FROM TB_EMPRESAS WHERE Codigo = @tenantCode",
+                "SELECT Id, NombreComercial, CadenaConexion FROM TB_EMPRESAS WHERE Codigo = @tenantCode",
                 new { tenantCode });
             string empresaNombre = empresa?.NombreComercial ?? tenantCode;
-            string? tenantConnStr = empresa?.ConnectionString != null
-                ? Multitenancy.TenantService.AdjustConnectionStringForEnvironment((string)empresa.ConnectionString)
+            string? tenantConnStr = empresa?.CadenaConexion != null
+                ? Multitenancy.TenantService.AdjustConnectionStringForEnvironment((string)empresa.CadenaConexion)
                 : null;
 
             List<string> modulosTenant = new();

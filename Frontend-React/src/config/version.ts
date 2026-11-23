@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 93,
-  patch: 2,
-  tag: 'v3.93.2',
+  patch: 3,
+  tag: 'v3.93.3',
   ultimaActualizacion: '2026-11-22',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'Hotfix App Móvil v3.93.2: Protege persistencia de movil_despachos_activos contra QuotaExceededError (aligerando fotos Base64) y evita envío de [EN_INDEXEDDB] en fotos.',
+  descripcion: 'Web v3.93.3: Normaliza fotos Base64 y agrega manejo onError en tabla Recolección para imágenes corruptas/incompletas.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

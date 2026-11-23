@@ -312,6 +312,40 @@ class LocalDatabase {
     });
   }
 
+  async eliminarRecoleccion(idLocal: number): Promise<void> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('recolecciones', 'readwrite');
+      const store = tx.objectStore('recolecciones');
+      const req = store.delete(idLocal);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async limpiarRecoleccionesPendientes(ticketId?: number): Promise<number> {
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('recolecciones', 'readwrite');
+      const store = tx.objectStore('recolecciones');
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const list = (req.result || []) as RecoleccionLocal[];
+        let eliminados = 0;
+        for (const item of list) {
+          if (item.estadoSync !== 'SINCRONIZADO' && item.idLocal) {
+            if (ticketId === undefined || Number(item.ticketId) === Number(ticketId)) {
+              store.delete(item.idLocal);
+              eliminados++;
+            }
+          }
+        }
+        resolve(eliminados);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   // =========================================================================
   // 2. CACHÉ DE VIAJES Y PARADAS DEL DÍA
   // =========================================================================

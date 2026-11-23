@@ -60,7 +60,16 @@ namespace Transporte.API.Controllers
             var user = await _authRepository.ObtenerPorUsernameAsync(dto.Username);
             if (user == null)
             {
-                return Unauthorized(new { message = "Usuario o contraseÃ±a invÃ¡lidos." });
+                // Verificar si el usuario existe pero está inactivo (despedido/desactivado)
+                using var checkDb = new SqlConnection(_tenantService.GetConnectionString());
+                var existeInactivo = await checkDb.QueryFirstOrDefaultAsync<bool?>(
+                    "SELECT CASE WHEN EXISTS (SELECT 1 FROM TB_USUARIOS WHERE LOWER(Username) = LOWER(@u) AND Activo = 0) THEN 1 ELSE 0 END",
+                    new { u = (dto.Username ?? "").Trim() });
+                if (existeInactivo == true)
+                {
+                    return StatusCode(403, new { message = "No tienes permisos para ingresar. Tu usuario está inactivo.", usuarioInactivo = true });
+                }
+                return Unauthorized(new { message = "Usuario o contraseña inválidos." });
             }
 
             bool passwordValida = false;
@@ -151,7 +160,10 @@ namespace Transporte.API.Controllers
             if (string.IsNullOrEmpty(username)) return Unauthorized();
 
             var user = await _authRepository.ObtenerPorUsernameAsync(username);
-            if (user == null) return NotFound();
+            if (user == null)
+            {
+                return StatusCode(403, new { message = "No tienes permisos para acceder. Tu usuario está inactivo.", usuarioInactivo = true });
+            }
 
             var permisos = await _authRepository.ObtenerPermisosUsuarioAsync(user.Id);
 
@@ -365,22 +377,31 @@ namespace Transporte.API.Controllers
             var tokenString = tokenHandler.WriteToken(token);
 
             bool permisoCrear = false;
+            bool usuarioActivo = true;
             string? logoUrl = null;
             if (!string.IsNullOrWhiteSpace(tenantConnStr))
             {
                 using var tenantDb = new Microsoft.Data.SqlClient.SqlConnection(tenantConnStr);
-                permisoCrear = await tenantDb.QueryFirstOrDefaultAsync<bool?>(
-                    "SELECT PermisoCrearViaje FROM TB_USUARIOS WHERE Id = @usuarioId",
-                    new { usuarioId }) ?? false;
+                var uEstado = await tenantDb.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT Activo, PermisoCrearViaje FROM TB_USUARIOS WHERE Id = @usuarioId",
+                    new { usuarioId });
+                usuarioActivo = uEstado != null && (bool)(uEstado.Activo ?? false);
+                permisoCrear = uEstado != null && (bool)(uEstado.PermisoCrearViaje ?? false);
                 logoUrl = await tenantDb.QueryFirstOrDefaultAsync<string?>(
                     "SELECT TOP 1 LogoUrl FROM TB_EMPRESA_CONFIG");
             }
             else
             {
                 var usuarioDb = await _usuariosRepository.ObtenerUsuarioPorIdAsync(usuarioId);
+                usuarioActivo = usuarioDb != null && usuarioDb.Activo;
                 permisoCrear = usuarioDb?.PermisoCrearViaje ?? false;
                 var empresaCfg = await _catalogosRepository.ObtenerEmpresaConfigAsync();
                 logoUrl = empresaCfg?.LogoUrl;
+            }
+
+            if (!usuarioActivo)
+            {
+                return StatusCode(403, new { message = "No tienes permisos para acceder. Tu usuario está inactivo.", usuarioInactivo = true });
             }
 
             // Marcar código como usado solo cuando toda la consulta fue exitosa

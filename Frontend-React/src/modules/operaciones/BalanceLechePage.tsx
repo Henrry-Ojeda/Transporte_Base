@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { operacionesApi } from '@/api/operaciones.api';
 import { finanzasApi } from '@/api/finanzas.api';
+import { sistemaApi } from '@/api/sistema.api';
 import { ControlTanquesPage } from './ControlTanquesPage';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import type { CicloSemanalDto, MovimientoLecheDto, BalanceVolumetricoDto } from '@/types';
@@ -18,10 +19,36 @@ export const BalanceLechePage: React.FC = () => {
   const [cicloIdSeleccionado, setCicloIdSeleccionado] = useState<number | undefined>(undefined);
   const [procesoFiltro, setProcesoFiltro] = useState<number>(0);
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [incluirDiferidos, setIncluirDiferidos] = useState<boolean>(false);
+
+  // Configuración persistida de litros diferidos en Balance
+  const { data: configParametros = [] } = useQuery<any[]>({
+    queryKey: ['configuracion-parametros'],
+    queryFn: () => sistemaApi.getConfiguracion(),
+  });
+
+  useEffect(() => {
+    const param = (configParametros || []).find((p: any) => (p.clave || p.Clave) === 'BALANCE_INCLUIR_DIFERIDOS');
+    if (param) {
+      setIncluirDiferidos(String(param.valor || param.Valor).toLowerCase() === 'true');
+    }
+  }, [configParametros]);
+
+  const toggleIncluirDiferidos = async () => {
+    const next = !incluirDiferidos;
+    setIncluirDiferidos(next);
+    try {
+      await sistemaApi.guardarParametro('BALANCE_INCLUIR_DIFERIDOS', String(next));
+      queryClient.invalidateQueries({ queryKey: ['configuracion-parametros'] });
+      toast.success(next ? 'Configuración guardada: mostrando litros diferidos en Balance.' : 'Configuración guardada: excluyendo litros diferidos del Balance.');
+    } catch {
+      // Si falla guardar parámetro, igual mantiene el estado local visual
+    }
+  };
 
   // Modal Ajustar Stock Inicial
   const [modalStockInicial, setModalStockInicial] = useState(false);
-  const [nuevoStockInicialInput, setNuevoStockInicialInput] = useState<number>(0);
+  const [nuevoStockInicialInput, setNuevoStockInicialInput] = useState<string>('0');
 
   // 1. Cargar lista de ciclos operativos
   const { data: ciclos = [] } = useQuery<CicloSemanalDto[]>({
@@ -72,6 +99,26 @@ export const BalanceLechePage: React.FC = () => {
     enabled: !!cicloIdSeleccionado,
   });
 
+  // 2b. Consulta de rutas del ciclo para detectar litros diferidos por ticket
+  const { data: rutasCiclo = [] } = useQuery<any[]>({
+    queryKey: ['balance-rutas-diferidos', cicloIdSeleccionado],
+    queryFn: () => operacionesApi.getRutasHoy(undefined, undefined, undefined, cicloIdSeleccionado),
+    enabled: !!cicloIdSeleccionado,
+  });
+
+  const diferidosPorTicket = useMemo(() => {
+    const map = new Map<number, number>();
+    (rutasCiclo || []).forEach((r: any) => {
+      const ticketId = Number(r.controlRutaId || r.ControlRutaId || 0);
+      const esDif = Boolean(r.esDiferido || r.EsDiferido);
+      const ltsDif = Number(r.litrosDiferidos ?? r.LitrosDiferidos ?? (esDif ? r.litros ?? r.Litros ?? 0 : 0));
+      if (ticketId > 0 && ltsDif > 0) {
+        map.set(ticketId, (map.get(ticketId) || 0) + ltsDif);
+      }
+    });
+    return map;
+  }, [rutasCiclo]);
+
   // Mutación para ajustar stock inicial
   const mutationStockInicial = useMutation({
     mutationFn: async (nuevoStock: number) => {
@@ -118,10 +165,75 @@ export const BalanceLechePage: React.FC = () => {
   const p3 = balance?.proceso3_FincaCompania || { totalLitros: 0, cantidadMovimientos: 0, porcentajeDelTotal: 0 };
   const p4 = balance?.proceso4_ReceptoriaCompania || { totalLitros: 0, cantidadMovimientos: 0, porcentajeDelTotal: 0 };
 
-  // Movimientos filtrados
+  // Movimientos ordenados por fecha -> primero Entradas (+), después Salidas (-) -> por ticket, con saldo recalculado
   const movimientos = balance?.movimientos || [];
+  const { movimientosOrdenadosConSaldo, totalDiferidosExcluidos } = useMemo(() => {
+    const extractTicketNum = (ref?: string | null, fallbackId?: number) => {
+      if (ref) {
+        const match = String(ref).match(/\d+/);
+        if (match) return Number(match[0]);
+      }
+      return Number(fallbackId || 0);
+    };
+
+    const getPrioridadMovimiento = (m: MovimientoLecheDto) => {
+      if (m.tipoProceso === 0) return 0; // Stock Inicial
+      if ((m.litrosEntradaTanque || 0) > 0) return 1; // Entradas (+) primero
+      if ((m.litrosSalidaTanque || 0) > 0) return 3; // Salidas (-) después
+      return 2; // Directas / informativos en el medio
+    };
+
+    const sorted = [...movimientos].sort((a, b) => {
+      const prioA = getPrioridadMovimiento(a);
+      const prioB = getPrioridadMovimiento(b);
+      if (prioA === 0 && prioB !== 0) return -1;
+      if (prioB === 0 && prioA !== 0) return 1;
+
+      const fechaA = String(a.fecha || '').split('T')[0];
+      const fechaB = String(b.fecha || '').split('T')[0];
+      if (fechaA !== fechaB) {
+        return fechaA.localeCompare(fechaB);
+      }
+
+      if (prioA !== prioB) {
+        return prioA - prioB;
+      }
+
+      return extractTicketNum(a.ticketReferencia, a.id) - extractTicketNum(b.ticketReferencia, b.id);
+    });
+
+    let saldo = stockInicial;
+    let totalDif = 0;
+    const mapped = sorted.map((m) => {
+      if (m.tipoProceso === 0) {
+        return { ...m, saldoTanque: stockInicial, litrosDiferidosTicket: 0 };
+      }
+      const ticketNum = extractTicketNum(m.ticketReferencia, m.id);
+      const difRaw = (m.litrosEntradaTanque || 0) > 0 ? (diferidosPorTicket.get(ticketNum) || 0) : 0;
+      const difAplicado = Math.min(Number(m.litrosEntradaTanque || 0), difRaw);
+      totalDif += difAplicado;
+
+      const entradaNeta = !incluirDiferidos && difAplicado > 0
+        ? Math.max(0, Number(m.litrosEntradaTanque || 0) - difAplicado)
+        : Number(m.litrosEntradaTanque || 0);
+
+      saldo = saldo + entradaNeta - Number(m.litrosSalidaTanque || 0);
+      return {
+        ...m,
+        litrosEntradaTanque: entradaNeta,
+        litrosDiferidosTicket: difAplicado,
+        saldoTanque: saldo,
+      };
+    });
+
+    return { movimientosOrdenadosConSaldo: mapped, totalDiferidosExcluidos: totalDif };
+  }, [movimientos, stockInicial, diferidosPorTicket, incluirDiferidos]);
+
+  const totalEntradasMostrado = !incluirDiferidos ? Math.max(0, totalEntradas - totalDiferidosExcluidos) : totalEntradas;
+  const stockActualMostrado = !incluirDiferidos ? stockActual - totalDiferidosExcluidos : stockActual;
+
   const movimientosFiltrados = useMemo(() => {
-    return movimientos.filter((m) => {
+    return movimientosOrdenadosConSaldo.filter((m) => {
       // Filtro por proceso (0 = todos)
       if (procesoFiltro !== 0 && m.tipoProceso !== procesoFiltro) {
         return false;
@@ -140,7 +252,7 @@ export const BalanceLechePage: React.FC = () => {
       }
       return true;
     });
-  }, [movimientos, procesoFiltro, searchTerm]);
+  }, [movimientosOrdenadosConSaldo, procesoFiltro, searchTerm]);
 
   // Click en tarjeta de proceso para filtrar
   const handleToggleProceso = (tipo: number) => {
@@ -260,13 +372,11 @@ export const BalanceLechePage: React.FC = () => {
       ),
     },
     {
-      header: 'Origen ➔ Destino',
+      header: 'Destino',
+      accessorKey: 'destino',
+      sortable: true,
       cell: (row) => (
-        <div style={{ fontSize: '12px' }}>
-          <span style={{ color: '#475569', fontWeight: 600 }}>{row.origen}</span>
-          <i className="fa-solid fa-arrow-right" style={{ color: '#94a3b8', margin: '0 6px', fontSize: '10px' }}></i>
-          <strong style={{ color: '#0f172a' }}>{row.destino}</strong>
-        </div>
+        <strong style={{ color: '#0f172a', fontSize: '12px' }}>{row.destino || '-'}</strong>
       ),
     },
     {
@@ -298,6 +408,26 @@ export const BalanceLechePage: React.FC = () => {
               >
                 <i className="fa-solid fa-scale-balanced" style={{ marginRight: '3px' }}></i>
                 {row.infoVerificacion}
+              </div>
+            )}
+            {Number((row as any).litrosDiferidosTicket || 0) > 0 && (
+              <div
+                style={{
+                  fontSize: '10px',
+                  color: '#b45309',
+                  background: '#fef3c7',
+                  border: '1px solid #fde68a',
+                  borderRadius: '4px',
+                  padding: '2px 5px',
+                  marginTop: '2px',
+                  fontWeight: 800,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <i className="fa-solid fa-clock-rotate-left" style={{ marginRight: '3px' }}></i>
+                {incluirDiferidos
+                  ? `Incluye ${fmtNum((row as any).litrosDiferidosTicket)} L Diferidos`
+                  : `-${fmtNum((row as any).litrosDiferidosTicket)} L Diferidos (excluidos)`}
               </div>
             )}
           </div>
@@ -339,23 +469,13 @@ export const BalanceLechePage: React.FC = () => {
         );
       },
     },
-    {
-      header: 'Directa (Ruta)',
-      accessorKey: 'litrosEntregaDirecta',
-      sortable: true,
-      cell: (row) => {
-        if (!row.litrosEntregaDirecta || row.litrosEntregaDirecta <= 0) {
-          return <span style={{ color: '#cbd5e1' }}>-</span>;
-        }
-        return (
-          <div style={{ textAlign: 'right' }}>
-            <span style={{ color: '#0284c7', fontWeight: 800, fontFamily: 'monospace', fontSize: '13px' }}>
-              {fmtNum(row.litrosEntregaDirecta)} Lts
-            </span>
-          </div>
-        );
-      },
-    },
+    // Oculto temporalmente por solicitud del usuario
+    // {
+    //   header: 'Directa (Ruta)',
+    //   accessorKey: 'litrosEntregaDirecta',
+    //   sortable: true,
+    //   cell: ...
+    // },
     {
       header: 'Saldo Tanque',
       accessorKey: 'saldoTanque',
@@ -746,7 +866,7 @@ export const BalanceLechePage: React.FC = () => {
                     fontFamily: 'monospace',
                   }}
                 >
-                  {fmtNum(stockActual)}
+                  {fmtNum(stockActualMostrado)}
                 </span>
                 <span style={{ fontSize: '14px', fontWeight: 700, color: '#94a3b8' }}>Lts en custodia</span>
               </div>
@@ -766,7 +886,7 @@ export const BalanceLechePage: React.FC = () => {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', color: '#cbd5e1', marginBottom: '6px' }}>
                 <span>
-                  Total Entrado: <strong style={{ color: '#4ade80' }}>{fmtNum(totalEntradas)} Lts</strong>
+                  Total Entrado: <strong style={{ color: '#4ade80' }}>{fmtNum(totalEntradasMostrado)} Lts</strong>
                 </span>
                 <span>
                   Total Salido: <strong style={{ color: '#f87171' }}>{fmtNum(totalSalidas)} Lts</strong>
@@ -791,7 +911,7 @@ export const BalanceLechePage: React.FC = () => {
                   className="btn btn-xs"
                   type="button"
                   onClick={() => {
-                    setNuevoStockInicialInput(stockInicial);
+                    setNuevoStockInicialInput(String(stockInicial ?? 0));
                     setModalStockInicial(true);
                   }}
                   style={{
@@ -1355,7 +1475,7 @@ export const BalanceLechePage: React.FC = () => {
                 background: '#f8fafc',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>
                   <i className="fa-solid fa-list-check" style={{ color: '#0284c7', marginRight: '6px' }}></i>
                   Libro Mayor de Entradas, Salidas y Saldos en Tanque
@@ -1363,6 +1483,29 @@ export const BalanceLechePage: React.FC = () => {
                 <span className="badge badge-info" style={{ fontSize: '11px', padding: '2px 8px' }}>
                   {movimientosFiltrados.length} de {movimientos.length} Movimientos
                 </span>
+                <button
+                  type="button"
+                  onClick={toggleIncluirDiferidos}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: incluirDiferidos ? '#dbeafe' : '#fef3c7',
+                    color: incluirDiferidos ? '#1d4ed8' : '#b45309',
+                    border: incluirDiferidos ? '1.5px solid #93c5fd' : '1.5px solid #fcd34d',
+                  }}
+                  title="Alternar entre excluir o visualizar los litros diferidos en el Balance"
+                >
+                  <i className={incluirDiferidos ? 'fa-solid fa-eye' : 'fa-solid fa-clock-rotate-left'}></i>
+                  {incluirDiferidos
+                    ? `Visualizando Con Diferidos (+${fmtNum(totalDiferidosExcluidos)} L)`
+                    : `Diferidos Excluidos (-${fmtNum(totalDiferidosExcluidos)} L)`}
+                </button>
               </div>
 
               {/* Badges explicativos de columnas */}
@@ -1450,7 +1593,12 @@ export const BalanceLechePage: React.FC = () => {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    mutationStockInicial.mutate(nuevoStockInicialInput);
+                    const limpio = nuevoStockInicialInput.trim().replace(',', '.');
+                    if (limpio === '' || limpio === '-' || !Number.isFinite(Number(limpio))) {
+                      toast.error('Ingrese un número válido (puede ser positivo, 0 o negativo).');
+                      return;
+                    }
+                    mutationStockInicial.mutate(Number(limpio));
                   }}
                   style={{ padding: '20px' }}
                 >
@@ -1478,11 +1626,16 @@ export const BalanceLechePage: React.FC = () => {
                     Litros en Tanques al Iniciar:
                   </label>
                   <input
-                    type="number"
-                    min="0"
-                    step="any"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Ej: 1500 o -1500"
                     value={nuevoStockInicialInput}
-                    onChange={(e) => setNuevoStockInicialInput(Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (/^-?\d*([.,]\d*)?$/.test(val)) {
+                        setNuevoStockInicialInput(val);
+                      }
+                    }}
                     className="form-input"
                     style={{ width: '100%', height: '42px', fontSize: '16px', fontWeight: 800, borderRadius: '8px', marginBottom: '16px' }}
                     required

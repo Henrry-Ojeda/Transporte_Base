@@ -834,35 +834,7 @@ export const ReceptoriaPage: React.FC = () => {
     }
   });
 
-  // Cálculo de totales y balance (Entradas '+' vs Salidas '-')
-  const totalLitrosRuta = useMemo(() => {
-    return rutasHoy.reduce((acc, r) => acc + Number(r.litros || r.Litros || 0), 0);
-  }, [rutasHoy]);
-
-  const esSalidaMovimiento = (e: any) => {
-    const tipo = clasificarEntrega(e).tipo;
-    return tipo === 'SALIDA_RECEPTORIA' || tipo === 'LLEGADA_COMPANIA';
-  };
-
-  const totalEntradasReceptoria = useMemo(() => {
-    return entregasHoy.reduce((acc, e) => {
-      if (esSalidaMovimiento(e)) return acc;
-      return acc + Math.abs(Number(e.litros || e.Litros || 0));
-    }, 0);
-  }, [entregasHoy]);
-
-  const totalSalidasReceptoria = useMemo(() => {
-    return entregasHoy.reduce((acc, e) => {
-      if (!esSalidaMovimiento(e)) return acc;
-      return acc + Math.abs(Number(e.litros || e.Litros || 0));
-    }, 0);
-  }, [entregasHoy]);
-
-  const totalLitrosReceptoria = totalEntradasReceptoria - totalSalidasReceptoria;
-  const diferenciaBalance = totalEntradasReceptoria - totalSalidasReceptoria;
-  const pctMermaGlobal = totalEntradasReceptoria > 0 ? (Math.abs(diferenciaBalance) / totalEntradasReceptoria) * 100 : 0;
-
-  // Clasificador de proceso por entrega
+  // Clasificador de proceso por entrega (declarado antes de los useMemo que lo invocan)
   const clasificarEntrega = (e: any) => {
     const compNom = (e.companiaNombre || '').toUpperCase();
     const obs = (e.observacion || '').toUpperCase();
@@ -945,6 +917,34 @@ export const ReceptoriaPage: React.FC = () => {
       ctrlCompId,
     };
   };
+
+  // Cálculo de totales y balance (Entradas '+' vs Salidas '-')
+  const totalLitrosRuta = useMemo(() => {
+    return rutasHoy.reduce((acc, r) => acc + Number(r.litros || r.Litros || 0), 0);
+  }, [rutasHoy]);
+
+  const esSalidaMovimiento = (e: any) => {
+    const tipo = clasificarEntrega(e).tipo;
+    return tipo === 'SALIDA_RECEPTORIA' || tipo === 'LLEGADA_COMPANIA';
+  };
+
+  const totalEntradasReceptoria = useMemo(() => {
+    return entregasHoy.reduce((acc, e) => {
+      if (esSalidaMovimiento(e)) return acc;
+      return acc + Math.abs(Number(e.litros || e.Litros || 0));
+    }, 0);
+  }, [entregasHoy]);
+
+  const totalSalidasReceptoria = useMemo(() => {
+    return entregasHoy.reduce((acc, e) => {
+      if (!esSalidaMovimiento(e)) return acc;
+      return acc + Math.abs(Number(e.litros || e.Litros || 0));
+    }, 0);
+  }, [entregasHoy]);
+
+  const totalLitrosReceptoria = totalEntradasReceptoria - totalSalidasReceptoria;
+  const diferenciaBalance = totalEntradasReceptoria - totalSalidasReceptoria;
+  const pctMermaGlobal = totalEntradasReceptoria > 0 ? (Math.abs(diferenciaBalance) / totalEntradasReceptoria) * 100 : 0;
 
   // Filtrado y ordenamiento de la tabla
   const entregasFiltradas = useMemo(() => {

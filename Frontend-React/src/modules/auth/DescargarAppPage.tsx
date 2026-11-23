@@ -65,7 +65,7 @@ export const DescargarAppPage: React.FC = () => {
             Transporte Vergel &amp; Carrillo
           </h1>
           <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', opacity: 0.9 }}>
-            App Móvil Oficial Android • v1.0.4 (62 MB)
+            App Móvil Oficial Android • v1.0.5 (62 MB)
           </p>
         </div>
 

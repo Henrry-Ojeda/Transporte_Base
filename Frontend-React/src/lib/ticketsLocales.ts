@@ -9,6 +9,7 @@
 
 const KEY_PENDIENTES = 'movil_tickets_locales_pendientes';
 const KEY_MAPA = 'movil_tickets_locales_map';
+const KEY_ELIMINACIONES = 'movil_tickets_eliminacion_pendiente';
 
 export interface FincaPaqueteLocal {
   fincaId: number;
@@ -188,6 +189,27 @@ export const ticketsLocales = {
   eliminarPorId: (localId: number) => {
     const lista = ticketsLocales.listarPendientes().filter((t) => Number(t.localId) !== Number(localId));
     escribir(KEY_PENDIENTES, lista);
+  },
+
+  /** Cola de tickets del servidor eliminados en modo offline para borrarlos en la Web al volver la señal. */
+  listarEliminacionesPendientes: (): number[] => {
+    const list = leer<number[]>(KEY_ELIMINACIONES, []);
+    return Array.isArray(list) ? list.map(Number).filter((n) => n > 0) : [];
+  },
+
+  encolarEliminacionServidor: (ticketId: number) => {
+    const id = Number(ticketId);
+    if (!id || id <= 0) return;
+    const actual = ticketsLocales.listarEliminacionesPendientes();
+    if (!actual.includes(id)) {
+      escribir(KEY_ELIMINACIONES, [...actual, id]);
+    }
+  },
+
+  quitarEliminacionPendiente: (ticketId: number) => {
+    const id = Number(ticketId);
+    const actual = ticketsLocales.listarEliminacionesPendientes().filter((x) => x !== id);
+    escribir(KEY_ELIMINACIONES, actual);
   },
 
   /** Elimina automáticamente tickets locales pendientes con más de 24 horas de antigüedad. */

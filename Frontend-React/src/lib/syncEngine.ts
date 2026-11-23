@@ -175,6 +175,9 @@ class SyncEngine {
       let ticketsSubidos = 0;
 
       try {
+        // -1. Eliminar en la central los tickets que el usuario borró en modo offline
+        const ticketsEliminados = await this.sincronizarEliminacionesTickets();
+
         // 0. Crear en la central los tickets/turnos iniciados sin conexión (antes que sus cargas)
         ticketsSubidos = await this.sincronizarTicketsLocales();
 
@@ -193,7 +196,7 @@ class SyncEngine {
         // 4. Sincronizar Descargas de Receptoría
         receptoriaSubida = await this.sincronizarReceptoria(empresaCodigo);
 
-        const totalSubidos = recoleccionesSubidas + combustibleSubido + averiasSubidas + receptoriaSubida + despachosSubidos + ticketsSubidos;
+        const totalSubidos = recoleccionesSubidas + combustibleSubido + averiasSubidas + receptoriaSubida + despachosSubidos + ticketsSubidos + ticketsEliminados;
 
         // Descargar catálogos actualizados desde la central (fincas, compañías, rutas)
         await this.refrescarCatalogosOffline(empresaCodigo);
@@ -250,6 +253,37 @@ class SyncEngine {
     })();
 
     return this.activeSyncPromise;
+  }
+
+  /**
+   * Envía al servidor la eliminación de tickets que el chofer/admin borró en modo offline.
+   */
+  async sincronizarEliminacionesTickets(): Promise<number> {
+    const pendientes = ticketsLocales.listarEliminacionesPendientes();
+    if (pendientes.length === 0) return 0;
+
+    let eliminados = 0;
+    for (const idTicket of pendientes) {
+      try {
+        await operacionesApi.eliminarControl(idTicket);
+        ticketsLocales.quitarEliminacionPendiente(idTicket);
+        eliminados++;
+        movilAuditLog.registrar({
+          tipo: 'SYNC_OK',
+          ticketId: idTicket,
+          detalle: `Ticket #${idTicket} eliminado en la central (encolado offline)`,
+        });
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 404 || status === 400) {
+          // Si ya no existe en BD o no es eliminable (ej. ya tiene litros/cerrado), quitar de cola
+          ticketsLocales.quitarEliminacionPendiente(idTicket);
+        } else {
+          console.warn(`[SyncEngine] Reintento pendiente para eliminar Ticket #${idTicket}:`, err?.message);
+        }
+      }
+    }
+    return eliminados;
   }
 
   /**

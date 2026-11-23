@@ -22,11 +22,11 @@ export interface VersionInfo {
 export const VERSION_DATA: VersionInfo = {
   major: 3,
   minor: 93,
-  patch: 1,
-  tag: 'v3.93.1',
+  patch: 3,
+  tag: 'v3.93.3',
   ultimaActualizacion: '2026-11-22',
   tipoUltimoCambio: 'DISEÑO_LOGICA',
-  descripcion: 'App Móvil Admin v3.93.1: Agrega modelo exacto 1:1 de Web y botón Capturar Imagen (html2canvas) en Reporte Diario y Reporte Finca.',
+  descripcion: 'Web v3.93.3: Normaliza fotos Base64 y agrega manejo onError en tabla Recolección para imágenes corruptas/incompletas.',
 };
 
 export const APP_VERSION = VERSION_DATA.tag;

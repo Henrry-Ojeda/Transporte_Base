@@ -2896,8 +2896,19 @@ export const RecoleccionRutasPage: React.FC = () => {
       header: 'COMPROBANTE / FOTO',
       accessorKey: 'fotoComprobante',
       cell: (row) => {
-        const foto = row.fotoComprobante || row.FotoComprobante || row.foto;
-        if (foto && String(foto).trim().length > 5) {
+        const rawFoto = String(row.fotoComprobante || row.FotoComprobante || row.foto || '').trim();
+        const esMarcadorInvalido = !rawFoto || rawFoto.length <= 5 || rawFoto === '[EN_INDEXEDDB]';
+        // Normalizar Base64 sin prefijo si viene puro (ej. /9j/ para JPEG o iVBOR para PNG)
+        const foto = esMarcadorInvalido
+          ? ''
+          : rawFoto.startsWith('data:image/') || rawFoto.startsWith('http://') || rawFoto.startsWith('https://') || rawFoto.startsWith('/')
+          ? rawFoto
+          : rawFoto.startsWith('/9j/')
+          ? `data:image/jpeg;base64,${rawFoto}`
+          : rawFoto.startsWith('iVBOR')
+          ? `data:image/png;base64,${rawFoto}`
+          : '';
+        if (foto) {
           return (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div
@@ -2920,6 +2931,19 @@ export const RecoleccionRutasPage: React.FC = () => {
                   src={foto}
                   alt="Recibo"
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onError={(e) => {
+                    const el = e.currentTarget;
+                    el.style.display = 'none';
+                    const parent = el.parentElement;
+                    if (parent && !parent.querySelector('.foto-err-badge')) {
+                      const span = document.createElement('span');
+                      span.className = 'foto-err-badge';
+                      span.textContent = '!';
+                      span.title = 'Imagen corrupta o incompleta en BD';
+                      span.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fef2f2;color:#dc2626;font-weight:900;font-size:14px;';
+                      parent.appendChild(span);
+                    }
+                  }}
                 />
                 <div
                   style={{

@@ -432,26 +432,33 @@ namespace Transporte.Infrastructure.Repositories
                 StockInicialTanque = stockInicial
             };
 
-            // 2. Consulta de RecolecciÃ³n en Fincas
-            string whereFincas = cId > 0 ? "r.CicloId = @cId" : "r.Fecha >= @fInicio AND r.Fecha <= @fFin";
+            // 2. Consulta de Recolección en Fincas (respetar filtro exacto por fecha en Vista por Día)
+            bool filtrarPorCiclo = cicloId.HasValue && cicloId.Value > 0 || (!fechaInicio.HasValue && !fechaFin.HasValue && cId > 0);
+            string whereFincas = filtrarPorCiclo ? "r.CicloId = @cId" : "CAST(r.Fecha AS DATE) >= CAST(@fInicio AS DATE) AND CAST(r.Fecha AS DATE) <= CAST(@fFin AS DATE)";
             result.TotalRecolectadoFincas = await connection.ExecuteScalarAsync<decimal>(
                 $"SELECT ISNULL(SUM(r.Litros), 0) FROM TB_RUTAS_RECOLECCION r WHERE {whereFincas}",
                 new { cId, fInicio, fFin });
 
-            // 3. Consulta de Merma en Rutas (solo viajes recibidos/finalizados con descarga en receptorÃ­a)
-            string whereRutas = cId > 0 ? "cr.CicloId = @cId" : "cr.Fecha >= @fInicio AND cr.Fecha <= @fFin";
+            // 3. Consulta de Merma en Rutas (estrictamente sobre viajes CONFIRMADOS / FINALIZADOS)
+            string whereRutas = filtrarPorCiclo ? "cr.CicloId = @cId" : "CAST(cr.Fecha AS DATE) >= CAST(@fInicio AS DATE) AND CAST(cr.Fecha AS DATE) <= CAST(@fFin AS DATE)";
             result.TotalMermaRuta = await connection.ExecuteScalarAsync<decimal>(
                 $@"SELECT ISNULL(SUM(
                     CASE 
-                        WHEN cr.ProcesoActualId >= 3 AND ISNULL(cr.TotalLitrosReceptoria, 0) > 0 
-                            THEN cr.TotalLitrosFinca - cr.TotalLitrosReceptoria
+                        WHEN (cr.ProcesoActualId = 4 OR UPPER(ISNULL(cr.Estado, '')) IN ('FINALIZADO', 'CUADRADO', 'CERRADO'))
+                             AND (ISNULL(cr.LitrosRecibidosReceptoria, 0) > 0 OR ISNULL(cr.TotalLitrosReceptoria, 0) > 0 OR ISNULL(cr.LitrosEntregadosCompania, 0) > 0)
+                            THEN cr.TotalLitrosFinca - (
+                                CASE 
+                                    WHEN cr.TipoDestino = 'COMPANIA_DIRECTA' THEN ISNULL(NULLIF(cr.LitrosEntregadosCompania, 0), cr.TotalLitrosFinca)
+                                    ELSE ISNULL(NULLIF(cr.LitrosRecibidosReceptoria, 0), ISNULL(NULLIF(cr.TotalLitrosReceptoria, 0), cr.TotalLitrosFinca))
+                                END
+                            )
                         ELSE 0 
                     END
                 ), 0) FROM TB_CONTROL_RUTAS cr WHERE {whereRutas}",
                 new { cId, fInicio, fFin });
 
             // 4. Consultar todas las entregas/movimientos unificados en el ciclo o periodo
-            string whereEntregas = cId > 0 ? "e.CicloId = @cId" : "e.Fecha >= @fInicio AND e.Fecha <= @fFin";
+            string whereEntregas = filtrarPorCiclo ? "e.CicloId = @cId" : "CAST(e.Fecha AS DATE) >= CAST(@fInicio AS DATE) AND CAST(e.Fecha AS DATE) <= CAST(@fFin AS DATE)";
             var rawEntregasSql = $@"
                 SELECT 
                     e.Id,

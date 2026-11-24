@@ -47,7 +47,6 @@ namespace Transporte.Infrastructure.Repositories
                 SELECT CONVERT(varchar(10), Fecha, 120) AS Fecha, ISNULL(SUM(Litros), 0) AS Litros
                 FROM TB_RUTAS_RECOLECCION
                 WHERE Fecha >= @fechaInicio AND Fecha <= @fechaFin
-                  AND FincaId != 68
                 GROUP BY Fecha
                 ORDER BY Fecha";
 
@@ -96,7 +95,6 @@ namespace Transporte.Infrastructure.Repositories
                 FROM TB_RUTAS_RECOLECCION r
                 LEFT JOIN TB_FINCAS f ON r.FincaId = f.Id
                 WHERE r.Fecha >= @fechaInicio AND r.Fecha <= @fechaFin
-                  AND r.FincaId != 68
                   AND f.TipoServicioId = 2
                 GROUP BY r.Fecha
                 ORDER BY r.Fecha";
@@ -111,7 +109,7 @@ namespace Transporte.Infrastructure.Repositories
                                 SELECT ISNULL(SUM(CASE WHEN ISNULL(ff.TipoServicioId, 1) = 2 THEN rr.Litros ELSE 0 END), 0)
                                 FROM TB_RUTAS_RECOLECCION rr
                                 INNER JOIN TB_FINCAS ff ON rr.FincaId = ff.Id
-                                WHERE rr.ControlRutaId = cc.ControlRutaId AND rr.FincaId != 68
+                                WHERE rr.ControlRutaId = cc.ControlRutaId
                             ) = COALESCE(NULLIF(cc.LitrosRecibidosCompania, 0), cc.LitrosDespachados, 0)
                             THEN 2
                             ELSE c.TipoServicioId
@@ -130,7 +128,7 @@ namespace Transporte.Infrastructure.Repositories
                                 SELECT ISNULL(SUM(CASE WHEN ISNULL(ff.TipoServicioId, 1) = 2 THEN rr.Litros ELSE 0 END), 0)
                                 FROM TB_RUTAS_RECOLECCION rr
                                 INNER JOIN TB_FINCAS ff ON rr.FincaId = ff.Id
-                                WHERE rr.ControlRutaId = e.ControlRutaId AND rr.FincaId != 68
+                                WHERE rr.ControlRutaId = e.ControlRutaId
                             ) = e.Litros
                             THEN 2
                             ELSE c.TipoServicioId
@@ -1165,7 +1163,6 @@ namespace Transporte.Infrastructure.Repositories
                         FROM TB_RUTAS_RECOLECCION r
                         LEFT JOIN TB_USUARIOS u ON r.UsuarioId = u.Id
                         WHERE CAST(r.Fecha AS DATE) >= @fechaInicio AND CAST(r.Fecha AS DATE) <= @fechaFin
-                          AND r.FincaId != 68
                         GROUP BY r.UsuarioId, u.NombreCompleto, u.Username
                     ),
                     EntregasPorChofer AS (
@@ -1210,7 +1207,6 @@ namespace Transporte.Infrastructure.Repositories
                 FROM TB_RUTAS_RECOLECCION r
                 LEFT JOIN TB_FINCAS f ON r.FincaId = f.Id
                 WHERE CAST(r.Fecha AS DATE) >= @fechaInicio AND CAST(r.Fecha AS DATE) <= @fechaFin
-                  AND r.FincaId != 68
                   AND r.Litros > 0
                 ORDER BY r.Fecha DESC, r.Id DESC";
 
@@ -1269,13 +1265,19 @@ namespace Transporte.Infrastructure.Repositories
                     ISNULL((
                         SELECT SUM(r.Litros) 
                         FROM TB_RUTAS_RECOLECCION r 
-                        WHERE r.CicloId = uc.CicloId AND r.FincaId != 68 
+                        WHERE r.CicloId = uc.CicloId
                           AND (@usuarioId IS NULL OR r.UsuarioId = @usuarioId)
                     ), 0) AS Recolectado,
                     ISNULL((
-                        SELECT SUM(CASE WHEN cr.TipoDestino = 'COMPANIA_DIRECTA' THEN ISNULL(cr.LitrosEntregadosCompania, cr.TotalLitrosFinca) ELSE ISNULL(cr.TotalLitrosReceptoria, cr.TotalLitrosFinca) END) 
+                        SELECT SUM(
+                            CASE 
+                                WHEN cr.TipoDestino = 'COMPANIA_DIRECTA' THEN ISNULL(NULLIF(cr.LitrosEntregadosCompania, 0), cr.TotalLitrosFinca)
+                                ELSE ISNULL(NULLIF(cr.LitrosRecibidosReceptoria, 0), ISNULL(NULLIF(cr.TotalLitrosReceptoria, 0), cr.TotalLitrosFinca))
+                            END
+                        ) 
                         FROM TB_CONTROL_RUTAS cr 
-                        WHERE cr.CicloId = uc.CicloId AND cr.ProcesoActualId >= 2
+                        WHERE cr.CicloId = uc.CicloId
+                          AND (cr.ProcesoActualId = 4 OR UPPER(ISNULL(cr.Estado, '')) IN ('FINALIZADO', 'CUADRADO', 'CERRADO'))
                           AND (@usuarioId IS NULL OR cr.UsuarioId = @usuarioId)
                     ), 0) AS Entregado
                 FROM UltimosCiclos uc
@@ -1299,7 +1301,7 @@ namespace Transporte.Infrastructure.Repositories
                     ISNULL((
                         SELECT COUNT(DISTINCT r.FincaId)
                         FROM TB_RUTAS_RECOLECCION r
-                        WHERE r.UsuarioId = u.Id AND r.FincaId != 68
+                        WHERE r.UsuarioId = u.Id
                           AND r.CicloId IN (SELECT CicloId FROM UltimosCiclos)
                     ), 0) AS Fincas
                 FROM TB_CONTROL_RUTAS cr
@@ -1316,8 +1318,7 @@ namespace Transporte.Infrastructure.Repositories
                     SUM(r.Litros) AS LitrosAcidos
                 FROM TB_RUTAS_RECOLECCION r
                 INNER JOIN TB_FINCAS f ON r.FincaId = f.Id
-                WHERE r.EsAcida = 1 
-                  AND r.FincaId != 68
+                WHERE r.EsAcida = 1
                   AND r.CicloId IN (
                       SELECT TOP (@semanas) c.Id 
                       FROM TB_CICLOS_OPERATIVOS c 
@@ -1411,3 +1412,4 @@ namespace Transporte.Infrastructure.Repositories
     // =========================================================================
 
 }
+

@@ -1736,12 +1736,10 @@ namespace Transporte.Infrastructure.Repositories
                       ORDER BY CASE 
                         WHEN EsPrincipal = 1 THEN 0
                         WHEN UPPER(Nombre) LIKE '%RECEPTOR%' THEN 1 
-                        WHEN UPPER(Nombre) LIKE '%CAMPO%VERDE%' THEN 2 
-                        WHEN UPPER(Nombre) LIKE '%VERGEL%' THEN 3 
-                        WHEN UPPER(Nombre) LIKE '%PLANTA%' THEN 4 
-                        ELSE 5 END, Id ASC")
+                        WHEN UPPER(Nombre) LIKE '%PLANTA%' THEN 2 
+                        ELSE 3 END, Id ASC")
                     ?? await connection.ExecuteScalarAsync<int?>("SELECT TOP 1 Id FROM TB_COMPANIAS WHERE Activo = 1 ORDER BY Id ASC")
-                    ?? 5028;
+                    ?? throw new InvalidOperationException("No existe ninguna compañía activa configurada como Receptoría Principal en TB_COMPANIAS.");
 
                 var entregaExistenteId = await connection.ExecuteScalarAsync<int?>(
                     "SELECT TOP 1 Id FROM TB_ENTREGAS_COMPANIA WHERE ControlRutaId = @controlRutaId AND CompaniaId = @compReceptoriaId",
@@ -2849,7 +2847,7 @@ namespace Transporte.Infrastructure.Repositories
 
             // Obtener Entradas y Salidas reales del dÃ­a (Servicio Tipo 1: RUTA)
             var sqlMovimientos = @"
-                -- ENTRADAS A SILOS (CompaniaId = 5028 - ReceptorÃ­a)
+                -- ENTRADAS A SILOS (Compañía Principal / Receptoría)
                 SELECT 
                     e.Id,
                     CONVERT(varchar(10), e.Fecha, 120) AS FechaStr,
@@ -2861,10 +2859,11 @@ namespace Transporte.Infrastructure.Repositories
                     'GENERAL' AS PorTipoLeche,
                     ISNULL(cr.Observacion, 'Descarga Silos') AS Detalle
                 FROM TB_ENTREGAS_COMPANIA e
+                INNER JOIN TB_COMPANIAS c ON e.CompaniaId = c.Id
                 LEFT JOIN TB_USUARIOS u ON e.UsuarioId = u.Id
                 LEFT JOIN TB_CONTROL_RUTAS cr ON e.ControlRutaId = cr.Id
                 WHERE CAST(e.Fecha AS DATE) = @fecha 
-                  AND e.CompaniaId = 5028
+                  AND (ISNULL(c.EsPrincipal, 0) = 1 OR UPPER(c.Nombre) LIKE '%RECEPTORIA%')
 
                 UNION ALL
 
@@ -2883,7 +2882,8 @@ namespace Transporte.Infrastructure.Repositories
                 INNER JOIN TB_COMPANIAS c ON e.CompaniaId = c.Id
                 LEFT JOIN TB_CONTROL_COMPANIAS cc ON e.ControlCompaniaId = cc.Id
                 WHERE CAST(e.Fecha AS DATE) = @fecha 
-                  AND e.CompaniaId != 5028 
+                  AND ISNULL(c.EsPrincipal, 0) = 0
+                  AND UPPER(c.Nombre) NOT LIKE '%RECEPTORIA%'
                   AND e.ControlRutaId IS NULL
 
                 ORDER BY TipoMovimiento DESC, Id ASC";

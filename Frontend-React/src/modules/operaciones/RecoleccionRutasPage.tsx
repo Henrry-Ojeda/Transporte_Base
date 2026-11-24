@@ -1076,7 +1076,7 @@ export const RecoleccionRutasPage: React.FC = () => {
           observacion: f.observacion || '',
         })),
         registrarEntrega: masivoRegistrarEntrega,
-        companiaDestinoId: masivoRegistrarEntrega ? (masivoCompaniaId || (companias[0]?.id || 5028)) : null,
+        companiaDestinoId: masivoRegistrarEntrega ? (masivoCompaniaId || companias.find((c: any) => c.esPrincipal)?.id || companias[0]?.id || null) : null,
         litrosRecibidosPlanta: masivoRegistrarEntrega ? litrosEfectivosRecibidos : null,
         observacionEntrega: masivoComprobantePesaje || '',
         finalizarInmediato: masivoRegistrarEntrega ? masivoFinalizarInmediato : false,

@@ -6,8 +6,9 @@ namespace Transporte.Migrador2026;
 
 internal class Program
 {
-    private static readonly string ConnectionString = 
-        "Data Source=DESKTOP-0F548CM;Initial Catalog=BD_TRANSPORTE;Persist Security Info=True;User ID=sa;Password=1234;TrustServerCertificate=True";
+    private static readonly string ConnectionString =
+        Environment.GetEnvironmentVariable("MIGRADOR_CONNECTION_STRING")
+        ?? throw new InvalidOperationException("Defina la variable de entorno MIGRADOR_CONNECTION_STRING antes de ejecutar el migrador.");
 
     private static async Task Main(string[] args)
     {

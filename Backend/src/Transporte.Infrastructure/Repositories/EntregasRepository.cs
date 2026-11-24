@@ -531,7 +531,7 @@ namespace Transporte.Infrastructure.Repositories
                 string estado = (string?)item.RutaEstado ?? (string?)item.ControlCompaniaEstado ?? "FINALIZADO";
 
                 bool compEsPrincipal = item.CompaniaEsPrincipal != null && Convert.ToBoolean(item.CompaniaEsPrincipal);
-                bool esReceptoria = compEsPrincipal || compId == 5028 || compNombre.IndexOf("RECEPTORIA", StringComparison.OrdinalIgnoreCase) >= 0 || compNombre.IndexOf("RECEPTORÃA", StringComparison.OrdinalIgnoreCase) >= 0 || compNombre.IndexOf("PLANTA PRINCIPAL", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool esReceptoria = compEsPrincipal || compNombre.IndexOf("RECEPTORIA", StringComparison.OrdinalIgnoreCase) >= 0 || compNombre.IndexOf("RECEPTORÃA", StringComparison.OrdinalIgnoreCase) >= 0 || compNombre.IndexOf("PLANTA PRINCIPAL", StringComparison.OrdinalIgnoreCase) >= 0;
 
                 int tipoProceso = 1;
                 string tipoProcesoNombre = "Finca âž” ReceptorÃ­a";
@@ -587,7 +587,7 @@ namespace Transporte.Infrastructure.Repositories
 
                     if (cRutaId.HasValue)
                     {
-                        bool pasoPorReceptoria = entregasRaw.Any(x => (long?)x.ControlRutaId == cRutaId && ((int)x.CompaniaId == 5028 || ((string)x.CompaniaNombre).IndexOf("RECEPTORIA", StringComparison.OrdinalIgnoreCase) >= 0));
+                        bool pasoPorReceptoria = entregasRaw.Any(x => (long?)x.ControlRutaId == cRutaId && ((x.CompaniaEsPrincipal != null && Convert.ToBoolean(x.CompaniaEsPrincipal)) || ((string)x.CompaniaNombre).IndexOf("RECEPTORIA", StringComparison.OrdinalIgnoreCase) >= 0));
 
                         if (pasoPorReceptoria)
                         {
@@ -764,7 +764,7 @@ namespace Transporte.Infrastructure.Repositories
 
             // Obtener Entradas y Salidas reales del dÃ­a (Servicio Tipo 1: RUTA)
             var sqlMovimientos = @"
-                -- ENTRADAS A SILOS (CompaniaId = 5028 - ReceptorÃ­a)
+                -- ENTRADAS A SILOS (Compañía Principal / Receptoría)
                 SELECT 
                     e.Id,
                     CONVERT(varchar(10), e.Fecha, 120) AS FechaStr,
@@ -776,10 +776,11 @@ namespace Transporte.Infrastructure.Repositories
                     'GENERAL' AS PorTipoLeche,
                     ISNULL(cr.Observacion, 'Descarga Silos') AS Detalle
                 FROM TB_ENTREGAS_COMPANIA e
+                INNER JOIN TB_COMPANIAS c ON e.CompaniaId = c.Id
                 LEFT JOIN TB_USUARIOS u ON e.UsuarioId = u.Id
                 LEFT JOIN TB_CONTROL_RUTAS cr ON e.ControlRutaId = cr.Id
                 WHERE CAST(e.Fecha AS DATE) = @fecha 
-                  AND e.CompaniaId = 5028
+                  AND (ISNULL(c.EsPrincipal, 0) = 1 OR UPPER(c.Nombre) LIKE '%RECEPTORIA%')
 
                 UNION ALL
 
@@ -798,7 +799,8 @@ namespace Transporte.Infrastructure.Repositories
                 INNER JOIN TB_COMPANIAS c ON e.CompaniaId = c.Id
                 LEFT JOIN TB_CONTROL_COMPANIAS cc ON e.ControlCompaniaId = cc.Id
                 WHERE CAST(e.Fecha AS DATE) = @fecha 
-                  AND e.CompaniaId != 5028 
+                  AND ISNULL(c.EsPrincipal, 0) = 0
+                  AND UPPER(c.Nombre) NOT LIKE '%RECEPTORIA%'
                   AND e.ControlRutaId IS NULL
 
                 ORDER BY TipoMovimiento DESC, Id ASC";

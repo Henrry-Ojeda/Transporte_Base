@@ -6,6 +6,7 @@ import { catalogosApi } from '@/api/catalogos.api';
 import { esReceptoriaPrincipal } from '@/utils/procesoViaje';
 import { finanzasApi } from '@/api/finanzas.api';
 import { sistemaApi } from '@/api/sistema.api';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -206,22 +207,54 @@ export const DashboardPage: React.FC = () => {
   const entregas = dashboardData?.entregas || [];
   const despachos = dashboardData?.despachos || [];
 
-  // Cálculos de RUTA vs TRANSPORTE
+  // Cálculos de RUTA vs TRANSPORTE (Recolección = todo lo recogido; Confirmaciones/Entregas/Despachos/Mermas = solo CONFIRMADOS)
+  const esServicioTransporteBase = (item: any) => {
+    const val = item?.tipoServicioId ?? item?.TipoServicioId ?? item?.tipoServicio ?? item?.servicio;
+    return val === 2 || String(val) === '2' || String(val || '').toUpperCase().includes('TRANSPORTE');
+  };
+
+  const esTicketRutaConfirmado = (r: any) => {
+    const proc = Number(r?.procesoTicketId ?? r?.ProcesoTicketId ?? r?.procesoActualId ?? 0);
+    const est = String(r?.estadoTicket ?? r?.EstadoTicket ?? r?.estadoViaje ?? r?.EstadoViaje ?? '').toUpperCase().trim();
+    if (proc === 4 || ['FINALIZADO', 'CUADRADO', 'CERRADO'].includes(est)) return true;
+    // Recolección histórica directa sin ticket (ControlRutaId nulo) se considera confirmada
+    if (!r?.controlRutaId && !r?.ControlRutaId) return true;
+    return false;
+  };
+
+  const esDespachoConfirmado = (d: any) => {
+    const est = String(d?.estado ?? d?.Estado ?? '').toUpperCase().trim();
+    return ['FINALIZADO', 'DESPACHO', 'ENTREGADO', 'CUADRADO', 'CERRADO'].includes(est);
+  };
+
+  // Mapa dinámico ControlRutaId -> TipoServicioId dominante (1 = RUTA, 2 = TRANSPORTE)
+  const ticketServicioMap = useMemo(() => {
+    const litrosPorTicket = new Map<number, { ruta: number; transp: number }>();
+    rutas.forEach((r: any) => {
+      const tid = Number(r?.controlRutaId ?? r?.ControlRutaId ?? 0);
+      if (!tid) return;
+      const cur = litrosPorTicket.get(tid) || { ruta: 0, transp: 0 };
+      const lts = Number(r.litros || r.litrosLeche || 0);
+      if (esServicioTransporteBase(r)) cur.transp += lts;
+      else cur.ruta += lts;
+      litrosPorTicket.set(tid, cur);
+    });
+    const res = new Map<number, number>();
+    litrosPorTicket.forEach((v, k) => {
+      res.set(k, v.transp > v.ruta ? 2 : 1);
+    });
+    return res;
+  }, [rutas]);
+
   const metricas = useMemo(() => {
     const bal = dashboardData?.balance;
 
     const esServicioTransporte = (item: any) => {
-      const val = item.tipoServicioId ?? item.TipoServicioId ?? item.tipoServicio ?? item.servicio;
-      const nom = String(item.fincaNombre ?? item.finca ?? item.nombre ?? item.companiaNombre ?? '').toUpperCase();
-      return (
-        val === 2 ||
-        String(val) === '2' ||
-        String(val || '').toUpperCase().includes('TRANSPORTE') ||
-        nom.includes('EL 50') ||
-        nom.includes('CAÑITO') ||
-        nom.includes('TAMARAL') ||
-        nom.includes('COLONA')
-      );
+      const tid = Number(item?.controlRutaId ?? item?.ControlRutaId ?? 0);
+      if (tid > 0 && ticketServicioMap.has(tid)) {
+        return ticketServicioMap.get(tid) === 2;
+      }
+      return esServicioTransporteBase(item);
     };
 
     const companiasCat = dashboardData?.companias || [];
@@ -237,89 +270,157 @@ export const DashboardPage: React.FC = () => {
       return esReceptoriaPrincipal(nom);
     };
 
-    // 1. RECOLECCIÓN EN CAMPO
-    const rutasTipo1 = rutas.filter((r) => !esServicioTransporte(r));
-    const ltsRutaFincas = rutasTipo1.reduce((sum, r) => sum + (r.litros || r.litrosLeche || 0), 0);
+    // 1. RECOLECCIÓN EN CAMPO (TODO lo recogido en fincas, separando confirmados vs pendientes)
+    const rutasTipo1 = rutas.filter((r) => !esServicioTransporteBase(r));
+    const ltsRutaFincas = rutasTipo1.reduce((sum, r) => sum + Number(r.litros || r.litrosLeche || 0), 0);
+    const ltsRutaConfirmadaFincas = rutasTipo1
+      .filter((r) => esTicketRutaConfirmado(r))
+      .reduce((sum, r) => sum + Number(r.litros || r.litrosLeche || 0), 0);
+    const ltsRutaPendienteFincas = Math.max(0, ltsRutaFincas - ltsRutaConfirmadaFincas);
     const fincasRutaCount = new Set(rutasTipo1.map((r) => r.fincaId || r.fincaNombre)).size;
 
-    const rutasTipo2 = rutas.filter((r) => esServicioTransporte(r));
-    const ltsTranspFincas = rutasTipo2.reduce((sum, r) => sum + (r.litros || r.litrosLeche || 0), 0);
+    const rutasTipo2 = rutas.filter((r) => esServicioTransporteBase(r));
+    const ltsTranspFincas = rutasTipo2.reduce((sum, r) => sum + Number(r.litros || r.litrosLeche || 0), 0);
+    const ltsTranspConfirmadaFincas = rutasTipo2
+      .filter((r) => esTicketRutaConfirmado(r))
+      .reduce((sum, r) => sum + Number(r.litros || r.litrosLeche || 0), 0);
+    const ltsTranspPendienteFincas = Math.max(0, ltsTranspFincas - ltsTranspConfirmadaFincas);
     const fincasTranspCount = new Set(rutasTipo2.map((r) => r.fincaId || r.fincaNombre)).size;
 
-    // 2. ENTREGAS FÍSICAS DE CAMIONES
-    // Descargas en silos
-    const descargasSilos = entregas.filter((e) => esReceptoria(e));
-    const ltsTotalEntradasSilos = descargasSilos.reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0);
-    const descargasRutaCount = descargasSilos.length;
+    // 2. ENTREGAS FÍSICAS CONFIRMADAS EN SILOS (RECEPTORÍA PRINCIPAL)
+    const entregasConfirmadas = entregas.filter((e: any) => {
+      const est = String(e?.estadoViaje ?? e?.EstadoViaje ?? '').toUpperCase().trim();
+      if (!est) return true; // Entregas manuales directas sin estado de viaje pendiente
+      return !['EN VIA', 'EN_TRANSITO', 'PENDIENTE', 'ABIERTO', 'EN RUTA', 'EN_RECEPTORIA'].includes(est);
+    });
 
-    // Entregas directas a plantas desde ruta (sin entrar a silos)
-    const entregasDirectas = entregas.filter((e) => !esReceptoria(e) && ((e as any).controlRutaId || (e as any).ControlRutaId));
-    const ltsTranspDirecta = entregasDirectas
-      .filter((e) => esServicioTransporte(e))
-      .reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0); // 3.510 Lts a Colona
-    const ltsRutaDirecta = entregasDirectas
-      .filter((e) => !esServicioTransporte(e))
-      .reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0); // 790 Lts a Pablo Marín
+    const descargasSilos = entregasConfirmadas.filter((e) => esReceptoria(e));
+    const ltsTotalEntradasSilos = descargasSilos.reduce((sum, e) => sum + Number(e.litros || e.litrosEntregados || 0), 0);
+    const descargasRutaCount = descargasSilos.filter((e) => !esServicioTransporte(e)).length;
 
-    // Leche de Colona guardada en Silos de Vergel (custodia) vs Leche Ruta Propia
+    // Separar entradas a silos de RUTA vs TRANSPORTE usando trazabilidad del ticket
     const ltsTranspEnSilos = descargasSilos
       .filter((e) => esServicioTransporte(e))
-      .reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0);
+      .reduce((sum, e) => sum + Number(e.litros || e.litrosEntregados || 0), 0);
     const ltsRutaReceptoria = descargasSilos
       .filter((e) => !esServicioTransporte(e))
-      .reduce((sum, e) => sum + (e.litros || e.litrosEntregados || 0), 0);
+      .reduce((sum, e) => sum + Number(e.litros || e.litrosEntregados || 0), 0);
 
-    // Mermas dinámicas por servicio (0 si no hay viajes o registros)
-    const mermaTranspLitros = ltsTranspFincas > 0 ? Math.max(0, ltsTranspFincas - (ltsTranspDirecta + ltsTranspEnSilos)) : 0;
+    // 3. DESPACHOS CONFIRMADOS A COMPAÑÍAS / QUESERAS (EXCLUYENDO 'EN VIA' Y EVITANDO DOBLE CONTEO)
+    const despachosConfirmadosExternos = despachos.filter((d) => !esReceptoria(d) && esDespachoConfirmado(d));
+    const despachosEnViaCount = despachos.filter((d) => !esReceptoria(d) && !esDespachoConfirmado(d)).length;
 
-    // Despachos a plantas / clientes desde Silos y Directos
-    const despachosTipo1 = despachos.filter((d) => !esServicioTransporte(d) && !esReceptoria(d));
-    const ltsRutaDespachadaDesdeSilos = despachosTipo1.reduce((sum, d) => sum + (d.litrosDespachados || d.litros || 0), 0);
-    const ltsRutaDespachada = ltsRutaDespachadaDesdeSilos + ltsRutaDirecta;
-    const despachosRutaCount = despachosTipo1.length + entregasDirectas.filter((e) => !esServicioTransporte(e)).length;
-    const queserasRutaCount = new Set(despachosTipo1.map((d) => d.companiaId || d.nombreCompania || d.companiaNombre)).size;
+    const controlRutaIdsEnDespachos = new Set<number>(
+      despachosConfirmadosExternos
+        .map((d: any) => Number(d?.controlRutaId ?? d?.ControlRutaId ?? 0))
+        .filter((id) => id > 0)
+    );
 
-    const despachosTipo2 = despachos.filter((d) => esServicioTransporte(d));
-    const ltsTranspDespachadaDesdeTanques = despachosTipo2.reduce((sum, d) => sum + (d.litrosDespachados || d.litros || 0), 0);
-    const ltsTranspTotalEntregadoPlanta = ltsTranspDirecta + ltsTranspDespachadaDesdeTanques; // 11.094 Lts
-    const despachosTranspCount = despachosTipo2.length + entregasDirectas.filter((e) => esServicioTransporte(e)).length;
+    // Entregas directas desde ruta confirmadas que NO estén ya en despachosConfirmadosExternos
+    const entregasDirectasSinDuplicar = entregasConfirmadas.filter((e: any) => {
+      if (esReceptoria(e)) return false;
+      const tid = Number(e?.controlRutaId ?? e?.ControlRutaId ?? 0);
+      if (tid <= 0) return false;
+      return !controlRutaIdsEnDespachos.has(tid);
+    });
+
+    const despachosDirectosConfirmados = despachosConfirmadosExternos.filter(
+      (d: any) => Number(d?.controlRutaId ?? d?.ControlRutaId ?? 0) > 0
+    );
+
+    // Entregas directas confirmadas a planta por servicio (sin duplicar entre tablas)
+    const ltsTranspDirecta =
+      despachosDirectosConfirmados
+        .filter((d) => esServicioTransporte(d))
+        .reduce((sum, d) => sum + Number(d.litrosRecibidosCompania || d.litrosConfirmados || d.litrosDespachados || d.litros || 0), 0) +
+      entregasDirectasSinDuplicar
+        .filter((e) => esServicioTransporte(e))
+        .reduce((sum, e) => sum + Number(e.litros || e.litrosEntregados || 0), 0);
+
+    const ltsRutaDirecta =
+      despachosDirectosConfirmados
+        .filter((d) => !esServicioTransporte(d))
+        .reduce((sum, d) => sum + Number(d.litrosRecibidosCompania || d.litrosConfirmados || d.litrosDespachados || d.litros || 0), 0) +
+      entregasDirectasSinDuplicar
+        .filter((e) => !esServicioTransporte(e))
+        .reduce((sum, e) => sum + Number(e.litros || e.litrosEntregados || 0), 0);
+
+    const plantasTranspCount =
+      despachosDirectosConfirmados.filter((d) => esServicioTransporte(d)).length +
+      entregasDirectasSinDuplicar.filter((e) => esServicioTransporte(e)).length;
+
+    // Despachos confirmados totales por servicio (sin doble conteo)
+    const despachosTipo1 = despachosConfirmadosExternos.filter((d) => !esServicioTransporte(d));
+    const ltsRutaDespachada =
+      despachosTipo1.reduce((sum, d) => sum + Number(d.litrosRecibidosCompania || d.litrosConfirmados || d.litrosDespachados || d.litros || 0), 0) +
+      entregasDirectasSinDuplicar
+        .filter((e) => !esServicioTransporte(e))
+        .reduce((sum, e) => sum + Number(e.litros || e.litrosEntregados || 0), 0);
+    const despachosRutaCount = despachosTipo1.length + entregasDirectasSinDuplicar.filter((e) => !esServicioTransporte(e)).length;
+    const queserasRutaCount = new Set([
+      ...despachosTipo1.map((d) => d.companiaId || d.nombreCompania || d.companiaNombre),
+      ...entregasDirectasSinDuplicar.filter((e) => !esServicioTransporte(e)).map((e: any) => e.companiaId || e.companiaNombre),
+    ]).size;
+
+    const despachosTipo2 = despachosConfirmadosExternos.filter((d) => esServicioTransporte(d));
+    const ltsTranspTotalEntregadoPlanta =
+      despachosTipo2.reduce((sum, d) => sum + Number(d.litrosRecibidosCompania || d.litrosConfirmados || d.litrosDespachados || d.litros || 0), 0) +
+      entregasDirectasSinDuplicar
+        .filter((e) => esServicioTransporte(e))
+        .reduce((sum, e) => sum + Number(e.litros || e.litrosEntregados || 0), 0);
+    const despachosTranspCount = despachosTipo2.length + entregasDirectasSinDuplicar.filter((e) => esServicioTransporte(e)).length;
     const ltsTranspDespachada = ltsTranspTotalEntregadoPlanta;
 
-    // Mermas por servicio
-    const mermaTranspPct = ltsTranspFincas > 0 ? (mermaTranspLitros / ltsTranspFincas) * 100 : 0;
+    // 4. MERMAS Y SOBRANTES (ESTRICTAMENTE SOBRE TICKETS CONFIRMADOS)
+    const diffRutaLitros =
+      ltsRutaConfirmadaFincas > 0 ? ltsRutaReceptoria + ltsRutaDirecta - ltsRutaConfirmadaFincas : 0;
+    const esSobranteRuta = diffRutaLitros > 0;
+    const mermaRutaLitros = Math.abs(diffRutaLitros);
+    const mermaRutaPct = ltsRutaConfirmadaFincas > 0 ? (mermaRutaLitros / ltsRutaConfirmadaFincas) * 100 : 0;
 
-    const totalMermaGlobal = Number(bal?.totalMermaRuta ?? 0);
-    const mermaRutaLitros = totalMermaGlobal > 0 
-      ? Math.max(0, totalMermaGlobal - mermaTranspLitros) 
-      : (ltsRutaFincas > 0 ? Math.max(0, ltsRutaFincas - (ltsRutaDirecta + ltsRutaReceptoria)) : 0);
-    const mermaRutaPct = ltsRutaFincas > 0 ? (mermaRutaLitros / ltsRutaFincas) * 100 : 0;
-    const diffRutaLitros = -mermaRutaLitros;
-    const esSobranteRuta = false;
+    const diffTranspLitros =
+      ltsTranspConfirmadaFincas > 0 ? ltsTranspDirecta + ltsTranspEnSilos - ltsTranspConfirmadaFincas : 0;
+    const esSobranteTransp = diffTranspLitros > 0;
+    const mermaTranspLitros = Math.abs(diffTranspLitros);
+    const mermaTranspPct = ltsTranspConfirmadaFincas > 0 ? (mermaTranspLitros / ltsTranspConfirmadaFincas) * 100 : 0;
 
-    // Stock real en silos (0 si no hay balance)
+    // Stock real en silos desde Balance Volumétrico (ya corregido para respetar Día vs Semana)
     const stockActualSilos = Number(bal?.stockActualTanque ?? 0);
     const ltsRutaEnTanque = stockActualSilos;
 
-    // CONSOLIDADO GENERAL (RUTA + TRANSPORTE)
+    // 5. CONSOLIDADO GENERAL (RUTA + TRANSPORTE)
     const ltsTotalLitrosGlobal = ltsRutaFincas + ltsTranspFincas;
+    const ltsTotalConfirmadoGlobal = ltsRutaConfirmadaFincas + ltsTranspConfirmadaFincas;
+    const ltsTotalPendienteGlobal = ltsRutaPendienteFincas + ltsTranspPendienteFincas;
     const totalFincasGlobal = fincasRutaCount + fincasTranspCount;
     const ltsTotalReceptoriaGlobal = ltsTotalEntradasSilos;
-    const totalPlantasGlobal = descargasRutaCount;
-    const ltsTotalDespachado = bal?.totalComercializadoCompanias ?? (ltsRutaDespachada + ltsTranspDespachadaDesdeTanques);
+    const totalPlantasGlobal = descargasSilos.length;
+    const ltsTotalDespachado = ltsRutaDespachada + ltsTranspDespachada;
     const totalDespachosGlobalCount = despachosRutaCount + despachosTranspCount;
     const ltsTotalEnTanqueGlobal = stockActualSilos;
 
-    const mermaGlobalLitros = totalMermaGlobal;
-    const mermaGlobalPct = ltsTotalLitrosGlobal > 0 ? (mermaGlobalLitros / ltsTotalLitrosGlobal) * 100 : 0;
-    const esSobranteGlobal = false;
-    const diffGlobalLitros = -mermaGlobalLitros;
+    const diffGlobalLitros = diffRutaLitros + diffTranspLitros;
+    const esSobranteGlobal = diffGlobalLitros > 0;
+    const mermaGlobalLitros = Math.abs(diffGlobalLitros);
+    const mermaGlobalPct = ltsTotalConfirmadoGlobal > 0 ? (mermaGlobalLitros / ltsTotalConfirmadoGlobal) * 100 : 0;
 
-    const totalRecibidoQueseras = despachosTipo1.reduce((sum, d) => sum + (d.litrosRecibidosCompania || d.litrosConfirmados || d.litrosDespachados || d.litros || 0), 0);
-    const variacionQueseras = totalRecibidoQueseras - ltsRutaDespachada;
-    const variacionPct = ltsRutaDespachada > 0 ? (Math.abs(variacionQueseras) / ltsRutaDespachada) * 100 : 0;
+    // 6. VARIACIÓN EN QUESERAS (Comparando exactamente Despachado vs Recibido sobre los MISMOS despachos confirmados)
+    const totalDespachadoQueserasConfirmado = despachosConfirmadosExternos.reduce(
+      (sum, d) => sum + Number(d.litrosDespachados || d.litros || 0),
+      0
+    );
+    const totalRecibidoQueseras = despachosConfirmadosExternos.reduce(
+      (sum, d) => sum + Number(d.litrosRecibidosCompania || d.litrosConfirmados || d.litrosDespachados || d.litros || 0),
+      0
+    );
+    const variacionQueseras = totalRecibidoQueseras - totalDespachadoQueserasConfirmado;
+    const variacionPct =
+      totalDespachadoQueserasConfirmado > 0 ? (Math.abs(variacionQueseras) / totalDespachadoQueserasConfirmado) * 100 : 0;
 
     return {
       ltsRutaFincas,
+      ltsRutaConfirmadaFincas,
+      ltsRutaPendienteFincas,
       fincasRutaCount,
       ltsRutaReceptoria,
       ltsRutaDirecta,
@@ -334,49 +435,64 @@ export const DashboardPage: React.FC = () => {
       ltsRutaEnTanque,
 
       ltsTranspFincas,
+      ltsTranspConfirmadaFincas,
+      ltsTranspPendienteFincas,
       fincasTranspCount,
       ltsTranspReceptoria: ltsTranspDirecta,
       ltsTranspDirecta,
       ltsTranspEnSilos,
       ltsTranspTotalEntregadoPlanta,
-      plantasTranspCount: entregasDirectas.filter((e) => esServicioTransporte(e)).length,
+      plantasTranspCount,
       ltsTranspDespachada,
       despachosTranspCount,
-      diffTranspLitros: mermaTranspLitros,
+      diffTranspLitros,
+      esSobranteTransp,
       mermaTranspLitros,
       mermaTranspPct,
       ltsTranspEnTanque: ltsTranspEnSilos,
 
       ltsTotalLitrosGlobal,
+      ltsTotalConfirmadoGlobal,
+      ltsTotalPendienteGlobal,
       totalFincasGlobal,
       ltsTotalReceptoriaGlobal,
       ltsTotalDirectaGlobal: ltsRutaDirecta + ltsTranspDirecta,
       totalPlantasGlobal,
       ltsTotalDespachado,
       totalDespachosGlobalCount,
+      despachosEnViaCount,
       ltsTotalEnTanqueGlobal,
       diffGlobalLitros,
       mermaGlobalLitros,
       mermaGlobalPct,
       esSobranteGlobal,
 
+      totalDespachadoQueserasConfirmado,
       totalRecibidoQueseras,
       variacionQueseras,
       variacionPct,
-      despachosExternosCount: despachos.filter((d) => !esReceptoria(d)).length,
-      queserasExternasCount: new Set(despachos.filter((d) => !esReceptoria(d)).map((d) => d.companiaId || d.nombreCompania || d.companiaNombre)).size,
+      despachosExternosCount: despachosConfirmadosExternos.length,
+      queserasExternasCount: new Set(
+        despachosConfirmadosExternos.map((d) => d.companiaId || d.nombreCompania || d.companiaNombre)
+      ).size,
     };
-  }, [rutas, entregas, despachos, dashboardData?.balance]);
+  }, [rutas, entregas, despachos, dashboardData?.balance, dashboardData?.companias, ticketServicioMap]);
 
-  // Datos para Gráficos
-  // 1. Desempeño por Conductor (Sincronizado con el día o semana seleccionada)
+  // Datos para Gráficos (100% sincronizados con filtroServicio + solo confirmados en destinos)
+  const rutasFiltradasServicio = useMemo(() => {
+    if (filtroServicio === 'ruta') return rutas.filter((r) => !esServicioTransporteBase(r));
+    if (filtroServicio === 'transporte') return rutas.filter((r) => esServicioTransporteBase(r));
+    return rutas;
+  }, [rutas, filtroServicio]);
+
+  // 1. Desempeño por Conductor (Sincronizado con el día/semana y servicio seleccionado)
   const conductoresData = useMemo(() => {
-    const map = new Map<string, { litros: number; viajes: number }>();
-    rutas.forEach((r) => {
-      const chofer = r.conductorNombre || (r as any).nombreConductor || `Chofer #${r.conductorId || 'N/A'}`;
-      const entry = map.get(chofer) || { litros: 0, viajes: 0 };
-      entry.litros += r.litros || r.litrosLeche || 0;
-      entry.viajes += 1;
+    const map = new Map<string, { litros: number; viajes: Set<number> }>();
+    rutasFiltradasServicio.forEach((r: any) => {
+      const chofer = r.conductorNombre || r.nombreConductor || `Chofer #${r.conductorId || 'N/A'}`;
+      const entry = map.get(chofer) || { litros: 0, viajes: new Set<number>() };
+      entry.litros += Number(r.litros || r.litrosLeche || 0);
+      if (r.controlRutaId || r.ControlRutaId) entry.viajes.add(Number(r.controlRutaId || r.ControlRutaId));
       map.set(chofer, entry);
     });
 
@@ -394,7 +510,7 @@ export const DashboardPage: React.FC = () => {
         },
       ],
     };
-  }, [rutas]);
+  }, [rutasFiltradasServicio]);
 
   // 2. Distribución Global por Servicio
   const serviciosData = useMemo(() => {
@@ -412,7 +528,7 @@ export const DashboardPage: React.FC = () => {
     };
   }, [metricas]);
 
-  // 3. Destino Logístico (Excluye Receptoría Principal / Planta Matriz, sincronizado con el período)
+  // 3. Destino Logístico (Solo CONFIRMADOS, excluye Receptoría Principal, respeta filtroServicio, cero doble conteo)
   const companiasData = useMemo(() => {
     const companiasCat = dashboardData?.companias || [];
     const esCompaniaReceptoria = (d: any) => {
@@ -425,12 +541,21 @@ export const DashboardPage: React.FC = () => {
       return compCat ? esReceptoriaPrincipal(compCat) : false;
     };
 
+    const pasaFiltroServicio = (d: any) => {
+      const tid = Number(d?.controlRutaId ?? d?.ControlRutaId ?? 0);
+      const esTransp = tid > 0 && ticketServicioMap.has(tid) ? ticketServicioMap.get(tid) === 2 : esServicioTransporteBase(d);
+      if (filtroServicio === 'ruta') return !esTransp;
+      if (filtroServicio === 'transporte') return esTransp;
+      return true;
+    };
+
     const map = new Map<string, number>();
     despachos
-      .filter((d) => !esCompaniaReceptoria(d))
+      .filter((d) => !esCompaniaReceptoria(d) && esDespachoConfirmado(d) && pasaFiltroServicio(d))
       .forEach((d) => {
         const comp = d.companiaNombre || (d as any).nombreCompania || `Planta #${d.companiaId || '1'}`;
-        map.set(comp, (map.get(comp) || 0) + (d.litrosDespachados || 0));
+        const ltsConf = Number(d.litrosRecibidosCompania || d.litrosConfirmados || d.litrosDespachados || d.litros || 0);
+        map.set(comp, (map.get(comp) || 0) + ltsConf);
       });
     const sorted = Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
     const labels = sorted.map(([k]) => k);
@@ -445,16 +570,16 @@ export const DashboardPage: React.FC = () => {
         },
       ],
     };
-  }, [despachos, dashboardData?.companias]);
+  }, [despachos, dashboardData?.companias, filtroServicio, ticketServicioMap]);
 
-  // 4. Leche Ácida por Finca (Sincronizado con el día o semana seleccionada)
+  // 4. Leche Ácida por Finca (Sincronizado con el día/semana y servicio seleccionado)
   const acidaData = useMemo(() => {
     const map = new Map<string, number>();
-    rutas
+    rutasFiltradasServicio
       .filter((r) => r.esAcida)
       .forEach((r) => {
         const finca = r.fincaNombre || `Finca #${r.fincaId || 'N/A'}`;
-        map.set(finca, (map.get(finca) || 0) + (r.litros || r.litrosLeche || 0));
+        map.set(finca, (map.get(finca) || 0) + Number(r.litros || r.litrosLeche || 0));
       });
     const sorted = Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6);
     const labels = sorted.map(([k]) => k);
@@ -470,7 +595,7 @@ export const DashboardPage: React.FC = () => {
         },
       ],
     };
-  }, [rutas]);
+  }, [rutasFiltradasServicio]);
 
   // 5. Histórico Semanas (Tendencia Operativa Real 1:1 desde Backend)
   const tendenciaSemanasData = useMemo(() => {
@@ -630,28 +755,25 @@ export const DashboardPage: React.FC = () => {
             </div>
           ) : (
             <div id="contenedorFiltroSemana" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <select
-                id="selectSemanaDashboard"
-                className="form-input"
-                style={{ height: '38px', fontSize: '13px', minWidth: '340px', fontWeight: 600 }}
-                value={cicloSeleccionado || ''}
-                onChange={(e) => setCicloSeleccionado(e.target.value ? Number(e.target.value) : undefined)}
-              >
-                <option value="">-- Seleccionar Semana Operativa --</option>
-                {ciclosOrdenados.map((c: any) => {
-                  const esActiva = String(c.estado || (c as any).Estado || '').toUpperCase() === 'ABIERTO';
-                  const semNum = c.numeroSemana || (c as any).NumeroSemana || '';
-                  const anio = c.año || (c as any).Anio || (c.fechaInicio ? new Date(c.fechaInicio).getFullYear() : '');
-                  const rangoFechas = c.fechaInicio && c.fechaFin
-                    ? `${formatearFechaCorta(c.fechaInicio)} al ${formatearFechaCorta(c.fechaFin)}`
-                    : '';
-                  return (
-                    <option key={c.id} value={c.id}>
-                      Semana #{semNum} ({anio}){rangoFechas ? ` • ${rangoFechas}` : ''} {esActiva ? '★ [ACTIVA]' : ''}
-                    </option>
-                  );
-                })}
-              </select>
+              <div style={{ minWidth: '340px' }}>
+                <SearchableSelect
+                  value={cicloSeleccionado ? String(cicloSeleccionado) : ''}
+                  onChange={(val) => setCicloSeleccionado(val ? Number(val) : undefined)}
+                  placeholder="-- Seleccionar Semana Operativa --"
+                  options={ciclosOrdenados.map((c: any) => {
+                    const esActiva = String(c.estado || c.Estado || '').toUpperCase() === 'ABIERTO';
+                    const semNum = c.numeroSemana || c.NumeroSemana || c.codigo || c.id;
+                    const anio = c.año || c.Anio || (c.fechaInicio ? new Date(c.fechaInicio).getFullYear() : '');
+                    const rangoFechas = c.fechaInicio && c.fechaFin
+                      ? `${formatearFechaCorta(c.fechaInicio)} al ${formatearFechaCorta(c.fechaFin)}`
+                      : '';
+                    return {
+                      value: String(c.id),
+                      label: `Semana #${semNum} (${anio})${rangoFechas ? ` • ${rangoFechas}` : ''} ${esActiva ? '★ [ACTIVA]' : ''}`,
+                    };
+                  })}
+                />
+              </div>
               <button
                 type="button"
                 className="btn btn-outline"
@@ -712,6 +834,11 @@ export const DashboardPage: React.FC = () => {
                 </div>
                 <span className="kpi-foot" id="kpiRutaFincasCount">
                   {metricas.fincasRutaCount} Fincas recolectadas
+                  {metricas.ltsRutaPendienteFincas > 0 && (
+                    <span style={{ display: 'block', color: '#d97706', fontWeight: 700, fontSize: '11px' }}>
+                      Pend. confirmar: {metricas.ltsRutaPendienteFincas.toLocaleString()} Lts
+                    </span>
+                  )}
                 </span>
               </div>
             </div>
@@ -808,8 +935,8 @@ export const DashboardPage: React.FC = () => {
           >
             <span>
               <i className="fa-solid fa-scale-balanced" style={{ color: metricas.esSobranteRuta ? '#10b981' : '#3b82f6', marginRight: '6px' }}></i>
-              <strong>Cuadre de Balance RUTA:</strong> Recolectado en Fincas: {metricas.ltsRutaFincas.toLocaleString()} Lts |{' '}
-              Entregado en Silos: {metricas.ltsRutaReceptoria.toLocaleString()} Lts | Variación:{' '}
+              <strong>Cuadre de Balance RUTA (Confirmados):</strong> Recolectado Confirmado: {metricas.ltsRutaConfirmadaFincas.toLocaleString()} Lts |{' '}
+              Entregado (Silos + Directa): {(metricas.ltsRutaReceptoria + metricas.ltsRutaDirecta).toLocaleString()} Lts | Variación:{' '}
               {metricas.diffRutaLitros > 0 ? '+' : ''}{metricas.diffRutaLitros.toLocaleString()} Lts
             </span>
             <span
@@ -921,27 +1048,33 @@ export const DashboardPage: React.FC = () => {
                 <i className="fa-solid fa-truck-arrow-right"></i>
               </div>
               <div className="kpi-content">
-                <span className="kpi-title">Recibido en Colona</span>
+                <span className="kpi-title">Entregado Planta (Transp.)</span>
                 <div className="kpi-value">
                   {metricas.ltsTranspDespachada.toLocaleString()} <small>Lts</small>
                 </div>
                 <span className="kpi-foot">
-                  {metricas.despachosTranspCount} Entregas (inc. préstamo)
+                  {metricas.despachosTranspCount} Entrega{metricas.despachosTranspCount === 1 ? '' : 's'} confirmada{metricas.despachosTranspCount === 1 ? '' : 's'}
                 </span>
               </div>
             </div>
 
-            {/* 5. Merma Transporte */}
+            {/* 5. Merma / Sobrante Transporte */}
             <div className="kpi-card glass-amber" id="cardMermaTransporte">
               <div className="kpi-icon-wrap">
                 <i className="fa-solid fa-scale-balanced"></i>
               </div>
               <div className="kpi-content">
-                <span className="kpi-title">Merma TRANSPORTE</span>
-                <div className="kpi-value" id="kpiTranspMermaLitros" style={{ color: '#ea580c' }}>
-                  {metricas.mermaTranspLitros.toLocaleString()} <small>Lts</small>
+                <span className="kpi-title">{metricas.esSobranteTransp ? 'Sobrante TRANSPORTE' : 'Merma TRANSPORTE'}</span>
+                <div className="kpi-value" id="kpiTranspMermaLitros" style={{ color: metricas.esSobranteTransp ? '#16a34a' : '#ea580c' }}>
+                  {metricas.diffTranspLitros > 0 ? '+' : metricas.diffTranspLitros < 0 ? '-' : ''}{metricas.mermaTranspLitros.toLocaleString()} <small>Lts</small>
                 </div>
-                <span className="kpi-foot" id="kpiTranspMermaPct">{metricas.mermaTranspPct.toFixed(2)}% Merma Ruta</span>
+                <span className="kpi-foot" id="kpiTranspMermaPct">
+                  {metricas.diffTranspLitros === 0
+                    ? '0.00% Merma (Cuadrado)'
+                    : metricas.esSobranteTransp
+                    ? `+${metricas.mermaTranspPct.toFixed(2)}% Sobrante`
+                    : `-${metricas.mermaTranspPct.toFixed(2)}% Merma Ruta`}
+                </span>
               </div>
             </div>
           </div>
@@ -966,20 +1099,24 @@ export const DashboardPage: React.FC = () => {
           >
             <span>
               <i className="fa-solid fa-scale-balanced" style={{ color: '#8b5cf6', marginRight: '6px' }}></i>
-              <strong>Cuadre Transporte:</strong> Recolectado en Fincas: {metricas.ltsTranspFincas.toLocaleString()} Lts |{' '}
-              Entregado en Ruta: {(metricas.ltsTranspDirecta + metricas.ltsTranspEnSilos).toLocaleString()} Lts (Directa: {metricas.ltsTranspDirecta.toLocaleString()} Lts + En Silos: {metricas.ltsTranspEnSilos.toLocaleString()} Lts) | Merma:{' '}
-              {metricas.mermaTranspLitros.toLocaleString()} Lts
+              <strong>Cuadre Transporte (Confirmados):</strong> Recolectado Confirmado: {metricas.ltsTranspConfirmadaFincas.toLocaleString()} Lts |{' '}
+              Entregado: {(metricas.ltsTranspDirecta + metricas.ltsTranspEnSilos).toLocaleString()} Lts (Directa: {metricas.ltsTranspDirecta.toLocaleString()} Lts + En Silos: {metricas.ltsTranspEnSilos.toLocaleString()} Lts) | Variación:{' '}
+              {metricas.diffTranspLitros > 0 ? '+' : ''}{metricas.diffTranspLitros.toLocaleString()} Lts
             </span>
             <span
               className="badge"
               style={{
-                background: '#10b981',
+                background: metricas.mermaTranspPct <= 0.5 ? '#10b981' : metricas.esSobranteTransp ? '#059669' : '#f59e0b',
                 color: 'white',
                 fontWeight: 800,
                 fontSize: '11px',
               }}
             >
-              100% Cuadrado
+              {metricas.mermaTranspPct <= 0.5
+                ? '100% Cuadrado'
+                : metricas.esSobranteTransp
+                ? `+${metricas.mermaTranspPct.toFixed(1)}% Sobrante`
+                : `${metricas.mermaTranspPct.toFixed(1)}% Desviación`}
             </span>
           </div>
         </div>
@@ -1071,18 +1208,22 @@ export const DashboardPage: React.FC = () => {
               </div>
             </div>
 
-            {/* 5. Merma Total Global */}
+            {/* 5. Merma / Sobrante Global */}
             <div className="kpi-card glass-amber" id="cardMermaGlobal">
               <div className="kpi-icon-wrap">
                 <i className="fa-solid fa-scale-balanced"></i>
               </div>
               <div className="kpi-content">
-                <span className="kpi-title">Merma Consolidada</span>
-                <div className="kpi-value" style={{ color: '#ea580c' }}>
-                  {metricas.mermaGlobalLitros > 0 ? `-${metricas.mermaGlobalLitros.toLocaleString()}` : Math.abs(metricas.mermaGlobalLitros).toLocaleString()} <small>Lts</small>
+                <span className="kpi-title">{metricas.esSobranteGlobal ? 'Sobrante Consolidado' : 'Merma Consolidada'}</span>
+                <div className="kpi-value" style={{ color: metricas.esSobranteGlobal ? '#16a34a' : '#ea580c' }}>
+                  {metricas.diffGlobalLitros > 0 ? '+' : metricas.diffGlobalLitros < 0 ? '-' : ''}{metricas.mermaGlobalLitros.toLocaleString()} <small>Lts</small>
                 </div>
                 <span className="kpi-foot">
-                  {Math.abs(metricas.mermaGlobalPct).toFixed(2)}% Merma Global Choferes
+                  {metricas.diffGlobalLitros === 0
+                    ? '0.00% Cuadrado (Confirmados)'
+                    : metricas.esSobranteGlobal
+                    ? `+${metricas.mermaGlobalPct.toFixed(2)}% Sobrante Global`
+                    : `-${metricas.mermaGlobalPct.toFixed(2)}% Merma Global Confirmada`}
                 </span>
               </div>
             </div>
@@ -1108,18 +1249,23 @@ export const DashboardPage: React.FC = () => {
           >
             <span>
               <i className="fa-solid fa-scale-balanced" style={{ color: '#059669', marginRight: '6px' }}></i>
-              <strong>Balance Operativo Global:</strong> Total Recolectado: {metricas.ltsTotalLitrosGlobal.toLocaleString()} Lts | Entregas Campo (Silos + Directas): {(metricas.ltsTotalReceptoriaGlobal + metricas.ltsTotalDirectaGlobal).toLocaleString()} Lts | Merma Choferes: {metricas.mermaGlobalLitros.toLocaleString()} Lts
+              <strong>Balance Operativo Global (Confirmados):</strong> Recolectado Confirmado: {metricas.ltsTotalConfirmadoGlobal.toLocaleString()} Lts
+              {metricas.ltsTotalPendienteGlobal > 0 ? ` (Pend. confirmar: ${metricas.ltsTotalPendienteGlobal.toLocaleString()} Lts)` : ''} | Entregas (Silos + Directas): {(metricas.ltsTotalReceptoriaGlobal + metricas.ltsTotalDirectaGlobal).toLocaleString()} Lts | Variación: {metricas.diffGlobalLitros > 0 ? '+' : ''}{metricas.diffGlobalLitros.toLocaleString()} Lts
             </span>
             <span
               className="badge"
               style={{
-                background: '#059669',
+                background: metricas.mermaGlobalPct <= 0.5 ? '#059669' : metricas.esSobranteGlobal ? '#059669' : '#f59e0b',
                 color: 'white',
                 fontWeight: 800,
                 fontSize: '11px',
               }}
             >
-              100% Conciliado
+              {metricas.mermaGlobalPct <= 0.5
+                ? '100% Conciliado'
+                : metricas.esSobranteGlobal
+                ? `+${metricas.mermaGlobalPct.toFixed(1)}% Sobrante`
+                : `${metricas.mermaGlobalPct.toFixed(1)}% Desviación`}
             </span>
           </div>
         </div>

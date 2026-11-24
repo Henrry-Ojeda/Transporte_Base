@@ -169,6 +169,8 @@ namespace Transporte.Core.DTOs
         public bool PuedeModificar { get; set; }
         public string? Observacion { get; set; }
         public long? ControlRutaId { get; set; }
+        public string? EstadoTicket { get; set; }
+        public int? ProcesoTicketId { get; set; }
         public int? CicloId { get; set; }
         public int? CicloLiquidacionId { get; set; }
         public bool EsDiferido { get; set; }

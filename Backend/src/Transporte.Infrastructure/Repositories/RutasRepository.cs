@@ -78,6 +78,8 @@ namespace Transporte.Infrastructure.Repositories
                     r.FotoComprobante AS FotoComprobante,
                     r.FotosEvidenciaJson AS FotosEvidenciaJson,
                     r.ControlRutaId AS ControlRutaId,
+                    cr.Estado AS EstadoTicket,
+                    cr.ProcesoActualId AS ProcesoTicketId,
                     r.CicloId AS CicloId,
                     r.CicloLiquidacionId AS CicloLiquidacionId,
                     ISNULL(r.EsDiferido, 0) AS EsDiferido,

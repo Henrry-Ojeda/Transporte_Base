@@ -108,6 +108,25 @@ export const LoginPage: React.FC = () => {
         empresaNombre: response.empresaNombre,
       });
 
+      // Si el usuario es CHOFER (o entra desde terminal móvil), sincronizar movil_device_info
+      // para evitar que /movil vuelva a pedir credenciales al redirigir desde /login
+      if ((response.rol || '').toUpperCase() === 'CHOFER') {
+        const dispData = {
+          token: response.token,
+          empresaCodigo: response.empresaCodigo,
+          empresaNombre: response.empresaNombre || empresaNombre,
+          id: response.id,
+          username: response.username,
+          nombreCompleto: response.nombreCompleto,
+          rol: response.rol,
+          permisos: Array.isArray(response.permisos) ? response.permisos : [],
+          camionId: (response as any).camionId,
+          placaCamion: (response as any).placaCamion,
+          modulosHabilitados: response.modulosHabilitados || [],
+        };
+        localStorage.setItem('movil_device_info', JSON.stringify(dispData));
+      }
+
       // Redirigir a la ruta original o al dashboard
       const from = (location.state as any)?.from?.pathname || '/';
       navigate(from, { replace: true });

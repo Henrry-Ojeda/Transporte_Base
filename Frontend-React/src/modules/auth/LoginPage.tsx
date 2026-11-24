@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { authApi } from '@/api/auth.api';
 import { isTokenExpired, AUTH_TOKEN_KEY } from '@/api/client';
+import { updateAppIcon } from '@/utils/pwaIcons';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -47,6 +48,7 @@ export const LoginPage: React.FC = () => {
       .then((info) => {
         if (mounted && info?.nombre) {
           setEmpresaNombre(info.nombre);
+          updateAppIcon(info.logoUrl, info.nombre);
         }
       })
       .catch(() => {

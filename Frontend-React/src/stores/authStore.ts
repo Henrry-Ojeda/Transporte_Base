@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { AuthUser, PermisoAccion } from '@/types';
 import { AUTH_TOKEN_KEY, setSessionExpiredHandler } from '@/api/client';
 import { authApi } from '@/api/auth.api';
+import { updateAppIcon } from '@/utils/pwaIcons';
 
 interface AuthState {
   token: string | null;
@@ -139,6 +140,9 @@ export const useAuthStore = create<AuthState>()(
       syncModulosTenant: async () => {
         try {
           const res = await authApi.getTenantInfo();
+          if (res) {
+            updateAppIcon(res.logoUrl, res.nombre || res.codigo || 'Sistema de Transporte');
+          }
           if (res && Array.isArray(res.modulos)) {
             const currentMods = get().user?.modulosHabilitados || [];
             const newMods = res.modulos.map((m) => m.toUpperCase());

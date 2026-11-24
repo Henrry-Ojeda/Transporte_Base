@@ -276,24 +276,21 @@ export const HistorialBcvPage: React.FC = () => {
         <div
           className="kpi-card"
           style={{
-            background: 'linear-gradient(135deg, #1e293b, #0f172a)',
-            border: '1.5px solid #334155',
             borderRadius: '12px',
             padding: '16px 20px',
-            color: '#fff',
-            boxShadow: '0 4px 15px rgba(0,0,0,0.08)',
+            border: '1px solid var(--t-border)',
           }}
         >
-          <div style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
-            <i className="fa-solid fa-sack-dollar" style={{ color: '#38bdf8', marginRight: '6px' }}></i> Tasa Oficial Actual
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+            <i className="fa-solid fa-sack-dollar" style={{ color: 'var(--t-accent)', marginRight: '6px' }}></i> Tasa Oficial Actual
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-            <span style={{ fontSize: '26px', fontWeight: 800, color: '#34d399', letterSpacing: '-0.5px' }}>
+            <span style={{ fontSize: '26px', fontWeight: 800, color: '#059669', letterSpacing: '-0.5px' }}>
               Bs. {!isNaN(tasaActual) && tasaActual > 0 ? tasaActual.toLocaleString('es-VE', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : '---'}
             </span>
-            <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>VES/USD</span>
+            <span style={{ fontSize: '12px', color: 'var(--t-muted)', fontWeight: 700 }}>VES/USD</span>
           </div>
-          <div style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '4px', fontWeight: 500 }}>
+          <div style={{ fontSize: '12px', color: 'var(--t-muted)', marginTop: '4px', fontWeight: 600 }}>
             <i className="fa-regular fa-clock" style={{ marginRight: '4px' }}></i> Vigencia: {tasaHoy?.fecha ? new Date(tasaHoy.fecha).toLocaleDateString('es-VE') : 'Actual'}
           </div>
         </div>
@@ -301,21 +298,18 @@ export const HistorialBcvPage: React.FC = () => {
         <div
           className="kpi-card"
           style={{
-            background: 'linear-gradient(135deg, #1e293b, #0f172a)',
-            border: '1.5px solid #334155',
             borderRadius: '12px',
             padding: '16px 20px',
-            color: '#fff',
-            boxShadow: '0 4px 15px rgba(0,0,0,0.08)',
+            border: '1px solid var(--t-border)',
           }}
         >
-          <div style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
-            <i className="fa-solid fa-building-columns" style={{ color: '#fbbf24', marginRight: '6px' }}></i> Fuente de la Tasa
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+            <i className="fa-solid fa-building-columns" style={{ color: '#d97706', marginRight: '6px' }}></i> Fuente de la Tasa
           </div>
-          <div style={{ fontSize: '15px', fontWeight: 700, color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--t-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             BANCO CENTRAL DE VENEZUELA
           </div>
-          <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+          <div style={{ fontSize: '12px', color: 'var(--t-muted)', marginTop: '4px', fontWeight: 500 }}>
             Publicación oficial para liquidaciones
           </div>
         </div>
@@ -323,21 +317,18 @@ export const HistorialBcvPage: React.FC = () => {
         <div
           className="kpi-card"
           style={{
-            background: 'linear-gradient(135deg, #1e293b, #0f172a)',
-            border: '1.5px solid #334155',
             borderRadius: '12px',
             padding: '16px 20px',
-            color: '#fff',
-            boxShadow: '0 4px 15px rgba(0,0,0,0.08)',
+            border: '1px solid var(--t-border)',
           }}
         >
-          <div style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
-            <i className="fa-solid fa-database" style={{ color: '#a78bfa', marginRight: '6px' }}></i> Registros en Historial
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+            <i className="fa-solid fa-database" style={{ color: '#7c3aed', marginRight: '6px' }}></i> Registros en Historial
           </div>
-          <div style={{ fontSize: '26px', fontWeight: 800, color: '#60a5fa' }}>
+          <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--t-accent)' }}>
             {historial.length}
           </div>
-          <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+          <div style={{ fontSize: '12px', color: 'var(--t-muted)', marginTop: '4px', fontWeight: 500 }}>
             Tasas registradas en la base de datos
           </div>
         </div>

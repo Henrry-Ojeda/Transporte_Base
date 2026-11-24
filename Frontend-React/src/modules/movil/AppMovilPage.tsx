@@ -5460,22 +5460,10 @@ export const AppMovilPage: React.FC = () => {
           (s: any) => Number(s.fincaId) === f.id && s.estado === 'PENDIENTE'
         );
 
-        // Identificar si la finca es habitual o alterna para este viaje/ruta
-        const miRutaId = viajeActivo.rutaLogisticaId;
-        const esHabitualParaMi =
-          (miRutaId && f.rutaId === miRutaId) ||
-          (f as any).esPrincipal === 1 ||
-          !(f as any).esAlterna;
-
-        // REGLA ASIMÉTRICA 1:
-        // Si ya la recogió otro ticket y NO hay solicitud de emergencia aprobada:
-        // - Si para este chofer la finca es ALTERNA: desaparece de su lista
-        if (!esHabitualParaMi && recOtro && !solicAprobada && lts === 0) {
-          return null;
-        }
-
-        // - Si para este chofer la finca es HABITUAL: se muestra con aviso de recogida por otro y litros en solo lectura
-        const recogidaPorOtro = Boolean(recOtro && !solicAprobada && lts === 0);
+        // REGLA UNIFICADA (Habituales y Alternas):
+        // Si ya la recogió otro chofer/ticket y NO hay solicitud de emergencia aprobada,
+        // siempre se muestra en la lista con el aviso "LA FINCA X YA FUE RECOGIDA POR EL CHOFER X" en solo lectura.
+        const recogidaPorOtro = Boolean(recOtro && Number(recOtro.litros || 0) > 0 && !solicAprobada && lts === 0);
         const soloLectura = recogidaPorOtro;
 
         const esRec = lts > 0 || (recogidaPorOtro && Number(recOtro.litros) > 0);
@@ -8932,8 +8920,8 @@ export const AppMovilPage: React.FC = () => {
 
                               {f.recogidaPorOtro ? (
                                 <>
-                                  <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde047', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px' }}>
-                                    🚛 Recogida por {f.otroCamionPlaca || f.otroConductorNombre || 'otro camión'}
+                                  <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde047', fontSize: '10px', fontWeight: 800, padding: '2px 7px', borderRadius: '5px' }}>
+                                    ⚠️ LA FINCA {f.nombre} YA FUE RECOGIDA POR EL CHOFER {f.otroConductorNombre || f.otroCamionPlaca || 'OTRO CHOFER'}
                                   </span>
                                   {f.solicPendiente && (
                                     <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #f59e0b', fontSize: '9.5px', fontWeight: 900, padding: '1px 6px', borderRadius: '5px' }}>
@@ -9705,8 +9693,8 @@ export const AppMovilPage: React.FC = () => {
                               )}
                               {f.recogidaPorOtro ? (
                                 <>
-                                  <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde047', fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: '5px' }}>
-                                    🚛 Recogida por {f.otroCamionPlaca || f.otroConductorNombre || 'otro camión'}
+                                  <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde047', fontSize: '10px', fontWeight: 800, padding: '2px 7px', borderRadius: '5px' }}>
+                                    ⚠️ LA FINCA {f.nombre} YA FUE RECOGIDA POR EL CHOFER {f.otroConductorNombre || f.otroCamionPlaca || 'OTRO CHOFER'}
                                   </span>
                                   {f.solicPendiente && (
                                     <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #f59e0b', fontSize: '9.5px', fontWeight: 900, padding: '1px 6px', borderRadius: '5px' }}>

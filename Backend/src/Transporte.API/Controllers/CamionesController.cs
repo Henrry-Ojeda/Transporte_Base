@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Security;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 
@@ -42,7 +43,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "ADMIN,SUPERADMIN,SUPER_ADMIN,ADMINISTRADOR,SUPERVISOR,TALLER")]
+        [RequirePermission("CAMIONES_VER", "HISTORIAL_CAMIONES_VER")]
         public async Task<IActionResult> CrearCamion([FromBody] CrearCamionDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Placa))
@@ -60,7 +61,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "ADMIN,SUPERADMIN,SUPER_ADMIN,ADMINISTRADOR,SUPERVISOR,TALLER")]
+        [RequirePermission("CAMIONES_VER", "HISTORIAL_CAMIONES_VER")]
         public async Task<IActionResult> ActualizarCamion([FromRoute] int id, [FromBody] EditarCamionDto dto)
         {
             var ok = await _usuariosRepository.ActualizarCamionAsync(id, dto);
@@ -69,7 +70,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("{id}/estado")]
-        [Authorize(Roles = "ADMIN,SUPERADMIN,SUPER_ADMIN,ADMINISTRADOR,SUPERVISOR,TALLER")]
+        [RequirePermission("CAMIONES_VER", "HISTORIAL_CAMIONES_VER")]
         public async Task<IActionResult> ActualizarEstadoCamion([FromRoute] int id, [FromBody] ActualizarEstadoCamionDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Estado))
@@ -81,7 +82,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "ADMIN,SUPERADMIN,SUPER_ADMIN,ADMINISTRADOR,SUPERVISOR,TALLER")]
+        [RequirePermission("CAMIONES_VER", "HISTORIAL_CAMIONES_VER")]
         public async Task<IActionResult> EliminarCamion([FromRoute] int id)
         {
             var ok = await _usuariosRepository.EliminarCamionAsync(id);

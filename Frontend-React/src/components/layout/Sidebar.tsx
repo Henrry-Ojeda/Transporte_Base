@@ -69,7 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     'Logísticas': true,
   });
 
-  // Sincronizar grupo activo al cambiar de ruta
+  // Sincronizar grupo activo al cambiar de ruta y cerrar siempre cualquier popover abierto
   useEffect(() => {
     const matched = visibleGroups.find((g) => isGroupActive(g));
     if (matched) {
@@ -78,17 +78,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       setSelectedGroupId(visibleGroups[0].id);
     }
     setPopoverGroupId(null);
-  }, [location.pathname, visibleGroups.length]);
+  }, [location.pathname, location.search, location.key, visibleGroups.length]);
 
-  // Cerrar popover al hacer clic fuera del sidebar
+  // Cerrar popover al hacer clic/tocar fuera del sidebar o presionar Escape
   useEffect(() => {
-    const handleOutside = (e: MouseEvent) => {
+    const handleOutside = (e: Event) => {
       if (sidebarRef.current && !sidebarRef.current.contains(e.target as Node)) {
         setPopoverGroupId(null);
       }
     };
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPopoverGroupId(null);
+      }
+    };
+    document.addEventListener('pointerdown', handleOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const isMobileDrawer = isOpen;

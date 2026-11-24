@@ -228,29 +228,28 @@ app.UseExceptionHandler(errApp =>
     });
 });
 
-// Redirección estricta: Dominios backend DuckDNS no sirven la UI Web; redirigen a sus dominios oficiales en Vercel
-app.Use(async (context, next) =>
+// Redirección opcional configurable desde RedirectDomains en appsettings/env (Cero dominios hardcodeados)
+var redirectDomains = builder.Configuration.GetSection("RedirectDomains").Get<Dictionary<string, string>>() ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+if (redirectDomains.Count > 0)
 {
-    var host = context.Request.Host.Host.ToLower();
-    var path = context.Request.Path.Value ?? "";
-
-    if ((host.Contains("duckdns.org") || host.Contains("queseracampoverde")) &&
-        !path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) &&
-        !path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase) &&
-        !path.StartsWith("/_", StringComparison.OrdinalIgnoreCase))
+    app.Use(async (context, next) =>
     {
-        string targetHost = "lacteos-campoverde.vercel.app";
-        if (host.Contains("transportevc") || host.Contains("vergel"))
-        {
-            targetHost = "transporte-vergel-carrillo.vercel.app";
-        }
-        var targetUrl = $"https://{targetHost}{path}{context.Request.QueryString}";
-        context.Response.Redirect(targetUrl, permanent: false);
-        return;
-    }
+        var host = context.Request.Host.Host.ToLower();
+        var path = context.Request.Path.Value ?? "";
 
-    await next();
-});
+        if (!path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/_", StringComparison.OrdinalIgnoreCase) &&
+            redirectDomains.TryGetValue(host, out var targetHost) &&
+            !string.IsNullOrWhiteSpace(targetHost))
+        {
+            var targetUrl = $"https://{targetHost}{path}{context.Request.QueryString}";
+            context.Response.Redirect(targetUrl, permanent: false);
+            return;
+        }
+        await next();
+    });
+}
 
 // Habilitar archivos estáticos para la UI (Frontend PWA en wwwroot)
 app.UseDefaultFiles();

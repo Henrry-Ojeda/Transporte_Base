@@ -14,9 +14,7 @@ export const LoginPage: React.FC = () => {
   const { login, sessionExpiredMessage, clearExpiredMessage, isAuthenticated } = useAuthStore();
   const { theme, toggleTheme } = useThemeStore();
 
-  const defaultNombre = typeof window !== 'undefined' && window.location.hostname.includes('campoverde')
-    ? 'Productos Lácteos Campo Verde, C.A.'
-    : (typeof window !== 'undefined' && window.location.hostname.includes('vergel') ? 'Transporte Vergel & Carrillo' : 'Sistema de Transporte');
+  const defaultNombre = 'Sistema de Transporte';
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -64,19 +62,6 @@ export const LoginPage: React.FC = () => {
       : null;
 
     if (isAuthenticated && activeToken && !isTokenExpired(activeToken)) {
-      // Comprobar consistencia estricta de empresa para evitar contaminación cruzada entre tenants
-      const user = useAuthStore.getState().user;
-      const userCod = ((user as any)?.empresaCodigo || '').toUpperCase();
-      const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
-      const isCampoVerde = host.includes('campoverde');
-      const isVergel = host.includes('vergel');
-
-      if ((isCampoVerde && userCod.includes('VERGEL')) || (isVergel && userCod.includes('CAMPO'))) {
-        console.warn('Sesión de otra empresa detectada. Limpiando para permitir login limpio en la empresa actual.');
-        useAuthStore.getState().logout();
-        return;
-      }
-
       navigate('/', { replace: true });
     } else if (isAuthenticated && (!activeToken || isTokenExpired(activeToken))) {
       // Estado desfasado: corregir inmediatamente a no autenticado para permitir login

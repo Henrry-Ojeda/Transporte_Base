@@ -111,12 +111,12 @@ namespace Transporte.API.Multitenancy
             if (_configuration.GetValue<bool>("LocalDev:UseLocalDatabase"))
             {
                 string localConn = _configuration.GetConnectionString("DefaultConnection")
-                    ?? "Server=localhost;Database=DB_DEV_VERGEL_CARRILLO;Integrated Security=True;TrustServerCertificate=True;Encrypt=False;Connect Timeout=30;Pooling=true;";
+                    ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection es requerida cuando LocalDev:UseLocalDatabase está activo.");
                 _currentTenant = new TenantInfo
                 {
                     EmpresaId = 1,
-                    Codigo = _configuration["LocalDev:TenantCode"] ?? "VERGEL_CARRILLO",
-                    Nombre = _configuration["LocalDev:TenantName"] ?? "Transporte Vergel & Carrillo (DEV LOCAL)",
+                    Codigo = _configuration["LocalDev:TenantCode"] ?? "LOCAL_DEV",
+                    Nombre = _configuration["LocalDev:TenantName"] ?? "Sistema de Transporte (DEV LOCAL)",
                     ConnectionString = AdjustConnectionStringForEnvironment(localConn),
                     Estado = "ACTIVA",
                     FechaVencimiento = DateTime.UtcNow.AddYears(5),
@@ -183,103 +183,94 @@ namespace Transporte.API.Multitenancy
 
             try
             {
-                string sqlHost = IsRunningInDocker ? "sql_instancia" : (OperatingSystem.IsLinux() ? "127.0.0.1" : "84.247.178.194");
-                string masterConn = $"Server=tcp:{sqlHost},1433;Database=DB_SAAS_MASTER;User Id=sa;Password=sql_HO_2026!;TrustServerCertificate=True;Encrypt=False;Connect Timeout=10;Pooling=true;";
-                using var db = new SqlConnection(masterConn);
-                
-                var emp = db.QueryFirstOrDefault<dynamic>(
-                    @"SELECT Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora, AiTablasPermitidas
-                      FROM TB_EMPRESAS
-                      WHERE DominioPrincipal = @h 
-                         OR SubdominioAlterno = @h 
-                         OR Codigo = @h 
-                         OR (@h LIKE '%vergel%' AND Codigo = 'VERGEL_CARRILLO')
-                         OR (@h LIKE '%campoverde%' AND Codigo = 'CAMPO_VERDE')
-                         OR (@h LIKE '%base%' AND Codigo = 'PRODUCTO_BASE')",
-                    new { h = host });
+                string? masterConn = _configuration.GetConnectionString("SaasMaster")
+                    ?? Environment.GetEnvironmentVariable("SAAS_MASTER_CONNECTION");
 
-                if (emp == null && (host == "localhost" || host == "127.0.0.1" || host == "84.247.178.194"))
+                if (!string.IsNullOrWhiteSpace(masterConn))
                 {
-                    emp = db.QueryFirstOrDefault<dynamic>(
-                        "SELECT Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora, AiTablasPermitidas FROM TB_EMPRESAS WHERE Codigo = 'VERGEL_CARRILLO'");
-                }
+                    using var db = new SqlConnection(AdjustConnectionStringForEnvironment(masterConn));
 
-                if (emp != null)
-                {
-                    int empId = (int)emp.Id;
-                    var mods = db.Query<string>(
-                        "SELECT ModuloCodigo FROM TB_EMPRESA_MODULOS WHERE EmpresaId = @empId AND Habilitado = 1",
-                        new { empId }).AsList();
+                    var emp = db.QueryFirstOrDefault<dynamic>(
+                        @"SELECT TOP 1 Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora, AiTablasPermitidas
+                          FROM TB_EMPRESAS
+                          WHERE LOWER(DominioPrincipal) = @h
+                             OR LOWER(ISNULL(SubdominioAlterno, '')) = @h
+                             OR LOWER(Codigo) = @h",
+                        new { h = host });
 
-                    List<string>? aiTablas = null;
-                    string? rawAiTablas = emp.AiTablasPermitidas as string;
-                    if (!string.IsNullOrWhiteSpace(rawAiTablas))
+                    if (emp == null && (host == "localhost" || host == "127.0.0.1"))
                     {
-                        try
-                        {
-                            if (rawAiTablas.TrimStart().StartsWith("["))
-                                aiTablas = System.Text.Json.JsonSerializer.Deserialize<List<string>>(rawAiTablas);
-                            else
-                                aiTablas = rawAiTablas.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-                        }
-                        catch { aiTablas = null; }
+                        var defaultCode = _configuration["LocalDev:TenantCode"];
+                        emp = !string.IsNullOrWhiteSpace(defaultCode)
+                            ? db.QueryFirstOrDefault<dynamic>(
+                                "SELECT TOP 1 Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora, AiTablasPermitidas FROM TB_EMPRESAS WHERE Codigo = @c",
+                                new { c = defaultCode })
+                            : db.QueryFirstOrDefault<dynamic>(
+                                "SELECT TOP 1 Id, Codigo, NombreComercial, CadenaConexion, Estado, FechaVencimientoLicencia, DiasGraciaMora, AiTablasPermitidas FROM TB_EMPRESAS WHERE Estado = 'ACTIVA' ORDER BY Id ASC");
                     }
 
-                    string effectiveConnStr = AdjustConnectionStringForEnvironment((string)emp.CadenaConexion);
-
-                    var tInfo = new TenantInfo
+                    if (emp != null)
                     {
-                        EmpresaId = empId,
-                        Codigo = emp.Codigo,
-                        Nombre = emp.NombreComercial,
-                        ConnectionString = effectiveConnStr,
-                        Estado = emp.Estado,
-                        FechaVencimiento = emp.FechaVencimientoLicencia,
-                        DiasGracia = emp.DiasGraciaMora,
-                        Modulos = mods,
-                        AiTablasPermitidas = aiTablas
-                    };
+                        int empId = (int)emp.Id;
+                        var mods = db.Query<string>(
+                            "SELECT ModuloCodigo FROM TB_EMPRESA_MODULOS WHERE EmpresaId = @empId AND Habilitado = 1",
+                            new { empId }).AsList();
 
-                    _tenantCache[host] = (tInfo, DateTime.UtcNow);
-                    _currentTenant = tInfo;
-                    return;
+                        List<string>? aiTablas = null;
+                        string? rawAiTablas = emp.AiTablasPermitidas as string;
+                        if (!string.IsNullOrWhiteSpace(rawAiTablas))
+                        {
+                            try
+                            {
+                                if (rawAiTablas.TrimStart().StartsWith("["))
+                                    aiTablas = System.Text.Json.JsonSerializer.Deserialize<List<string>>(rawAiTablas);
+                                else
+                                    aiTablas = rawAiTablas.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+                            }
+                            catch { aiTablas = null; }
+                        }
+
+                        string effectiveConnStr = AdjustConnectionStringForEnvironment((string)emp.CadenaConexion);
+
+                        var tInfo = new TenantInfo
+                        {
+                            EmpresaId = empId,
+                            Codigo = emp.Codigo,
+                            Nombre = emp.NombreComercial,
+                            ConnectionString = effectiveConnStr,
+                            Estado = emp.Estado,
+                            FechaVencimiento = emp.FechaVencimientoLicencia,
+                            DiasGracia = emp.DiasGraciaMora,
+                            Modulos = mods,
+                            AiTablasPermitidas = aiTablas
+                        };
+
+                        _tenantCache[host] = (tInfo, DateTime.UtcNow);
+                        _currentTenant = tInfo;
+                        return;
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning("Fallback a conexión local para host {Host}: {Msg}", host, ex.Message);
+                _logger.LogWarning("Fallback a conexión configurada para host {Host}: {Msg}", host, ex.Message);
             }
 
-            // Fallback inteligente según el subdominio/host solicitado para evitar contaminación cruzada de tenants
-            bool isVergel = host.Contains("vergel", StringComparison.OrdinalIgnoreCase) || host.Equals("VERGEL_CARRILLO", StringComparison.OrdinalIgnoreCase);
-            bool isCampo = host.Contains("campoverde", StringComparison.OrdinalIgnoreCase) || host.Equals("CAMPO_VERDE", StringComparison.OrdinalIgnoreCase);
-            bool isBase = host.Contains("base", StringComparison.OrdinalIgnoreCase) || host.Equals("PRODUCTO_BASE", StringComparison.OrdinalIgnoreCase);
-
-            string fallbackDb = isCampo 
-                ? "DB_PROD_CAMPO_VERDE" 
-                : (isBase ? "DB_PRODUCTO_BASE" : "DB_PROD_TRANSPORTE_VERGEL_CARRILLO");
-
-            string fallbackUser = isCampo ? "user_campoverde" : "sa";
-            string fallbackPass = isCampo ? "Campo_Verde_2026!" : "sql_HO_2026!";
-
-            string sqlInstHost = IsRunningInDocker ? "sql_instancia" : "127.0.0.1";
-            string fallbackConn = $"Server=tcp:{sqlInstHost},1433;Database={fallbackDb};User Id={fallbackUser};Password={fallbackPass};TrustServerCertificate=True;Encrypt=False;Connect Timeout=30;Pooling=true;";
+            // Fallback genérico basado únicamente en ConnectionStrings:DefaultConnection (Cero Hardcodeo de clientes ni credenciales)
+            string fallbackConn = _configuration.GetConnectionString("DefaultConnection")
+                ?? Environment.GetEnvironmentVariable("DEFAULT_CONNECTION")
+                ?? string.Empty;
 
             _currentTenant = new TenantInfo
             {
-                Codigo = isCampo ? "CAMPO_VERDE" : (isBase ? "PRODUCTO_BASE" : "VERGEL_CARRILLO"),
-                Nombre = isCampo 
-                    ? "Productos Lácteos Campo Verde, C.A." 
-                    : (isBase ? "Sistema Transporte V2 (Producto Base Demo)" : "Transporte Vergel & Carrillo"),
-                ConnectionString = AdjustConnectionStringForEnvironment(fallbackConn),
+                Codigo = _configuration["LocalDev:TenantCode"] ?? "DEFAULT",
+                Nombre = _configuration["LocalDev:TenantName"] ?? "Sistema de Transporte",
+                ConnectionString = string.IsNullOrWhiteSpace(fallbackConn) ? string.Empty : AdjustConnectionStringForEnvironment(fallbackConn),
                 Estado = "ACTIVA",
                 FechaVencimiento = DateTime.UtcNow.AddYears(1),
-                Modulos = isCampo 
-                    ? new List<string> { "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE", "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_PAGOS_PERSONAL", "MOD_HISTORIAL_BCV", "MOD_APP_MOVIL", "MOD_TOLERANCIA_MERMA" }
-                    : new List<string> { "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LECHE_BUFALA", "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE", "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_PAGOS_PERSONAL", "MOD_HISTORIAL_BCV", "MOD_ASISTENTE_IA", "MOD_APP_MOVIL", "MOD_TOLERANCIA_MERMA" }
+                Modulos = new List<string>()
             };
 
-            // Cachear fallback por 5 segundos para reintentar prontamente la conexión con DB_SAAS_MASTER
             _tenantCache[host] = (_currentTenant, DateTime.UtcNow);
         }
 
@@ -294,12 +285,12 @@ namespace Transporte.API.Multitenancy
             host = host.Split(':')[0].Trim().ToLower();
         }
 
-        public string GetConnectionString() => _currentTenant?.ConnectionString 
-            ?? AdjustConnectionStringForEnvironment(_configuration.GetConnectionString("DefaultConnection") 
-            ?? "Server=84.247.178.194,1433;Database=DB_PROD_TRANSPORTE_VERGEL_CARRILLO;User Id=sa;Password=sql_HO_2026!;TrustServerCertificate=True;");
+        public string GetConnectionString() => _currentTenant?.ConnectionString
+            ?? AdjustConnectionStringForEnvironment(_configuration.GetConnectionString("DefaultConnection")
+                ?? throw new InvalidOperationException("No se encontró ConnectionStrings:DefaultConnection ni tenant resuelto."));
 
-        public string GetTenantCode() => _currentTenant?.Codigo ?? "VERGEL_CARRILLO";
-        public string GetTenantName() => _currentTenant?.Nombre ?? "Transporte Vergel & Carrillo";
+        public string GetTenantCode() => _currentTenant?.Codigo ?? (_configuration["LocalDev:TenantCode"] ?? "DEFAULT");
+        public string GetTenantName() => _currentTenant?.Nombre ?? (_configuration["LocalDev:TenantName"] ?? "Sistema de Transporte");
         public List<string> GetModulosActivos() => _currentTenant?.Modulos ?? new List<string>();
         public bool TieneModulo(string moduloCodigo)
         {

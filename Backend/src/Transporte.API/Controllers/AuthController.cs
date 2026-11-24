@@ -254,11 +254,10 @@ namespace Transporte.API.Controllers
             // Generar código único criptográficamente seguro de 6 dígitos numéricos (ej. 849215)
             string codigo = System.Security.Cryptography.RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
 
-            // Guardar en DB_SAAS_MASTER para resolución ciega e inmediata
-            string masterHost = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production" 
-                ? "tcp:sql_instancia,1433" 
-                : "84.247.178.194,1433";
-            string masterConn = $"Server={masterHost};Database=DB_SAAS_MASTER;User Id=sa;Password=sql_HO_2026!;TrustServerCertificate=True;";
+            // Guardar en DB_SAAS_MASTER desde configuración / variable de entorno (sin credenciales hardcodeadas)
+            string masterConn = _config.GetConnectionString("SaasMaster")
+                ?? Environment.GetEnvironmentVariable("SAAS_MASTER_CONNECTION")
+                ?? throw new InvalidOperationException("ConnectionStrings:SaasMaster o SAAS_MASTER_CONNECTION no está configurada.");
             using var db = new Microsoft.Data.SqlClient.SqlConnection(masterConn);
             
             // Vigencia de 48 horas
@@ -304,10 +303,9 @@ namespace Transporte.API.Controllers
 
             string cleanCode = dto.Codigo.Trim().Replace("-", "").Replace(" ", "");
 
-            string masterHost = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true" || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production" 
-                ? "tcp:sql_instancia,1433" 
-                : "84.247.178.194,1433";
-            string masterConn = $"Server={masterHost};Database=DB_SAAS_MASTER;User Id=sa;Password=sql_HO_2026!;TrustServerCertificate=True;";
+            string masterConn = _config.GetConnectionString("SaasMaster")
+                ?? Environment.GetEnvironmentVariable("SAAS_MASTER_CONNECTION")
+                ?? throw new InvalidOperationException("ConnectionStrings:SaasMaster o SAAS_MASTER_CONNECTION no está configurada.");
             using var db = new Microsoft.Data.SqlClient.SqlConnection(masterConn);
 
             var registro = await db.QueryFirstOrDefaultAsync<dynamic>(@"

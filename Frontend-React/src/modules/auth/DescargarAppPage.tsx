@@ -1,15 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Smartphone, Download, Copy, Check, ShieldCheck, FolderDown } from 'lucide-react';
+import { authApi } from '@/api/auth.api';
 
 const APK_URL = '/downloads/transporte-vergel-carrillo.apk';
-const FULL_APK_URL = 'https://transporte-vergel-carrillo.vercel.app/downloads/transporte-vergel-carrillo.apk';
+const getFullApkUrl = () =>
+  typeof window !== 'undefined' && window.location.origin
+    ? `${window.location.origin}${APK_URL}`
+    : APK_URL;
 
 export const DescargarAppPage: React.FC = () => {
   const [copiado, setCopiado] = useState(false);
+  const [empresaNombre, setEmpresaNombre] = useState('Sistema de Transporte');
+
+  useEffect(() => {
+    authApi.getTenantInfo().then((info) => {
+      if (info?.nombre) setEmpresaNombre(info.nombre);
+    }).catch(() => {});
+  }, []);
 
   const handleCopiar = async () => {
     try {
-      await navigator.clipboard.writeText(FULL_APK_URL);
+      await navigator.clipboard.writeText(getFullApkUrl());
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2500);
     } catch {}
@@ -62,7 +73,7 @@ export const DescargarAppPage: React.FC = () => {
             <Smartphone size={28} />
           </div>
           <h1 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}>
-            Transporte Vergel &amp; Carrillo
+            {empresaNombre}
           </h1>
           <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', opacity: 0.9 }}>
             App Móvil Oficial Android • v1.0.8 (62 MB)

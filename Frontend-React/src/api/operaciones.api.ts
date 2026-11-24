@@ -488,7 +488,7 @@ export const operacionesApi = {
     return res.data;
   },
 
-  validarEntregaCompania: async (id: number, dto: { litrosConfirmados?: number; litrosRecibidosCompania?: number; observaciones?: string; observacion?: string; tipoLeche?: string; fotoReciboUrl?: string }): Promise<{ success: boolean; message: string }> => {
+  validarEntregaCompania: async (id: number, dto: { litrosConfirmados?: number; litrosRecibidosCompania?: number; observaciones?: string; observacion?: string; tipoLeche?: string; fotoReciboUrl?: string; fotoExamenLeche?: string; fotoReciboCompania?: string; examenLeche?: any }): Promise<{ success: boolean; message: string }> => {
     const lts = Number(dto.litrosRecibidosCompania ?? dto.litrosConfirmados ?? 0);
     const obs = dto.observaciones ?? dto.observacion ?? '';
     const res = await apiClient.post(`/controlcompanias/${id}/validar-entrega`, {
@@ -498,6 +498,9 @@ export const operacionesApi = {
       observaciones: obs,
       tipoLeche: dto.tipoLeche,
       fotoReciboUrl: dto.fotoReciboUrl,
+      fotoExamenLeche: dto.fotoExamenLeche,
+      fotoReciboCompania: dto.fotoReciboCompania,
+      examenLeche: dto.examenLeche,
     });
     return res.data;
   },
@@ -508,6 +511,9 @@ export const operacionesApi = {
     litrosCargadosAdicional?: number;
     companiaDestinoId?: number;
     observacion?: string;
+    fotoExamenLeche?: string;
+    fotoReciboReceptoria?: string;
+    examenLeche?: any;
     destinos?: Array<{
       companiaId: number;
       litrosDespachados?: number;
@@ -517,25 +523,22 @@ export const operacionesApi = {
       observacion?: string;
     }>;
   }): Promise<{ success?: boolean; message?: string }> => {
+    const body = {
+      litrosRecibidos: Math.round(Number(dto.litrosRecibidos)),
+      accion: dto.accion || 'DEJAR_EN_RECEPTORIA',
+      litrosCargadosAdicional: dto.litrosCargadosAdicional,
+      companiaDestinoId: dto.companiaDestinoId,
+      observacion: dto.observacion,
+      fotoExamenLeche: dto.fotoExamenLeche,
+      fotoReciboReceptoria: dto.fotoReciboReceptoria,
+      examenLeche: dto.examenLeche,
+      destinos: dto.destinos,
+    };
     try {
-      const res = await apiClient.post(`/control-rutas/${id}/recibir-receptoria`, {
-        litrosRecibidos: Math.round(Number(dto.litrosRecibidos)),
-        accion: dto.accion || 'DEJAR_EN_RECEPTORIA',
-        litrosCargadosAdicional: dto.litrosCargadosAdicional,
-        companiaDestinoId: dto.companiaDestinoId,
-        observacion: dto.observacion,
-        destinos: dto.destinos,
-      });
+      const res = await apiClient.post(`/control-rutas/${id}/recibir-receptoria`, body);
       return res.data;
     } catch {
-      const res = await apiClient.post(`/controlrutas/${id}/recibir-receptoria`, {
-        litrosRecibidos: Math.round(Number(dto.litrosRecibidos)),
-        accion: dto.accion || 'DEJAR_EN_RECEPTORIA',
-        litrosCargadosAdicional: dto.litrosCargadosAdicional,
-        companiaDestinoId: dto.companiaDestinoId,
-        observacion: dto.observacion,
-        destinos: dto.destinos,
-      });
+      const res = await apiClient.post(`/controlrutas/${id}/recibir-receptoria`, body);
       return res.data;
     }
   },

@@ -13,10 +13,12 @@ namespace Transporte.API.Controllers
     public class ControlRutasController : ControllerBase
     {
         private readonly IControlRutasRepository _controlRutasRepository;
+        private readonly IExamenesLecheRepository? _examenesLecheRepository;
 
-        public ControlRutasController(IControlRutasRepository controlRutasRepository)
+        public ControlRutasController(IControlRutasRepository controlRutasRepository, IExamenesLecheRepository? examenesLecheRepository = null)
         {
             _controlRutasRepository = controlRutasRepository;
+            _examenesLecheRepository = examenesLecheRepository;
         }
 
         /// <summary>
@@ -361,6 +363,25 @@ namespace Transporte.API.Controllers
             {
                 var ok = await _controlRutasRepository.RecibirEnReceptoriaAsync(id, dto, userId);
                 if (!ok) return NotFound(new { message = "Viaje no encontrado." });
+
+                // Registrar examen / recibo opcional en historial TB_EXAMENES_LECHE si se adjuntó
+                if (_examenesLecheRepository != null &&
+                    (dto.ExamenLeche != null || !string.IsNullOrWhiteSpace(dto.FotoExamenLeche) || !string.IsNullOrWhiteSpace(dto.FotoReciboReceptoria)))
+                {
+                    try
+                    {
+                        var ex = dto.ExamenLeche ?? new GuardarExamenLecheDto();
+                        ex.NivelPrueba = "TICKET";
+                        ex.ControlRutaId = id;
+                        ex.LitrosAsociados ??= dto.LitrosRecibidos;
+                        ex.ImagenExamen ??= dto.FotoExamenLeche;
+                        ex.ImagenRecibo ??= dto.FotoReciboReceptoria;
+                        if (string.IsNullOrWhiteSpace(ex.Observacion)) ex.Observacion = dto.Observacion;
+                        await _examenesLecheRepository.CrearExamenAsync(ex, userId);
+                    }
+                    catch { /* No bloquear recepción si la tabla aún no existe en algún entorno */ }
+                }
+
                 return Ok(new { message = "Recepción de viaje procesada exitosamente." });
             }
             catch (Exception ex)

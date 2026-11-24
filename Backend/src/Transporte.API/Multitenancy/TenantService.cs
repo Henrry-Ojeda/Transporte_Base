@@ -126,7 +126,8 @@ namespace Transporte.API.Multitenancy
                         "MOD_DASHBOARD", "MOD_LECHE_VACA", "MOD_LECHE_BUFALA",
                         "MOD_LOGISTICA_RUTAS", "MOD_RECEPTORIA", "MOD_COMBUSTIBLE",
                         "MOD_MANTENIMIENTO", "MOD_REPUESTOS", "MOD_LIQUIDACIONES", "MOD_PAGOS_PERSONAL",
-                        "MOD_HISTORIAL_BCV", "MOD_ASISTENTE_IA", "MOD_APP_MOVIL", "MOD_TOLERANCIA_MERMA"
+                        "MOD_HISTORIAL_BCV", "MOD_ASISTENTE_IA", "MOD_APP_MOVIL", "MOD_TOLERANCIA_MERMA",
+                        "MOD_CALIDAD_LECHE"
                     }
                 };
                 return;

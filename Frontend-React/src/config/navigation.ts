@@ -34,6 +34,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
       { name: 'Principal', href: '/dashboard', tabId: 'dashboard', icon: 'fa-solid fa-chart-pie' },
       { name: 'Recolección en Ruta', href: '/rutas', tabId: 'rutas', icon: 'fa-solid fa-route' },
       { name: 'Entregas Receptoría', href: '/receptoria', tabId: 'receptoria', icon: 'fa-solid fa-truck-ramp-box', requiredTenantModule: 'MOD_RECEPTORIA' },
+      { name: 'Calidad de Leche', href: '/calidad-leche', tabId: 'calidad-leche', icon: 'fa-solid fa-flask-vial', color: '#06b6d4', requiredTenantModule: 'MOD_CALIDAD_LECHE' },
       { name: 'Control de Viajes', href: '/viajes', tabId: 'viajes', icon: 'fa-solid fa-clipboard-check' },
       { name: 'Balance & Silos', href: '/balance', tabId: 'balance', icon: 'fa-solid fa-cubes-stacked', color: '#2563eb' },
       { name: 'Trazabilidad Búfala', href: '/bufala', tabId: 'bufala', icon: 'fa-solid fa-gem', color: '#0d9488', requiredTenantModule: 'MOD_LECHE_BUFALA' },

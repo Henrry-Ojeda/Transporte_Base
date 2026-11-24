@@ -4,6 +4,7 @@ using System.Security.Claims;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 using Transporte.API.Multitenancy;
+using Transporte.API.Security;
 
 namespace Transporte.API.Controllers
 {
@@ -12,6 +13,7 @@ namespace Transporte.API.Controllers
     [Route("api/pagosusuarios")]
     [Authorize]
     [RequireTenantModule("MOD_PAGOS_PERSONAL")]
+    [RequirePermission("PAGOS_PERSONAL_VER", "LIQUIDACIONES_VER")]
     public class PagosUsuariosController : ControllerBase
     {
         private readonly IPagosUsuariosRepository _pagosUsuariosRepo;

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 using Transporte.API.Multitenancy;
+using Transporte.API.Security;
 
 namespace Transporte.API.Controllers
 {
@@ -13,6 +14,7 @@ namespace Transporte.API.Controllers
     [Route("api/combustible")]
     [Authorize]
     [RequireTenantModule("MOD_COMBUSTIBLE")]
+    [RequirePermission("COMBUSTIBLE_VER", "CAMIONES_VER")]
     public class CombustibleController : ControllerBase
     {
         private readonly ICombustibleRepository _repo;

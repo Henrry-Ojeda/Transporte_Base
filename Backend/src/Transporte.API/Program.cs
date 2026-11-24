@@ -108,19 +108,44 @@ builder.Services.AddScoped<INotificacionesRepository, NotificacionesRepository>(
 // 2. Controladores
 builder.Services.AddControllers();
 
-// 3. CORS
+// 3. CORS Configurable (sin AllowAll abierto en Producción)
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        if (allowedOrigins.Length > 0)
+        {
+            policy.SetIsOriginAllowed(origin =>
+            {
+                if (allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase)) return true;
+                if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                {
+                    return allowedOrigins.Any(ao => ao.StartsWith("*.", StringComparison.Ordinal) &&
+                        uri.Host.EndsWith(ao[1..], StringComparison.OrdinalIgnoreCase));
+                }
+                return false;
+            })
+            .AllowAnyMethod()
+            .AllowAnyHeader();
+        }
+        else
+        {
+            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        }
     });
 });
 
-// 4. JWT
-var jwtKey = builder.Configuration["Jwt:SecretKey"] ?? "ClaveSecretaSuperSeguraParaRutasDeLeche2026_JWT_Token_Key_MuyLargaParaHmacSha256!";
+// 4. JWT (sin clave hardcodeada en Producción)
+var jwtKey = builder.Configuration["Jwt:SecretKey"] ?? builder.Configuration["Jwt:Key"] ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY");
+if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.StartsWith("__INYECTAR", StringComparison.OrdinalIgnoreCase))
+{
+    if (!builder.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("Jwt:SecretKey (o variable JWT_SECRET_KEY) es obligatoria en QA/Producción.");
+    }
+    jwtKey = "DevLocalOnly_TransporteJwtSecretKey_Minimum32Chars!";
+}
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "TransporteAPI";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "TransporteApp";
 

@@ -23,8 +23,7 @@ export const esReceptoriaPrincipal = (nombreOCompania: any): boolean => {
       nombreOCompania.EsPrincipal === true ||
       nombreOCompania.esPrincipal === 1 ||
       nombreOCompania.EsPrincipal === 1 ||
-      nombreOCompania.esReceptoria === true ||
-      Number(nombreOCompania.id || nombreOCompania.companiaId) === 5028
+      nombreOCompania.esReceptoria === true
     ) {
       return true;
     }

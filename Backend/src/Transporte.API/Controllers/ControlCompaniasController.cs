@@ -13,10 +13,12 @@ namespace Transporte.API.Controllers
     public class ControlCompaniasController : ControllerBase
     {
         private readonly IControlCompaniasRepository _controlCompaniasRepository;
+        private readonly IExamenesLecheRepository? _examenesLecheRepository;
 
-        public ControlCompaniasController(IControlCompaniasRepository controlCompaniasRepository)
+        public ControlCompaniasController(IControlCompaniasRepository controlCompaniasRepository, IExamenesLecheRepository? examenesLecheRepository = null)
         {
             _controlCompaniasRepository = controlCompaniasRepository;
+            _examenesLecheRepository = examenesLecheRepository;
         }
 
         /// <summary>
@@ -174,6 +176,30 @@ namespace Transporte.API.Controllers
 
                 var ok = await _controlCompaniasRepository.ValidarYFinalizarEntregaAsync(id, dto, userId);
                 if (!ok) return NotFound(new { message = "Despacho no encontrado." });
+
+                // Registrar examen / recibo opcional en historial TB_EXAMENES_LECHE si se adjuntó
+                var fotoRec = !string.IsNullOrWhiteSpace(dto.FotoReciboCompania) ? dto.FotoReciboCompania : dto.FotoReciboUrl;
+                if (_examenesLecheRepository != null &&
+                    (dto.ExamenLeche != null || !string.IsNullOrWhiteSpace(dto.FotoExamenLeche) || !string.IsNullOrWhiteSpace(fotoRec)))
+                {
+                    try
+                    {
+                        var despacho = await _controlCompaniasRepository.ObtenerPorIdAsync(id);
+                        var ex = dto.ExamenLeche ?? new GuardarExamenLecheDto();
+                        ex.NivelPrueba = "TICKET";
+                        ex.ControlCompaniaId = id;
+                        ex.ControlRutaId ??= despacho?.ControlRutaId;
+                        ex.ChoferId ??= despacho?.UsuarioId;
+                        ex.Fecha ??= despacho?.Fecha;
+                        ex.TipoLeche ??= dto.TipoLeche ?? despacho?.TipoLeche ?? "VACA";
+                        ex.LitrosAsociados ??= ltsValidar > 0 ? ltsValidar : despacho?.LitrosDespachados;
+                        ex.ImagenExamen ??= dto.FotoExamenLeche;
+                        ex.ImagenRecibo ??= fotoRec;
+                        if (string.IsNullOrWhiteSpace(ex.Observacion)) ex.Observacion = dto.Observacion ?? dto.Observaciones;
+                        await _examenesLecheRepository.CrearExamenAsync(ex, userId);
+                    }
+                    catch { /* Tolerante */ }
+                }
 
                 return Ok(new { message = "Entrega en compañía validada exitosamente. Estado actualizado a FINALIZADO." });
             }

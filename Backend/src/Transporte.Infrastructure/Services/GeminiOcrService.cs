@@ -16,6 +16,7 @@ namespace Transporte.Infrastructure.Services
     public interface IGeminiOcrService
     {
         Task<ResultadoOcrRutaDto> ProcesarPlanillaImagenAsync(string base64Imagen, IEnumerable<FincaDto> fincasSistema);
+        Task<OcrLactoscanResponseDto> ProcesarTicketLactoscanAsync(string base64Imagen);
     }
 
     public class GeminiOcrService : IGeminiOcrService
@@ -355,6 +356,114 @@ Devuelve ÚNICAMENTE un JSON estricto con esta estructura (sin markdown ni expli
             t = t.Replace("JEITA", "GEITA").Replace("JITA", "GEITA").Replace("CEITA", "GEITA");
             t = t.Replace("CHIQUINQUIRA", "CHIQUINQUIRA").Replace("BUFALO", "BUFALA");
             return t.Trim();
+        }
+
+        public async Task<OcrLactoscanResponseDto> ProcesarTicketLactoscanAsync(string base64Imagen)
+        {
+            var result = new OcrLactoscanResponseDto { Exito = false };
+            if (string.IsNullOrWhiteSpace(_apiKey))
+            {
+                result.Mensaje = "Gemini API Key no configurada en el servidor. Puedes ingresar los valores manualmente.";
+                return result;
+            }
+
+            var cleanBase64 = base64Imagen.Contains(",") ? base64Imagen.Split(',')[1] : base64Imagen;
+            var modelEndpoints = new[]
+            {
+                $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={_apiKey}",
+                $"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={_apiKey}",
+                $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={_apiKey}"
+            };
+
+            const string prompt = @"Eres un lector OCR de tickets térmicos de analizadores de leche (ej. Lactoscan S50 / Milkotester).
+Extrae los valores exactos de la imagen y devuelve ÚNICAMENTE un JSON estricto sin markdown ni explicaciones.
+Si un campo no aparece o es ilegible, devuelve null. Usa punto decimal (ej. 4.04, -0.542).
+Estructura exacta:
+{
+  ""horaPrueba"": ""01:48:57"",
+  ""fechaDetectada"": ""2026-08-18"",
+  ""equipo"": ""Lactoscan S50"",
+  ""numeroSerial"": ""048680"",
+  ""calibracion"": ""Calibr 1 Vaca"",
+  ""tipoLecheDetectado"": ""VACA"",
+  ""grasaPct"": 4.04,
+  ""sngPct"": 8.05,
+  ""densidad"": 26.86,
+  ""lactosaPct"": 4.68,
+  ""salesPct"": 0.69,
+  ""proteinaPct"": 2.94,
+  ""solidosTotalesPct"": 12.09,
+  ""aguaAdicionadaPct"": 0.00,
+  ""temperaturaC"": 12.6,
+  ""puntoCongelacion"": -0.542,
+  ""ph"": 11.22,
+  ""conductividad"": 4.72
+}";
+
+            var requestPayload = new
+            {
+                contents = new[]
+                {
+                    new
+                    {
+                        parts = new object[]
+                        {
+                            new { text = prompt },
+                            new { inline_data = new { mime_type = "image/jpeg", data = cleanBase64 } }
+                        }
+                    }
+                }
+            };
+
+            foreach (var endpoint in modelEndpoints)
+            {
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    var jsonContent = new StringContent(JsonSerializer.Serialize(requestPayload), Encoding.UTF8, "application/json");
+                    var response = await _httpClient.PostAsync(endpoint, jsonContent, cts.Token);
+                    if (!response.IsSuccessStatusCode) continue;
+
+                    var body = await response.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(body);
+                    var text = doc.RootElement
+                        .GetProperty("candidates")[0]
+                        .GetProperty("content")
+                        .GetProperty("parts")[0]
+                        .GetProperty("text")
+                        .GetString();
+
+                    if (string.IsNullOrWhiteSpace(text)) continue;
+
+                    var cleanJson = text.Trim();
+                    if (cleanJson.StartsWith("```"))
+                    {
+                        var firstBrace = cleanJson.IndexOf('{');
+                        var lastBrace = cleanJson.LastIndexOf('}');
+                        if (firstBrace >= 0 && lastBrace > firstBrace)
+                            cleanJson = cleanJson.Substring(firstBrace, lastBrace - firstBrace + 1);
+                    }
+
+                    var parsed = JsonSerializer.Deserialize<OcrLactoscanResponseDto>(cleanJson, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    if (parsed != null)
+                    {
+                        parsed.Exito = true;
+                        parsed.Mensaje = "Ticket Lactoscan leído con IA exitosamente.";
+                        return parsed;
+                    }
+                }
+                catch
+                {
+                    // Intentar siguiente modelo
+                }
+            }
+
+            result.Mensaje = "No se pudo leer automáticamente el ticket. Verifica la nitidez de la foto o ingresa los valores manualmente.";
+            return result;
         }
     }
 }

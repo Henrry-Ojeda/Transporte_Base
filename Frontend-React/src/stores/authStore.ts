@@ -213,6 +213,7 @@ export const useAuthStore = create<AuthState>()(
           'mapa-rutas': ['RUTAS_PLANIFICACION_VER', 'RUTAS_VER'],
           'entregas': ['ENTREGAS_VER'],
           'receptoria': ['ENTREGAS_VER'],
+          'calidad-leche': ['CALIDAD_VER', 'ENTREGAS_VER'],
           'balance': ['BALANCE_LECHE_VER'],
           'control-tanques': ['BALANCE_LECHE_VER', 'ENTREGAS_VER'],
           'bufala': ['TRAZABILIDAD_BUFALA_VER'],

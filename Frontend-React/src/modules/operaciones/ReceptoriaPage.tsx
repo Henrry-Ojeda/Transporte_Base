@@ -13,12 +13,21 @@ import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import Swal from 'sweetalert2';
 import type { CompaniaDto, CamionDto, UsuarioDto, DespachoCompaniaDto, ControlRutaDto } from '@/types';
 import { viajeEstaEnviadoAReceptoria, esReceptoriaPrincipal, esTicketVisibleEnReceptoria } from '@/utils/procesoViaje';
+import { ExamenLecheModal } from './components/ExamenLecheModal';
+import { comprimirImagenArchivo } from '@/api/examenesLeche.api';
 
 export const ReceptoriaPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const hasBufala = useAuthStore((state) => state.hasTenantModule('MOD_LECHE_BUFALA'));
+  const hasCalidadLeche = useAuthStore((state) => state.hasTenantModule('MOD_CALIDAD_LECHE'));
   const hoyStr = new Date().toISOString().split('T')[0];
+
+  // Calidad de Leche (Exámenes y Recibos opcionales en Receptoría)
+  const [modalExamenLecheOpen, setModalExamenLecheOpen] = useState(false);
+  const [examenLecheDefaults, setExamenLecheDefaults] = useState<any>(null);
+  const [fotoExamenTicket, setFotoExamenTicket] = useState<string>('');
+  const [fotoReciboTicket, setFotoReciboTicket] = useState<string>('');
 
   // Filtros globales de la vista
   const [filtroFecha, setFiltroFecha] = useState<string>(hoyStr);
@@ -873,6 +882,8 @@ export const ReceptoriaPage: React.FC = () => {
         accion: modoRecepcion,
         litrosCargadosAdicional: modoRecepcion === 'RECARGAR_Y_DESPACHAR' ? Math.round(Number(recargaSilosInput)) : 0,
         observacion: obsRecepcionInput,
+        fotoExamenLeche: fotoExamenTicket || undefined,
+        fotoReciboReceptoria: fotoReciboTicket || undefined,
       };
       if (modoRecepcion === 'RECARGAR_Y_DESPACHAR') {
         const dests = destinosRecarga
@@ -906,6 +917,8 @@ export const ReceptoriaPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['rutas-hoy'] });
       setModalVerificarViaje(false);
       setViajeParaRecibir(null);
+      setFotoExamenTicket('');
+      setFotoReciboTicket('');
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.message || err.message || 'Error al procesar la recepción');
@@ -4655,6 +4668,43 @@ export const ReceptoriaPage: React.FC = () => {
                                 ) : (
                                   <span style={{ color: '#94a3b8', fontSize: '11px' }}>Sin foto</span>
                                 )}
+                                {hasCalidadLeche && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setExamenLecheDefaults({
+                                        nivelPrueba: 'FINCA',
+                                        controlRutaId: Number(viajeParaRecibir.id),
+                                        rutaRecoleccionId: Number(f.id) || null,
+                                        fincaId: Number(f.fincaId || f.FincaId || f.id),
+                                        fincaNombre: nomFinca,
+                                        choferId: Number(viajeParaRecibir.usuarioId || viajeParaRecibir.choferId || 0) || null,
+                                        camionId: Number(viajeParaRecibir.camionId || 0) || null,
+                                        litrosAsociados: lts,
+                                        fecha: viajeParaRecibir.fecha || hoyStr,
+                                        tipoLeche: f.tipoLeche || 'VACA',
+                                      });
+                                      setModalExamenLecheOpen(true);
+                                    }}
+                                    style={{
+                                      marginLeft: '4px',
+                                      padding: '3px 8px',
+                                      fontSize: '11px',
+                                      fontWeight: 700,
+                                      borderRadius: '6px',
+                                      color: '#0891b2',
+                                      border: '1px solid #67e8f9',
+                                      background: '#ecfeff',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                    title="Registrar Examen de Leche (Lactoscan S50) para esta finca"
+                                  >
+                                    <i className="fa-solid fa-flask-vial"></i> Examen
+                                  </button>
+                                )}
                               </td>
                               <td style={{ padding: '7px 10px', textAlign: 'center', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                                 {f.esDiferido || Number(f.litrosDiferidos || 0) > 0 ? (
@@ -5120,6 +5170,43 @@ export const ReceptoriaPage: React.FC = () => {
                                 ) : (
                                   <span style={{ color: '#94a3b8', fontSize: '11px' }}>Sin foto</span>
                                 )}
+                                {hasCalidadLeche && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setExamenLecheDefaults({
+                                        nivelPrueba: 'FINCA',
+                                        controlRutaId: Number(viajeParaRecibir.id),
+                                        rutaRecoleccionId: Number(f.id) || null,
+                                        fincaId: Number(f.fincaId || f.FincaId || f.id),
+                                        fincaNombre: nomFinca,
+                                        choferId: Number(viajeParaRecibir.usuarioId || viajeParaRecibir.choferId || 0) || null,
+                                        camionId: Number(viajeParaRecibir.camionId || 0) || null,
+                                        litrosAsociados: lts,
+                                        fecha: viajeParaRecibir.fecha || hoyStr,
+                                        tipoLeche: f.tipoLeche || 'VACA',
+                                      });
+                                      setModalExamenLecheOpen(true);
+                                    }}
+                                    style={{
+                                      marginLeft: '4px',
+                                      padding: '3px 8px',
+                                      fontSize: '11px',
+                                      fontWeight: 700,
+                                      borderRadius: '6px',
+                                      color: '#0891b2',
+                                      border: '1px solid #67e8f9',
+                                      background: '#ecfeff',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                    title="Registrar Examen de Leche (Lactoscan S50) para esta finca"
+                                  >
+                                    <i className="fa-solid fa-flask-vial"></i> Examen
+                                  </button>
+                                )}
                               </td>
                               <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                                 {verificado ? (
@@ -5140,6 +5227,124 @@ export const ReceptoriaPage: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {hasCalidadLeche && (
+                    <div
+                      style={{
+                        marginTop: '2px',
+                        padding: '12px',
+                        borderRadius: '10px',
+                        background: '#ecfeff',
+                        border: '1.5px solid #a5f3fc',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#155e75', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <i className="fa-solid fa-flask-vial"></i>
+                          Examen de Leche y Recibo del Ticket (Opcionales)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExamenLecheDefaults({
+                              nivelPrueba: 'TICKET',
+                              controlRutaId: Number(viajeParaRecibir.id),
+                              choferId: Number(viajeParaRecibir.usuarioId || viajeParaRecibir.choferId || 0) || null,
+                              camionId: Number(viajeParaRecibir.camionId || 0) || null,
+                              litrosAsociados: Number(litrosRecibidosInput) || Number(viajeParaRecibir.totalLitrosFinca || 0),
+                              fecha: viajeParaRecibir.fecha || hoyStr,
+                              tipoLeche: 'VACA',
+                            });
+                            setModalExamenLecheOpen(true);
+                          }}
+                          style={{
+                            padding: '5px 10px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: '#0891b2',
+                            color: '#ffffff',
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                          }}
+                        >
+                          <i className="fa-solid fa-vials"></i> Cargar 12 Campos Lactoscan / IA
+                        </button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cffafe' }}>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#0e7490', marginBottom: '4px' }}>
+                            1. Foto Examen de Leche
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                setFotoExamenTicket(await comprimirImagenArchivo(file));
+                              } catch {
+                                toast.error('No se pudo procesar la foto del examen');
+                              }
+                            }}
+                            style={{ fontSize: '11px', width: '100%' }}
+                          />
+                          {fotoExamenTicket && (
+                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <img src={fotoExamenTicket} alt="Examen" style={{ height: '42px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                              <button
+                                type="button"
+                                onClick={() => setFotoExamenTicket('')}
+                                style={{ fontSize: '11px', color: '#e11d48', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                              >
+                                Quitar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ background: '#ffffff', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cffafe' }}>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#047857', marginBottom: '4px' }}>
+                            2. Foto Recibo de Leche
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                setFotoReciboTicket(await comprimirImagenArchivo(file));
+                              } catch {
+                                toast.error('No se pudo procesar la foto del recibo');
+                              }
+                            }}
+                            style={{ fontSize: '11px', width: '100%' }}
+                          />
+                          {fotoReciboTicket && (
+                            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <img src={fotoReciboTicket} alt="Recibo" style={{ height: '42px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                              <button
+                                type="button"
+                                onClick={() => setFotoReciboTicket('')}
+                                style={{ fontSize: '11px', color: '#e11d48', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                              >
+                                Quitar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
               {/* SELECTOR VISUAL DE ACCIÓN */}
               <div>
@@ -5817,6 +6022,18 @@ export const ReceptoriaPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {hasCalidadLeche && (
+        <ExamenLecheModal
+          isOpen={modalExamenLecheOpen}
+          onClose={() => setModalExamenLecheOpen(false)}
+          defaults={examenLecheDefaults}
+          bloquearContexto={true}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['examenes-leche'] });
+          }}
+        />
       )}
     </section>
   );

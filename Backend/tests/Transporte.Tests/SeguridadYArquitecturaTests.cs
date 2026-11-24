@@ -74,6 +74,7 @@ public class SeguridadYArquitecturaTests
     [InlineData(typeof(CamionesController))]
     [InlineData(typeof(BcvController))]
     [InlineData(typeof(ConfiguracionController))]
+    [InlineData(typeof(ExamenesLecheController))]
     public void EndpointsEscritura_DebenUsarRequirePermissionYSinRolesHardcodeados(Type controllerType)
     {
         var writeMethods = controllerType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)

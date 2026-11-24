@@ -55,6 +55,7 @@ const LogisticaRutasPage = lazyNamed(() => import('@/modules/operaciones/Logisti
 const RecoleccionRutasPage = lazyNamed(() => import('@/modules/operaciones/RecoleccionRutasPage'), 'RecoleccionRutasPage');
 const ViajesTicketsPage = lazyNamed(() => import('@/modules/operaciones/ViajesTicketsPage'), 'ViajesTicketsPage');
 const ReceptoriaPage = lazyNamed(() => import('@/modules/operaciones/ReceptoriaPage'), 'ReceptoriaPage');
+const CalidadLechePage = lazyNamed(() => import('@/modules/operaciones/CalidadLechePage'), 'CalidadLechePage');
 const BalanceLechePage = lazyNamed(() => import('@/modules/operaciones/BalanceLechePage'), 'BalanceLechePage');
 const BufalaPage = lazyNamed(() => import('@/modules/operaciones/BufalaPage'), 'BufalaPage');
 const EvolucionFincasPage = lazyNamed(() => import('@/modules/operaciones/EvolucionFincasPage'), 'EvolucionFincasPage');
@@ -218,6 +219,7 @@ export const App: React.FC = () => {
                 <Route path="/rutas" element={<ProtectedRoute requiredTabId="rutas"><RecoleccionRutasPage /></ProtectedRoute>} />
                 <Route path="/viajes" element={<ProtectedRoute requiredTabId="viajes"><ViajesTicketsPage /></ProtectedRoute>} />
                 <Route path="/receptoria" element={<ProtectedRoute requiredTabId="receptoria" requiredTenantModule="MOD_RECEPTORIA"><ReceptoriaPage /></ProtectedRoute>} />
+                <Route path="/calidad-leche" element={<ProtectedRoute requiredTabId="calidad-leche" requiredTenantModule="MOD_CALIDAD_LECHE"><CalidadLechePage /></ProtectedRoute>} />
                 <Route path="/balance" element={<ProtectedRoute requiredTabId="balance"><BalanceLechePage /></ProtectedRoute>} />
                 <Route path="/evolucion-fincas" element={<ProtectedRoute requiredTabId="evolucion-fincas"><EvolucionFincasPage /></ProtectedRoute>} />
                 <Route path="/control-tanques" element={<ProtectedRoute requiredTabId="control-tanques" requiredTenantModule="MOD_CONTROL_TANQUES"><ControlTanquesPage /></ProtectedRoute>} />

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -55,6 +56,7 @@ namespace Transporte.API.Controllers
 
         [HttpPost("login")]
         [AllowAnonymous]
+        [EnableRateLimiting("auth-strict")]
         public async Task<IActionResult> Login([FromBody] LoginDto dto)
         {
             var user = await _authRepository.ObtenerPorUsernameAsync(dto.Username);
@@ -296,6 +298,7 @@ namespace Transporte.API.Controllers
 
         [HttpPost("vincular-dispositivo")]
         [AllowAnonymous]
+        [EnableRateLimiting("auth-strict")]
         public async Task<IActionResult> VincularDispositivo([FromBody] VincularDispositivoDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Codigo))

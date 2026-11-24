@@ -702,11 +702,11 @@ export const SemanasPage: React.FC = () => {
         <div
           className="content-card"
           style={{
-            background: 'linear-gradient(135deg, #0f172a, #1e293b)',
-            border: '1.5px solid #334155',
+            background: 'var(--t-surface)',
+            border: '1px solid var(--t-border)',
             borderRadius: '12px',
             padding: '20px',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+            boxShadow: 'var(--t-shadow)',
             marginBottom: '20px',
           }}
         >
@@ -719,14 +719,14 @@ export const SemanasPage: React.FC = () => {
               flexWrap: 'wrap',
               gap: '14px',
               marginBottom: '16px',
-              borderBottom: '1px solid rgba(255,255,255,0.1)',
+              borderBottom: '1px solid var(--t-border)',
               paddingBottom: '12px',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <h3
                 className="card-title"
-                style={{ marginBottom: 0, color: '#ffffff', fontSize: '16px', fontWeight: 800 }}
+                style={{ marginBottom: 0, color: 'var(--t-text)', fontSize: '16px', fontWeight: 800 }}
               >
                 <i className="fa-solid fa-star" style={{ color: '#fbbf24', marginRight: '6px' }}></i>
                 Semana Operativa Activa para Recolecciones
@@ -791,16 +791,16 @@ export const SemanasPage: React.FC = () => {
           >
             <div
               style={{
-                background: 'rgba(255,255,255,0.06)',
+                background: 'var(--t-surface-2)',
                 padding: '12px 14px',
                 borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--t-border)',
               }}
             >
               <span
                 style={{
                   fontSize: '11px',
-                  color: '#94a3b8',
+                  color: 'var(--t-muted)',
                   textTransform: 'uppercase',
                   fontWeight: 700,
                   letterSpacing: '0.05em',
@@ -810,23 +810,23 @@ export const SemanasPage: React.FC = () => {
               >
                 CÓDIGO / SEMANA
               </span>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--t-text)' }}>
                 {semanaActiva.codigo || semanaActiva.Codigo || `Semana #${semanaActiva.id}`}
               </div>
             </div>
 
             <div
               style={{
-                background: 'rgba(255,255,255,0.06)',
+                background: 'var(--t-surface-2)',
                 padding: '12px 14px',
                 borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--t-border)',
               }}
             >
               <span
                 style={{
                   fontSize: '11px',
-                  color: '#94a3b8',
+                  color: 'var(--t-muted)',
                   textTransform: 'uppercase',
                   fontWeight: 700,
                   letterSpacing: '0.05em',
@@ -836,23 +836,23 @@ export const SemanasPage: React.FC = () => {
               >
                 RANGO DE FECHAS
               </span>
-              <div style={{ fontSize: '15px', fontWeight: 700, color: '#38bdf8' }}>
+              <div style={{ fontSize: '15px', fontWeight: 700, color: '#0284c7' }}>
                 {activaFIni}  al  {activaFFin}
               </div>
             </div>
 
             <div
               style={{
-                background: 'rgba(255,255,255,0.06)',
+                background: 'var(--t-surface-2)',
                 padding: '12px 14px',
                 borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--t-border)',
               }}
             >
               <span
                 style={{
                   fontSize: '11px',
-                  color: '#94a3b8',
+                  color: 'var(--t-muted)',
                   textTransform: 'uppercase',
                   fontWeight: 700,
                   letterSpacing: '0.05em',
@@ -862,23 +862,23 @@ export const SemanasPage: React.FC = () => {
               >
                 LITROS ACUMULADOS
               </span>
-              <div style={{ fontSize: '17px', fontWeight: 800, color: '#4ade80' }}>
+              <div style={{ fontSize: '17px', fontWeight: 800, color: '#16a34a' }}>
                 {Number(semanaActiva.totalLitros || semanaActiva.TotalLitros || 0).toLocaleString()} Lts
               </div>
             </div>
 
             <div
               style={{
-                background: 'rgba(255,255,255,0.06)',
+                background: 'var(--t-surface-2)',
                 padding: '12px 14px',
                 borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--t-border)',
               }}
             >
               <span
                 style={{
                   fontSize: '11px',
-                  color: '#94a3b8',
+                  color: 'var(--t-muted)',
                   textTransform: 'uppercase',
                   fontWeight: 700,
                   letterSpacing: '0.05em',
@@ -888,23 +888,23 @@ export const SemanasPage: React.FC = () => {
               >
                 FINCAS CON ENTREGAS
               </span>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--t-text)' }}>
                 {Number(semanaActiva.totalFincasParticipantes ?? semanaActiva.TotalFincasParticipantes ?? 0)} Fincas
               </div>
             </div>
 
             <div
               style={{
-                background: 'rgba(255,255,255,0.06)',
+                background: 'var(--t-surface-2)',
                 padding: '12px 14px',
                 borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--t-border)',
               }}
             >
               <span
                 style={{
                   fontSize: '11px',
-                  color: '#94a3b8',
+                  color: 'var(--t-muted)',
                   textTransform: 'uppercase',
                   fontWeight: 700,
                   letterSpacing: '0.05em',
@@ -914,7 +914,7 @@ export const SemanasPage: React.FC = () => {
               >
                 PLANTAS RECEPTORAS
               </span>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#38bdf8' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: '#0284c7' }}>
                 {Number(semanaActiva.totalCompaniasParticipantes ?? semanaActiva.TotalCompaniasParticipantes ?? 0)} Plantas
               </div>
             </div>

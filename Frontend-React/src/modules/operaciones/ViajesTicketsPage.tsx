@@ -28,6 +28,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { operacionesApi } from '@/api/operaciones.api';
+import { getPermisosTipoLecheFinca } from '@/utils/procesoViaje';
 import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -2979,11 +2980,11 @@ export const ViajesTicketsPage: React.FC = () => {
                     onChange={(val) => {
                       const id = Number(val);
                       const fMatch = fincas.find((f) => f.id === id);
-                      const esBuf = (fMatch?.tipoLeche || '').toUpperCase().includes('BUFAL');
+                      const permisos = getPermisosTipoLecheFinca(fMatch);
                       setFormFincaAuditada({
                         ...formFincaAuditada,
                         fincaId: id,
-                        tipoLeche: esBuf ? 'BUFALA' : (formFincaAuditada.tipoLeche || 'VACA'),
+                        tipoLeche: permisos.defaultTipo,
                       });
                     }}
                     placeholder="-- SELECCIONAR FINCA GANADERA --"
@@ -3015,20 +3016,32 @@ export const ViajesTicketsPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {hasBufala && (
+                  {hasBufala && (() => {
+                    const fSelAud = fincas.find((f) => Number(f.id) === Number(formFincaAuditada.fincaId));
+                    const permisosAud = getPermisosTipoLecheFinca(fSelAud);
+                    return (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <i className="fa-solid fa-cow text-sky-600"></i>
-                        Tipo de Leche *
+                      <label className="text-xs font-bold text-slate-800 flex items-center justify-between gap-1.5">
+                        <span className="flex items-center gap-1.5">
+                          <i className="fa-solid fa-cow text-sky-600"></i>
+                          Tipo de Leche *
+                        </span>
+                        {!permisosAud.esDual && formFincaAuditada.fincaId > 0 && (
+                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Automático</span>
+                        )}
                       </label>
                       <div className="grid grid-cols-2 gap-2 h-11">
                         <button
                           type="button"
-                          onClick={() => setFormFincaAuditada({ ...formFincaAuditada, tipoLeche: 'VACA' })}
-                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            formFincaAuditada.tipoLeche === 'VACA'
-                              ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-2xs font-extrabold ring-1 ring-blue-500/20'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          disabled={!permisosAud.permiteVaca}
+                          onClick={() => permisosAud.permiteVaca && setFormFincaAuditada({ ...formFincaAuditada, tipoLeche: 'VACA' })}
+                          title={!permisosAud.permiteVaca ? 'Esta finca solo produce leche de Búfala' : undefined}
+                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                            !permisosAud.permiteVaca
+                              ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-50'
+                              : formFincaAuditada.tipoLeche === 'VACA'
+                                ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-2xs font-extrabold ring-1 ring-blue-500/20 cursor-pointer'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
                           }`}
                         >
                           <i className="fa-solid fa-cow text-sm"></i>
@@ -3036,11 +3049,15 @@ export const ViajesTicketsPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setFormFincaAuditada({ ...formFincaAuditada, tipoLeche: 'BUFALA' })}
-                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            formFincaAuditada.tipoLeche === 'BUFALA'
-                              ? 'bg-emerald-50 border-emerald-600 text-emerald-800 shadow-2xs font-extrabold ring-1 ring-emerald-500/20'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          disabled={!permisosAud.permiteBufala}
+                          onClick={() => permisosAud.permiteBufala && setFormFincaAuditada({ ...formFincaAuditada, tipoLeche: 'BUFALA' })}
+                          title={!permisosAud.permiteBufala ? 'Esta finca solo produce leche de Vaca' : undefined}
+                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                            !permisosAud.permiteBufala
+                              ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-50'
+                              : formFincaAuditada.tipoLeche === 'BUFALA'
+                                ? 'bg-emerald-50 border-emerald-600 text-emerald-800 shadow-2xs font-extrabold ring-1 ring-emerald-500/20 cursor-pointer'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
                           }`}
                         >
                           <span className="text-sm">🐃</span>
@@ -3048,7 +3065,8 @@ export const ViajesTicketsPage: React.FC = () => {
                         </button>
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 {/* 4. OPCIÓN DIFERIR LITROS & LECHE ÁCIDA */}
@@ -3326,30 +3344,46 @@ export const ViajesTicketsPage: React.FC = () => {
                         Tipo de Leche *
                       </label>
                       <div className="grid grid-cols-2 gap-2 h-11">
-                        <button
-                          type="button"
-                          onClick={() => setFormEditarFinca({ ...formEditarFinca, tipoLeche: 'VACA' })}
-                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            formEditarFinca.tipoLeche === 'VACA'
-                              ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-2xs font-extrabold ring-1 ring-blue-500/20'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                          }`}
-                        >
-                          <i className="fa-solid fa-cow text-sm"></i>
-                          Vaca
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFormEditarFinca({ ...formEditarFinca, tipoLeche: 'BUFALA' })}
-                          className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            formEditarFinca.tipoLeche === 'BUFALA'
-                              ? 'bg-emerald-50 border-emerald-600 text-emerald-800 shadow-2xs font-extrabold ring-1 ring-emerald-500/20'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="text-sm">🐃</span>
-                          Búfala
-                        </button>
+                        {(() => {
+                          const fSelEdit = fincas.find((f) => Number(f.id) === Number(formEditarFinca.fincaId));
+                          const permisosEdit = getPermisosTipoLecheFinca(fSelEdit);
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                disabled={!permisosEdit.permiteVaca}
+                                onClick={() => permisosEdit.permiteVaca && setFormEditarFinca({ ...formEditarFinca, tipoLeche: 'VACA' })}
+                                title={!permisosEdit.permiteVaca ? 'Esta finca solo produce leche de Búfala' : undefined}
+                                className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                                  !permisosEdit.permiteVaca
+                                    ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-50'
+                                    : formEditarFinca.tipoLeche === 'VACA'
+                                      ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-2xs font-extrabold ring-1 ring-blue-500/20 cursor-pointer'
+                                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
+                                }`}
+                              >
+                                <i className="fa-solid fa-cow text-sm"></i>
+                                Vaca
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!permisosEdit.permiteBufala}
+                                onClick={() => permisosEdit.permiteBufala && setFormEditarFinca({ ...formEditarFinca, tipoLeche: 'BUFALA' })}
+                                title={!permisosEdit.permiteBufala ? 'Esta finca solo produce leche de Vaca' : undefined}
+                                className={`h-full rounded-xl border-[1.5px] font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
+                                  !permisosEdit.permiteBufala
+                                    ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed opacity-50'
+                                    : formEditarFinca.tipoLeche === 'BUFALA'
+                                      ? 'bg-emerald-50 border-emerald-600 text-emerald-800 shadow-2xs font-extrabold ring-1 ring-emerald-500/20 cursor-pointer'
+                                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer'
+                                }`}
+                              >
+                                <span className="text-sm">🐃</span>
+                                Búfala
+                              </button>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}

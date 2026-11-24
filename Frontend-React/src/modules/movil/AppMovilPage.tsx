@@ -22570,6 +22570,10 @@ export const AppMovilPage: React.FC = () => {
                 </div>
 
                 {/* Tipo de Leche (Vaca vs Búfala) */}
+                {(() => {
+                  const fAdminSel = fincas.find((f) => Number(f.id) === Number(formAdminLitros.fincaId));
+                  const permisosAdminTl = getPermisosTipoLecheFinca(fAdminSel);
+                  return (
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
                     Tipo de Leche
@@ -22577,16 +22581,18 @@ export const AppMovilPage: React.FC = () => {
                   <div style={{ display: 'grid', gridTemplateColumns: tieneModuloBufala ? '1fr 1fr' : '1fr', gap: '8px' }}>
                     <button
                       type="button"
-                      onClick={() => setFormAdminLitros((prev) => ({ ...prev, tipoLeche: 'VACA' }))}
+                      disabled={!permisosAdminTl.permiteVaca}
+                      onClick={() => permisosAdminTl.permiteVaca && setFormAdminLitros((prev) => ({ ...prev, tipoLeche: 'VACA' }))}
                       style={{
                         padding: '9px',
                         borderRadius: '10px',
-                        border: formAdminLitros.tipoLeche === 'VACA' ? '2px solid #0284c7' : '1.5px solid #cbd5e1',
-                        background: formAdminLitros.tipoLeche === 'VACA' ? '#f0f9ff' : '#ffffff',
-                        color: formAdminLitros.tipoLeche === 'VACA' ? '#0369a1' : '#64748b',
+                        border: !permisosAdminTl.permiteVaca ? '1px solid #e2e8f0' : (formAdminLitros.tipoLeche === 'VACA' ? '2px solid #0284c7' : '1.5px solid #cbd5e1'),
+                        background: !permisosAdminTl.permiteVaca ? '#f1f5f9' : (formAdminLitros.tipoLeche === 'VACA' ? '#f0f9ff' : '#ffffff'),
+                        color: !permisosAdminTl.permiteVaca ? '#cbd5e1' : (formAdminLitros.tipoLeche === 'VACA' ? '#0369a1' : '#64748b'),
                         fontWeight: 800,
                         fontSize: '12.5px',
-                        cursor: 'pointer',
+                        cursor: !permisosAdminTl.permiteVaca ? 'not-allowed' : 'pointer',
+                        opacity: !permisosAdminTl.permiteVaca ? 0.55 : 1,
                       }}
                     >
                       🥛 Leche de Vaca
@@ -22594,16 +22600,18 @@ export const AppMovilPage: React.FC = () => {
                     {tieneModuloBufala && (
                       <button
                         type="button"
-                        onClick={() => setFormAdminLitros((prev) => ({ ...prev, tipoLeche: 'BUFALA' }))}
+                        disabled={!permisosAdminTl.permiteBufala}
+                        onClick={() => permisosAdminTl.permiteBufala && setFormAdminLitros((prev) => ({ ...prev, tipoLeche: 'BUFALA' }))}
                         style={{
                           padding: '9px',
                           borderRadius: '10px',
-                          border: formAdminLitros.tipoLeche === 'BUFALA' ? '2px solid #ea580c' : '1.5px solid #cbd5e1',
-                          background: formAdminLitros.tipoLeche === 'BUFALA' ? '#fff7ed' : '#ffffff',
-                          color: formAdminLitros.tipoLeche === 'BUFALA' ? '#c2410c' : '#64748b',
+                          border: !permisosAdminTl.permiteBufala ? '1px solid #e2e8f0' : (formAdminLitros.tipoLeche === 'BUFALA' ? '2px solid #ea580c' : '1.5px solid #cbd5e1'),
+                          background: !permisosAdminTl.permiteBufala ? '#f1f5f9' : (formAdminLitros.tipoLeche === 'BUFALA' ? '#fff7ed' : '#ffffff'),
+                          color: !permisosAdminTl.permiteBufala ? '#cbd5e1' : (formAdminLitros.tipoLeche === 'BUFALA' ? '#c2410c' : '#64748b'),
                           fontWeight: 800,
                           fontSize: '12.5px',
-                          cursor: 'pointer',
+                          cursor: !permisosAdminTl.permiteBufala ? 'not-allowed' : 'pointer',
+                          opacity: !permisosAdminTl.permiteBufala ? 0.55 : 1,
                         }}
                       >
                         🐃 Leche de Búfala
@@ -22611,6 +22619,8 @@ export const AppMovilPage: React.FC = () => {
                     )}
                   </div>
                 </div>
+                  );
+                })()}
 
                 {/* Checkboxes: Leche Ácida y Diferir */}
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>

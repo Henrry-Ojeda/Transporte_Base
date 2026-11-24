@@ -36,18 +36,8 @@ export const NAV_GROUPS: NavGroupDef[] = [
       { name: 'Entregas Receptoría', href: '/receptoria', tabId: 'receptoria', icon: 'fa-solid fa-truck-ramp-box', requiredTenantModule: 'MOD_RECEPTORIA' },
       { name: 'Control de Viajes', href: '/viajes', tabId: 'viajes', icon: 'fa-solid fa-clipboard-check' },
       { name: 'Balance & Silos', href: '/balance', tabId: 'balance', icon: 'fa-solid fa-cubes-stacked', color: '#2563eb' },
-      { name: 'Mapa de Rutas & GPS', href: '/mapa-rutas', tabId: 'mapa-rutas', icon: 'fa-solid fa-map-location-dot', color: '#0d9488', requiredTenantModule: 'MOD_MAPA_RUTAS' },
       { name: 'Trazabilidad Búfala', href: '/bufala', tabId: 'bufala', icon: 'fa-solid fa-gem', color: '#0d9488', requiredTenantModule: 'MOD_LECHE_BUFALA' },
-      {
-        name: 'Logísticas',
-        tabId: 'rutas-planificacion',
-        icon: 'fa-solid fa-map-location-dot',
-        color: '#3b82f6',
-        subItems: [
-          { name: 'Circuitos y Rutas Base', href: '/planificacion-rutas', tabId: 'rutas-planificacion', icon: 'fa-solid fa-route', requiredTenantModule: 'MOD_LOGISTICA_RUTAS' },
-          { name: 'Planificación de Rutas-choferes', href: '/planificacion-rutas-choferes', tabId: 'planificacion-rutas-choferes', icon: 'fa-solid fa-calendar-check', color: '#10b981', requiredTenantModule: 'MOD_LOGISTICA_RUTAS' },
-        ],
-      },
+      { name: 'Logística de Rutas', href: '/logistica', tabId: 'rutas-planificacion', icon: 'fa-solid fa-map-location-dot', color: '#3b82f6', requiredTenantModule: 'MOD_LOGISTICA_RUTAS' },
     ],
   },
   {
@@ -89,8 +79,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
     items: [
       { name: 'Semanas Operativas', href: '/semanas', tabId: 'semanas', icon: 'fa-regular fa-calendar-check', requiredTenantModule: 'MOD_LIQUIDACIONES' },
       { name: 'Liquidación Fincas', href: '/liquidaciones', tabId: 'liquidaciones', icon: 'fa-solid fa-file-invoice-dollar', requiredTenantModule: 'MOD_LIQUIDACIONES' },
-      { name: 'Pagos Choferes & Personal', href: '/pagos-personal', tabId: 'pagos-personal', icon: 'fa-solid fa-money-check-dollar', color: '#38bdf8', requiredTenantModule: 'MOD_PAGOS_PERSONAL' },
-      { name: 'Historial de Pagos', href: '/historial-pagos', tabId: 'historial-pagos', icon: 'fa-solid fa-receipt', color: '#6366f1', requiredTenantModule: 'MOD_LIQUIDACIONES' },
+      { name: 'Pagos & Nómina', href: '/pagos-nomina', tabId: 'pagos-personal', icon: 'fa-solid fa-money-check-dollar', color: '#38bdf8', requiredTenantModule: 'MOD_PAGOS_PERSONAL' },
       { name: 'Historial Tasas BCV', href: '/historial-bcv', tabId: 'historial-bcv', icon: 'fa-solid fa-coins', requiredTenantModule: 'MOD_HISTORIAL_BCV' },
     ],
   },
@@ -102,9 +91,8 @@ export const NAV_GROUPS: NavGroupDef[] = [
     groupIconClass: 'icon-ade',
     color: '#ea580c',
     items: [
-      { name: 'Adelantos a Fincas', href: '/adelantos-fincas', tabId: 'adelantos-fincas', icon: 'fa-solid fa-leaf', requiredTenantModule: 'MOD_LIQUIDACIONES' },
+      { name: 'Adelantos & Amortizaciones', href: '/adelantos', tabId: 'adelantos', icon: 'fa-solid fa-hand-holding-dollar', requiredTenantModule: 'MOD_LIQUIDACIONES' },
       { name: 'Abonos a Compañías', href: '/abonos-companias', tabId: 'abonos-companias', icon: 'fa-solid fa-building' },
-      { name: 'Otros Adelantos & Historial', href: '/otros-adelantos', tabId: 'adelantos', icon: 'fa-solid fa-clock-rotate-left', color: '#0d9488' },
     ],
   },
   {

@@ -100,7 +100,15 @@ namespace Transporte.API.Controllers
                 : (await _authRepository.ObtenerPermisosUsuarioAsync(user.Id));
 
             var tokenHandler = new JwtSecurityTokenHandler();
-            var secretKey = _config["Jwt:SecretKey"] ?? _config["Jwt:Key"] ?? "ClaveSecretaSuperSeguraParaRutasDeLeche2026_JWT_Token_Key_MuyLargaParaHmacSha256!";
+            var secretKey = _config["Jwt:SecretKey"] ?? _config["Jwt:Key"] ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY");
+            if (string.IsNullOrWhiteSpace(secretKey) || secretKey.StartsWith("__INYECTAR", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")?.Equals("Development", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    return StatusCode(500, new { message = "Jwt:SecretKey no está configurado en el servidor." });
+                }
+                secretKey = "DevLocalOnly_TransporteJwtSecretKey_Minimum32Chars!";
+            }
             var key = Encoding.UTF8.GetBytes(secretKey);
             
             string tenantCode = _tenantService.GetTenantCode();
@@ -343,7 +351,15 @@ namespace Transporte.API.Controllers
 
             // Generar JWT firmado
             var tokenHandler = new JwtSecurityTokenHandler();
-            var secretKey = _config["Jwt:SecretKey"] ?? _config["Jwt:Key"] ?? "ClaveSecretaSuperSeguraParaRutasDeLeche2026_JWT_Token_Key_MuyLargaParaHmacSha256!";
+            var secretKey = _config["Jwt:SecretKey"] ?? _config["Jwt:Key"] ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY");
+            if (string.IsNullOrWhiteSpace(secretKey) || secretKey.StartsWith("__INYECTAR", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")?.Equals("Development", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    return StatusCode(500, new { message = "Jwt:SecretKey no está configurado en el servidor." });
+                }
+                secretKey = "DevLocalOnly_TransporteJwtSecretKey_Minimum32Chars!";
+            }
             var key = Encoding.UTF8.GetBytes(secretKey);
 
             var claims = new List<Claim>

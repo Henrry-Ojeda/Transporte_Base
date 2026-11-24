@@ -707,6 +707,17 @@ body {
   -webkit-backdrop-filter: blur(12px) !important;
   border-bottom: 1px solid var(--t-border) !important;
   color: var(--t-text) !important;
+  padding: 0 18px !important;
+  gap: 16px !important;
+  justify-content: space-between !important;
+}
+
+.top-nav .nav-center {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  flex: 1 !important;
 }
 
 .top-nav .brand-title,
@@ -720,6 +731,9 @@ body {
   background: var(--t-surface-solid) !important;
   border: 1px solid var(--t-border) !important;
   color: var(--t-text) !important;
+  border-radius: 12px !important;
+  height: 40px !important;
+  padding: 0 12px !important;
 }
 
 .top-nav .bcv-label,

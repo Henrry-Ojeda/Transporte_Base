@@ -5,7 +5,9 @@
 - **Reglas Permanentes:** Ver [AGENTS.md](AGENTS.md) — Reglas Maestras #1–#7 (incluyendo **CERO HARDCODEO**, `<DataTable />`, `<SearchableSelect />`, `develop -> qa -> main`, no alterar lógica de `Relación Compañías` ni `Relación Chofer`).
 - **Infraestructura Clave:**
   - **VPS Backend PROD:** `root@84.247.178.194` (`/opt/sql_server`, contenedores `sql_instancia` y `api_transporte` en `127.0.0.1:8080`, variable `SAAS_MASTER_CONNECTION`).
+  - **Respaldos Automáticos PROD:** Cron diario en VPS (`/opt/sql_server/backup_databases.sh`, 3:00 AM VET, retención 14 días, descubre dinámicamente todas las BDs) + descarga portable en laptop (`Scripts/Backups/Descargar-Backups-PROD.ps1` + `Instalar-Tarea-Backup.ps1` + `backup-config.example.json`).
   - **Frontend PROD (Vercel):** Raíz del repo (`npx vercel --prod --yes`) + alias hijos: `transporte-vergel-carrillo.vercel.app`, `lacteos-campoverde.vercel.app`, `transporte-base.vercel.app`.
+  - **App Móvil Nativa Futura:** `C:\Users\Usuario\source\repos\Transporte_App_Movil` (Expo/React Native + `expo-sqlite`) para implementación futura de choferes.
   - **Local QA:** Frontend `:3000` (`Frontend-React`), Backend `:5188` (`Backend/src/Transporte.API`).
 
 ## Estado Actual (Desplegado en PROD — P0 a P4 Completados)

@@ -574,10 +574,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
                 right: 0,
                 width: '370px',
                 maxWidth: '90vw',
-                background: '#ffffff',
+                background: 'var(--t-surface-solid)',
                 borderRadius: '14px',
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 12px 32px rgba(15, 23, 42, 0.14)',
+                border: '1px solid var(--t-border)',
+                boxShadow: '0 12px 32px rgba(15, 23, 42, 0.25)',
                 zIndex: 1050,
                 overflow: 'hidden',
               }}
@@ -586,16 +586,16 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
               <div
                 style={{
                   padding: '12px 16px',
-                  borderBottom: '1px solid #f1f5f9',
+                  borderBottom: '1px solid var(--t-border)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  background: '#f8fafc',
+                  background: 'var(--t-table-head)',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <i className="fa-solid fa-bell" style={{ color: '#2563eb' }}></i>
-                  <span style={{ fontWeight: 800, fontSize: '13px', color: '#1e293b' }}>
+                  <i className="fa-solid fa-bell" style={{ color: 'var(--t-accent)' }}></i>
+                  <span style={{ fontWeight: 800, fontSize: '13px', color: 'var(--t-text)' }}>
                     Notificaciones
                   </span>
                   {unreadCount > 0 && (
@@ -803,7 +803,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
                 style={{
                   fontSize: '13px',
                   fontWeight: 800,
-                  color: '#0f172a',
+                  color: 'var(--t-text)',
                   maxWidth: '160px',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',

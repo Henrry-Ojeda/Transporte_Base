@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 using Transporte.API.Multitenancy;
+using Transporte.API.Security;
 
 namespace Transporte.API.Controllers
 {
@@ -13,6 +14,7 @@ namespace Transporte.API.Controllers
     [Route("api/mantenimiento-camiones")]
     [Authorize]
     [RequireTenantModule("MOD_MANTENIMIENTO")]
+    [RequirePermission("HISTORIAL_CAMIONES_VER", "CAMIONES_VER")]
     public class MantenimientoCamionesController : ControllerBase
     {
         private readonly IMantenimientoCamionesRepository _repo;

@@ -444,10 +444,12 @@ namespace Transporte.Infrastructure.Repositories
                     {
                         int targetCompaniaId = (dto.CompaniaDestinoId.HasValue && dto.CompaniaDestinoId.Value > 0)
                             ? dto.CompaniaDestinoId.Value
-                            : 5028;
+                            : 0;
 
-                        var existeComp = await connection.ExecuteScalarAsync<int>(
-                            "SELECT COUNT(1) FROM TB_COMPANIAS WHERE Id = @targetCompaniaId", new { targetCompaniaId }, transaction);
+                        var existeComp = targetCompaniaId > 0
+                            ? await connection.ExecuteScalarAsync<int>(
+                                "SELECT COUNT(1) FROM TB_COMPANIAS WHERE Id = @targetCompaniaId", new { targetCompaniaId }, transaction)
+                            : 0;
                         if (existeComp == 0)
                         {
                             targetCompaniaId = await connection.ExecuteScalarAsync<int>(
@@ -456,9 +458,8 @@ namespace Transporte.Infrastructure.Repositories
                                   ORDER BY CASE 
                                     WHEN EsPrincipal = 1 THEN 0 
                                     WHEN UPPER(Nombre) LIKE '%RECEPTOR%' THEN 1 
-                                    WHEN UPPER(Nombre) LIKE '%CAMPO%VERDE%' THEN 2 
-                                    WHEN UPPER(Nombre) LIKE '%VERGEL%' THEN 3 
-                                    ELSE 4 END, Id ASC", transaction: transaction);
+                                    WHEN UPPER(Nombre) LIKE '%PLANTA%' THEN 2 
+                                    ELSE 3 END, Id ASC", transaction: transaction);
                         }
 
                         int litrosDespacho = totalLitrosFinca;

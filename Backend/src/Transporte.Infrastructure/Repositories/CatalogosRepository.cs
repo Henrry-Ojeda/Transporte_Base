@@ -499,11 +499,9 @@ namespace Transporte.Infrastructure.Repositories
                                 WHERE IsDeleted = 0
                                 ORDER BY CASE 
                                     WHEN UPPER(Nombre) LIKE ''%RECEPTOR%'' THEN 1
-                                    WHEN UPPER(Nombre) LIKE ''%CAMPO%VERDE%'' THEN 2
-                                    WHEN UPPER(Nombre) LIKE ''%VERGEL%'' THEN 3
-                                    WHEN UPPER(Nombre) LIKE ''%PLANTA%'' THEN 4
-                                    WHEN UPPER(Nombre) LIKE ''%MATRIZ%'' THEN 5
-                                    ELSE 6 END, Id ASC
+                                    WHEN UPPER(Nombre) LIKE ''%PLANTA%'' THEN 2
+                                    WHEN UPPER(Nombre) LIKE ''%MATRIZ%'' THEN 3
+                                    ELSE 4 END, Id ASC
                             );
                         END
                     ';";

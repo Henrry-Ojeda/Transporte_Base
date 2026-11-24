@@ -50,7 +50,13 @@ public class JwtTokenService : IJwtTokenService
 
     public string GenerateToken(Usuario usuario, List<string> permisos)
     {
-        var secret = _configuration["Jwt:SecretKey"] ?? "ClaveSecretaSuperSeguraParaRutasDeLeche2026_JWT_Token_Key!";
+        var secret = _configuration["Jwt:SecretKey"] ?? _configuration["Jwt:Key"] ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY");
+        if (string.IsNullOrWhiteSpace(secret) || secret.StartsWith("__INYECTAR", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.Equals(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), "Development", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Jwt:SecretKey (o variable JWT_SECRET_KEY) es obligatoria en QA/Producción.");
+            secret = "DevLocalOnly_TransporteJwtSecretKey_Minimum32Chars!";
+        }
         var issuer = _configuration["Jwt:Issuer"] ?? "TransporteAPI";
         var audience = _configuration["Jwt:Audience"] ?? "TransporteApp";
 

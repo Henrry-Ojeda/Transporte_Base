@@ -153,6 +153,9 @@ const DynamicAppIconSync: React.FC = () => {
         updateAppIcon(savedLogo);
       }
 
+      const hasToken = !!(localStorage.getItem('transporte_jwt_token') || localStorage.getItem('token'));
+      if (!hasToken) return;
+
       apiClient.get<any>('/catalogos/empresa')
         .then((res) => {
           const logo = res.data?.logoUrl || res.data?.LogoUrl;

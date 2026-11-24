@@ -234,7 +234,9 @@ namespace Transporte.Infrastructure.Repositories
             DateTime fechaFinal = dto.Fecha?.Date ?? fechaActual;
             int litrosFinal = dto.Litros ?? (int)entrega.Litros;
             int companiaFinal = dto.CompaniaId ?? (int)entrega.CompaniaId;
-            int conductorFinal = (rol == "ADMIN" && dto.ConductorId.HasValue && dto.ConductorId.Value > 0)
+            var rUp = (rol ?? string.Empty).Trim().ToUpperInvariant();
+            bool esAdminEnt = rUp == "ADMIN" || rUp == "SUPERADMIN" || rUp == "SUPER_ADMIN" || rUp == "ADMINISTRADOR";
+            int conductorFinal = (esAdminEnt && dto.ConductorId.HasValue && dto.ConductorId.Value > 0)
                 ? dto.ConductorId.Value
                 : conductorActual;
             string? observacionFinal = dto.Observacion ?? (string?)entrega.Observacion;

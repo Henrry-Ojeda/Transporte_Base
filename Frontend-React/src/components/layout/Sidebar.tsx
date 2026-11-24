@@ -105,7 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             <button
               type="button"
               onClick={() => setOpenSubMenus((prev) => ({ ...prev, [item.name]: !prev[item.name] }))}
-              className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+              className="nav-sub-item w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold cursor-pointer"
               style={{ color: 'var(--t-text)' }}
             >
               <span className="flex items-center gap-2.5 truncate">
@@ -124,9 +124,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                       setPopoverGroupId(null);
                       if (isMobileDrawer) onClose();
                     }}
-                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-all"
+                    className="nav-sub-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs"
                     style={({ isActive }) => ({
-                      background: isActive ? 'var(--t-accent-soft)' : 'transparent',
+                      background: isActive ? 'var(--t-accent-soft)' : undefined,
                       color: isActive ? 'var(--t-accent-text)' : 'var(--t-muted)',
                       fontWeight: isActive ? 700 : 500,
                       textDecoration: 'none',
@@ -150,9 +150,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             setPopoverGroupId(null);
             if (isMobileDrawer) onClose();
           }}
-          className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-all"
+          className="nav-sub-item flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs"
           style={({ isActive }) => ({
-            background: isActive ? 'var(--t-accent-soft)' : 'transparent',
+            background: isActive ? 'var(--t-accent-soft)' : undefined,
             color: isActive ? 'var(--t-accent-text)' : 'var(--t-text)',
             fontWeight: isActive ? 700 : 500,
             border: isActive ? '1px solid var(--t-accent-soft)' : '1px solid transparent',
@@ -230,9 +230,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     setSelectedGroupId(grp.id);
                   }
                 }}
-                className="w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+                className={`rail-item-btn w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer ${highlighted ? 'is-highlighted' : ''}`}
                 style={{
-                  background: highlighted ? 'var(--t-accent)' : 'transparent',
+                  backgroundColor: highlighted ? 'var(--t-accent)' : undefined,
                   color: highlighted ? '#ffffff' : 'var(--t-rail-text)',
                   border: isCurrentRouteGroup && !highlighted ? '1px solid var(--t-accent)' : '1px solid transparent',
                   boxShadow: highlighted ? '0 4px 12px rgba(0, 0, 0, 0.25)' : 'none',
@@ -253,7 +253,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             type="button"
             onClick={() => toggleCollapse()}
             title={effectiveCollapsed ? 'Expandir panel de menú (Dual-Rail)' : 'Colapsar a Mini-Rail'}
-            className="w-10 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors"
+            className="rail-collapse-btn w-10 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all"
             style={{
               background: 'rgba(255,255,255,0.07)',
               color: '#e2e8f0',
@@ -333,6 +333,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       {/* POPOVER POR CLIC EN MODO COLAPSADO (OPCIÓN 5 - MINI-RAIL) */}
       {effectiveCollapsed && popoverGroup && (
         <div
+          className="dual-rail-popover"
           onClick={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',

@@ -10,6 +10,25 @@ import { finanzasApi } from '@/api/finanzas.api';
 import { SearchableSelect, type SelectOption } from '@/components/common/SearchableSelect';
 import { useAuthStore } from '@/stores/authStore';
 
+/** Limpia etiquetas y textos automáticos generados por el sistema para mostrar solo observaciones reales del chofer/usuario. */
+const limpiarObservacionFinca = (raw?: string | null): string => {
+  if (!raw) return '';
+  return raw
+    .replace(/\[ENTRADA\s+TERCERO\]/gi, '')
+    .replace(/\[ORIGEN_(M[OÓ]VIL|PLANIFICACION)\]/gi, '')
+    .replace(/\[RUTAS:[^\]]+\]/gi, '')
+    .replace(/\[LOCAL:[^\]]+\]/gi, '')
+    .replace(/\[\s*BUFAL[AO]\s*\]/gi, '')
+    .replace(/\bBUFAL[AO]\b/gi, '')
+    .replace(/Asignada en inicio de ruta/gi, '')
+    .replace(/Recepci[^\s]*n directa en Receptor[^\s]*/gi, '')
+    .replace(/Viaje iniciado por el chofer/gi, '')
+    .replace(/Descarga en Receptor[^\s]* desde Viaje #\d+/gi, '')
+    .replace(/Entrega y recepci[^\s]*n registrada mediante Carga Masiva[^.]*\.?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+};
+
 export type TipoReporteOficial =
   | 'DIARIOS'
   | 'RECEPTORIAS'
@@ -1423,7 +1442,7 @@ const RenderReporteReceptorias: React.FC<{
                     <tr key={dIdx}>
                       <td>{formatearFechaLocal(d.fecha)}</td>
                       <td style={{ fontWeight: 800 }}>{formatearNumero(d.litros)}</td>
-                      <td className="text-left">{(d.observacion || '').replace(/Asignada en inicio de ruta\s*\[ORIGEN_PLANIFICACION\]/gi, '').replace(/\[ORIGEN_(M[OÓ]VIL|PLANIFICACION)\]/gi, '').trim() || '-'}</td>
+                      <td className="text-left">{limpiarObservacionFinca(d.observacion) || '-'}</td>
                     </tr>
                   ))
                 )}
@@ -1890,12 +1909,7 @@ const RenderReporteFincas: React.FC<{
                       finca.detalle.map((d: any, dIdx: number) => {
                         const obs = (d.observacion || d.Observacion || '').toUpperCase();
                         const isAcida = Boolean(d.esAcida) || obs.includes('ACID') || obs.includes('MALA') || String(d.tipoLeche || '').includes('ACID');
-                        let obsLimpia = (d.observacion || d.Observacion || '')
-                          .replace(/Asignada en inicio de ruta\s*\[ORIGEN_PLANIFICACION\]/gi, '')
-                          .replace(/\[ORIGEN_(M[OÓ]VIL|PLANIFICACION)\]/gi, '')
-                          .replace(/\[\s*BUFAL[AO]\s*\]/gi, '')
-                          .replace(/\bBUFAL[AO]\b/gi, '')
-                          .trim();
+                        let obsLimpia = limpiarObservacionFinca(d.observacion || d.Observacion || '');
                         let obsDisplay = obsLimpia;
                         if (isAcida) {
                           if (!obsLimpia.toUpperCase().includes('ACID') && !obsLimpia.toUpperCase().includes('MALA')) {
@@ -2491,7 +2505,7 @@ const RenderReporteChoferes: React.FC<{
                       <tr key={dIdx}>
                         <td>{formatearFechaLocal(d.fecha)}</td>
                         <td style={{ background: bgCol, color: textCol, fontWeight: 800 }}>{txt}</td>
-                        <td className="text-left">{(d.observacion || '').replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '').trim()}</td>
+                        <td className="text-left">{limpiarObservacionFinca(d.observacion)}</td>
                       </tr>
                     );
                   })
@@ -3388,7 +3402,7 @@ const RenderReporteRelacionChoferes: React.FC<{
                           const fNombre = (f.fincaNombre || f.FincaNombre || `Finca #${f.fincaId || f.FincaId || ''}`).toUpperCase();
                           const fProp = (f.propietario || f.Propietario || '').trim();
                           const fTipo = (f.tipoLeche || f.TipoLeche || 'VACA').toUpperCase();
-                          const fObs = (f.observacion || f.Observacion || '').replace(/\[ORIGEN_M[OÓ]VIL\]/gi, '').trim();
+                          const fObs = limpiarObservacionFinca(f.observacion || f.Observacion || '');
                           const fTicket = f.ticketControlId || f.TicketControlId || '';
 
                           let tipoBadge = (
@@ -3579,7 +3593,7 @@ const ModalDetalleEntregasCompania: React.FC<{ compania: any; onClose: () => voi
                     <td>{formatearFechaLocal(e.fecha)}</td>
                     <td style={{ fontWeight: 800, color: '#047857' }}>{formatearNumero(e.litros)} L</td>
                     <td>{e.conductorNombre || e.choferNombre || 'OTROS'}</td>
-                    <td className="text-left">{e.observacion || '-'}</td>
+                    <td className="text-left">{limpiarObservacionFinca(e.observacion) || '-'}</td>
                   </tr>
                 ))
               )}

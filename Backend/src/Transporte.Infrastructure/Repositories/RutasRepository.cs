@@ -139,6 +139,11 @@ namespace Transporte.Infrastructure.Repositories
                 throw new InvalidOperationException("El usuario seleccionado tiene rol Administrador y no puede ser asignado como conductor.");
             }
 
+            if (dto.Litros <= 0)
+            {
+                throw new InvalidOperationException("Debe ingresar una cantidad de litros mayor a 0 para registrar la recolección.");
+            }
+
             var cicloSql = "SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS WHERE @fechaRuta BETWEEN FechaInicio AND FechaFin AND Estado = 'ABIERTO'";
             var cicloId = await connection.ExecuteScalarAsync<int?>(cicloSql, new { fechaRuta });
             if (cicloId == null)
@@ -181,6 +186,38 @@ namespace Transporte.Infrastructure.Repositories
                         INSERT INTO TB_HISTORIAL_PROCESOS_TICKET (ControlRutaId, ProcesoId, FechaCambio, CambiadoPor, Observacion)
                         VALUES (@ticketId, 1, GETDATE(), @choferEfectivo, 'Apertura automÃ¡tica de viaje al registrar recolecciÃ³n');",
                         new { ticketId, choferEfectivo });
+                }
+            }
+
+            // Validar si la finca ya fue recogida hoy por OTRO chofer/ticket (sin solicitud extraordinaria aprobada)
+            var yaRecogidaOtro = await connection.QueryFirstOrDefaultAsync<dynamic>(@"
+                SELECT TOP 1 f.Nombre AS FincaNombre, ISNULL(u.NombreCompleto, u.Username) AS ChoferNombre
+                FROM TB_RUTAS_RECOLECCION r
+                INNER JOIN TB_FINCAS f ON r.FincaId = f.Id
+                LEFT JOIN TB_USUARIOS u ON r.UsuarioId = u.Id
+                WHERE r.FincaId = @fincaId
+                  AND CAST(r.Fecha AS DATE) = @fechaRuta
+                  AND ISNULL(r.Litros, 0) > 0
+                  AND (r.ControlRutaId IS NULL OR r.ControlRutaId <> @ticketId)
+                  AND r.UsuarioId <> @choferEfectivo",
+                new { fincaId = dto.FincaId, fechaRuta, ticketId = ticketId ?? 0, choferEfectivo });
+
+            if (yaRecogidaOtro != null)
+            {
+                var tieneExtraAprobada = await connection.ExecuteScalarAsync<int>(@"
+                    SELECT COUNT(1)
+                    FROM TB_SOLICITUDES_RECOLECCION_EXTRAORDINARIA
+                    WHERE FincaId = @fincaId
+                      AND CAST(Fecha AS DATE) = @fechaRuta
+                      AND ChoferSolicitanteId = @choferEfectivo
+                      AND UPPER(Estado) = 'APROBADA'",
+                    new { fincaId = dto.FincaId, fechaRuta, choferEfectivo });
+
+                if (tieneExtraAprobada == 0)
+                {
+                    string fNom = (string)(yaRecogidaOtro.FincaNombre ?? $"Finca #{dto.FincaId}");
+                    string cNom = (string)(yaRecogidaOtro.ChoferNombre ?? "otro chofer");
+                    throw new InvalidOperationException($"LA FINCA {fNom} YA FUE RECOGIDA POR EL CHOFER {cNom}.");
                 }
             }
 
@@ -749,19 +786,10 @@ namespace Transporte.Infrastructure.Repositories
                 "SELECT * FROM TB_RUTAS_RECOLECCION WHERE Id = @rutaId", new { rutaId });
             if (ruta == null) return false;
 
-            // Resetear informaciÃ³n de recolecciÃ³n manteniendo la asignaciÃ³n de la finca en el ticket
+            // Eliminar recolección de TB_RUTAS_RECOLECCION (la finca sigue visible en gris desde la ruta planificada)
             await connection.ExecuteAsync(@"
-                UPDATE TB_RUTAS_RECOLECCION
-                SET Litros = 0,
-                    FotoComprobante = NULL,
-                    EsAcida = 0,
-                    EsDiferido = 0,
-                    LitrosOriginales = NULL,
-                    Observacion = NULL,
-                    PrecioLitroUSDAplicado = NULL,
-                    ModifiedAt = GETDATE(),
-                    ModifiedBy = @usuarioId
-                WHERE Id = @rutaId", new { rutaId, usuarioId });
+                DELETE FROM TB_RUTAS_RECOLECCION
+                WHERE Id = @rutaId", new { rutaId });
 
             if (ruta.ControlRutaId != null)
             {

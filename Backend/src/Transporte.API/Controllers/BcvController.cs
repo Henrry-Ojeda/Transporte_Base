@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Security;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 using Transporte.API.Multitenancy;
@@ -53,7 +54,7 @@ namespace Transporte.API.Controllers
         [HttpPost]
         [HttpPost("registrar")]
         [HttpPost("guardar")]
-        [Authorize(Roles = "SUPERADMIN,ADMIN,FINANZAS,SUPERVISOR")]
+        [RequirePermission("HISTORIAL_BCV_VER", "CONFIGURACION_VER")]
         public async Task<IActionResult> GuardarTasa([FromBody] RegistrarBcvDto dto)
         {
             if (dto.TasaDolarBs <= 0)
@@ -75,7 +76,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "SUPERADMIN,ADMIN,FINANZAS,SUPERVISOR")]
+        [RequirePermission("HISTORIAL_BCV_VER", "CONFIGURACION_VER")]
         public async Task<IActionResult> EditarTasa([FromRoute] int id, [FromBody] EditarBcvDto dto)
         {
             if (dto.TasaDolarBs.HasValue && dto.TasaDolarBs.Value <= 0)
@@ -98,7 +99,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "SUPERADMIN,ADMIN,FINANZAS,SUPERVISOR")]
+        [RequirePermission("HISTORIAL_BCV_VER", "CONFIGURACION_VER")]
         public async Task<IActionResult> EliminarTasa([FromRoute] int id)
         {
             try

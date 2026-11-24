@@ -15,6 +15,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Transporte.Core\Transporte.Core.csproj" />
+    <ProjectReference Include="..\..\src\Transporte.Infrastructure\Transporte.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Transporte.API\Transporte.API.csproj" />
   </ItemGroup>
 
 </Project>

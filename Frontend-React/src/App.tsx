@@ -26,8 +26,6 @@ const lazyNamed = <T extends Record<string, any>>(
 
 // Dashboard & Operaciones (Code-Splitting por ruta)
 const DashboardPage = lazyNamed(() => import('@/modules/dashboard/DashboardPage'), 'DashboardPage');
-const RutasLogisticaPage = lazyNamed(() => import('@/modules/operaciones/RutasLogisticaPage'), 'RutasLogisticaPage');
-const PlanificacionRutasChoferesPage = lazyNamed(() => import('@/modules/operaciones/PlanificacionRutasChoferesPage'), 'PlanificacionRutasChoferesPage');
 const LogisticaRutasPage = lazyNamed(() => import('@/modules/operaciones/LogisticaRutasPage'), 'LogisticaRutasPage');
 const RecoleccionRutasPage = lazyNamed(() => import('@/modules/operaciones/RecoleccionRutasPage'), 'RecoleccionRutasPage');
 const ViajesTicketsPage = lazyNamed(() => import('@/modules/operaciones/ViajesTicketsPage'), 'ViajesTicketsPage');
@@ -36,7 +34,6 @@ const BalanceLechePage = lazyNamed(() => import('@/modules/operaciones/BalanceLe
 const BufalaPage = lazyNamed(() => import('@/modules/operaciones/BufalaPage'), 'BufalaPage');
 const EvolucionFincasPage = lazyNamed(() => import('@/modules/operaciones/EvolucionFincasPage'), 'EvolucionFincasPage');
 const ControlTanquesPage = lazyNamed(() => import('@/modules/operaciones/ControlTanquesPage'), 'ControlTanquesPage');
-const MapaRutasPage = lazyNamed(() => import('@/modules/operaciones/MapaRutasPage'), 'MapaRutasPage');
 
 // Catálogos
 const FincasPage = lazyNamed(() => import('@/modules/catalogos/FincasPage'), 'FincasPage');
@@ -55,15 +52,11 @@ const RepuestosPage = lazyNamed(() => import('@/modules/repuestos/RepuestosPage'
 // Liquidación & Finanzas
 const SemanasPage = lazyNamed(() => import('@/modules/finanzas/SemanasPage'), 'SemanasPage');
 const LiquidacionesPage = lazyNamed(() => import('@/modules/finanzas/LiquidacionesPage'), 'LiquidacionesPage');
-const PagosPersonalPage = lazyNamed(() => import('@/modules/finanzas/PagosPersonalPage'), 'PagosPersonalPage');
-const HistorialPagosPage = lazyNamed(() => import('@/modules/finanzas/HistorialPagosPage'), 'HistorialPagosPage');
 const PagosNominaPage = lazyNamed(() => import('@/modules/finanzas/PagosNominaPage'), 'PagosNominaPage');
 const AdministracionGeneralPage = lazyNamed(() => import('@/modules/finanzas/AdministracionGeneralPage'), 'AdministracionGeneralPage');
 
 // Adelantos
-const AdelantosFincasPage = lazyNamed(() => import('@/modules/finanzas/AdelantosFincasPage'), 'AdelantosFincasPage');
 const AbonosCompaniasPage = lazyNamed(() => import('@/modules/finanzas/AbonosCompaniasPage'), 'AbonosCompaniasPage');
-const OtrosAdelantosPage = lazyNamed(() => import('@/modules/finanzas/OtrosAdelantosPage'), 'OtrosAdelantosPage');
 const AdelantosUnificadoPage = lazyNamed(() => import('@/modules/finanzas/AdelantosUnificadoPage'), 'AdelantosUnificadoPage');
 
 // Sistema & Reportes

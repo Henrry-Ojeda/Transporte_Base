@@ -94,7 +94,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const isMobileDrawer = isOpen;
   const effectiveCollapsed = isSidebarCollapsed && !isMobileDrawer;
   const activeGroup = visibleGroups.find((g) => g.id === selectedGroupId) || visibleGroups[0];
-  const popoverGroup = visibleGroups.find((g) => g.id === popoverGroupId) || null;
 
   const renderNavLinks = (items: NavSubItem[]) =>
     items.map((item) => {
@@ -210,39 +209,82 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         }}
       >
         <div className="flex flex-col items-center gap-2 w-full">
-          {visibleGroups.map((grp) => {
+          {visibleGroups.map((grp, idx) => {
             const isSelected = activeGroup?.id === grp.id;
             const isCurrentRouteGroup = isGroupActive(grp);
             const isPopOpen = popoverGroupId === grp.id;
             const highlighted = effectiveCollapsed ? (isPopOpen || isCurrentRouteGroup) : isSelected;
+            const alignBottom = idx >= Math.max(3, visibleGroups.length - 3);
 
             return (
-              <button
-                key={grp.id}
-                type="button"
-                title={grp.title}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (effectiveCollapsed) {
-                    setPopoverGroupId((prev) => (prev === grp.id ? null : grp.id));
-                    setSelectedGroupId(grp.id);
-                  } else {
-                    setSelectedGroupId(grp.id);
-                  }
-                }}
-                className={`rail-item-btn w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer ${highlighted ? 'is-highlighted' : ''}`}
-                style={{
-                  backgroundColor: highlighted ? 'var(--t-accent)' : undefined,
-                  color: highlighted ? '#ffffff' : 'var(--t-rail-text)',
-                  border: isCurrentRouteGroup && !highlighted ? '1px solid var(--t-accent)' : '1px solid transparent',
-                  boxShadow: highlighted ? '0 4px 12px rgba(0, 0, 0, 0.25)' : 'none',
-                }}
-              >
-                <i className={`${grp.iconClass} text-[14px]`}></i>
-                <span style={{ fontSize: '7.5px', fontWeight: 700, letterSpacing: '0.02em', lineHeight: '9px' }}>
-                  {grp.shortTitle.slice(0, 6)}
-                </span>
-              </button>
+              <div key={grp.id} style={{ position: 'relative', display: 'flex', justifyContent: 'center', width: '100%' }}>
+                <button
+                  type="button"
+                  title={grp.title}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (effectiveCollapsed) {
+                      setPopoverGroupId((prev) => (prev === grp.id ? null : grp.id));
+                      setSelectedGroupId(grp.id);
+                    } else {
+                      setSelectedGroupId(grp.id);
+                    }
+                  }}
+                  className={`rail-item-btn w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer ${highlighted ? 'is-highlighted' : ''}`}
+                  style={{
+                    backgroundColor: highlighted ? 'var(--t-accent)' : undefined,
+                    color: highlighted ? '#ffffff' : 'var(--t-rail-text)',
+                    border: isCurrentRouteGroup && !highlighted ? '1px solid var(--t-accent)' : '1px solid transparent',
+                    boxShadow: highlighted ? '0 4px 12px rgba(0, 0, 0, 0.25)' : 'none',
+                  }}
+                >
+                  <i className={`${grp.iconClass} text-[14px]`}></i>
+                  <span style={{ fontSize: '7.5px', fontWeight: 700, letterSpacing: '0.02em', lineHeight: '9px' }}>
+                    {grp.shortTitle.slice(0, 6)}
+                  </span>
+                </button>
+
+                {/* POPOVER ALINEADO AL ICONO CLICKEADO EN MODO COLAPSADO (OPCIÓN 5) */}
+                {effectiveCollapsed && isPopOpen && (
+                  <div
+                    className="dual-rail-popover"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'absolute',
+                      left: '58px',
+                      ...(alignBottom ? { bottom: 0 } : { top: 0 }),
+                      width: '232px',
+                      maxHeight: 'calc(100vh - 100px)',
+                      overflowY: 'auto',
+                      background: 'var(--t-surface-solid)',
+                      border: '1px solid var(--t-border)',
+                      borderRadius: '14px',
+                      boxShadow: '0 18px 40px rgba(0, 0, 0, 0.22)',
+                      padding: '10px',
+                      zIndex: 9999,
+                    }}
+                  >
+                    <div
+                      className="flex items-center justify-between px-2 pb-2 mb-2"
+                      style={{ borderBottom: '1px solid var(--t-border)' }}
+                    >
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider" style={{ color: 'var(--t-muted)' }}>
+                        {grp.title}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPopoverGroupId(null)}
+                        className="w-6 h-6 rounded-md flex items-center justify-center cursor-pointer text-xs"
+                        style={{ color: 'var(--t-muted)' }}
+                        title="Cerrar"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <nav className="space-y-1">{renderNavLinks(grp.visibleItems)}</nav>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -327,47 +369,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </div>
             <div className="text-[10px]">v{APP_VERSION}</div>
           </div>
-        </div>
-      )}
-
-      {/* POPOVER POR CLIC EN MODO COLAPSADO (OPCIÓN 5 - MINI-RAIL) */}
-      {effectiveCollapsed && popoverGroup && (
-        <div
-          className="dual-rail-popover"
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'absolute',
-            left: '68px',
-            top: '14px',
-            width: '232px',
-            maxHeight: 'calc(100vh - 100px)',
-            overflowY: 'auto',
-            background: 'var(--t-surface-solid)',
-            border: '1px solid var(--t-border)',
-            borderRadius: '14px',
-            boxShadow: '0 18px 40px rgba(0, 0, 0, 0.22)',
-            padding: '10px',
-            zIndex: 9999,
-          }}
-        >
-          <div
-            className="flex items-center justify-between px-2 pb-2 mb-2"
-            style={{ borderBottom: '1px solid var(--t-border)' }}
-          >
-            <span className="text-[11px] font-extrabold uppercase tracking-wider" style={{ color: 'var(--t-muted)' }}>
-              {popoverGroup.title}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPopoverGroupId(null)}
-              className="w-6 h-6 rounded-md flex items-center justify-center cursor-pointer text-xs"
-              style={{ color: 'var(--t-muted)' }}
-              title="Cerrar"
-            >
-              ✕
-            </button>
-          </div>
-          <nav className="space-y-1">{renderNavLinks(popoverGroup.visibleItems)}</nav>
         </div>
       )}
     </aside>

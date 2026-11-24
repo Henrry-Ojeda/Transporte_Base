@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { finanzasApi } from '@/api/finanzas.api';
 import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { ChoferSelect } from '@/components/selectors';
 import type { PagoPersonalDto, ChoferDto } from '@/types';
 
@@ -256,39 +257,41 @@ export const PagosPersonalPage: React.FC = () => {
       {/* BARRA DE FILTROS */}
       <div className="content-card" style={{ padding: '16px 20px', marginBottom: '18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-          <div>
+          <div style={{ minWidth: '210px' }}>
             <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px', textTransform: 'uppercase' }}>
               <i className="fa-solid fa-filter" style={{ color: '#0284c7', marginRight: '4px' }}></i> Modalidad:
             </label>
-            <select
+            <SearchableSelect
+              options={[
+                { value: '', label: 'Todas las modalidades' },
+                { value: 'COMISION_LITROS', label: 'Comisión por Litros' },
+                { value: 'SUELDO_FIJO', label: 'Sueldo Fijo' },
+                { value: 'BONO', label: 'Bono Operativo' },
+                { value: 'JORNAL', label: 'Jornal de Campo' },
+              ]}
               value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
-              className="form-input"
-              style={{ height: '38px', fontSize: '13px', fontWeight: 600, minWidth: '180px' }}
-            >
-              <option value="">Todas las modalidades</option>
-              <option value="COMISION_LITROS">Comisión por Litros</option>
-              <option value="SUELDO_FIJO">Sueldo Fijo</option>
-              <option value="BONO">Bono Operativo</option>
-              <option value="JORNAL">Jornal de Campo</option>
-            </select>
+              onChange={(val) => setFiltroTipo(val || '')}
+              placeholder="Todas las modalidades"
+              searchPlaceholder="Buscar modalidad..."
+              allowClear
+            />
           </div>
 
-          <div>
+          <div style={{ minWidth: '240px' }}>
             <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px', textTransform: 'uppercase' }}>
               <i className="fa-solid fa-user" style={{ color: '#64748b', marginRight: '4px' }}></i> Chofer / Trabajador:
             </label>
-            <select
+            <SearchableSelect
+              options={[
+                { value: '', label: 'Todos los trabajadores' },
+                ...choferes.map((c) => ({ value: String(c.id), label: `${c.nombreCompleto} (${c.cedula})` })),
+              ]}
               value={filtroChofer}
-              onChange={(e) => setFiltroChofer(e.target.value)}
-              className="form-input"
-              style={{ height: '38px', fontSize: '13px', fontWeight: 600, minWidth: '220px' }}
-            >
-              <option value="">Todos los trabajadores</option>
-              {choferes.map((c) => (
-                <option key={c.id} value={c.id}>{c.nombreCompleto} ({c.cedula})</option>
-              ))}
-            </select>
+              onChange={(val) => setFiltroChofer(val || '')}
+              placeholder="Todos los trabajadores"
+              searchPlaceholder="Buscar trabajador..."
+              allowClear
+            />
           </div>
         </div>
       </div>
@@ -399,17 +402,18 @@ export const PagosPersonalPage: React.FC = () => {
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
                     Modalidad
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={[
+                      { value: 'COMISION_LITROS', label: 'Comisión Litros' },
+                      { value: 'SUELDO_FIJO', label: 'Sueldo Fijo' },
+                      { value: 'BONO', label: 'Bono Operativo' },
+                      { value: 'JORNAL', label: 'Jornal Campo' },
+                    ]}
                     value={form.tipoPago}
-                    onChange={(e) => setForm({ ...form, tipoPago: e.target.value })}
-                    className="form-input"
-                    style={{ width: '100%', height: '38px', borderRadius: '8px' }}
-                  >
-                    <option value="COMISION_LITROS">Comisión Litros</option>
-                    <option value="SUELDO_FIJO">Sueldo Fijo</option>
-                    <option value="BONO">Bono Operativo</option>
-                    <option value="JORNAL">Jornal Campo</option>
-                  </select>
+                    onChange={(val) => setForm({ ...form, tipoPago: val || 'COMISION_LITROS' })}
+                    placeholder="Modalidad de pago"
+                    searchPlaceholder="Buscar modalidad..."
+                  />
                 </div>
 
                 <div>

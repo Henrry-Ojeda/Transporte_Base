@@ -48,9 +48,8 @@ interface FincaEvolucionRow {
 }
 
 export const EvolucionFincasPage: React.FC = () => {
-  const { user } = useAuthStore();
-  const rol = user?.rol?.toUpperCase() || '';
-  const tienePermiso = ['SUPERVISOR', 'ADMINISTRADOR', 'ADMIN', 'GERENTE'].includes(rol);
+  const canAccessTab = useAuthStore((s) => s.canAccessTab);
+  const tienePermiso = canAccessTab('evolucion-fincas');
 
   // Modo de evaluación de 15 días: Desde Semana Operativa Activa (hacia atrás), Mes en Quincenas o Rango Personalizado
   const [modo, setModo] = useState<ModoEvaluacion>('SEMANA_OPERATIVA');
@@ -722,32 +721,18 @@ export const EvolucionFincasPage: React.FC = () => {
               <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>
                 📆 Semana Operativa Evaluada:
               </label>
-              <select
-                value={semanaSeleccionadaId || (cicloActivo?.id ? String(cicloActivo.id) : '')}
-                onChange={(e) => setSemanaSeleccionadaId(e.target.value)}
-                className="form-input"
-                style={{
-                  height: '36px',
-                  fontWeight: 800,
-                  fontSize: '12px',
-                  color: '#1e40af',
-                  background: '#eff6ff',
-                  border: '1.5px solid #bfdbfe',
-                  borderRadius: '8px',
-                  padding: '0 10px',
-                }}
-              >
-                {semanas.map((s) => {
+              <SearchableSelect
+                options={semanas.map((s) => {
                   const sId = String(s.id || (s as any).Id);
                   const isAct = String(s.estado || (s as any).Estado || '').toUpperCase() === 'ABIERTO';
                   const cod = s.codigo || (s as any).Codigo || `Semana #${sId}`;
-                  return (
-                    <option key={sId} value={sId}>
-                      {cod} {isAct ? '⭐ (Activa)' : ''}
-                    </option>
-                  );
+                  return { value: sId, label: `${cod} ${isAct ? '⭐ (Activa)' : ''}` };
                 })}
-              </select>
+                value={semanaSeleccionadaId || (cicloActivo?.id ? String(cicloActivo.id) : '')}
+                onChange={(val) => setSemanaSeleccionadaId(val || '')}
+                placeholder="Seleccionar semana..."
+                searchPlaceholder="Buscar semana..."
+              />
             </div>
           ) : modo === 'MES_QUINCENAS' ? (
             <div>
@@ -780,16 +765,19 @@ export const EvolucionFincasPage: React.FC = () => {
                 <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>
                   Días por Bloque:
                 </label>
-                <select
-                  value={diasPersonalizado}
-                  onChange={(e) => setDiasPersonalizado(Number(e.target.value))}
-                  className="form-input"
-                  style={{ height: '36px', fontWeight: 700, padding: '0 10px' }}
-                >
-                  <option value={15}>15 Días (Quincenal)</option>
-                  <option value={7}>7 Días (Semanal)</option>
-                  <option value={30}>30 Días (Mensual)</option>
-                </select>
+                <div style={{ minWidth: '170px' }}>
+                  <SearchableSelect
+                    options={[
+                      { value: '15', label: '15 Días (Quincenal)' },
+                      { value: '7', label: '7 Días (Semanal)' },
+                      { value: '30', label: '30 Días (Mensual)' },
+                    ]}
+                    value={String(diasPersonalizado)}
+                    onChange={(val) => setDiasPersonalizado(Number(val || 15))}
+                    placeholder="15 Días (Quincenal)"
+                    searchPlaceholder="Buscar..."
+                  />
+                </div>
               </div>
             </div>
           )}

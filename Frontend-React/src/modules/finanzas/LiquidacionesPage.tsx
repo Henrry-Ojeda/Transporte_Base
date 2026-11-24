@@ -12,7 +12,7 @@ import type { PreliquidacionFincaDto, CicloSemanalDto } from '@/types';
 export const LiquidacionesPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const empresaNombre = user?.empresaNombre || (typeof window !== 'undefined' && window.location.hostname.includes('campoverde') ? 'Lácteos Campo Verde' : 'Transporte Vergel & Carrillo');
+  const empresaNombre = user?.empresaNombre || 'Sistema de Transporte';
 
   const [cicloSeleccionadoId, setCicloSeleccionadoId] = useState<number | undefined>(undefined);
   const [modalPagar, setModalPagar] = useState(false);
@@ -170,7 +170,7 @@ export const LiquidacionesPage: React.FC = () => {
     const semanaStr = cicloActivo ? `Semana #${cicloActivo.numeroSemana || cicloActivo.id} (${fIni} al ${fFin})` : 'Semana Operativa';
 
     let txt = `🥛 *DETALLE DE COMPRA DE LECHE* 🥛\n`;
-    txt += `🏢 *TRANSPORTE VERGEL & CARRILLO*\n`;
+    txt += `🏢 *${empresaNombre.toUpperCase()}*\n`;
     txt += `👤 *Productor:* ${row.propietarioNombre || 'Productor'}\n`;
     txt += `🏡 *Finca:* ${row.fincaNombre}\n`;
     txt += `📅 *${semanaStr}*\n`;

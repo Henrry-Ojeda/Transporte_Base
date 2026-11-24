@@ -766,12 +766,14 @@ body {
 }
 
 /* Garantizar contraste alto en tarjetas que tenían texto claro heredado de diseño oscuro previo */
-[data-theme="light"] .kpi-card [style*="color: rgb(248, 250, 252)"],
-[data-theme="light"] .kpi-card [style*="color: #f8fafc"],
-[data-theme="light"] .kpi-card [style*="color: rgb(255, 255, 255)"],
-[data-theme="light"] .kpi-card [style*="color: #ffffff"],
-[data-theme="light"] .content-card [style*="color: rgb(248, 250, 252)"],
-[data-theme="light"] .content-card [style*="color: #f8fafc"] {
+[data-theme="light"] .kpi-card [style*="color: rgb(248, 250, 252)"]:not(button):not(.btn):not(.badge),
+[data-theme="light"] .kpi-card [style*="color: #f8fafc"]:not(button):not(.btn):not(.badge),
+[data-theme="light"] .kpi-card [style*="color: rgb(255, 255, 255)"]:not(button):not(.btn):not(.badge),
+[data-theme="light"] .kpi-card [style*="color: #ffffff"]:not(button):not(.btn):not(.badge),
+[data-theme="light"] .content-card [style*="color: rgb(248, 250, 252)"]:not(button):not(.btn):not(.badge):not([style*="linear-gradient"] *),
+[data-theme="light"] .content-card [style*="color: #f8fafc"]:not(button):not(.btn):not(.badge):not([style*="linear-gradient"] *),
+[data-theme="light"] .content-card [style*="color: rgb(255, 255, 255)"]:not(button):not(.btn):not(.badge):not([style*="linear-gradient"] *),
+[data-theme="light"] .content-card [style*="color: #ffffff"]:not(button):not(.btn):not(.badge):not([style*="linear-gradient"] *) {
   color: #0f172a !important;
 }
 
@@ -780,8 +782,23 @@ body {
 [data-theme="light"] .kpi-card [style*="color: rgb(203, 213, 225)"],
 [data-theme="light"] .kpi-card [style*="color: #cbd5e1"],
 [data-theme="light"] .content-card [style*="color: rgb(148, 163, 184)"],
-[data-theme="light"] .content-card [style*="color: #94a3b8"] {
+[data-theme="light"] .content-card [style*="color: #94a3b8"],
+[data-theme="light"] .content-card [style*="color: rgb(203, 213, 225)"],
+[data-theme="light"] .content-card [style*="color: #cbd5e1"] {
   color: #334155 !important;
+}
+
+.destino-row-4col {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.45fr) minmax(110px, 0.75fr) minmax(150px, 1fr) minmax(175px, 1.15fr);
+  gap: 10px;
+  align-items: end;
+}
+
+@media (max-width: 767px) {
+  .destino-row-4col {
+    grid-template-columns: 1fr;
+  }
 }
 
 [data-theme="dark"] .bg-slate-50,

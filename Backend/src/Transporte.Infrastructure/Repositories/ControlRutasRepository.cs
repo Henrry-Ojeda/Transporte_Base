@@ -347,11 +347,32 @@ namespace Transporte.Infrastructure.Repositories
             return nuevoId;
         }
 
+        private static bool EsRolAdmin(string? rol)
+        {
+            var r = (rol ?? string.Empty).Trim().ToUpperInvariant();
+            return r == "ADMIN" || r == "SUPERADMIN" || r == "SUPER_ADMIN" || r == "ADMINISTRADOR";
+        }
+
+        private static async Task<bool> TieneAccesoAdminOPermisoAsync(SqlConnection connection, int usuarioId, string? rol, params string[] permisos)
+        {
+            if (EsRolAdmin(rol)) return true;
+            var sql = @"
+                SELECT COUNT(1)
+                FROM TB_USUARIOS u
+                INNER JOIN TB_ROL_PERMISOS rp ON (u.RolId = rp.RolId OR (u.RolId IS NULL AND rp.RolId = (SELECT TOP 1 Id FROM TB_ROLES WHERE Codigo = u.Rol)))
+                INNER JOIN TB_PERMISOS p ON rp.PermisoId = p.Id
+                WHERE u.Id = @usuarioId AND rp.Concedido = 1 AND p.Activo = 1
+                  AND (p.Codigo = 'ADMIN_TOTAL' OR p.Codigo IN @permisos)";
+            var count = await connection.ExecuteScalarAsync<int>(sql, new { usuarioId, permisos });
+            return count > 0;
+        }
+
         public async Task<long> RecalcularControlAsync(DateTime fecha, int conductorId, int usuarioId, string rol)
         {
             using var connection = new SqlConnection(_connectionString);
             var fechaControl = fecha.Date;
-            int conductorEfectivo = (rol == "ADMIN" && conductorId > 0) ? conductorId : usuarioId;
+            bool esAdmin = await TieneAccesoAdminOPermisoAsync(connection, usuarioId, rol, "CONTROL_RUTAS_EDITAR", "RUTAS_EDITAR");
+            int conductorEfectivo = (esAdmin && conductorId > 0) ? conductorId : usuarioId;
 
             var totalFinca = await connection.ExecuteScalarAsync<int>(
                 @"SELECT ISNULL(SUM(r.Litros), 0) FROM TB_RUTAS_RECOLECCION r
@@ -3153,10 +3174,11 @@ namespace Transporte.Infrastructure.Repositories
 
         public async Task<bool> EditarFincaDeViajeAuditadoAsync(long controlRutaId, long rutaId, EditarFincaViajeAuditadoDto dto, int usuarioId, string rol)
         {
-            if (rol != "ADMIN" && rol != "SUPERADMIN") throw new UnauthorizedAccessException("Solo un Administrador o SuperAdmin puede modificar fincas desde el Control de Viaje.");
-            if (string.IsNullOrWhiteSpace(dto.Motivo)) throw new ArgumentException("El motivo o justificaciÃ³n de la modificaciÃ³n es obligatorio.");
+            if (string.IsNullOrWhiteSpace(dto.Motivo)) throw new ArgumentException("El motivo o justificación de la modificación es obligatorio.");
 
             using var connection = new SqlConnection(_connectionString);
+            if (!await TieneAccesoAdminOPermisoAsync(connection, usuarioId, rol, "CONTROL_RUTAS_EDITAR", "RUTAS_EDITAR"))
+                throw new UnauthorizedAccessException("No tienes permisos de Administrador o edición de rutas para modificar fincas desde el Control de Viaje.");
 
             var viaje = await connection.QueryFirstOrDefaultAsync<dynamic>(
                 "SELECT * FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId", new { controlRutaId });
@@ -3224,10 +3246,11 @@ namespace Transporte.Infrastructure.Repositories
 
         public async Task<bool> EliminarFincaDeViajeAuditadoAsync(long controlRutaId, long rutaId, string motivo, int usuarioId, string rol)
         {
-            if (rol != "ADMIN") throw new UnauthorizedAccessException("Solo un Administrador puede eliminar fincas desde el Control de Viaje.");
-            if (string.IsNullOrWhiteSpace(motivo)) throw new ArgumentException("El motivo o justificaciÃ³n de la eliminaciÃ³n es obligatorio.");
+            if (string.IsNullOrWhiteSpace(motivo)) throw new ArgumentException("El motivo o justificación de la eliminación es obligatorio.");
 
             using var connection = new SqlConnection(_connectionString);
+            if (!await TieneAccesoAdminOPermisoAsync(connection, usuarioId, rol, "CONTROL_RUTAS_ELIMINAR", "RUTAS_ELIMINAR"))
+                throw new UnauthorizedAccessException("No tienes permisos de Administrador o eliminación de rutas para eliminar fincas desde el Control de Viaje.");
 
             var viaje = await connection.QueryFirstOrDefaultAsync<dynamic>(
                 "SELECT * FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId", new { controlRutaId });
@@ -3733,10 +3756,11 @@ namespace Transporte.Infrastructure.Repositories
 
         public async Task<bool> EditarEntregaDeViajeAuditadoAsync(long controlRutaId, long entregaId, EditarEntregaViajeAuditadoDto dto, int usuarioId, string rol)
         {
-            if (rol != "ADMIN") throw new UnauthorizedAccessException("Solo un Administrador puede modificar entregas desde el Control de Viaje.");
-            if (string.IsNullOrWhiteSpace(dto.Motivo)) throw new ArgumentException("El motivo o justificaciÃ³n de la modificaciÃ³n es obligatorio.");
+            if (string.IsNullOrWhiteSpace(dto.Motivo)) throw new ArgumentException("El motivo o justificación de la modificación es obligatorio.");
 
             using var connection = new SqlConnection(_connectionString);
+            if (!await TieneAccesoAdminOPermisoAsync(connection, usuarioId, rol, "CONTROL_RUTAS_EDITAR", "ENTREGAS_EDITAR"))
+                throw new UnauthorizedAccessException("No tienes permisos de Administrador o edición para modificar entregas desde el Control de Viaje.");
 
             var viaje = await connection.QueryFirstOrDefaultAsync<dynamic>(
                 "SELECT * FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId", new { controlRutaId });

@@ -590,7 +590,9 @@ namespace Transporte.Infrastructure.Repositories
             DateTime fechaFinal = dto.Fecha?.Date ?? fechaActual;
             int litrosFinal = dto.Litros ?? dto.NuevosLitros ?? (int)ruta.Litros;
             int fincaFinal = dto.FincaId ?? (int)ruta.FincaId;
-            int conductorFinal = (rol == "ADMIN" && dto.ConductorId.HasValue && dto.ConductorId.Value > 0)
+            var rUp = (rol ?? string.Empty).Trim().ToUpperInvariant();
+            bool esAdminRut = rUp == "ADMIN" || rUp == "SUPERADMIN" || rUp == "SUPER_ADMIN" || rUp == "ADMINISTRADOR";
+            int conductorFinal = (esAdminRut && dto.ConductorId.HasValue && dto.ConductorId.Value > 0)
                 ? dto.ConductorId.Value
                 : conductorActual;
             string? observacionFinal = dto.Observacion ?? (string?)ruta.Observacion;

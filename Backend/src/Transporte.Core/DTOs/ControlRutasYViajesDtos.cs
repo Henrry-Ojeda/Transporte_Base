@@ -58,6 +58,8 @@ namespace Transporte.Core.DTOs
         public decimal? KmRecorridos { get; set; }
 
         public List<int>? FincasPlanificadasIds { get; set; }
+        public string? FotoExamenLeche { get; set; }
+        public string? FotoReciboReceptoria { get; set; }
         public string? Observacion { get; set; }
         public DateTime CreatedAt { get; set; }
     }
@@ -413,6 +415,9 @@ namespace Transporte.Core.DTOs
         public int? LitrosCargadosAdicional { get; set; }
         public int? CompaniaDestinoId { get; set; }
         public string? Observacion { get; set; }
+        public string? FotoExamenLeche { get; set; }
+        public string? FotoReciboReceptoria { get; set; }
+        public GuardarExamenLecheDto? ExamenLeche { get; set; }
         public List<DestinoEnvioRutaDto>? Destinos { get; set; }
     }
 
@@ -467,6 +472,8 @@ namespace Transporte.Core.DTOs
         public string? CodigoTicket { get; set; }
         public bool? EsPrincipal { get; set; }
         public string? FotoReciboUrl { get; set; }
+        public string? FotoExamenLeche { get; set; }
+        public string? FotoReciboCompania { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 
@@ -499,6 +506,9 @@ namespace Transporte.Core.DTOs
         public string? Observacion { get; set; }
         public string? Observaciones { get; set; }
         public string? FotoReciboUrl { get; set; }
+        public string? FotoExamenLeche { get; set; }
+        public string? FotoReciboCompania { get; set; }
+        public GuardarExamenLecheDto? ExamenLeche { get; set; }
         public List<DesgloseEntregaCompaniaDto>? Desgloses { get; set; }
     }
 

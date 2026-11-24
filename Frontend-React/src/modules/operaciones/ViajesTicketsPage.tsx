@@ -35,10 +35,14 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { CamionSelect, ChoferSelect } from '@/components/selectors';
 import { useAuth } from '@/hooks/useAuth';
 import type { ControlRutaDto, CamionDto, RutaLogisticaDto, FincaDto, CompaniaDto } from '@/types';
+import { examenesLecheApi, type ExamenLecheDto } from '@/api/examenesLeche.api';
+import { ExamenLecheModal } from './components/ExamenLecheModal';
+import { ImagenLightboxModal } from './components/ImagenLightboxModal';
 
 export const ViajesTicketsPage: React.FC = () => {
   const { user, isAdmin, hasTenantModule } = useAuth();
   const hasBufala = hasTenantModule('MOD_LECHE_BUFALA');
+  const hasCalidadLeche = hasTenantModule('MOD_CALIDAD_LECHE');
   const queryClient = useQueryClient();
 
   // Filtros de fecha (por defecto últimos 30 días como en V2_3_11_26)
@@ -63,7 +67,9 @@ export const ViajesTicketsPage: React.FC = () => {
   // Modal Trazabilidad
   const [modalTrazabilidad, setModalTrazabilidad] = useState(false);
   const [ticketTrazabilidad, setTicketTrazabilidad] = useState<any | null>(null);
-  const [tabTrazabilidad, setTabTrazabilidad] = useState<'fincas' | 'despacho' | 'entregas' | 'timeline' | 'logs'>('fincas');
+  const [tabTrazabilidad, setTabTrazabilidad] = useState<'fincas' | 'despacho' | 'entregas' | 'calidad' | 'timeline' | 'logs'>('fincas');
+  const [modalExamenTicketOpen, setModalExamenTicketOpen] = useState(false);
+  const [lightboxCalidad, setLightboxCalidad] = useState<{ src: string; title: string } | null>(null);
 
   // Modal Traspaso
   const [modalTraspaso, setModalTraspaso] = useState(false);
@@ -314,11 +320,18 @@ export const ViajesTicketsPage: React.FC = () => {
     enabled: !!ticketTrazabilidadId && esRutaTrazabilidad,
   });
 
+  const { data: examenesTicket = [], refetch: refetchExamenesTicket } = useQuery<ExamenLecheDto[]>({
+    queryKey: ['examenes-ticket', ticketTrazabilidadId],
+    queryFn: () => (ticketTrazabilidadId ? examenesLecheApi.getExamenesPorTicket(ticketTrazabilidadId) : []),
+    enabled: !!ticketTrazabilidadId && hasCalidadLeche,
+  });
+
   const recargarTrazabilidad = () => {
     refetchFincasTraz();
     refetchEntregasTraz();
     refetchHistorialTraz();
     refetchLogsTraz();
+    if (hasCalidadLeche) refetchExamenesTicket();
     queryClient.invalidateQueries({ queryKey: ['control-rutas'] });
     queryClient.invalidateQueries({ queryKey: ['control-companias'] });
   };
@@ -2428,6 +2441,20 @@ export const ViajesTicketsPage: React.FC = () => {
                   <i className="fa-solid fa-truck-ramp-box text-amber-600"></i>
                   Entregas / Descargas ({entregasTrazabilidad.length})
                 </button>
+                {hasCalidadLeche && (
+                  <button
+                    type="button"
+                    onClick={() => setTabTrazabilidad('calidad')}
+                    className={`px-4 py-2 rounded-lg text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                      tabTrazabilidad === 'calidad'
+                        ? 'bg-white text-cyan-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                    }`}
+                  >
+                    <i className="fa-solid fa-flask-vial text-cyan-600"></i>
+                    Calidad y Recibos ({examenesTicket.length})
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setTabTrazabilidad('timeline')}
@@ -2643,6 +2670,97 @@ export const ViajesTicketsPage: React.FC = () => {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              )}
+
+              {/* CONTENIDO TAB CALIDAD Y RECIBOS */}
+              {hasCalidadLeche && tabTrazabilidad === 'calidad' && (
+                <div className="space-y-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-600">
+                      Exámenes de calidad (Lactoscan S50) y recibos asociados al Ticket #{ticketTrazabilidadId}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setModalExamenTicketOpen(true)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-cyan-600 hover:bg-cyan-500 text-white shadow flex items-center gap-1.5"
+                    >
+                      <i className="fa-solid fa-plus"></i> Registrar Examen
+                    </button>
+                  </div>
+                  {examenesTicket.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-slate-400 border rounded-xl border-dashed">
+                      No hay exámenes de leche registrados para este ticket todavía.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border rounded-xl">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 text-slate-600 border-b">
+                          <tr>
+                            <th className="p-2 text-left">Nivel / Finca</th>
+                            <th className="p-2 text-center">Grasa %</th>
+                            <th className="p-2 text-center">SNG %</th>
+                            <th className="p-2 text-center">Dens.</th>
+                            <th className="p-2 text-center">Prot. %</th>
+                            <th className="p-2 text-center">Agua %</th>
+                            <th className="p-2 text-center">Temp °C</th>
+                            <th className="p-2 text-center">pH</th>
+                            <th className="p-2 text-center">Resultado</th>
+                            <th className="p-2 text-center">Fotos</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {examenesTicket.map((ex) => (
+                            <tr key={ex.id} className="hover:bg-slate-50/60">
+                              <td className="p-2">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${ex.nivelPrueba === 'FINCA' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                                  {ex.nivelPrueba}
+                                </span>
+                                <div className="font-bold mt-0.5">{ex.fincaNombre || `Ticket #${ex.controlRutaId}`}</div>
+                              </td>
+                              <td className="p-2 text-center font-semibold">{ex.grasaPct != null ? `${ex.grasaPct}%` : '—'}</td>
+                              <td className="p-2 text-center font-semibold">{ex.sngPct != null ? `${ex.sngPct}%` : '—'}</td>
+                              <td className="p-2 text-center font-semibold">{ex.densidad ?? '—'}</td>
+                              <td className="p-2 text-center font-semibold">{ex.proteinaPct != null ? `${ex.proteinaPct}%` : '—'}</td>
+                              <td className={`p-2 text-center font-extrabold ${(ex.aguaAdicionadaPct ?? 0) > 0 ? 'text-rose-600' : ''}`}>
+                                {ex.aguaAdicionadaPct != null ? `${ex.aguaAdicionadaPct}%` : '—'}
+                              </td>
+                              <td className="p-2 text-center font-semibold">{ex.temperaturaC != null ? `${ex.temperaturaC}°C` : '—'}</td>
+                              <td className="p-2 text-center font-semibold">{ex.ph ?? '—'}</td>
+                              <td className="p-2 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${ex.fueraDeRango ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                  {ex.resultado}
+                                </span>
+                              </td>
+                              <td className="p-2 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  {ex.imagenExamen && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setLightboxCalidad({ src: ex.imagenExamen!, title: `Examen #${ex.id}` })}
+                                      className="px-2 py-1 rounded bg-indigo-100 text-indigo-700 font-bold text-[10px]"
+                                    >
+                                      <i className="fa-solid fa-flask"></i>
+                                    </button>
+                                  )}
+                                  {ex.imagenRecibo && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setLightboxCalidad({ src: ex.imagenRecibo!, title: `Recibo #${ex.id}` })}
+                                      className="px-2 py-1 rounded bg-emerald-100 text-emerald-700 font-bold text-[10px]"
+                                    >
+                                      <i className="fa-solid fa-receipt"></i>
+                                    </button>
+                                  )}
+                                  {!ex.imagenExamen && !ex.imagenRecibo && '—'}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -3737,6 +3855,32 @@ export const ViajesTicketsPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {hasCalidadLeche && (
+        <>
+          <ExamenLecheModal
+            isOpen={modalExamenTicketOpen}
+            onClose={() => setModalExamenTicketOpen(false)}
+            defaults={{
+              nivelPrueba: 'TICKET',
+              controlRutaId: ticketTrazabilidadId || null,
+              choferId: ticketTrazabilidad?.usuarioId || null,
+              camionId: ticketTrazabilidad?.camionId || null,
+              litrosAsociados: ticketTrazabilidad?.litrosRecibidosReceptoria || ticketTrazabilidad?.totalLitrosFinca || null,
+              fecha: ticketTrazabilidad?.fecha,
+            }}
+            onSaved={() => {
+              refetchExamenesTicket();
+              queryClient.invalidateQueries({ queryKey: ['examenes-leche'] });
+            }}
+          />
+          <ImagenLightboxModal
+            src={lightboxCalidad?.src || null}
+            title={lightboxCalidad?.title}
+            onClose={() => setLightboxCalidad(null)}
+          />
+        </>
       )}
     </div>
   );

@@ -496,10 +496,12 @@ namespace Transporte.Infrastructure.Repositories
                     FechaEntrega = GETDATE(),
                     Observacion = @obsFinal,
                     FotoReciboUrl = ISNULL(@fotoReciboUrl, FotoReciboUrl),
+                    FotoExamenLeche = COALESCE(@fotoExamenLeche, FotoExamenLeche),
+                    FotoReciboCompania = COALESCE(@fotoReciboCompania, FotoReciboCompania),
                     ModifiedAt = GETDATE(),
                     ModifiedBy = @modificadoPor
                 WHERE Id = @id",
-                new { targetComp, recibidos, diferencia, porcentaje, tipoFinal, obsFinal, fotoReciboUrl = dto.FotoReciboUrl, modificadoPor, id });
+                new { targetComp, recibidos, diferencia, porcentaje, tipoFinal, obsFinal, fotoReciboUrl = dto.FotoReciboUrl ?? dto.FotoReciboCompania, fotoExamenLeche = dto.FotoExamenLeche, fotoReciboCompania = dto.FotoReciboCompania ?? dto.FotoReciboUrl, modificadoPor, id });
 
             var compDestino = await connection.ExecuteScalarAsync<string>("SELECT Nombre FROM TB_COMPANIAS WHERE Id = @companiaId", new { companiaId = targetComp }) ?? "CompaÃ±Ã­a";
             var compDestinoUpper = compDestino.Trim().ToUpperInvariant();

@@ -22,7 +22,8 @@
   - Idempotencia `UuidLocal` en `RutasRepository.RegistrarRutaAsync`.
 - ✅ **Rediseño UI Dual-Rail + Temas (E/F):** Menú Dual-Rail expandido colapsable a Mini-Rail con Popover por clic (`Sidebar.tsx`), selector Modo Claro (**E: Glass SaaS**) y Modo Oscuro (**F: Torre de Control**) en `Header.tsx`, `LoginPage.tsx` y variables globales en `index.css` (`themeStore.ts`), favicon y título dinámicos (`pwaIcons.ts`).
 - ✅ **Operación y App Móvil:** Reorganización de `ReceptoriaPage.tsx` (Entradas / Salidas / Control Diario), fix de bucle de login chofer (`403` + `movil_device_info`), timeout 120s + fallback 1-a-1 en `syncEngine.ts`, permisos de tipo de leche por finca (`getPermisosTipoLecheFinca`), parámetro `BALANCE_INCLUIR_DIFERIDOS`, y APK nativo `Transporte_App_Movil` (`v1.0.8`).
+- ✅ **Módulo SaaS Calidad de Leche (`MOD_CALIDAD_LECHE`, Lactoscan S50) y Recibos en Receptoría:** Migración `24_ExamenesCalidadLecheYRecibos.sql` (`TB_PARAMETROS_CALIDAD_LECHE` con índice único filtrado `EsPrincipal = 1` + `TB_EXAMENES_LECHE` con 12 campos Lactoscan S50 + fotos en `TB_CONTROL_RUTAS` y `TB_CONTROL_COMPANIAS`), `ExamenesLecheController.cs` + OCR IA Gemini (`POST /api/examenes-leche/ocr-lactoscan`), `CalidadLechePage.tsx` (`/calidad-leche` con Historial + CRUD Parámetros), captura opcional Ticket/Finca en `ReceptoriaPage.tsx`, `HistorialFincaModal.tsx` en `FincasPage.tsx`, y pestaña `Calidad y Recibos` en `ViajesTicketsPage.tsx` (26/26 tests xUnit).
 
 ## Roadmap Futuro (Siguiente Fase)
 - [ ] **P4-M1 / P4-M2:** Mejoras futuras del APK nativo (cola offline avanzada / sincronización incremental).
-- [ ] **P5:** Límites SaaS por plan (`MaxCamiones`, `MaxUsuarios`) + módulo Calidad de Leche.
+- [ ] **P5:** Límites SaaS por plan (`MaxCamiones`, `MaxUsuarios`) + tendencias de calidad en Evolución Fincas.

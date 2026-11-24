@@ -8,15 +8,18 @@ import { PropietarioSelect, CompaniaSelect } from '@/components/selectors';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import { useAuthStore } from '@/stores/authStore';
 import { LeafletMapPicker } from '@/components/maps/LeafletMapPicker';
+import { HistorialFincaModal } from './components/HistorialFincaModal';
 import type { FincaDto, GuardarFincaDto, PropietarioDto } from '@/types';
 
 export const FincasPage: React.FC = () => {
   const queryClient = useQueryClient();
   const hasBufala = useAuthStore((state) => state.hasTenantModule('MOD_LECHE_BUFALA'));
   const hasMapaRutas = useAuthStore((state) => state.hasTenantModule('MOD_MAPA_RUTAS'));
+  const hasCalidadLeche = useAuthStore((state) => state.hasTenantModule('MOD_CALIDAD_LECHE'));
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalPrecioMasivo, setModalPrecioMasivo] = useState(false);
+  const [fincaHistorial, setFincaHistorial] = useState<{ id: number; nombre: string } | null>(null);
   const [modoEdicionId, setModoEdicionId] = useState<number | null>(null);
   const [nuevoPrecioMasivo, setNuevoPrecioMasivo] = useState<number>(0.35);
 
@@ -438,6 +441,16 @@ export const FincasPage: React.FC = () => {
       header: 'ACCIONES',
       cell: (row) => (
         <div style={{ display: 'flex', gap: '6px' }}>
+          {hasCalidadLeche && (
+            <button
+              onClick={() => setFincaHistorial({ id: row.id, nombre: row.nombre })}
+              className="btn btn-sm btn-outline"
+              title="Historial Integral y Exámenes de Leche"
+              style={{ padding: '4px 8px' }}
+            >
+              <i className="fa-solid fa-flask-vial" style={{ color: '#0891b2' }}></i>
+            </button>
+          )}
           <button
             onClick={() => abrirModalEditar(row)}
             className="btn btn-sm btn-outline"
@@ -1391,6 +1404,13 @@ export const FincasPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {hasCalidadLeche && (
+        <HistorialFincaModal
+          finca={fincaHistorial}
+          onClose={() => setFincaHistorial(null)}
+        />
       )}
     </div>
   );

@@ -1169,9 +1169,14 @@ namespace Transporte.Infrastructure.Repositories
                     }
                 }
 
-                string obsTexto = string.IsNullOrWhiteSpace(dto.Observacion)
-                    ? "[ENTRADA TERCERO] RecepciÃ³n directa en ReceptorÃ­a"
-                    : $"[ENTRADA TERCERO] {dto.Observacion.Trim()}";
+                string? obsUsuario = string.IsNullOrWhiteSpace(dto.Observacion)
+                    ? null
+                    : dto.Observacion.Replace("[ENTRADA TERCERO]", "").Trim();
+                if (string.IsNullOrWhiteSpace(obsUsuario)) obsUsuario = null;
+
+                string obsTexto = obsUsuario == null
+                    ? "[ENTRADA TERCERO] Recepción directa en Receptoría"
+                    : $"[ENTRADA TERCERO] {obsUsuario}";
 
                 // 5. Crear Control de Viaje (queda EN_RECEPTORIA / Proceso 2 para poder editar o confirmar antes de pasar a FINALIZADO)
                 long controlRutaId = await connection.ExecuteScalarAsync<long>(@"
@@ -1190,12 +1195,13 @@ namespace Transporte.Infrastructure.Repositories
                     transaction: transaction);
 
                 // 6. Registrar parada de finca para que entre en Liquidaciones y Reportes de Fincas
+                //    (Observacion de la finca SOLO guarda texto ingresado por usuario/chofer, nunca tags de sistema)
                 await connection.ExecuteAsync(@"
                     INSERT INTO TB_RUTAS_RECOLECCION
                     (ControlRutaId, UsuarioId, FincaId, CicloId, Fecha, Litros, TipoLeche, EsAcida, EsDiferido, Observacion, CreatedAt)
                     VALUES
-                    (@controlRutaId, @usuarioIdOtros, @fincaId, @cicloFinal, @fechaOp, @litros, @tipoLeche, 0, 0, @obsTexto, GETDATE());",
-                    new { controlRutaId, usuarioIdOtros, fincaId, cicloFinal, fechaOp, litros = dto.Litros, tipoLeche, obsTexto },
+                    (@controlRutaId, @usuarioIdOtros, @fincaId, @cicloFinal, @fechaOp, @litros, @tipoLeche, 0, 0, @obsFinca, GETDATE());",
+                    new { controlRutaId, usuarioIdOtros, fincaId, cicloFinal, fechaOp, litros = dto.Litros, tipoLeche, obsFinca = obsUsuario },
                     transaction: transaction);
 
                 // 7. Registrar ingreso pendiente en TB_CONTROL_COMPANIAS hacia ReceptorÃ­a Principal (EN VIA hasta confirmar en silos)
@@ -1295,9 +1301,10 @@ namespace Transporte.Infrastructure.Repositories
                 }
 
                 string obsLimpia = (dto.Observacion ?? "").Replace("[ENTRADA TERCERO]", "").Trim();
-                string obsTexto = string.IsNullOrWhiteSpace(obsLimpia)
-                    ? "[ENTRADA TERCERO] RecepciÃ³n directa en ReceptorÃ­a"
-                    : $"[ENTRADA TERCERO] {obsLimpia}";
+                string? obsFinca = string.IsNullOrWhiteSpace(obsLimpia) ? null : obsLimpia;
+                string obsTexto = obsFinca == null
+                    ? "[ENTRADA TERCERO] Recepción directa en Receptoría"
+                    : $"[ENTRADA TERCERO] {obsFinca}";
 
                 await connection.ExecuteAsync(@"
                     UPDATE TB_CONTROL_RUTAS
@@ -1318,10 +1325,10 @@ namespace Transporte.Infrastructure.Repositories
                         Fecha = @fechaOp,
                         Litros = @litros,
                         TipoLeche = @tipoLeche,
-                        Observacion = @obsTexto,
+                        Observacion = @obsFinca,
                         ModifiedAt = GETDATE()
                     WHERE ControlRutaId = @controlRutaId;",
-                    new { fincaId, cicloFinal, fechaOp, litros = dto.Litros, tipoLeche, obsTexto, controlRutaId },
+                    new { fincaId, cicloFinal, fechaOp, litros = dto.Litros, tipoLeche, obsFinca, controlRutaId },
                     transaction: transaction);
 
                 await connection.ExecuteAsync(@"

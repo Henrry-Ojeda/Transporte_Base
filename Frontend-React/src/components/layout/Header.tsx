@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
+import { useThemeStore } from '@/stores/themeStore';
 import apiClient from '@/api/client';
 import { bcvApi } from '@/api/bcv.api';
 import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.api';
@@ -32,6 +33,7 @@ interface CicloActivoResponse {
 export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   const navigate = useNavigate();
   const { user, logout, isAppHijo, hasTenantModule, hasPermission, isAdmin } = useAuthStore();
+  const { theme, toggleTheme } = useThemeStore();
   const esHijo = isAppHijo();
   const rolVisible = esHijo && (user?.rol === 'SUPERADMIN' || user?.esSuperAdmin) ? 'ADMIN' : (user?.rol || 'ADMIN');
   const queryClient = useQueryClient();
@@ -463,6 +465,30 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
       </div>
 
       <div className="nav-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* SELECTOR DE TEMA: MODO CLARO (E: GLASS SAAS) / MODO OSCURO (F: TORRE DE CONTROL) */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          title={theme === 'light' ? 'Cambiar a Modo Oscuro (Torre de Control)' : 'Cambiar a Modo Claro (Glass SaaS)'}
+          style={{
+            background: 'var(--t-surface-solid)',
+            border: '1px solid var(--t-border)',
+            color: 'var(--t-text)',
+            borderRadius: '10px',
+            padding: '6px 10px',
+            fontSize: '12px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: '0 2px 6px rgba(15, 23, 42, 0.05)',
+          }}
+        >
+          <i className={`fa-solid ${theme === 'light' ? 'fa-moon' : 'fa-sun'}`} style={{ color: 'var(--t-accent)' }}></i>
+          <span className="hidden md:inline">{theme === 'light' ? 'Oscuro' : 'Claro'}</span>
+        </button>
+
         {mostrarQrApp && (
           <>
             <button
@@ -500,9 +526,9 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
               width: '38px',
               height: '38px',
               borderRadius: '50%',
-              background: openNotif ? '#eff6ff' : '#ffffff',
-              border: `1.5px solid ${unreadCount > 0 ? '#3b82f6' : '#e2e8f0'}`,
-              color: unreadCount > 0 ? '#2563eb' : '#64748b',
+              background: openNotif ? 'var(--t-accent-soft)' : 'var(--t-surface-solid)',
+              border: `1.5px solid ${unreadCount > 0 ? 'var(--t-accent)' : 'var(--t-border)'}`,
+              color: unreadCount > 0 ? 'var(--t-accent)' : 'var(--t-muted)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -697,8 +723,8 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
           id="userProfileWidget"
           className="header-user-widget"
           style={{
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
+            background: 'var(--t-surface-solid)',
+            border: '1px solid var(--t-border)',
             borderRadius: '999px',
             padding: '4px 6px 4px 6px',
             display: 'flex',

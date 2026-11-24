@@ -4,6 +4,7 @@ if (typeof window !== 'undefined' && window.location.hostname === 'campoverde-om
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import '@/stores/themeStore';
 import App from './App';
 import './index.css';
 

@@ -3459,7 +3459,7 @@ export const ReceptoriaPage: React.FC = () => {
             className="content-card"
             style={{
               width: '100%',
-              maxWidth: '780px',
+              maxWidth: '960px',
               maxHeight: '90vh',
               display: 'flex',
               flexDirection: 'column',
@@ -3675,7 +3675,7 @@ export const ReceptoriaPage: React.FC = () => {
                         )}
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', alignItems: 'end' }}>
+                      <div className="destino-row-4col">
                         {/* Compañía Destino */}
                         <div>
                           <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
@@ -5339,7 +5339,7 @@ export const ReceptoriaPage: React.FC = () => {
                             )}
                           </div>
 
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', alignItems: 'end' }}>
+                          <div className="destino-row-4col">
                             <div>
                               <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
                                 Planta / Compañía *

@@ -642,9 +642,146 @@ div[style*="position: fixed"][style*="top: 0"][style*="align-items: center"] > d
 }
 
 .filter-pills-bar .filter-pill.active {
-  background: #2563eb !important;
+  background: var(--t-accent) !important;
   color: #ffffff !important;
-  border-color: #2563eb !important;
+  border-color: var(--t-accent) !important;
+}
+
+/* ============================================================================
+   SISTEMA DUAL DE TEMAS: MODO CLARO (OPCIÓN E: GLASS SAAS) & MODO OSCURO (OPCIÓN F: TORRE DE CONTROL)
+   ============================================================================ */
+:root,
+[data-theme="light"] {
+  --t-bg: linear-gradient(135deg, #f3f7ff 0%, #eef2f9 55%, #f8fafc 100%);
+  --t-bg-flat: #f3f7ff;
+  --t-surface: rgba(255, 255, 255, 0.86);
+  --t-surface-solid: #ffffff;
+  --t-sub-bg: rgba(255, 255, 255, 0.78);
+  --t-rail-bg: #0f172a;
+  --t-rail-text: #94a3b8;
+  --t-border: rgba(203, 213, 225, 0.78);
+  --t-text: #0f172a;
+  --t-muted: #64748b;
+  --t-accent: #3b82f6;
+  --t-accent-hover: #2563eb;
+  --t-accent-soft: rgba(59, 130, 246, 0.12);
+  --t-accent-text: #1d4ed8;
+  --t-table-head: rgba(248, 250, 252, 0.92);
+  --t-table-hover: rgba(241, 245, 249, 0.75);
+  --t-input-bg: rgba(255, 255, 255, 0.92);
+  --t-header-grad: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  --t-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
+}
+
+[data-theme="dark"] {
+  --t-bg: #090d14;
+  --t-bg-flat: #090d14;
+  --t-surface: #111824;
+  --t-surface-solid: #111824;
+  --t-sub-bg: #0d131d;
+  --t-rail-bg: #06090f;
+  --t-rail-text: #8b949e;
+  --t-border: #212b3a;
+  --t-text: #e6edf3;
+  --t-muted: #8b949e;
+  --t-accent: #06b6d4;
+  --t-accent-hover: #0891b2;
+  --t-accent-soft: rgba(6, 182, 212, 0.14);
+  --t-accent-text: #22d3ee;
+  --t-table-head: #0d131d;
+  --t-table-hover: rgba(33, 43, 58, 0.55);
+  --t-input-bg: #0d131d;
+  --t-header-grad: linear-gradient(135deg, #0d1522 0%, #111c2d 100%);
+  --t-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+body {
+  background: var(--t-bg) !important;
+  color: var(--t-text) !important;
+}
+
+.main-header {
+  background: var(--t-surface) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border-bottom: 1px solid var(--t-border) !important;
+  color: var(--t-text) !important;
+}
+
+.view-header {
+  background: var(--t-header-grad) !important;
+  border: 1px solid var(--t-border) !important;
+  box-shadow: var(--t-shadow) !important;
+}
+
+.content-card,
+.kpi-card,
+.glass-card,
+[data-theme="dark"] .bg-white {
+  background: var(--t-surface) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-color: var(--t-border) !important;
+  color: var(--t-text) !important;
+  box-shadow: var(--t-shadow) !important;
+}
+
+[data-theme="dark"] .bg-slate-50,
+[data-theme="dark"] .bg-slate-100 {
+  background-color: #0d131d !important;
+  color: var(--t-text) !important;
+}
+
+[data-theme="dark"] .text-slate-900,
+[data-theme="dark"] .text-slate-800,
+[data-theme="dark"] .text-slate-700 {
+  color: var(--t-text) !important;
+}
+
+[data-theme="dark"] .text-slate-600,
+[data-theme="dark"] .text-slate-500,
+[data-theme="dark"] .text-slate-400 {
+  color: var(--t-muted) !important;
+}
+
+[data-theme="dark"] .border-slate-200,
+[data-theme="dark"] .border-slate-300,
+[data-theme="dark"] .border-slate-100 {
+  border-color: var(--t-border) !important;
+}
+
+[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background-color: var(--t-input-bg) !important;
+  border-color: var(--t-border) !important;
+  color: var(--t-text) !important;
+}
+
+table.dataTable thead th,
+.data-table thead th,
+.modern-table thead th {
+  background: var(--t-table-head) !important;
+  color: var(--t-muted) !important;
+  border-bottom: 1.5px solid var(--t-border) !important;
+}
+
+table.dataTable tbody td,
+.data-table tbody td,
+.modern-table tbody td {
+  border-bottom: 1px solid var(--t-border) !important;
+  color: var(--t-text) !important;
+}
+
+table.dataTable tbody tr:hover td,
+.data-table tbody tr:hover td,
+.modern-table tbody tr:hover td {
+  background: var(--t-table-hover) !important;
+}
+
+.btn-primary {
+  background: var(--t-accent) !important;
+  border-color: var(--t-accent) !important;
 }
 
 

@@ -661,7 +661,7 @@ div[style*="position: fixed"][style*="top: 0"][style*="align-items: center"] > d
   --t-rail-text: #94a3b8;
   --t-border: rgba(203, 213, 225, 0.78);
   --t-text: #0f172a;
-  --t-muted: #64748b;
+  --t-muted: #475569;
   --t-accent: #3b82f6;
   --t-accent-hover: #2563eb;
   --t-accent-soft: rgba(59, 130, 246, 0.12);
@@ -724,6 +724,25 @@ body {
   border-color: var(--t-border) !important;
   color: var(--t-text) !important;
   box-shadow: var(--t-shadow) !important;
+}
+
+/* Garantizar contraste alto en tarjetas que tenían texto claro heredado de diseño oscuro previo */
+[data-theme="light"] .kpi-card [style*="color: rgb(248, 250, 252)"],
+[data-theme="light"] .kpi-card [style*="color: #f8fafc"],
+[data-theme="light"] .kpi-card [style*="color: rgb(255, 255, 255)"],
+[data-theme="light"] .kpi-card [style*="color: #ffffff"],
+[data-theme="light"] .content-card [style*="color: rgb(248, 250, 252)"],
+[data-theme="light"] .content-card [style*="color: #f8fafc"] {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .kpi-card [style*="color: rgb(148, 163, 184)"],
+[data-theme="light"] .kpi-card [style*="color: #94a3b8"],
+[data-theme="light"] .kpi-card [style*="color: rgb(203, 213, 225)"],
+[data-theme="light"] .kpi-card [style*="color: #cbd5e1"],
+[data-theme="light"] .content-card [style*="color: rgb(148, 163, 184)"],
+[data-theme="light"] .content-card [style*="color: #94a3b8"] {
+  color: #334155 !important;
 }
 
 [data-theme="dark"] .bg-slate-50,

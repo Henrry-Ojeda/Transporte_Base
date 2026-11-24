@@ -882,6 +882,77 @@ table.dataTable tbody td,
   color: var(--t-text) !important;
 }
 
+[data-theme="dark"] table,
+[data-theme="dark"] table tbody,
+[data-theme="dark"] table tbody tr,
+[data-theme="dark"] table tbody td {
+  background-color: transparent !important;
+  color: var(--t-text) !important;
+  border-color: var(--t-border) !important;
+}
+
+[data-theme="dark"] .btn-outline,
+[data-theme="dark"] .btn-secondary,
+[data-theme="dark"] .filter-pill:not(.active),
+[data-theme="dark"] #mainContainer button.bg-white,
+[data-theme="dark"] #mainContainer button[style*="background: rgb(255, 255, 255)"],
+[data-theme="dark"] #mainContainer button[style*="background: #ffffff"],
+[data-theme="dark"] #mainContainer button[style*="background-color: rgb(255, 255, 255)"],
+[data-theme="dark"] #mainContainer button[style*="background-color: #ffffff"],
+[data-theme="dark"] #mainContainer button[style*="background: rgb(248, 250, 252)"],
+[data-theme="dark"] #mainContainer button[style*="background: #f8fafc"],
+[data-theme="dark"] #mainContainer button[style*="background: rgb(241, 245, 249)"],
+[data-theme="dark"] #mainContainer button[style*="background: #f1f5f9"] {
+  background: var(--t-surface-solid) !important;
+  border-color: var(--t-border) !important;
+  color: var(--t-text) !important;
+}
+
+[data-theme="dark"] .btn-outline:hover,
+[data-theme="dark"] .btn-secondary:hover,
+[data-theme="dark"] .filter-pill:not(.active):hover {
+  border-color: var(--t-accent) !important;
+  background: var(--t-accent-soft) !important;
+  color: var(--t-accent-text) !important;
+}
+
+/* Badges y píldoras pastel en Modo Oscuro */
+[data-theme="dark"] .bg-emerald-50,
+[data-theme="dark"] .bg-green-50,
+[data-theme="dark"] #mainContainer [style*="background: rgb(236, 253, 245)"],
+[data-theme="dark"] #mainContainer [style*="background: rgb(220, 252, 231)"] {
+  background: rgba(16, 185, 129, 0.16) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+}
+
+[data-theme="dark"] .bg-rose-50,
+[data-theme="dark"] .bg-red-50,
+[data-theme="dark"] #mainContainer [style*="background: rgb(254, 242, 242)"],
+[data-theme="dark"] #mainContainer [style*="background: rgb(255, 241, 242)"] {
+  background: rgba(244, 63, 94, 0.16) !important;
+  color: #fda4af !important;
+  border-color: rgba(244, 63, 94, 0.35) !important;
+}
+
+[data-theme="dark"] .bg-blue-50,
+[data-theme="dark"] .bg-sky-50,
+[data-theme="dark"] .bg-indigo-50,
+[data-theme="dark"] #mainContainer [style*="background: rgb(239, 246, 255)"],
+[data-theme="dark"] #mainContainer [style*="background: rgb(240, 249, 255)"] {
+  background: rgba(56, 189, 248, 0.16) !important;
+  color: #7dd3fc !important;
+  border-color: rgba(56, 189, 248, 0.35) !important;
+}
+
+[data-theme="dark"] .bg-amber-50,
+[data-theme="dark"] .bg-yellow-50,
+[data-theme="dark"] #mainContainer [style*="background: rgb(255, 251, 235)"] {
+  background: rgba(245, 158, 11, 0.16) !important;
+  color: #fcd34d !important;
+  border-color: rgba(245, 158, 11, 0.35) !important;
+}
+
 table.dataTable tbody tr:hover td,
 .data-table tbody tr:hover td,
 .modern-table tbody tr:hover td {

@@ -6,6 +6,7 @@ import { operacionesApi } from '@/api/operaciones.api';
 import { catalogosApi } from '@/api/catalogos.api';
 import { finanzasApi } from '@/api/finanzas.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import type { CicloSemanalDto, FincaDto, CompaniaDto, ChoferDto } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -316,20 +317,20 @@ export const BufalaPage: React.FC = () => {
 
           {/* CONTROLES DE FECHAS / SEMANAS */}
           {modoFiltro === 'semana' ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <select
-                value={cicloId || ''}
-                onChange={(e) => setCicloId(e.target.value ? Number(e.target.value) : undefined)}
-                className="form-input"
-                style={{ height: '36px', fontWeight: 700, fontSize: '13px', color: '#0f172a', minWidth: '260px', borderColor: '#cbd5e1' }}
-              >
-                <option value="">⚡ Ver Todos los Ciclos</option>
-                {ciclos.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    Semana #{c.numeroSemana} ({new Date(c.fechaInicio).toLocaleDateString('es-VE')} - {new Date(c.fechaFin).toLocaleDateString('es-VE')})
-                  </option>
-                ))}
-              </select>
+            <div style={{ minWidth: '280px' }}>
+              <SearchableSelect
+                options={[
+                  { value: '', label: '⚡ Ver Todos los Ciclos' },
+                  ...ciclos.map((c) => ({
+                    value: String(c.id),
+                    label: `Semana #${c.numeroSemana} (${new Date(c.fechaInicio).toLocaleDateString('es-VE')} - ${new Date(c.fechaFin).toLocaleDateString('es-VE')})`,
+                  })),
+                ]}
+                value={cicloId ? String(cicloId) : ''}
+                onChange={(val) => setCicloId(val ? Number(val) : undefined)}
+                placeholder="⚡ Ver Todos los Ciclos"
+                searchPlaceholder="Buscar semana..."
+              />
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -359,51 +360,51 @@ export const BufalaPage: React.FC = () => {
             <label style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <i className="fa-solid fa-seedling" style={{ color: '#10b981' }}></i> Finca de Origen:
             </label>
-            <select
+            <SearchableSelect
+              options={[
+                { value: '', label: '🏡 TODAS LAS FINCAS' },
+                ...fincas.map((f) => ({ value: f.nombre, label: f.nombre })),
+              ]}
               value={fincaFiltro}
-              onChange={(e) => setFincaFiltro(e.target.value)}
-              className="form-input"
-              style={{ height: '38px', fontSize: '13px', fontWeight: 600, borderColor: '#cbd5e1', width: '100%' }}
-            >
-              <option value="">🏡 TODAS LAS FINCAS</option>
-              {fincas.map((f) => (
-                <option key={f.id} value={f.nombre}>{f.nombre}</option>
-              ))}
-            </select>
+              onChange={(val) => setFincaFiltro(val || '')}
+              placeholder="🏡 TODAS LAS FINCAS"
+              searchPlaceholder="Buscar finca..."
+              allowClear
+            />
           </div>
 
           <div>
             <label style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <i className="fa-solid fa-building" style={{ color: '#7c3aed' }}></i> Compañía / Destino:
             </label>
-            <select
+            <SearchableSelect
+              options={[
+                { value: '', label: '🏢 TODAS LAS COMPAÑÍAS' },
+                ...companias.map((c) => ({ value: c.nombre, label: c.nombre })),
+              ]}
               value={companiaFiltro}
-              onChange={(e) => setCompaniaFiltro(e.target.value)}
-              className="form-input"
-              style={{ height: '38px', fontSize: '13px', fontWeight: 600, borderColor: '#cbd5e1', width: '100%' }}
-            >
-              <option value="">🏢 TODAS LAS COMPAÑÍAS</option>
-              {companias.map((c) => (
-                <option key={c.id} value={c.nombre}>{c.nombre}</option>
-              ))}
-            </select>
+              onChange={(val) => setCompaniaFiltro(val || '')}
+              placeholder="🏢 TODAS LAS COMPAÑÍAS"
+              searchPlaceholder="Buscar compañía..."
+              allowClear
+            />
           </div>
 
           <div>
             <label style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <i className="fa-solid fa-id-card" style={{ color: '#0284c7' }}></i> Conductor:
             </label>
-            <select
+            <SearchableSelect
+              options={[
+                { value: '', label: '🚚 TODOS LOS CONDUCTORES' },
+                ...choferes.map((ch) => ({ value: ch.nombreCompleto, label: ch.nombreCompleto })),
+              ]}
               value={choferFiltro}
-              onChange={(e) => setChoferFiltro(e.target.value)}
-              className="form-input"
-              style={{ height: '38px', fontSize: '13px', fontWeight: 600, borderColor: '#cbd5e1', width: '100%' }}
-            >
-              <option value="">🚚 TODOS LOS CONDUCTORES</option>
-              {choferes.map((ch) => (
-                <option key={ch.id} value={ch.nombreCompleto}>{ch.nombreCompleto}</option>
-              ))}
-            </select>
+              onChange={(val) => setChoferFiltro(val || '')}
+              placeholder="🚚 TODOS LOS CONDUCTORES"
+              searchPlaceholder="Buscar conductor..."
+              allowClear
+            />
           </div>
         </div>
       </div>

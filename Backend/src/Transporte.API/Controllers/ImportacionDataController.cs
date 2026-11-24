@@ -34,9 +34,12 @@ namespace Transporte.API.Controllers
 
         private IDbConnection CreateConnection()
         {
-            string rawConn = _tenantService?.GetConnectionString() 
-                ?? _configuration.GetConnectionString("DefaultConnection") 
-                ?? "Server=127.0.0.1,1433;Database=DB_PROD_CAMPO_VERDE;User Id=user_campoverde;Password=Campo_Verde_2026!;TrustServerCertificate=True;";
+            string? rawConn = _tenantService?.GetConnectionString()
+                ?? _configuration.GetConnectionString("DefaultConnection");
+            if (string.IsNullOrWhiteSpace(rawConn) || rawConn.StartsWith("__INYECTAR", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("No hay cadena de conexión configurada para el tenant actual.");
+            }
             return new SqlConnection(Transporte.API.Multitenancy.TenantService.AdjustConnectionStringForEnvironment(rawConn));
         }
 

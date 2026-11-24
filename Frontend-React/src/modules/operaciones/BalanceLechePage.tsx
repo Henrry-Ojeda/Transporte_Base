@@ -7,6 +7,7 @@ import { finanzasApi } from '@/api/finanzas.api';
 import { sistemaApi } from '@/api/sistema.api';
 import { ControlTanquesPage } from './ControlTanquesPage';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import type { CicloSemanalDto, MovimientoLecheDto, BalanceVolumetricoDto } from '@/types';
 
 export const BalanceLechePage: React.FC = () => {
@@ -675,7 +676,7 @@ export const BalanceLechePage: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                 {/* Selector de Ciclo */}
-                <div>
+                <div style={{ minWidth: '280px' }}>
                   <label
                     style={{
                       fontSize: '12px',
@@ -689,21 +690,8 @@ export const BalanceLechePage: React.FC = () => {
                   >
                     <i className="fa-regular fa-calendar-check" style={{ color: '#0284c7', marginRight: '4px' }}></i> Ciclo Operativo / Semana:
                   </label>
-                  <select
-                    value={cicloIdSeleccionado || ''}
-                    onChange={(e) => setCicloIdSeleccionado(e.target.value ? Number(e.target.value) : undefined)}
-                    className="form-input"
-                    style={{
-                      height: '40px',
-                      minWidth: '280px',
-                      fontWeight: 700,
-                      fontSize: '13.5px',
-                      borderRadius: '8px',
-                      border: '1.5px solid #cbd5e1',
-                      background: '#f8fafc',
-                    }}
-                  >
-                    {ciclosOrdenados.map((c) => {
+                  <SearchableSelect
+                    options={ciclosOrdenados.map((c) => {
                       const esActivo =
                         c.id === cicloActivo?.id ||
                         c.estado?.toUpperCase() === 'ABIERTO' ||
@@ -712,17 +700,20 @@ export const BalanceLechePage: React.FC = () => {
                         (c as any).Estado === 'ACTIVO';
                       const fIni = c.fechaInicio ? new Date(c.fechaInicio).toLocaleDateString('es-VE') : '';
                       const fFin = c.fechaFin ? new Date(c.fechaFin).toLocaleDateString('es-VE') : '';
-                      return (
-                        <option key={c.id} value={c.id}>
-                          Semana #{c.numeroSemana || c.id} ({fIni} al {fFin}) {esActivo ? '★ ACTIVO' : ''}
-                        </option>
-                      );
+                      return {
+                        value: String(c.id),
+                        label: `Semana #${c.numeroSemana || c.id} (${fIni} al ${fFin}) ${esActivo ? '★ ACTIVO' : ''}`,
+                      };
                     })}
-                  </select>
+                    value={cicloIdSeleccionado ? String(cicloIdSeleccionado) : ''}
+                    onChange={(val) => setCicloIdSeleccionado(val ? Number(val) : undefined)}
+                    placeholder="Seleccionar semana..."
+                    searchPlaceholder="Buscar semana..."
+                  />
                 </div>
 
                 {/* Filtro de Proceso Rápido */}
-                <div>
+                <div style={{ minWidth: '270px' }}>
                   <label
                     style={{
                       fontSize: '12px',
@@ -736,26 +727,19 @@ export const BalanceLechePage: React.FC = () => {
                   >
                     <i className="fa-solid fa-diagram-project" style={{ color: '#8b5cf6', marginRight: '4px' }}></i> Filtrar por Proceso:
                   </label>
-                  <select
-                    value={procesoFiltro}
-                    onChange={(e) => setProcesoFiltro(Number(e.target.value))}
-                    className="form-input"
-                    style={{
-                      height: '40px',
-                      minWidth: '250px',
-                      fontWeight: 700,
-                      fontSize: '13.5px',
-                      borderRadius: '8px',
-                      border: '1.5px solid #cbd5e1',
-                      background: '#f8fafc',
-                    }}
-                  >
-                    <option value="0">⚡ Todos los Procesos (4)</option>
-                    <option value="1">📥 1. Finca ➔ Receptoría (Descarga Tanque)</option>
-                    <option value="2">🔄 2. Finca ➔ Receptoría ➔ Compañía (Tránsito)</option>
-                    <option value="3">🚛 3. Finca ➔ Compañía (Entrega Directa)</option>
-                    <option value="4">📤 4. Receptoría ➔ Compañía (Despacho Tanque)</option>
-                  </select>
+                  <SearchableSelect
+                    options={[
+                      { value: '0', label: '⚡ Todos los Procesos (4)' },
+                      { value: '1', label: '📥 1. Finca ➔ Receptoría (Descarga Tanque)' },
+                      { value: '2', label: '🔄 2. Finca ➔ Receptoría ➔ Compañía (Tránsito)' },
+                      { value: '3', label: '🚛 3. Finca ➔ Compañía (Entrega Directa)' },
+                      { value: '4', label: '📤 4. Receptoría ➔ Compañía (Despacho Tanque)' },
+                    ]}
+                    value={String(procesoFiltro)}
+                    onChange={(val) => setProcesoFiltro(Number(val || 0))}
+                    placeholder="Todos los procesos"
+                    searchPlaceholder="Filtrar proceso..."
+                  />
                 </div>
               </div>
 

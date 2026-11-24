@@ -31,15 +31,14 @@ interface CicloActivoResponse {
 
 export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   const navigate = useNavigate();
-  const { user, logout, isAppHijo } = useAuthStore();
+  const { user, logout, isAppHijo, hasTenantModule, hasPermission, isAdmin } = useAuthStore();
   const esHijo = isAppHijo();
   const rolVisible = esHijo && (user?.rol === 'SUPERADMIN' || user?.esSuperAdmin) ? 'ADMIN' : (user?.rol || 'ADMIN');
   const queryClient = useQueryClient();
   const [sincronizandoBcv, setSincronizandoBcv] = useState(false);
   const [modalQrApp, setModalQrApp] = useState(false);
-  const mostrarQrVergel = esTenantVergelCarrillo(user?.empresaCodigo);
-  const userRol = String(user?.rol || '').toUpperCase();
-  const puedeVerYGestionarBcv = !['CHOFER', 'RECEPTOR', 'RECEPTORIA'].includes(userRol);
+  const mostrarQrApp = hasTenantModule('MOD_APP_MOVIL');
+  const puedeVerYGestionarBcv = isAdmin() || hasPermission('HISTORIAL_BCV_VER') || hasPermission('DASHBOARD_VER');
 
   // Query Tasa BCV (Solo para usuarios autorizados; Chofer y Receptor no gestionan montos ni tasas)
   const { data: bcvData, isLoading: loadingBcv, refetch: refetchBcv } = useQuery<BcvResponse>({
@@ -98,12 +97,12 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Roles autorizados para supervisión y administración
-  const esAdminOSupervisor = 
-    userRol.includes('ADMIN') || 
-    userRol.includes('SUPERVISOR') ||
-    userRol.includes('GERENTE') ||
-    Boolean(user?.permisos?.some((p: string) => ['TODOS', 'ADMIN_TOTAL', 'RUTAS_CREAR', 'RUTAS_EDITAR'].includes(p)));
+  // Permisos autorizados para supervisión y administración (100% dinámico por RBAC)
+  const esAdminOSupervisor =
+    isAdmin() ||
+    hasPermission('ADMIN_TOTAL') ||
+    hasPermission('RUTAS_CREAR') ||
+    hasPermission('RUTAS_EDITAR');
 
   // IDs de notificaciones marcadas como leídas localmente
   const [leidasIds, setLeidasIds] = useState<string[]>(() => {
@@ -464,7 +463,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
       </div>
 
       <div className="nav-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        {mostrarQrVergel && (
+        {mostrarQrApp && (
           <>
             <button
               type="button"

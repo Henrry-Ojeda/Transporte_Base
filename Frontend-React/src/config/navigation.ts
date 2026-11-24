@@ -35,16 +35,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
       { name: 'Recolección en Ruta', href: '/rutas', tabId: 'rutas', icon: 'fa-solid fa-route' },
       { name: 'Entregas Receptoría', href: '/receptoria', tabId: 'receptoria', icon: 'fa-solid fa-truck-ramp-box', requiredTenantModule: 'MOD_RECEPTORIA' },
       { name: 'Control de Viajes', href: '/viajes', tabId: 'viajes', icon: 'fa-solid fa-clipboard-check' },
-      {
-        name: 'Balance Silos',
-        tabId: 'balance',
-        icon: 'fa-solid fa-cubes-stacked',
-        color: '#2563eb',
-        subItems: [
-          { name: 'Balance General Silos', href: '/balance', tabId: 'balance', icon: 'fa-solid fa-chart-line' },
-          { name: 'Formulario Silos-01', href: '/control-tanques', tabId: 'control-tanques', icon: 'fa-solid fa-clipboard-list', color: '#6366f1', requiredTenantModule: 'MOD_CONTROL_TANQUES' },
-        ],
-      },
+      { name: 'Balance & Silos', href: '/balance', tabId: 'balance', icon: 'fa-solid fa-cubes-stacked', color: '#2563eb' },
       { name: 'Mapa de Rutas & GPS', href: '/mapa-rutas', tabId: 'mapa-rutas', icon: 'fa-solid fa-map-location-dot', color: '#0d9488', requiredTenantModule: 'MOD_MAPA_RUTAS' },
       { name: 'Trazabilidad Búfala', href: '/bufala', tabId: 'bufala', icon: 'fa-solid fa-gem', color: '#0d9488', requiredTenantModule: 'MOD_LECHE_BUFALA' },
       {

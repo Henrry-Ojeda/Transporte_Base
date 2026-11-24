@@ -110,36 +110,18 @@ const HomeRedirect: React.FC = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const rol = (user?.rol || '').toUpperCase();
 
-  const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
-  const isCampoVerde = host.includes('campoverde');
-  const isVergel = host.includes('vergel');
-
   let tieneDispositivoValido = false;
   if (typeof window !== 'undefined') {
     try {
       const raw = localStorage.getItem('movil_device_info');
       if (raw) {
         const d = JSON.parse(raw);
-        const dIsVergel = (d.empresaCodigo || '').includes('VERGEL') || (d.empresaNombre || '').toLowerCase().includes('vergel');
-        const dIsCampo = (d.empresaCodigo || '').includes('CAMPO') || (d.empresaNombre || '').toLowerCase().includes('campo');
-        if (isCampoVerde && dIsVergel) {
-          tieneDispositivoValido = false;
-        } else if (isVergel && dIsCampo) {
-          tieneDispositivoValido = false;
-        } else {
-          tieneDispositivoValido = true;
-        }
+        const userCod = String((user as any)?.empresaCodigo || '').toUpperCase().trim();
+        const devCod = String(d.empresaCodigo || '').toUpperCase().trim();
+        tieneDispositivoValido = !userCod || !devCod || userCod === devCod;
       }
     } catch {
       tieneDispositivoValido = false;
-    }
-  }
-
-  if (isAuthenticated && user) {
-    const userCod = ((user as any)?.empresaCodigo || '').toUpperCase();
-    if ((isCampoVerde && userCod.includes('VERGEL')) || (isVergel && userCod.includes('CAMPO'))) {
-      useAuthStore.getState().logout();
-      return <Navigate to="/login" replace />;
     }
   }
 

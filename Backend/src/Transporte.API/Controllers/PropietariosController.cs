@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Security;
 using System.Security.Claims;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
@@ -43,6 +44,7 @@ public class PropietariosController : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission("PROPIETARIOS_VER", "FINCAS_VER")]
     public async Task<IActionResult> Crear([FromBody] CrearPropietarioDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Nombre))
@@ -53,6 +55,7 @@ public class PropietariosController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [RequirePermission("PROPIETARIOS_VER", "FINCAS_VER")]
     public async Task<IActionResult> Actualizar(int id, [FromBody] ActualizarPropietarioDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Nombre))
@@ -64,6 +67,7 @@ public class PropietariosController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RequirePermission("PROPIETARIOS_VER", "FINCAS_VER")]
     public async Task<IActionResult> Eliminar(int id)
     {
         bool ok = await _catalogosRepository.EliminarPropietarioAsync(id);
@@ -72,6 +76,7 @@ public class PropietariosController : ControllerBase
     }
 
     [HttpPost("asignar-fincas")]
+    [RequirePermission("PROPIETARIOS_VER", "FINCAS_VER")]
     public async Task<IActionResult> AsignarFincas([FromBody] AsignarFincasPropietarioDto dto)
     {
         bool ok = await _catalogosRepository.AsignarFincasPropietarioAsync(dto);
@@ -80,6 +85,7 @@ public class PropietariosController : ControllerBase
     }
 
     [HttpGet("preliquidacion-consolidada")]
+    [RequirePermission("LIQUIDACIONES_VER", "PROPIETARIOS_VER")]
     public async Task<IActionResult> GetPreLiquidacionConsolidada([FromQuery] int? cicloId = null)
     {
         var result = await _catalogosRepository.ObtenerPreLiquidacionConsolidadaPropietariosAsync(cicloId);

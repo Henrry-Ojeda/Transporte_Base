@@ -53,3 +53,6 @@ appsettings.Development.json
 
 # Binarios APK pesados (desplegados directo a Vercel)
 Frontend-React/public/downloads/*.apk
+
+# Configuracion local de respaldos por laptop
+Scripts/Backups/backup-config.json

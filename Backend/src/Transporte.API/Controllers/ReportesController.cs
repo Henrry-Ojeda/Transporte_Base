@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using Transporte.API.Security;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 
 namespace Transporte.API.Controllers
 {
     [Authorize]
+    [RequirePermission("REPORTES_VER", "DASHBOARD_VER", "ADMINISTRACION_VER")]
     [ApiController]
     [Route("api/[controller]")]
     public class ReportesController : ControllerBase

@@ -1,0 +1,9 @@
+{
+  "vpsHost": "84.247.178.194",
+  "vpsUser": "root",
+  "vpsBackupDir": "/opt/sql_server/backups",
+  "vpsBackupScript": "/opt/sql_server/backup_databases.sh",
+  "localBackupDir": "C:\\Backups\\Transporte_PROD",
+  "localRetentionDays": 30,
+  "sshKeyPath": ""
+}

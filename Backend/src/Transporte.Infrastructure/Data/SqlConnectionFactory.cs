@@ -18,9 +18,10 @@ public class SqlConnectionFactory : IDbConnectionFactory
     public SqlConnectionFactory(IConfiguration configuration, ITenantService? tenantService = null)
     {
         _tenantService = tenantService;
-        _fallbackConnectionString = configuration.GetConnectionString("BD_TRANSPORTE") 
+        _fallbackConnectionString = configuration.GetConnectionString("BD_TRANSPORTE")
             ?? configuration.GetConnectionString("DefaultConnection")
-            ?? "Server=84.247.178.194,1433;Database=DB_PROD_CAMPO_VERDE;User Id=user_campoverde;Password=Campo_Verde_2026!;TrustServerCertificate=True;";
+            ?? Environment.GetEnvironmentVariable("DEFAULT_CONNECTION")
+            ?? string.Empty;
     }
 
     public IDbConnection CreateConnection()

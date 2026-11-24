@@ -13,12 +13,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Data.SqlClient;
 using Transporte.Core.Entities;
 using Transporte.Infrastructure.Repositories;
+using Transporte.API.Security;
 
 namespace Transporte.API.Controllers
 {
     [ApiController]
     [Route("api/data")]
     [Authorize]
+    [RequirePermission("DATA_VER", "IMPORTACION_VER")]
     public class ImportacionDataController : ControllerBase
     {
         private readonly IConfiguration _configuration;

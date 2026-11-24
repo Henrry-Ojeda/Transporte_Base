@@ -502,7 +502,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
             <button
               type="button"
               onClick={() => setModalQrApp(true)}
-              title="QR para descargar App Móvil (Vergel & Carrillo)"
+              title="QR para descargar App Móvil"
               style={{
                 height: '38px',
                 background: 'var(--t-accent-soft)',

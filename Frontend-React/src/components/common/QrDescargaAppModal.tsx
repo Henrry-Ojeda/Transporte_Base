@@ -1,26 +1,31 @@
 import React, { useState } from 'react';
 import { QrCode, Copy, Check, ExternalLink, X, Smartphone } from 'lucide-react';
+import { useAuthStore } from '@/stores/authStore';
 
 interface QrDescargaAppModalProps {
   open: boolean;
   onClose: () => void;
 }
 
-const STORAGE_KEY_URL_APP = 'vergel_app_movil_descarga_url_v2';
-const DEFAULT_URL_APP = 'https://transporte-vergel-carrillo.vercel.app/descargar-app';
+const STORAGE_KEY_URL_APP = 'app_movil_descarga_url_v2';
+const getDefaultUrlApp = () =>
+  typeof window !== 'undefined' && window.location.origin
+    ? `${window.location.origin}/descargar-app`
+    : '/descargar-app';
 
-export const esTenantVergelCarrillo = (empresaCodigo?: string | null): boolean => {
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname.toLowerCase();
-    if (host.includes('campoverde')) return false;
-    if (host.includes('vergel') || host.includes('transportevc')) return true;
+/**
+ * Determina dinámicamente si el tenant actual tiene habilitado el módulo de App Móvil (Cero Hardcodeo).
+ */
+export const esTenantVergelCarrillo = (_empresaCodigo?: string | null): boolean => {
+  try {
+    return useAuthStore.getState().hasTenantModule('MOD_APP_MOVIL');
+  } catch {
+    return false;
   }
-  const cod = String(empresaCodigo || '').toUpperCase();
-  if (cod.includes('CAMPO')) return false;
-  return cod.includes('VERGEL');
 };
 
 export const QrDescargaAppModal: React.FC<QrDescargaAppModalProps> = ({ open, onClose }) => {
+  const DEFAULT_URL_APP = getDefaultUrlApp();
   const [urlDescarga, setUrlDescarga] = useState<string>(() => {
     try {
       return localStorage.getItem(STORAGE_KEY_URL_APP) || DEFAULT_URL_APP;
@@ -90,7 +95,7 @@ export const QrDescargaAppModal: React.FC<QrDescargaAppModalProps> = ({ open, on
             <Smartphone size={20} />
             <div>
               <div style={{ fontSize: '15px', fontWeight: 900 }}>Descargar App Móvil</div>
-              <div style={{ fontSize: '11px', opacity: 0.9 }}>Transporte Vergel &amp; Carrillo</div>
+              <div style={{ fontSize: '11px', opacity: 0.9 }}>{useAuthStore.getState().user?.empresaNombre || 'Sistema de Transporte'}</div>
             </div>
           </div>
           <button
@@ -126,7 +131,7 @@ export const QrDescargaAppModal: React.FC<QrDescargaAppModalProps> = ({ open, on
           >
             <img
               src={qrImgUrl}
-              alt="QR Descargar App Móvil Vergel Carrillo"
+              alt="QR Descargar App Móvil"
               style={{ width: '210px', height: '210px', display: 'block', borderRadius: '8px' }}
             />
           </div>
@@ -182,7 +187,7 @@ export const QrDescargaAppModal: React.FC<QrDescargaAppModalProps> = ({ open, on
             </button>
             <a
               href={urlEfectiva}
-              download="transporte-vergel-carrillo.apk"
+              download="transporte-app-movil.apk"
               style={{
                 flex: 1,
                 height: '40px',

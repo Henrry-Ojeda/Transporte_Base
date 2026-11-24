@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Security;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 
@@ -41,6 +42,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("parametros")]
+        [RequirePermission("CONFIGURACION_VER", "USUARIOS_VER")]
         public async Task<IActionResult> GuardarParametro([FromBody] GuardarParametroDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Clave))
@@ -54,6 +56,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("parametros/{clave}")]
+        [RequirePermission("CONFIGURACION_VER", "USUARIOS_VER")]
         public async Task<IActionResult> EliminarParametro([FromRoute] string clave)
         {
             var ok = await _configRepo.EliminarParametroAsync(clave);
@@ -80,6 +83,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("tipos-leche")]
+        [RequirePermission("CONFIGURACION_VER", "USUARIOS_VER")]
         public async Task<IActionResult> GuardarTipoLeche([FromBody] GuardarTipoLecheDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Codigo) || string.IsNullOrWhiteSpace(dto.Nombre))
@@ -92,6 +96,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("tipos-leche/{id}/toggle")]
+        [RequirePermission("CONFIGURACION_VER", "USUARIOS_VER")]
         public async Task<IActionResult> ToggleTipoLeche([FromRoute] int id, [FromBody] bool activo)
         {
             var tipo = await _configRepo.ObtenerTipoLechePorIdAsync(id);
@@ -111,6 +116,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("tipos-leche/{id}")]
+        [RequirePermission("CONFIGURACION_VER", "USUARIOS_VER")]
         public async Task<IActionResult> EliminarTipoLeche([FromRoute] int id)
         {
             var ok = await _configRepo.EliminarTipoLecheAsync(id);
@@ -144,6 +150,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpGet("modulos-admin")]
+        [RequirePermission("CONFIGURACION_VER", "USUARIOS_VER")]
         public async Task<IActionResult> ObtenerModulosAdmin()
         {
             var todosModulos = await _configRepo.ObtenerModulosMenuAsync(soloActivos: false);
@@ -151,6 +158,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("modulos/{id}/toggle")]
+        [RequirePermission("CONFIGURACION_VER", "USUARIOS_VER")]
         public async Task<IActionResult> ToggleModulo([FromRoute] int id, [FromBody] bool activo)
         {
             var currentUserRole = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? "";
@@ -192,6 +200,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("reportes/{id}/toggle")]
+        [RequirePermission("CONFIGURACION_VER", "USUARIOS_VER")]
         public async Task<IActionResult> ToggleReporte([FromRoute] int id, [FromBody] bool activo)
         {
             var ok = await _configRepo.ToggleReporteConfigAsync(id, activo);
@@ -225,6 +234,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("widgets/{id}/toggle")]
+        [RequirePermission("CONFIGURACION_VER", "USUARIOS_VER")]
         public async Task<IActionResult> ToggleWidget([FromRoute] int id, [FromBody] bool activo)
         {
             var ok = await _configRepo.ToggleWidgetDashboardAsync(id, activo);

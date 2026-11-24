@@ -172,6 +172,38 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
+// 4.5 Rate Limiting nativo (.NET 8) contra fuerza bruta en autenticación y vinculación móvil
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            message = "Demasiados intentos en poco tiempo. Por favor espera 1 minuto e intenta nuevamente."
+        }, token);
+    };
+
+    options.AddPolicy("auth-strict", httpContext =>
+    {
+        var forwardedFor = httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+        var clientIp = !string.IsNullOrWhiteSpace(forwardedFor)
+            ? forwardedFor.Split(',')[0].Trim()
+            : (httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: clientIp,
+            factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 15,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+});
+
 // 5. Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -290,6 +322,7 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseCors("AllowAll");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Transporte.API.Controllers;
 using Transporte.API.Security;
@@ -29,7 +30,6 @@ public class SeguridadYArquitecturaTests
             .Where(c =>
             {
                 if (c.GetCustomAttribute<AuthorizeAttribute>() != null) return false;
-                // Si no tiene [Authorize] en clase (ej. AuthController), toda acción pública debe tener [Authorize] o [AllowAnonymous]
                 var acciones = c.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                     .Where(m => !m.IsSpecialName && m.GetCustomAttributes().Any(a => a.GetType().Name.StartsWith("Http")));
                 return acciones.Any(m =>
@@ -56,6 +56,40 @@ public class SeguridadYArquitecturaTests
     {
         var hasClassAttr = controllerType.GetCustomAttributes<RequirePermissionAttribute>().Any();
         Assert.True(hasClassAttr, $"{controllerType.Name} debe tener [RequirePermission] dinámico.");
+    }
+
+    [Theory]
+    [InlineData(nameof(AuthController.Login))]
+    [InlineData(nameof(AuthController.VincularDispositivo))]
+    public void AuthEndpointsPublicos_DebenTenerRateLimiting(string methodName)
+    {
+        var method = typeof(AuthController).GetMethod(methodName);
+        Assert.NotNull(method);
+        var attr = method!.GetCustomAttribute<EnableRateLimitingAttribute>();
+        Assert.NotNull(attr);
+        Assert.Equal("auth-strict", attr!.PolicyName);
+    }
+
+    [Theory]
+    [InlineData(typeof(CamionesController))]
+    [InlineData(typeof(BcvController))]
+    [InlineData(typeof(ConfiguracionController))]
+    public void EndpointsEscritura_DebenUsarRequirePermissionYSinRolesHardcodeados(Type controllerType)
+    {
+        var writeMethods = controllerType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => m.GetCustomAttributes().Any(a =>
+                a is HttpPostAttribute || a is HttpPutAttribute || a is HttpDeleteAttribute))
+            .ToList();
+
+        Assert.NotEmpty(writeMethods);
+        foreach (var m in writeMethods)
+        {
+            var authRoleAttr = m.GetCustomAttribute<AuthorizeAttribute>();
+            Assert.True(string.IsNullOrWhiteSpace(authRoleAttr?.Roles),
+                $"{controllerType.Name}.{m.Name} no debe usar [Authorize(Roles=...)] hardcodeado.");
+            Assert.True(m.GetCustomAttributes<RequirePermissionAttribute>().Any(),
+                $"{controllerType.Name}.{m.Name} debe usar [RequirePermission] dinámico.");
+        }
     }
 
     [Fact]

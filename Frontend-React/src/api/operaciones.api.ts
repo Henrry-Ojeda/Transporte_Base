@@ -212,7 +212,7 @@ export const operacionesApi = {
       fotoComprobante?: string;
     }>;
   }): Promise<{ ticketId: number; fincasSincronizadas: number; creadoNuevo: boolean; message?: string; mensaje?: string }> => {
-    const res = await apiClient.post('/control-rutas/sincronizar-paquete', dto);
+    const res = await apiClient.post('/control-rutas/sincronizar-paquete', dto, { timeout: 120000 });
     return res.data;
   },
 

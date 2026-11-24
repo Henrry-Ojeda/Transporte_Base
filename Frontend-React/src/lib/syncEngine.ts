@@ -336,9 +336,10 @@ class SyncEngine {
             detalle: `Fallo sincronizar-paquete ticket ${t.localId}: ${errMsg}`,
           });
 
-          // Fallback: si falló el paquete completo (ej. foto muy pesada o validación de una finca),
-          // intentar crear primero el ticket vacío para que las fincas se suban una a una en sincronizarRecolecciones.
-          if (status && status >= 400 && status < 500) {
+          // Fallback: si falló el paquete completo (foto pesada, timeout, 413, 5xx o validación de una finca)
+          // y hay conexión en el navegador, crear primero el ticket vacío para subir las fincas una a una.
+          const estaEnLinea = typeof navigator === 'undefined' || navigator.onLine !== false;
+          if ((status && status >= 400) || (!status && estaEnLinea)) {
             const totalLtsPaquete = Array.isArray(t.fincas)
               ? t.fincas.reduce((acc: number, f: any) => acc + Number(f?.litros || 0), 0)
               : 0;

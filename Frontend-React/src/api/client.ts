@@ -218,11 +218,12 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Manejo global estricto: si cualquier API devuelve 401 o sesión expirada, pasar a /login
+    // Manejo global estricto: solo 401 (no autenticado/token inválido) o mensaje explícito de sesión cerrada
+    // redirige a /login. Un 403 Forbidden significa falta de permiso en ese endpoint puntual, NO sesión expirada.
     const isSessionClosed =
       status === 401 ||
-      (status === 403 && !url.includes('/auth/login') && !url.includes('/fincas')) ||
-      isSessionExpiredString(dataStr);
+      (status !== 403 && isSessionExpiredString(dataStr)) ||
+      (status === 403 && isSessionExpiredString(dataStr));
 
     // Sin conexión real jamás se cierra la sesión (puede ser un 503 sintético del Service Worker)
     const sinRedAhora = typeof navigator !== 'undefined' && navigator.onLine === false;

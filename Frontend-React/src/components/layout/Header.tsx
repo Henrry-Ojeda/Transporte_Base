@@ -396,10 +396,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
           ) : (
             <i className="fa-solid fa-cow brand-icon"></i>
           )}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span className="brand-title">RUTAS DE LECHE</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span className="brand-title" style={{ lineHeight: 1.05 }}>RUTAS DE LECHE</span>
             {(empresaConfig?.nombre || empresaConfig?.nombreEmpresa) && (
-              <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', lineHeight: 1 }}>
+              <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.45px', lineHeight: 1 }}>
                 {empresaConfig?.nombre || empresaConfig?.nombreEmpresa}
               </span>
             )}
@@ -471,18 +471,19 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
         </div>
       </div>
 
-      <div className="nav-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div className="nav-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         {/* SELECTOR DE TEMA: MODO CLARO (E: GLASS SAAS) / MODO OSCURO (F: TORRE DE CONTROL) */}
         <button
           type="button"
           onClick={toggleTheme}
           title={theme === 'light' ? 'Cambiar a Modo Oscuro (Torre de Control)' : 'Cambiar a Modo Claro (Glass SaaS)'}
           style={{
+            height: '38px',
             background: 'var(--t-surface-solid)',
             border: '1px solid var(--t-border)',
             color: 'var(--t-text)',
             borderRadius: '10px',
-            padding: '6px 10px',
+            padding: '0 12px',
             fontSize: '12px',
             fontWeight: 700,
             cursor: 'pointer',
@@ -503,11 +504,12 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
               onClick={() => setModalQrApp(true)}
               title="QR para descargar App Móvil (Vergel & Carrillo)"
               style={{
-                background: '#eff6ff',
-                border: '1.5px solid #bfdbfe',
-                color: '#1d4ed8',
+                height: '38px',
+                background: 'var(--t-accent-soft)',
+                border: '1px solid var(--t-border)',
+                color: 'var(--t-accent-text)',
                 borderRadius: '10px',
-                padding: '6px 11px',
+                padding: '0 12px',
                 fontSize: '12px',
                 fontWeight: 800,
                 cursor: 'pointer',

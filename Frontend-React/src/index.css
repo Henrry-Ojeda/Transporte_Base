@@ -700,12 +700,37 @@ body {
   color: var(--t-text) !important;
 }
 
-.main-header {
+.main-header,
+.top-nav {
   background: var(--t-surface) !important;
   backdrop-filter: blur(12px) !important;
   -webkit-backdrop-filter: blur(12px) !important;
   border-bottom: 1px solid var(--t-border) !important;
   color: var(--t-text) !important;
+}
+
+.top-nav .brand-title,
+.top-nav .ciclo-semana-title,
+.top-nav .ciclo-value {
+  color: var(--t-text) !important;
+}
+
+.top-nav .bcv-widget,
+.top-nav .ciclo-widget {
+  background: var(--t-surface-solid) !important;
+  border: 1px solid var(--t-border) !important;
+  color: var(--t-text) !important;
+}
+
+.top-nav .bcv-label,
+.top-nav .ciclo-label {
+  color: var(--t-muted) !important;
+}
+
+.top-nav .mobile-menu-toggle {
+  color: var(--t-text) !important;
+  border-color: var(--t-border) !important;
+  background: var(--t-surface-solid) !important;
 }
 
 .view-header {

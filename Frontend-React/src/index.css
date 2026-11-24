@@ -784,5 +784,57 @@ table.dataTable tbody tr:hover td,
   border-color: var(--t-accent) !important;
 }
 
+/* Animación y hover del Menú Dual-Rail + Mini-Rail Popover */
+@keyframes dualRailPopIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.dual-rail-popover {
+  animation: dualRailPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.rail-item-btn {
+  transition: transform 0.18s ease, background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease !important;
+}
+
+.rail-item-btn:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+  transform: translateY(-1px) scale(1.04);
+}
+
+.rail-item-btn.is-highlighted:hover {
+  background-color: var(--t-accent-hover) !important;
+  transform: translateY(-1px) scale(1.03);
+}
+
+.rail-collapse-btn:hover {
+  background-color: rgba(255, 255, 255, 0.16) !important;
+  transform: scale(1.05);
+}
+
+.nav-sub-item {
+  transition: transform 0.16s ease, background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease !important;
+}
+
+.nav-sub-item:hover {
+  background-color: var(--t-accent-soft) !important;
+  color: var(--t-accent-text) !important;
+  transform: translateX(4px);
+}
+
+.nav-sub-item:hover i {
+  color: var(--t-accent) !important;
+  transform: scale(1.12);
+  transition: transform 0.16s ease, color 0.16s ease;
+}
+
 
 

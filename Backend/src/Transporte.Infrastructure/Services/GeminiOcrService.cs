@@ -59,11 +59,11 @@ REGLA CRÍTICA DE ALINEACIÓN FILA POR FILA (SECCIÓN MATERA):
 - NO te saltes ninguna fila ni combines líneas. Si un nombre manuscrito es confuso (ej: 'Los ermano Aguirre', 'Kike', 'Canta claro', 'Jaguey Hondo', 'Puerto triunfo', 'Los Naranjos', 'Calle derecha', 'San gregorio', 'La Geita/Ceita', 'El paujil'), extrae el nombre manuscrito lealmente en esa posición exacta con sus litros.
 
 1. Columna 'MATERA' (Fincas produciendo leche): Fincas donde se recolecta leche.
-2. Columna 'RECEPTORIA' / 'RECEPTORA': Empresa/Planta receptora que recibe la leche (ej: 'CARLOS VERGEL', 'JOSE BARRETO', 'CANAIMA').
+2. Columna 'RECEPTORIA' / 'RECEPTORA': Empresa/Planta receptora que recibe la leche (ej: 'PLANTA RECEPTORA A', 'QUESERA CENTRAL').
 
 INSTRUCCIONES DE EXTRACCIÓN:
 - En la lista ""items"", extrae ÚNICAMENTE las fincas de la columna 'MATERA' respetando el orden estricto de arriba hacia abajo.
-- En la propiedad ""receptoraDetectada"", coloca la empresa leída en la columna 'RECEPTORIA' (ej: 'CARLOS VERGEL - 4244 Lts'). NO la incluyas como finca de recolección.
+- En la propiedad ""receptoraDetectada"", coloca la empresa leída en la columna 'RECEPTORIA' (ej: 'PLANTA RECEPTORA A - 4244 Lts'). NO la incluyas como finca de recolección.
 - Observaciones: extrae cualquier nota como '3=17', '13-5', '14', '13', '17-23', '92-3', '12=6', '32=4', '3=28', etc. Si menciona 'acida' o 'ácida', coloca 'ÁCIDA'.
 
 Lista de nombres de fincas en la base de datos para cotejar e identificar FincaId:
@@ -71,7 +71,7 @@ Lista de nombres de fincas en la base de datos para cotejar e identificar FincaI
 
 Devuelve ÚNICAMENTE un JSON estricto con esta estructura (sin markdown ni explicaciones):
 {{
-  ""receptoraDetectada"": ""CARLOS VERGEL (4244 Lts)"",
+  ""receptoraDetectada"": ""PLANTA RECEPTORA A (4244 Lts)"",
   ""items"": [
     {{
       ""fincaNombreDetectado"": ""Kike"",
@@ -206,7 +206,7 @@ Devuelve ÚNICAMENTE un JSON estricto con esta estructura (sin markdown ni expli
                                         if (string.IsNullOrWhiteSpace(fNombre) && lts == 0) continue;
 
                                         // Si la fila fue detectada como RECEPTORIA, guardarla como receptoraDetectada y pasar a la siguiente
-                                        if (tipoCol.ToUpper().Contains("RECEPTOR") || fNombre.ToUpper().Contains("CARLO VERGEL") || fNombre.ToUpper().Contains("CARLOS VERGEL"))
+                                        if (tipoCol.ToUpper().Contains("RECEPTOR"))
                                         {
                                             if (string.IsNullOrWhiteSpace(receptoraEncontrada))
                                                 receptoraEncontrada = $"{fNombre} ({lts} Lts)";

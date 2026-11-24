@@ -860,13 +860,13 @@ namespace Transporte.Infrastructure.Repositories
                     cc.Id AS ControlCompaniaId,
                     cc.CompaniaId AS CompaniaId,
                     ISNULL(comp.Nombre, CASE WHEN cc.CompaniaId IS NOT NULL THEN 'CompaÃ±Ã­a #' + CAST(cc.CompaniaId AS VARCHAR) ELSE 'Sin Asignar' END) AS CompaniaNombre,
-                    CASE WHEN cc.CompaniaId = 5028 OR comp.Nombre LIKE '%RECEPTORIA%' THEN 1 ELSE 0 END AS EsTanqueReceptoria,
+                    CASE WHEN ISNULL(comp.EsPrincipal, 0) = 1 OR UPPER(comp.Nombre) LIKE '%RECEPTORIA%' THEN 1 ELSE 0 END AS EsTanqueReceptoria,
                     (
                         SELECT STRING_AGG(c_sal.Nombre + ' (' + CAST(cc_sal.LitrosDespachados AS VARCHAR) + ' L)', ', ')
                         FROM TB_CONTROL_COMPANIAS cc_sal
                         JOIN TB_COMPANIAS c_sal ON cc_sal.CompaniaId = c_sal.Id
-                        WHERE (cc_sal.ControlRutaId = cr.Id AND cc_sal.CompaniaId <> 5028)
-                           OR (cc_sal.ControlRutaId IS NULL AND cc_sal.Fecha = r.Fecha AND c_sal.Id <> 5028)
+                        WHERE (cc_sal.ControlRutaId = cr.Id AND ISNULL(c_sal.EsPrincipal, 0) = 0)
+                           OR (cc_sal.ControlRutaId IS NULL AND cc_sal.Fecha = r.Fecha AND ISNULL(c_sal.EsPrincipal, 0) = 0)
                     ) AS DestinosFinales,
                     cc.LitrosDespachados AS LitrosDespachadosCompania,
                     cc.LitrosRecibidosCompania AS LitrosRecibidosCompania,

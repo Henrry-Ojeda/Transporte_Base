@@ -7,8 +7,8 @@ export const authApi = {
     return response.data;
   },
 
-  getTenantInfo: async (): Promise<{ codigo: string; nombre: string; modulos: string[] }> => {
-    const response = await apiClient.get<{ codigo: string; nombre: string; modulos: string[] }>('/auth/tenant');
+  getTenantInfo: async (): Promise<{ codigo: string; nombre: string; logoUrl?: string; modulos: string[] }> => {
+    const response = await apiClient.get<{ codigo: string; nombre: string; logoUrl?: string; modulos: string[] }>('/auth/tenant');
     return response.data;
   },
 

@@ -8,6 +8,7 @@ import { bcvApi } from '@/api/bcv.api';
 import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.api';
 import Swal from 'sweetalert2';
 import { QrDescargaAppModal, esTenantVergelCarrillo } from '@/components/common/QrDescargaAppModal';
+import { updateAppIcon } from '@/utils/pwaIcons';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -83,6 +84,12 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
     },
     enabled: !!user,
   });
+
+  useEffect(() => {
+    if (empresaConfig?.nombre || empresaConfig?.logoUrl) {
+      updateAppIcon(empresaConfig.logoUrl, empresaConfig.nombre || 'Sistema de Transporte');
+    }
+  }, [empresaConfig?.logoUrl, empresaConfig?.nombre]);
 
   // Notificaciones en Vivo del Sistema
   const [openNotif, setOpenNotif] = useState(false);

@@ -2,9 +2,18 @@
  * Utilidad para sincronizar el logo de la empresa como icono de la aplicación (PWA, Favicon y Apple Touch Icon)
  */
 export const updateAppIcon = (logoUrl?: string, appTitle: string = 'Rutas de Leche') => {
-  if (typeof document === 'undefined' || !logoUrl || !logoUrl.trim()) return;
+  if (typeof document === 'undefined') return;
 
-  const cleanLogoUrl = logoUrl.trim();
+  // Si la empresa no tiene logo propio en BD, forzamos /favicon.svg con cache-buster por tenant
+  // para evitar que el navegador conserve el favicon cacheado de otro cliente en el mismo host (ej. localhost)
+  const cleanLogoUrl =
+    logoUrl && logoUrl.trim()
+      ? logoUrl.trim()
+      : `/favicon.svg?t=${encodeURIComponent(appTitle || 'default')}`;
+
+  if (appTitle && appTitle.trim()) {
+    document.title = `${appTitle.trim()} — Sistema de Transporte`;
+  }
 
   try {
     // 1. Favicon en el navegador (Pestaña)

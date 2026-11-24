@@ -28,6 +28,7 @@ const lazyNamed = <T extends Record<string, any>>(
 const DashboardPage = lazyNamed(() => import('@/modules/dashboard/DashboardPage'), 'DashboardPage');
 const RutasLogisticaPage = lazyNamed(() => import('@/modules/operaciones/RutasLogisticaPage'), 'RutasLogisticaPage');
 const PlanificacionRutasChoferesPage = lazyNamed(() => import('@/modules/operaciones/PlanificacionRutasChoferesPage'), 'PlanificacionRutasChoferesPage');
+const LogisticaRutasPage = lazyNamed(() => import('@/modules/operaciones/LogisticaRutasPage'), 'LogisticaRutasPage');
 const RecoleccionRutasPage = lazyNamed(() => import('@/modules/operaciones/RecoleccionRutasPage'), 'RecoleccionRutasPage');
 const ViajesTicketsPage = lazyNamed(() => import('@/modules/operaciones/ViajesTicketsPage'), 'ViajesTicketsPage');
 const ReceptoriaPage = lazyNamed(() => import('@/modules/operaciones/ReceptoriaPage'), 'ReceptoriaPage');
@@ -56,12 +57,14 @@ const SemanasPage = lazyNamed(() => import('@/modules/finanzas/SemanasPage'), 'S
 const LiquidacionesPage = lazyNamed(() => import('@/modules/finanzas/LiquidacionesPage'), 'LiquidacionesPage');
 const PagosPersonalPage = lazyNamed(() => import('@/modules/finanzas/PagosPersonalPage'), 'PagosPersonalPage');
 const HistorialPagosPage = lazyNamed(() => import('@/modules/finanzas/HistorialPagosPage'), 'HistorialPagosPage');
+const PagosNominaPage = lazyNamed(() => import('@/modules/finanzas/PagosNominaPage'), 'PagosNominaPage');
 const AdministracionGeneralPage = lazyNamed(() => import('@/modules/finanzas/AdministracionGeneralPage'), 'AdministracionGeneralPage');
 
 // Adelantos
 const AdelantosFincasPage = lazyNamed(() => import('@/modules/finanzas/AdelantosFincasPage'), 'AdelantosFincasPage');
 const AbonosCompaniasPage = lazyNamed(() => import('@/modules/finanzas/AbonosCompaniasPage'), 'AbonosCompaniasPage');
 const OtrosAdelantosPage = lazyNamed(() => import('@/modules/finanzas/OtrosAdelantosPage'), 'OtrosAdelantosPage');
+const AdelantosUnificadoPage = lazyNamed(() => import('@/modules/finanzas/AdelantosUnificadoPage'), 'AdelantosUnificadoPage');
 
 // Sistema & Reportes
 const ReportesPage = lazyNamed(() => import('@/modules/sistema/ReportesPage'), 'ReportesPage');
@@ -110,36 +113,18 @@ const HomeRedirect: React.FC = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const rol = (user?.rol || '').toUpperCase();
 
-  const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
-  const isCampoVerde = host.includes('campoverde');
-  const isVergel = host.includes('vergel');
-
   let tieneDispositivoValido = false;
   if (typeof window !== 'undefined') {
     try {
       const raw = localStorage.getItem('movil_device_info');
       if (raw) {
         const d = JSON.parse(raw);
-        const dIsVergel = (d.empresaCodigo || '').includes('VERGEL') || (d.empresaNombre || '').toLowerCase().includes('vergel');
-        const dIsCampo = (d.empresaCodigo || '').includes('CAMPO') || (d.empresaNombre || '').toLowerCase().includes('campo');
-        if (isCampoVerde && dIsVergel) {
-          tieneDispositivoValido = false;
-        } else if (isVergel && dIsCampo) {
-          tieneDispositivoValido = false;
-        } else {
-          tieneDispositivoValido = true;
-        }
+        const userCod = String((user as any)?.empresaCodigo || '').toUpperCase().trim();
+        const devCod = String(d.empresaCodigo || '').toUpperCase().trim();
+        tieneDispositivoValido = !userCod || !devCod || userCod === devCod;
       }
     } catch {
       tieneDispositivoValido = false;
-    }
-  }
-
-  if (isAuthenticated && user) {
-    const userCod = ((user as any)?.empresaCodigo || '').toUpperCase();
-    if ((isCampoVerde && userCod.includes('VERGEL')) || (isVergel && userCod.includes('CAMPO'))) {
-      useAuthStore.getState().logout();
-      return <Navigate to="/login" replace />;
     }
   }
 
@@ -218,9 +203,10 @@ export const App: React.FC = () => {
                 <Route path="/balance" element={<ProtectedRoute requiredTabId="balance"><BalanceLechePage /></ProtectedRoute>} />
                 <Route path="/evolucion-fincas" element={<ProtectedRoute requiredTabId="evolucion-fincas"><EvolucionFincasPage /></ProtectedRoute>} />
                 <Route path="/control-tanques" element={<ProtectedRoute requiredTabId="control-tanques" requiredTenantModule="MOD_CONTROL_TANQUES"><ControlTanquesPage /></ProtectedRoute>} />
-                <Route path="/planificacion-rutas" element={<ProtectedRoute requiredTabId="rutas-planificacion" requiredTenantModule="MOD_LOGISTICA_RUTAS"><RutasLogisticaPage /></ProtectedRoute>} />
-                <Route path="/planificacion-rutas-choferes" element={<ProtectedRoute requiredTabId="planificacion-rutas-choferes" requiredTenantModule="MOD_LOGISTICA_RUTAS"><PlanificacionRutasChoferesPage /></ProtectedRoute>} />
-                <Route path="/mapa-rutas" element={<ProtectedRoute requiredTabId="mapa-rutas" requiredTenantModule="MOD_MAPA_RUTAS"><MapaRutasPage /></ProtectedRoute>} />
+                <Route path="/logistica" element={<ProtectedRoute requiredTabId="rutas-planificacion" requiredTenantModule="MOD_LOGISTICA_RUTAS"><LogisticaRutasPage /></ProtectedRoute>} />
+                <Route path="/planificacion-rutas" element={<Navigate to="/logistica?tab=circuitos" replace />} />
+                <Route path="/planificacion-rutas-choferes" element={<Navigate to="/logistica?tab=planificacion" replace />} />
+                <Route path="/mapa-rutas" element={<Navigate to="/logistica?tab=mapa" replace />} />
                 <Route path="/bufala" element={<ProtectedRoute requiredTabId="bufala" requiredTenantModule="MOD_LECHE_BUFALA"><BufalaPage /></ProtectedRoute>} />
 
                 {/* Catálogos */}
@@ -240,18 +226,20 @@ export const App: React.FC = () => {
                 {/* Liquidación & Pagos */}
                 <Route path="/semanas" element={<ProtectedRoute requiredTabId="semanas" requiredTenantModule="MOD_LIQUIDACIONES"><SemanasPage /></ProtectedRoute>} />
                 <Route path="/liquidaciones" element={<ProtectedRoute requiredTabId="liquidaciones" requiredTenantModule="MOD_LIQUIDACIONES"><LiquidacionesPage /></ProtectedRoute>} />
-                <Route path="/pagos-personal" element={<ProtectedRoute requiredTabId="pagos-personal" requiredTenantModule="MOD_PAGOS_PERSONAL"><PagosPersonalPage /></ProtectedRoute>} />
-                <Route path="/historial-pagos" element={<ProtectedRoute requiredTabId="historial-pagos" requiredTenantModule="MOD_LIQUIDACIONES"><HistorialPagosPage /></ProtectedRoute>} />
+                <Route path="/pagos-nomina" element={<ProtectedRoute requiredTabId="pagos-personal" requiredTenantModule="MOD_PAGOS_PERSONAL"><PagosNominaPage /></ProtectedRoute>} />
+                <Route path="/pagos-personal" element={<Navigate to="/pagos-nomina?tab=nomina" replace />} />
+                <Route path="/historial-pagos" element={<Navigate to="/pagos-nomina?tab=historial" replace />} />
                 <Route path="/administracion" element={<ProtectedRoute requiredTabId="administracion"><AdministracionGeneralPage /></ProtectedRoute>} />
 
                 {/* Adelantos & Cobranzas */}
-                <Route path="/adelantos-fincas" element={<ProtectedRoute requiredTabId="adelantos-fincas" requiredTenantModule="MOD_LIQUIDACIONES"><AdelantosFincasPage /></ProtectedRoute>} />
+                <Route path="/adelantos" element={<ProtectedRoute requiredTabId="adelantos" requiredTenantModule="MOD_LIQUIDACIONES"><AdelantosUnificadoPage /></ProtectedRoute>} />
+                <Route path="/adelantos-fincas" element={<Navigate to="/adelantos?tab=fincas" replace />} />
                 <Route path="/abonos-companias" element={<ProtectedRoute requiredTabId="abonos-companias"><AbonosCompaniasPage /></ProtectedRoute>} />
-                <Route path="/otros-adelantos" element={<ProtectedRoute requiredTabId="adelantos"><OtrosAdelantosPage /></ProtectedRoute>} />
-                <Route path="/adelantos-personal" element={<ProtectedRoute requiredTabId="adelantos-personal" requiredTenantModule="MOD_LIQUIDACIONES"><OtrosAdelantosPage defaultTab="personal" /></ProtectedRoute>} />
-                <Route path="/adelantos-receptoria" element={<ProtectedRoute requiredTabId="adelantos-receptoria"><OtrosAdelantosPage defaultTab="receptoria" /></ProtectedRoute>} />
-                <Route path="/abonos-amortizaciones" element={<ProtectedRoute requiredTabId="abonos"><OtrosAdelantosPage defaultTab="amortizaciones" /></ProtectedRoute>} />
-                <Route path="/historial-adelantos" element={<ProtectedRoute requiredTabId="historial-adelantos" requiredTenantModule="MOD_LIQUIDACIONES"><OtrosAdelantosPage defaultTab="historial" /></ProtectedRoute>} />
+                <Route path="/otros-adelantos" element={<Navigate to="/adelantos?tab=personal" replace />} />
+                <Route path="/adelantos-personal" element={<Navigate to="/adelantos?tab=personal" replace />} />
+                <Route path="/adelantos-receptoria" element={<Navigate to="/adelantos?tab=receptoria" replace />} />
+                <Route path="/abonos-amortizaciones" element={<Navigate to="/adelantos?tab=amortizaciones" replace />} />
+                <Route path="/historial-adelantos" element={<Navigate to="/adelantos?tab=historial" replace />} />
 
                 {/* Reportes */}
                 <Route path="/reportes" element={<ProtectedRoute requiredTabId="reportes"><ReportesPage /></ProtectedRoute>} />

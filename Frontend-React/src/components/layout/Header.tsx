@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
+import { useThemeStore } from '@/stores/themeStore';
 import apiClient from '@/api/client';
 import { bcvApi } from '@/api/bcv.api';
 import { notificacionesApi, type NotificacionMovil } from '@/api/notificaciones.api';
 import Swal from 'sweetalert2';
 import { QrDescargaAppModal, esTenantVergelCarrillo } from '@/components/common/QrDescargaAppModal';
+import { updateAppIcon } from '@/utils/pwaIcons';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -31,15 +33,15 @@ interface CicloActivoResponse {
 
 export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   const navigate = useNavigate();
-  const { user, logout, isAppHijo } = useAuthStore();
+  const { user, logout, isAppHijo, hasTenantModule, hasPermission, isAdmin } = useAuthStore();
+  const { theme, toggleTheme } = useThemeStore();
   const esHijo = isAppHijo();
   const rolVisible = esHijo && (user?.rol === 'SUPERADMIN' || user?.esSuperAdmin) ? 'ADMIN' : (user?.rol || 'ADMIN');
   const queryClient = useQueryClient();
   const [sincronizandoBcv, setSincronizandoBcv] = useState(false);
   const [modalQrApp, setModalQrApp] = useState(false);
-  const mostrarQrVergel = esTenantVergelCarrillo(user?.empresaCodigo);
-  const userRol = String(user?.rol || '').toUpperCase();
-  const puedeVerYGestionarBcv = !['CHOFER', 'RECEPTOR', 'RECEPTORIA'].includes(userRol);
+  const mostrarQrApp = hasTenantModule('MOD_APP_MOVIL');
+  const puedeVerYGestionarBcv = isAdmin() || hasPermission('HISTORIAL_BCV_VER') || hasPermission('DASHBOARD_VER');
 
   // Query Tasa BCV (Solo para usuarios autorizados; Chofer y Receptor no gestionan montos ni tasas)
   const { data: bcvData, isLoading: loadingBcv, refetch: refetchBcv } = useQuery<BcvResponse>({
@@ -83,6 +85,12 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
     enabled: !!user,
   });
 
+  useEffect(() => {
+    if (empresaConfig?.nombre || empresaConfig?.logoUrl) {
+      updateAppIcon(empresaConfig.logoUrl, empresaConfig.nombre || 'Sistema de Transporte');
+    }
+  }, [empresaConfig?.logoUrl, empresaConfig?.nombre]);
+
   // Notificaciones en Vivo del Sistema
   const [openNotif, setOpenNotif] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -98,12 +106,12 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Roles autorizados para supervisión y administración
-  const esAdminOSupervisor = 
-    userRol.includes('ADMIN') || 
-    userRol.includes('SUPERVISOR') ||
-    userRol.includes('GERENTE') ||
-    Boolean(user?.permisos?.some((p: string) => ['TODOS', 'ADMIN_TOTAL', 'RUTAS_CREAR', 'RUTAS_EDITAR'].includes(p)));
+  // Permisos autorizados para supervisión y administración (100% dinámico por RBAC)
+  const esAdminOSupervisor =
+    isAdmin() ||
+    hasPermission('ADMIN_TOTAL') ||
+    hasPermission('RUTAS_CREAR') ||
+    hasPermission('RUTAS_EDITAR');
 
   // IDs de notificaciones marcadas como leídas localmente
   const [leidasIds, setLeidasIds] = useState<string[]>(() => {
@@ -388,10 +396,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
           ) : (
             <i className="fa-solid fa-cow brand-icon"></i>
           )}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span className="brand-title">RUTAS DE LECHE</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span className="brand-title" style={{ lineHeight: 1.05 }}>RUTAS DE LECHE</span>
             {(empresaConfig?.nombre || empresaConfig?.nombreEmpresa) && (
-              <span style={{ fontSize: '9px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', lineHeight: 1 }}>
+              <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.45px', lineHeight: 1 }}>
                 {empresaConfig?.nombre || empresaConfig?.nombreEmpresa}
               </span>
             )}
@@ -463,19 +471,45 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
         </div>
       </div>
 
-      <div className="nav-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        {mostrarQrVergel && (
+      <div className="nav-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* SELECTOR DE TEMA: MODO CLARO (E: GLASS SAAS) / MODO OSCURO (F: TORRE DE CONTROL) */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          title={theme === 'light' ? 'Cambiar a Modo Oscuro (Torre de Control)' : 'Cambiar a Modo Claro (Glass SaaS)'}
+          style={{
+            height: '38px',
+            background: 'var(--t-surface-solid)',
+            border: '1px solid var(--t-border)',
+            color: 'var(--t-text)',
+            borderRadius: '10px',
+            padding: '0 12px',
+            fontSize: '12px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: '0 2px 6px rgba(15, 23, 42, 0.05)',
+          }}
+        >
+          <i className={`fa-solid ${theme === 'light' ? 'fa-moon' : 'fa-sun'}`} style={{ color: 'var(--t-accent)' }}></i>
+          <span className="hidden md:inline">{theme === 'light' ? 'Oscuro' : 'Claro'}</span>
+        </button>
+
+        {mostrarQrApp && (
           <>
             <button
               type="button"
               onClick={() => setModalQrApp(true)}
               title="QR para descargar App Móvil (Vergel & Carrillo)"
               style={{
-                background: '#eff6ff',
-                border: '1.5px solid #bfdbfe',
-                color: '#1d4ed8',
+                height: '38px',
+                background: 'var(--t-accent-soft)',
+                border: '1px solid var(--t-border)',
+                color: 'var(--t-accent-text)',
                 borderRadius: '10px',
-                padding: '6px 11px',
+                padding: '0 12px',
                 fontSize: '12px',
                 fontWeight: 800,
                 cursor: 'pointer',
@@ -501,9 +535,9 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
               width: '38px',
               height: '38px',
               borderRadius: '50%',
-              background: openNotif ? '#eff6ff' : '#ffffff',
-              border: `1.5px solid ${unreadCount > 0 ? '#3b82f6' : '#e2e8f0'}`,
-              color: unreadCount > 0 ? '#2563eb' : '#64748b',
+              background: openNotif ? 'var(--t-accent-soft)' : 'var(--t-surface-solid)',
+              border: `1.5px solid ${unreadCount > 0 ? 'var(--t-accent)' : 'var(--t-border)'}`,
+              color: unreadCount > 0 ? 'var(--t-accent)' : 'var(--t-muted)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -549,10 +583,10 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
                 right: 0,
                 width: '370px',
                 maxWidth: '90vw',
-                background: '#ffffff',
+                background: 'var(--t-surface-solid)',
                 borderRadius: '14px',
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 12px 32px rgba(15, 23, 42, 0.14)',
+                border: '1px solid var(--t-border)',
+                boxShadow: '0 12px 32px rgba(15, 23, 42, 0.25)',
                 zIndex: 1050,
                 overflow: 'hidden',
               }}
@@ -561,16 +595,16 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
               <div
                 style={{
                   padding: '12px 16px',
-                  borderBottom: '1px solid #f1f5f9',
+                  borderBottom: '1px solid var(--t-border)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  background: '#f8fafc',
+                  background: 'var(--t-table-head)',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <i className="fa-solid fa-bell" style={{ color: '#2563eb' }}></i>
-                  <span style={{ fontWeight: 800, fontSize: '13px', color: '#1e293b' }}>
+                  <i className="fa-solid fa-bell" style={{ color: 'var(--t-accent)' }}></i>
+                  <span style={{ fontWeight: 800, fontSize: '13px', color: 'var(--t-text)' }}>
                     Notificaciones
                   </span>
                   {unreadCount > 0 && (
@@ -698,8 +732,8 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
           id="userProfileWidget"
           className="header-user-widget"
           style={{
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
+            background: 'var(--t-surface-solid)',
+            border: '1px solid var(--t-border)',
             borderRadius: '999px',
             padding: '4px 6px 4px 6px',
             display: 'flex',
@@ -778,7 +812,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
                 style={{
                   fontSize: '13px',
                   fontWeight: 800,
-                  color: '#0f172a',
+                  color: 'var(--t-text)',
                   maxWidth: '160px',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',

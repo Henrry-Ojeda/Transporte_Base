@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { AuthUser, PermisoAccion } from '@/types';
 import { AUTH_TOKEN_KEY, setSessionExpiredHandler } from '@/api/client';
 import { authApi } from '@/api/auth.api';
+import { updateAppIcon } from '@/utils/pwaIcons';
 
 interface AuthState {
   token: string | null;
@@ -118,7 +119,6 @@ export const useAuthStore = create<AuthState>()(
         if (cod && cod !== 'PRODUCTO_BASE' && cod !== 'BASE') return true;
         if (typeof window !== 'undefined') {
           const host = window.location.hostname.toLowerCase();
-          if (host.includes('campoverde') || host.includes('vergel')) return true;
           if (host && !host.includes('base') && !host.includes('localhost') && host !== '127.0.0.1') return true;
         }
         return false;
@@ -140,6 +140,9 @@ export const useAuthStore = create<AuthState>()(
       syncModulosTenant: async () => {
         try {
           const res = await authApi.getTenantInfo();
+          if (res) {
+            updateAppIcon(res.logoUrl, res.nombre || res.codigo || 'Sistema de Transporte');
+          }
           if (res && Array.isArray(res.modulos)) {
             const currentMods = get().user?.modulosHabilitados || [];
             const newMods = res.modulos.map((m) => m.toUpperCase());
@@ -189,14 +192,6 @@ export const useAuthStore = create<AuthState>()(
           return user.modulosHabilitados.some((m: string) => m.toUpperCase() === code);
         }
 
-        // Si el usuario pertenece a CAMPO_VERDE y aún no tiene módulos cargados, búfala y asistente IA están apagados por defecto
-        const emp = (user?.empresaCodigo || '').toUpperCase();
-        if (emp.includes('CAMPO_VERDE') || emp.includes('CAMPOVERDE')) {
-          if (code === 'MOD_LECHE_BUFALA' || code === 'MOD_BUFALA' || code === 'BUFALA' || code === 'LECHE_BUFALA' || code === 'MOD_ASISTENTE_IA') {
-            return false;
-          }
-        }
-
         return false;
       },
 
@@ -206,35 +201,6 @@ export const useAuthStore = create<AuthState>()(
         // REGLA 4: Si el módulo SaaS no está habilitado para el tenant, ocultar pestaña transversalmente
         if (tabId.toLowerCase() === 'bufala' && !hasTenantModule('MOD_LECHE_BUFALA')) {
           return false;
-        }
-
-        const rolUsuario = (get().user?.rol || '').toUpperCase();
-
-        // ROL TALLER: Sólo ve Flota, Mantenimiento, Repuestos, Combustible y Perfil
-        if (rolUsuario === 'TALLER' || rolUsuario.includes('MECANICO')) {
-          const tabsPermitidosTaller = ['camiones', 'mantenimiento', 'repuestos', 'combustible', 'perfil'];
-          return tabsPermitidosTaller.includes(tabId.toLowerCase());
-        }
-
-        // ROL RECEPTOR / RECEPTORIA: Oculta Catálogos, Flota, Liquidación, Adelantos y del grupo Sistema solo ve Perfil y Tiempo de Sesión
-        if (rolUsuario === 'RECEPTOR' || rolUsuario === 'RECEPTORIA') {
-          const tabsPermitidosReceptoria = [
-            'dashboard',
-            'receptoria',
-            'entregas',
-            'balance',
-            'control-tanques',
-            'perfil',
-            'configuracion-sesion',
-          ];
-          return tabsPermitidosReceptoria.includes(tabId.toLowerCase());
-        }
-
-        // ROL CHOFER: No ve Taller ni Repuestos
-        if (rolUsuario === 'CHOFER') {
-          if (['mantenimiento', 'repuestos'].includes(tabId.toLowerCase())) {
-            return false;
-          }
         }
 
         if (isAdmin()) return true;
@@ -306,10 +272,10 @@ export const useAuthStore = create<AuthState>()(
         };
 
         const requiredPerms = tabPermissionMap[tabId.toLowerCase()];
-        if (!requiredPerms || requiredPerms.length === 0) return true;
-        const user = get().user;
-        const rol = (user?.rol || '').toUpperCase();
-        if (rol === 'SUPERVISOR' || rol.includes('ADMIN')) return true;
+        if (!requiredPerms || requiredPerms.length === 0) {
+          // Perfil personal accesible para usuarios autenticados; cualquier otra ruta no registrada es fail-closed
+          return ['perfil', 'mi-cuenta', 'configuracion-sesion'].includes(tabId.toLowerCase());
+        }
         return requiredPerms.some((perm) => hasPermission(perm));
       },
     }),

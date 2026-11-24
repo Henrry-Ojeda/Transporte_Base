@@ -3,13 +3,16 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { User, Lock, Eye, EyeOff, LogIn, AlertTriangle, Loader2, Building2, Hash, Smartphone, KeyRound, QrCode } from 'lucide-react';
 import { QrDescargaAppModal, esTenantVergelCarrillo } from '@/components/common/QrDescargaAppModal';
 import { useAuthStore } from '@/stores/authStore';
+import { useThemeStore } from '@/stores/themeStore';
 import { authApi } from '@/api/auth.api';
 import { isTokenExpired, AUTH_TOKEN_KEY } from '@/api/client';
+import { updateAppIcon } from '@/utils/pwaIcons';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, sessionExpiredMessage, clearExpiredMessage, isAuthenticated } = useAuthStore();
+  const { theme, toggleTheme } = useThemeStore();
 
   const defaultNombre = typeof window !== 'undefined' && window.location.hostname.includes('campoverde')
     ? 'Productos Lácteos Campo Verde, C.A.'
@@ -45,6 +48,7 @@ export const LoginPage: React.FC = () => {
       .then((info) => {
         if (mounted && info?.nombre) {
           setEmpresaNombre(info.nombre);
+          updateAppIcon(info.logoUrl, info.nombre);
         }
       })
       .catch(() => {
@@ -197,9 +201,32 @@ export const LoginPage: React.FC = () => {
 
   return (
     <div 
-      className="min-h-screen w-full bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden select-none"
-      style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+      className="min-h-screen w-full flex flex-col items-center justify-center p-4 relative overflow-hidden select-none"
+      style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--t-bg)', color: 'var(--t-text)' }}
     >
+      {/* Botón rápido Modo Claro / Oscuro en Login */}
+      <button
+        type="button"
+        onClick={toggleTheme}
+        style={{
+          position: 'fixed',
+          top: '16px',
+          right: '16px',
+          zIndex: 20,
+          background: 'var(--t-surface-solid)',
+          border: '1px solid var(--t-border)',
+          color: 'var(--t-text)',
+          borderRadius: '999px',
+          padding: '7px 14px',
+          fontSize: '12px',
+          fontWeight: 700,
+          cursor: 'pointer',
+          boxShadow: 'var(--t-shadow)',
+        }}
+      >
+        {theme === 'light' ? '🌙 Modo Oscuro' : '☀️ Modo Claro'}
+      </button>
+
       {/* Fondo decorativo fijo */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-32 -left-32 w-96 h-96 bg-blue-600/15 rounded-full blur-3xl" />
@@ -207,8 +234,8 @@ export const LoginPage: React.FC = () => {
       </div>
 
       <div 
-        className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200/80 relative z-10"
-        style={{ maxWidth: '440px', padding: '2.5rem', margin: 'auto' }}
+        className="w-full max-w-md rounded-3xl shadow-2xl relative z-10 glass-card"
+        style={{ maxWidth: '440px', padding: '2.5rem', margin: 'auto', background: 'var(--t-surface)', border: '1px solid var(--t-border)', backdropFilter: 'blur(14px)' }}
       >
         {/* Cabecera / Logo */}
         <div className="text-center mb-8" style={{ textAlign: 'center', marginBottom: '2rem' }}>

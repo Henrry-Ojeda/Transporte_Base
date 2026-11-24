@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { APP_VERSION } from '@/config/version';
@@ -9,16 +9,16 @@ interface SidebarProps {
   onClose: () => void;
 }
 
+const SIDEBAR_COLLAPSED_KEY = 'transporte_sidebar_collapsed';
+
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const location = useLocation();
-  const { canAccessTab, hasTenantModule } = useAuthStore();
-  const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
-  const [pinnedGroupId, setPinnedGroupId] = useState<string | null>(null);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { canAccessTab, hasTenantModule, user } = useAuthStore();
+  const sidebarRef = useRef<HTMLElement>(null);
 
   const isItemVisible = (item: NavSubItem): boolean => {
     if (item.subItems && item.subItems.length > 0) {
-      return item.subItems.some(sub => isItemVisible(sub));
+      return item.subItems.some((sub) => isItemVisible(sub));
     }
     if (item.requiredTenantModule && !hasTenantModule(item.requiredTenantModule)) {
       return false;
@@ -26,472 +26,351 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     return canAccessTab(item.tabId);
   };
 
-  const [openSubMenus, setOpenSubMenus] = useState<Record<string, boolean>>({
-    'Balance Silos': true,
-    'Logísticas': true,
-  });
+  const visibleGroups = useMemo(() => {
+    return NAV_GROUPS.map((grp) => ({
+      ...grp,
+      visibleItems: grp.items.filter(isItemVisible),
+    })).filter((grp) => grp.visibleItems.length > 0);
+  }, [canAccessTab, hasTenantModule]);
 
-  const toggleSubMenu = (name: string) => {
-    setOpenSubMenus(prev => ({
-      ...prev,
-      [name]: !prev[name],
-    }));
-  };
-
-  useEffect(() => {
-    if (location.pathname === '/balance' || location.pathname === '/control-tanques') {
-      setOpenSubMenus(prev => ({ ...prev, 'Balance Silos': true }));
-    }
-    if (location.pathname === '/planificacion-rutas' || location.pathname === '/planificacion-rutas-choferes') {
-      setOpenSubMenus(prev => ({ ...prev, 'Logísticas': true }));
-    }
-  }, [location.pathname]);
-
-  const handleMouseEnter = (groupId: string) => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-    setHoveredGroupId(groupId);
-  };
-
-  const handleMouseLeave = () => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-    }
-    closeTimerRef.current = setTimeout(() => {
-      if (!pinnedGroupId) {
-        setHoveredGroupId(null);
-      }
-    }, 900); // 900ms de tolerancia para mover el cursor sin que se cierre apresuradamente
-  };
-
-  // Cerrar submenú fijado al hacer clic fuera del sidebar
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const sidebar = document.getElementById('mainSidebar');
-      if (sidebar && !sidebar.contains(e.target as Node)) {
-        setPinnedGroupId(null);
-        setHoveredGroupId(null);
-      }
-    };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
-
-  const groups = NAV_GROUPS;
-
-  // Identificar qué grupo tiene la ruta actual activa
   const isGroupActive = (grp: NavGroupDef) => {
-    return grp.items.some(it => {
+    return grp.items.some((it) => {
       if (it.subItems && it.subItems.length > 0) {
-        return it.subItems.some(sub => isItemVisible(sub) && location.pathname === sub.href);
+        return it.subItems.some((sub) => isItemVisible(sub) && location.pathname === sub.href);
       }
       return isItemVisible(it) && location.pathname === it.href;
     });
   };
 
-  // Estado para contraer/achicar menú lateral
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerWidth < 1280;
-    }
-    return false;
+  // Colapsable (Opción 1): Dual-Rail expandido (Opción 2) ⇄ Mini-Rail + Popover por clic (Opción 5)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    if (saved !== null) return saved === 'true';
+    return window.innerWidth < 1280;
   });
 
-  // Estado para colapsar manualmente con clic en vista normal
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-
-  const toggleGroup = (groupId: string) => {
-    setCollapsedGroups(prev => ({
-      ...prev,
-      [groupId]: !prev[groupId],
-    }));
+  const toggleCollapse = (next?: boolean) => {
+    setIsSidebarCollapsed((prev) => {
+      const value = typeof next === 'boolean' ? next : !prev;
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(value));
+      return value;
+    });
+    setPopoverGroupId(null);
   };
 
-  // En móvil con drawer abierto, forzar vista interactiva completa (no achicada a 78px)
+  // Grupo activo en el panel secundario (Dual-Rail)
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(() => visibleGroups[0]?.id || 'grp-operaciones');
+  // Popover abierto por clic cuando está en modo Mini-Rail
+  const [popoverGroupId, setPopoverGroupId] = useState<string | null>(null);
+  // Sub-items anidados dentro de un grupo
+  const [openSubMenus, setOpenSubMenus] = useState<Record<string, boolean>>({
+    'Balance Silos': true,
+    'Logísticas': true,
+  });
+
+  // Sincronizar grupo activo al cambiar de ruta
+  useEffect(() => {
+    const matched = visibleGroups.find((g) => isGroupActive(g));
+    if (matched) {
+      setSelectedGroupId(matched.id);
+    } else if (visibleGroups.length > 0 && !visibleGroups.some((g) => g.id === selectedGroupId)) {
+      setSelectedGroupId(visibleGroups[0].id);
+    }
+    setPopoverGroupId(null);
+  }, [location.pathname, visibleGroups.length]);
+
+  // Cerrar popover al hacer clic fuera del sidebar
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (sidebarRef.current && !sidebarRef.current.contains(e.target as Node)) {
+        setPopoverGroupId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+
   const isMobileDrawer = isOpen;
   const effectiveCollapsed = isSidebarCollapsed && !isMobileDrawer;
+  const activeGroup = visibleGroups.find((g) => g.id === selectedGroupId) || visibleGroups[0];
+
+  const renderNavLinks = (items: NavSubItem[]) =>
+    items.map((item) => {
+      if (item.subItems && item.subItems.length > 0) {
+        const subOpen = !!openSubMenus[item.name];
+        return (
+          <div key={item.name} className="space-y-0.5">
+            <button
+              type="button"
+              onClick={() => setOpenSubMenus((prev) => ({ ...prev, [item.name]: !prev[item.name] }))}
+              className="nav-sub-item w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold cursor-pointer"
+              style={{ color: 'var(--t-text)' }}
+            >
+              <span className="flex items-center gap-2.5 truncate">
+                <i className={`${item.icon} w-4 text-center text-xs`} style={{ color: item.color || 'var(--t-accent)' }}></i>
+                <span className="truncate">{item.name}</span>
+              </span>
+              <i className={`fa-solid fa-chevron-${subOpen ? 'down' : 'right'} text-[10px]`} style={{ color: 'var(--t-muted)' }}></i>
+            </button>
+            {subOpen && (
+              <div className="pl-5 space-y-0.5">
+                {item.subItems.filter(isItemVisible).map((sub) => (
+                  <NavLink
+                    key={sub.href || sub.tabId}
+                    to={sub.href || '#'}
+                    onClick={() => {
+                      setPopoverGroupId(null);
+                      if (isMobileDrawer) onClose();
+                    }}
+                    className="nav-sub-item flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs"
+                    style={({ isActive }) => ({
+                      background: isActive ? 'var(--t-accent-soft)' : undefined,
+                      color: isActive ? 'var(--t-accent-text)' : 'var(--t-muted)',
+                      fontWeight: isActive ? 700 : 500,
+                      textDecoration: 'none',
+                    })}
+                  >
+                    <i className={`${sub.icon} w-3.5 text-center text-[11px]`}></i>
+                    <span className="truncate">{sub.name}</span>
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <NavLink
+          key={item.href || item.tabId}
+          to={item.href || '#'}
+          onClick={() => {
+            setPopoverGroupId(null);
+            if (isMobileDrawer) onClose();
+          }}
+          className="nav-sub-item flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs"
+          style={({ isActive }) => ({
+            background: isActive ? 'var(--t-accent-soft)' : undefined,
+            color: isActive ? 'var(--t-accent-text)' : 'var(--t-text)',
+            fontWeight: isActive ? 700 : 500,
+            border: isActive ? '1px solid var(--t-accent-soft)' : '1px solid transparent',
+            textDecoration: 'none',
+          })}
+        >
+          {({ isActive }) => (
+            <>
+              <i
+                className={`${item.icon} w-4 text-center text-xs shrink-0`}
+                style={{ color: isActive ? 'var(--t-accent)' : item.color || 'var(--t-muted)' }}
+              ></i>
+              <span className="truncate">{item.name}</span>
+            </>
+          )}
+        </NavLink>
+      );
+    });
 
   return (
     <aside
-      className={`sidebar ${isOpen ? 'open mobile-open' : ''} ${effectiveCollapsed ? 'is-collapsed' : 'hover-accordion-sidebar'}`}
+      ref={sidebarRef}
       id="mainSidebar"
+      className={`sidebar ${isOpen ? 'open mobile-open' : ''} ${effectiveCollapsed ? 'is-collapsed' : 'dual-rail-sidebar'}`}
       style={{
-        width: effectiveCollapsed ? '78px' : '260px',
-        minWidth: effectiveCollapsed ? '78px' : '260px',
-        maxWidth: effectiveCollapsed ? '78px' : '280px',
-        padding: effectiveCollapsed ? '12px 6px' : '16px 12px 12px 12px',
+        width: isMobileDrawer ? '280px' : effectiveCollapsed ? '62px' : '272px',
+        minWidth: isMobileDrawer ? '280px' : effectiveCollapsed ? '62px' : '272px',
+        maxWidth: isMobileDrawer ? '280px' : effectiveCollapsed ? '62px' : '272px',
+        padding: 0,
+        display: 'flex',
+        flexDirection: 'row',
         flexShrink: 0,
         height: '100%',
-        overflowY: effectiveCollapsed ? 'visible' : 'auto',
-        overflowX: 'visible',
-        transition: 'width 0.25s cubic-bezier(0.25, 1, 0.5, 1), min-width 0.25s, max-width 0.25s',
+        position: isMobileDrawer ? 'fixed' : 'relative',
+        overflow: 'visible',
+        background: 'transparent',
+        borderRight: '1px solid var(--t-border)',
+        transition: 'width 0.22s ease, min-width 0.22s ease, max-width 0.22s ease',
+        zIndex: isMobileDrawer ? 9999 : 40,
       }}
     >
-      {/* Cabecera Móvil con botón para cerrar menú en pantallas táctiles */}
-      {isOpen && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '4px 6px 12px 6px',
-            borderBottom: '1.5px solid #e2e8f0',
-            marginBottom: '12px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
-              <i className="fa-solid fa-bars" style={{ fontSize: '13px' }}></i>
-            </div>
-            <span style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>Menú del Sistema</span>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              border: '1px solid #cbd5e1',
-              background: '#f8fafc',
-              color: '#475569',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              fontSize: '18px',
-              fontWeight: 800,
-            }}
-            title="Cerrar menú"
-          >
-            &times;
-          </button>
-        </div>
-      )}
-
-      {/* Botón para achicar/expandir menú lateral (solo en escritorio) */}
-      {!isMobileDrawer && (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: effectiveCollapsed ? 'center' : 'flex-end',
-            padding: effectiveCollapsed ? '2px 0 10px 0' : '4px 6px 10px 6px',
-            borderBottom: '1px solid #f1f5f9',
-            marginBottom: '8px',
-          }}
-        >
-          {effectiveCollapsed ? (
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed(false)}
-              title="Expandir menú lateral"
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/90 text-slate-500 hover:text-blue-600 transition-all shadow-xs cursor-pointer"
-            >
-              <i className="fa-solid fa-chevron-right text-xs"></i>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed(true)}
-              title="Achicar menú lateral"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-600 hover:text-slate-900 transition-all text-xs font-semibold shadow-xs cursor-pointer"
-            >
-              <i className="fa-solid fa-chevron-left text-[10px] text-slate-400"></i>
-              <span>Achicar</span>
-            </button>
-          )}
-        </div>
-      )}
-
-      <nav className="sidebar-nav" style={{ overflow: 'visible' }}>
-        {effectiveCollapsed ? (
-          /* MODO ACHICADO (78px): Ícono con categoría elegante + Menú flotante al pasar el mouse */
-          <div className="flex flex-col items-center space-y-1.5" style={{ position: 'relative' }}>
-            {groups.map((grp, idx) => {
-              const visibleItems = grp.items.filter(isItemVisible);
-              if (visibleItems.length === 0) return null;
-
-              const active = isGroupActive(grp);
-              const firstItem = visibleItems[0];
-              const isMenuOpen = hoveredGroupId === grp.id || pinnedGroupId === grp.id;
-              // Para los últimos grupos, alinear el popover hacia arriba para no salirse de pantalla
-              const alignBottom = idx >= 4;
-
-              return (
-                <div
-                  key={grp.id}
-                  className="relative group"
-                  onMouseEnter={() => handleMouseEnter(grp.id)}
-                  onMouseLeave={handleMouseLeave}
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setPinnedGroupId(prev => (prev === grp.id ? null : grp.id));
-                      setHoveredGroupId(grp.id);
-                    }}
-                    title={`${grp.title} (Clic para fijar menú)`}
-                    className={`w-[66px] h-[52px] flex flex-col items-center justify-center rounded-xl transition-all duration-200 cursor-pointer ${
-                      active
-                        ? 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-md shadow-blue-500/25 border border-blue-500'
-                        : isMenuOpen
-                        ? 'bg-white text-blue-700 border-2 border-blue-500 shadow-md ring-2 ring-blue-100'
-                        : 'bg-slate-50/90 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-200/80 hover:border-slate-300 hover:shadow-sm'
-                    }`}
-                    style={{ textDecoration: 'none' }}
-                  >
-                    <i
-                      className={`${grp.iconClass} text-[16px] mb-1`}
-                      style={{
-                        color: active ? '#ffffff' : (isMenuOpen ? '#2563eb' : grp.color),
-                        filter: active ? 'drop-shadow(0 1px 2px rgba(0,0,0,0.15))' : 'none',
-                      }}
-                    ></i>
-                    <span
-                      style={{
-                        fontSize: '7.5px',
-                        fontWeight: active || isMenuOpen ? 800 : 700,
-                        lineHeight: '9px',
-                        textAlign: 'center',
-                        letterSpacing: '0.015em',
-                        whiteSpace: 'nowrap',
-                        color: active ? '#ffffff' : (isMenuOpen ? '#1d4ed8' : '#475569'),
-                      }}
-                    >
-                      {grp.shortTitle}
-                    </span>
-                  </button>
-
-                  {/* FLYOUT POPOVER: Despliega los submenús al pasar el mouse por encima o al dar clic */}
-                  {isMenuOpen && (
-                    <div
-                      onMouseEnter={() => handleMouseEnter(grp.id)}
-                      onMouseLeave={handleMouseLeave}
-                      className={`absolute left-[64px] w-64 bg-white rounded-xl shadow-2xl border border-slate-200 p-2.5 z-50 before:content-[''] before:absolute before:-left-5 before:top-0 before:w-6 before:h-full ${
-                        alignBottom ? 'bottom-0' : 'top-0'
-                      }`}
-                      style={{
-                        boxShadow: '0 16px 36px -4px rgba(15, 23, 42, 0.18), 0 6px 16px -2px rgba(15, 23, 42, 0.1)',
-                        animation: 'fadeInMenu 0.15s ease-out',
-                      }}
-                    >
-                      {/* Cabecera del flyout */}
-                      <div className="flex items-center justify-between px-2.5 py-1.5 mb-1.5 border-b border-slate-100 bg-slate-50/70 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <i className={`${grp.iconClass} text-sm`} style={{ color: grp.color }}></i>
-                          <span className="text-[11.5px] font-extrabold text-slate-800 uppercase tracking-wider">
-                            {grp.title}
-                          </span>
-                        </div>
-                        {pinnedGroupId === grp.id && (
-                          <span className="text-[9.5px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded">
-                            Fijado
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Lista de enlaces directos */}
-                      <div className="flex flex-col gap-0.5 max-h-[360px] overflow-y-auto">
-                        {visibleItems.map(item => {
-                          if (item.subItems && item.subItems.length > 0) {
-                            const visibleSubs = item.subItems.filter(isItemVisible);
-                            if (visibleSubs.length === 0) return null;
-                            return (
-                              <div key={item.name} className="mt-1 pt-1 border-t border-slate-100">
-                                <div className="px-2.5 py-1 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                  <i className={`${item.icon} text-[11px]`} style={item.color ? { color: item.color } : undefined}></i>
-                                  <span>{item.name}</span>
-                                </div>
-                                <div className="flex flex-col gap-0.5 pl-1.5">
-                                  {visibleSubs.map(sub => {
-                                    const isSubActive = location.pathname === sub.href;
-                                    return (
-                                      <NavLink
-                                        key={sub.href}
-                                        to={sub.href!}
-                                        onClick={() => {
-                                          setHoveredGroupId(null);
-                                          setPinnedGroupId(null);
-                                          if (isOpen) onClose();
-                                        }}
-                                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
-                                          isSubActive
-                                            ? 'bg-blue-50 text-blue-700 font-bold border-l-[3px] border-l-blue-600 shadow-xs'
-                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 font-medium'
-                                        }`}
-                                        style={{ textDecoration: 'none' }}
-                                      >
-                                        <i
-                                          className={`${sub.icon} text-[11px] w-3.5 text-center`}
-                                          style={sub.color ? { color: sub.color } : undefined}
-                                        ></i>
-                                        <span className="truncate">{sub.name}</span>
-                                      </NavLink>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          }
-
-                          const isItemActive = location.pathname === item.href;
-                          return (
-                            <NavLink
-                              key={item.href}
-                              to={item.href!}
-                              onClick={() => {
-                                setHoveredGroupId(null);
-                                setPinnedGroupId(null);
-                                if (isOpen) onClose();
-                              }}
-                              className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                                isItemActive
-                                  ? 'bg-blue-50 text-blue-700 font-bold border-l-[3px] border-l-blue-600 shadow-xs'
-                                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 font-medium'
-                              }`}
-                              style={{ textDecoration: 'none' }}
-                            >
-                              <i
-                                className={`${item.icon} text-[12px] w-4 text-center`}
-                                style={item.color ? { color: item.color } : undefined}
-                              ></i>
-                              <span className="truncate">{item.name}</span>
-                            </NavLink>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          /* MODO EXPANDIDO: Acordeón normal interactivo */
-          groups.map((grp) => {
-            const visibleItems = grp.items.filter(isItemVisible);
-            if (visibleItems.length === 0) return null;
-
-            const groupActive = isGroupActive(grp);
-            const isGroupCollapsed = collapsedGroups[grp.id] === true;
-            const groupClasses = [
-              'nav-accordion-group',
-              groupActive ? 'has-active' : '',
-              isGroupCollapsed ? 'collapsed' : (groupActive ? 'open' : ''),
-            ].filter(Boolean).join(' ');
+      {/* RAIL PRINCIPAL DE ICONOS (SIEMPRE VISIBLE - 62px) */}
+      <div
+        style={{
+          width: '62px',
+          minWidth: '62px',
+          background: 'var(--t-rail-bg)',
+          color: 'var(--t-rail-text)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 6px',
+          borderRight: effectiveCollapsed ? 'none' : '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
+        <div className="flex flex-col items-center gap-2 w-full">
+          {visibleGroups.map((grp, idx) => {
+            const isSelected = activeGroup?.id === grp.id;
+            const isCurrentRouteGroup = isGroupActive(grp);
+            const isPopOpen = popoverGroupId === grp.id;
+            const highlighted = effectiveCollapsed ? (isPopOpen || isCurrentRouteGroup) : isSelected;
+            const alignBottom = idx >= Math.max(3, visibleGroups.length - 3);
 
             return (
-              <div key={grp.id} className={groupClasses} id={grp.id}>
-                <div className="nav-accordion-header" onClick={() => toggleGroup(grp.id)}>
-                  <div className="header-main">
-                    <i className={`${grp.iconClass} group-icon ${grp.groupIconClass}`}></i>
-                    <span className="group-title">{grp.title}</span>
+              <div key={grp.id} style={{ position: 'relative', display: 'flex', justifyContent: 'center', width: '100%' }}>
+                <button
+                  type="button"
+                  title={grp.title}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (effectiveCollapsed) {
+                      setPopoverGroupId((prev) => (prev === grp.id ? null : grp.id));
+                      setSelectedGroupId(grp.id);
+                    } else {
+                      setSelectedGroupId(grp.id);
+                    }
+                  }}
+                  className={`rail-item-btn w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 cursor-pointer ${highlighted ? 'is-highlighted' : ''}`}
+                  style={{
+                    backgroundColor: highlighted ? 'var(--t-accent)' : undefined,
+                    color: highlighted ? '#ffffff' : 'var(--t-rail-text)',
+                    border: isCurrentRouteGroup && !highlighted ? '1px solid var(--t-accent)' : '1px solid transparent',
+                    boxShadow: highlighted ? '0 4px 12px rgba(0, 0, 0, 0.25)' : 'none',
+                  }}
+                >
+                  <i className={`${grp.iconClass} text-[14px]`}></i>
+                  <span style={{ fontSize: '7.5px', fontWeight: 700, letterSpacing: '0.02em', lineHeight: '9px' }}>
+                    {grp.shortTitle.slice(0, 6)}
+                  </span>
+                </button>
+
+                {/* POPOVER ALINEADO AL ICONO CLICKEADO EN MODO COLAPSADO (OPCIÓN 5) */}
+                {effectiveCollapsed && isPopOpen && (
+                  <div
+                    className="dual-rail-popover"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'absolute',
+                      left: '58px',
+                      ...(alignBottom ? { bottom: 0 } : { top: 0 }),
+                      width: '232px',
+                      maxHeight: 'calc(100vh - 100px)',
+                      overflowY: 'auto',
+                      background: 'var(--t-surface-solid)',
+                      border: '1px solid var(--t-border)',
+                      borderRadius: '14px',
+                      boxShadow: '0 18px 40px rgba(0, 0, 0, 0.22)',
+                      padding: '10px',
+                      zIndex: 9999,
+                    }}
+                  >
+                    <div
+                      className="flex items-center justify-between px-2 pb-2 mb-2"
+                      style={{ borderBottom: '1px solid var(--t-border)' }}
+                    >
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider" style={{ color: 'var(--t-muted)' }}>
+                        {grp.title}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPopoverGroupId(null)}
+                        className="w-6 h-6 rounded-md flex items-center justify-center cursor-pointer text-xs"
+                        style={{ color: 'var(--t-muted)' }}
+                        title="Cerrar"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <nav className="space-y-1">{renderNavLinks(grp.visibleItems)}</nav>
                   </div>
-                  <i className="fa-solid fa-chevron-right group-chevron"></i>
-                </div>
-                <div className="nav-accordion-body">
-                  <div className="accordion-subitems">
-                    {visibleItems.map((item) => {
-                      if (item.subItems && item.subItems.length > 0) {
-                        const visibleSubs = item.subItems.filter(isItemVisible);
-                        if (visibleSubs.length === 0) return null;
-                        const isSubActive = visibleSubs.some(s => location.pathname === s.href);
-                        const isSubOpen = openSubMenus[item.name] !== false;
-
-                        return (
-                          <div key={item.name} className="nav-sub-group mb-1">
-                            <button
-                              type="button"
-                              onClick={() => toggleSubMenu(item.name)}
-                              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer border-0 ${
-                                isSubActive
-                                  ? 'bg-blue-50/90 text-blue-700 font-bold'
-                                  : 'text-slate-600 hover:bg-slate-100/70 hover:text-slate-900 bg-transparent'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <i className={`${item.icon} text-[12px] w-4 text-center`} style={item.color ? { color: item.color } : undefined}></i>
-                                <span className="tracking-tight">{item.name}</span>
-                              </div>
-                              <i
-                                className={`fa-solid fa-chevron-right text-[9px] text-slate-400 transition-transform duration-200 ${
-                                  isSubOpen ? 'rotate-90 text-blue-600' : ''
-                                }`}
-                              ></i>
-                            </button>
-
-                            {isSubOpen && (
-                              <div className="pl-3.5 pr-1 py-1 flex flex-col gap-0.5 border-l-2 border-blue-200 ml-4 my-1">
-                                {visibleSubs.map((sub) => {
-                                  const isActive = location.pathname === sub.href;
-                                  return (
-                                    <NavLink
-                                      key={sub.href}
-                                      to={sub.href!}
-                                      onClick={() => {
-                                        if (isOpen) onClose();
-                                      }}
-                                      title={sub.name}
-                                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11.5px] transition-colors ${
-                                        isActive
-                                          ? 'bg-blue-600 text-white font-bold shadow-xs'
-                                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 font-medium'
-                                      }`}
-                                      style={{ textDecoration: 'none' }}
-                                    >
-                                      <i
-                                        className={`${sub.icon} text-[11px] w-3.5 text-center`}
-                                        style={!isActive && sub.color ? { color: sub.color } : undefined}
-                                      ></i>
-                                      <span className="truncate">{sub.name}</span>
-                                    </NavLink>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <NavLink
-                          key={item.href}
-                          to={item.href!}
-                          onClick={() => {
-                            if (isOpen) onClose();
-                          }}
-                          title={item.name}
-                          className={({ isActive }) =>
-                            isActive ? 'nav-item active' : 'nav-item'
-                          }
-                        >
-                          <i className={item.icon} style={item.color ? { color: item.color } : undefined}></i>
-                          <span>{item.name}</span>
-                        </NavLink>
-                      );
-                    })}
-                  </div>
-                </div>
+                )}
               </div>
             );
-          })
-        )}
-      </nav>
-
-      <div className="sidebar-footer" style={{ borderTop: '1px solid #f1f5f9', marginTop: 'auto', paddingTop: '10px' }} title={`Sistema Conectado • ${APP_VERSION}`}>
-        <div className="connection-status flex items-center justify-center" style={{ gap: '6px' }}>
-          <span className="status-dot online"></span>
-          {!isSidebarCollapsed && (
-            <span style={{ fontSize: '11px', color: '#64748b' }}>
-              Sistema Conectado • <strong style={{ color: '#0284c7', fontWeight: 700 }}>{APP_VERSION}</strong>
-            </span>
-          )}
+          })}
         </div>
+
+        {/* Botón Colapsar / Expandir (Opción 1) */}
+        {!isMobileDrawer && (
+          <button
+            type="button"
+            onClick={() => toggleCollapse()}
+            title={effectiveCollapsed ? 'Expandir panel de menú (Dual-Rail)' : 'Colapsar a Mini-Rail'}
+            className="rail-collapse-btn w-10 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-all"
+            style={{
+              background: 'rgba(255,255,255,0.07)',
+              color: '#e2e8f0',
+              border: '1px solid rgba(255,255,255,0.12)',
+            }}
+          >
+            <i className={`fa-solid fa-angles-${effectiveCollapsed ? 'right' : 'left'} text-xs`}></i>
+          </button>
+        )}
       </div>
+
+      {/* PANEL SECUNDARIO EXPANDIDO (OPCIÓN 2 - DUAL RAIL) */}
+      {!effectiveCollapsed && activeGroup && (
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: 'var(--t-sub-bg)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            padding: '14px 10px',
+            overflowY: 'auto',
+          }}
+        >
+          <div>
+            <div
+              className="flex items-center justify-between px-2 pb-2.5 mb-2.5"
+              style={{ borderBottom: '1px solid var(--t-border)' }}
+            >
+              <span
+                className="text-[11px] font-extrabold uppercase tracking-wider truncate"
+                style={{ color: 'var(--t-muted)' }}
+              >
+                {activeGroup.title}
+              </span>
+              {isMobileDrawer ? (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer text-sm font-bold"
+                  style={{ border: '1px solid var(--t-border)', color: 'var(--t-muted)' }}
+                  title="Cerrar menú"
+                >
+                  &times;
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => toggleCollapse(true)}
+                  className="w-6 h-6 rounded-md flex items-center justify-center cursor-pointer text-[11px]"
+                  style={{ border: '1px solid var(--t-border)', color: 'var(--t-muted)' }}
+                  title="Colapsar menú"
+                >
+                  <i className="fa-solid fa-chevron-left"></i>
+                </button>
+              )}
+            </div>
+
+            <nav className="space-y-1">{renderNavLinks(activeGroup.visibleItems)}</nav>
+          </div>
+
+          <div
+            className="px-2 pt-2.5 mt-3 text-[11px]"
+            style={{ borderTop: '1px solid var(--t-border)', color: 'var(--t-muted)' }}
+          >
+            <div className="font-semibold truncate" style={{ color: 'var(--t-text)' }}>
+              {user?.nombreCompleto || user?.username || 'Sistema'}
+            </div>
+            <div className="text-[10px]">v{APP_VERSION}</div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

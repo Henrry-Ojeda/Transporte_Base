@@ -56,4 +56,5 @@ jobs:
           dotnet-version: '8.0.x'
       - run: dotnet restore Backend/Transporte.sln
       - run: dotnet build Backend/Transporte.sln --configuration Release --no-restore
+      - run: dotnet test Backend/tests/Transporte.Tests/Transporte.Tests.csproj --configuration Release
 

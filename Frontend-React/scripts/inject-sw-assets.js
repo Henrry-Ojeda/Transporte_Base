@@ -79,12 +79,13 @@ const staticAssets = [
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
 ];
 
-// 4. Leer sw.js y reemplazar CACHE_NAME y STATIC_ASSETS
+// 4. Leer sw.js y reemplazar CACHE_NAME (único por build) y STATIC_ASSETS
 let swContent = fs.readFileSync(swSourcePath, 'utf-8');
+const buildStamp = Date.now().toString(36);
 
 swContent = swContent.replace(
   /const CACHE_NAME = '[^']+';/,
-  `const CACHE_NAME = 'rutas-movil-${version}';`
+  `const CACHE_NAME = 'rutas-movil-${version}-${buildStamp}';`
 );
 
 const assetsArrayString = JSON.stringify(staticAssets, null, 2);

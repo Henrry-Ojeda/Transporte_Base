@@ -14,14 +14,39 @@ import { TenantModuleMonitor } from '@/components/common/TenantModuleMonitor';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { setOnLogoutListener, useAuthStore } from '@/stores/authStore';
 
-// Helper para lazy-loading limpio de exportaciones nombradas o default
+// Helper para lazy-loading limpio con auto-recuperación silenciosa si un deploy nuevo invalidó chunks previos
 const lazyNamed = <T extends Record<string, any>>(
   loader: () => Promise<T>,
   exportName: keyof T
 ) =>
   lazy(async () => {
-    const mod = await loader();
-    return { default: mod[exportName] as React.ComponentType<any> };
+    try {
+      const mod = await loader();
+      return { default: mod[exportName] as React.ComponentType<any> };
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      const isChunkError =
+        msg.includes('Failed to fetch dynamically imported module') ||
+        msg.includes('Importing a module script failed') ||
+        msg.includes('Loading chunk') ||
+        msg.includes('error loading dynamically imported module');
+
+      if (isChunkError && typeof window !== 'undefined' && navigator.onLine) {
+        const lastReload = Number(sessionStorage.getItem('vite_chunk_reload_at') || '0');
+        if (Date.now() - lastReload > 15000) {
+          sessionStorage.setItem('vite_chunk_reload_at', String(Date.now()));
+          try {
+            if ('caches' in window) {
+              const keys = await caches.keys();
+              await Promise.all(keys.map((k) => caches.delete(k)));
+            }
+          } catch {}
+          window.location.reload();
+          return new Promise(() => {}) as any;
+        }
+      }
+      throw err;
+    }
   });
 
 // Dashboard & Operaciones (Code-Splitting por ruta)

@@ -81,10 +81,26 @@ export const setSessionExpiredHandler = (handler: SessionExpiredHandler) => {
 };
 
 /**
- * Forzar cierre de sesión inmediato y cambio de página a /login
+ * Detecta si el usuario está en la terminal móvil (/movil, /app) o ejecutando la PWA instalada (standalone)
+ */
+export const isMobileOrPwaContext = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const path = window.location.pathname || '';
+  if (path.startsWith('/movil') || path.startsWith('/app')) return true;
+  try {
+    if (window.matchMedia?.('(display-mode: standalone)').matches) return true;
+    if ((window.navigator as any)?.standalone === true) return true;
+  } catch {}
+  return false;
+};
+
+/**
+ * Forzar cierre de sesión inmediato y cambio de página (a /movil si es PWA/móvil, a /login si es web)
  */
 export const forceRedirectToLogin = (message?: string) => {
   if (typeof window === 'undefined') return;
+
+  const enMovilOPwa = isMobileOrPwaContext();
 
   // 1. Limpiar credenciales y almacenamiento local
   try {
@@ -92,6 +108,9 @@ export const forceRedirectToLogin = (message?: string) => {
     localStorage.removeItem('token');
     localStorage.removeItem('transporte_auth_store');
     localStorage.removeItem('transporte_last_activity');
+    if (enMovilOPwa) {
+      localStorage.removeItem('movil_device_info');
+    }
     sessionStorage.clear();
   } catch {}
 
@@ -102,7 +121,14 @@ export const forceRedirectToLogin = (message?: string) => {
     }
   } catch {}
 
-  // 3. Forzar cambio de página a /login inmediatamente
+  // 3. Mantener al usuario en /movil si estaba en la App Móvil/PWA; solo enviar a /login en Web
+  if (enMovilOPwa) {
+    if (!window.location.pathname.startsWith('/movil') && !window.location.pathname.startsWith('/app')) {
+      window.location.replace('/movil');
+    }
+    return;
+  }
+
   if (window.location.pathname !== '/login') {
     window.location.replace('/login');
   }
@@ -230,6 +256,10 @@ apiClient.interceptors.response.use(
     const esRespuestaOffline = Boolean((serverData as any)?.offline) || status === 503;
 
     if (isSessionClosed && !url.includes('/auth/login') && !sinRedAhora && !esRespuestaOffline) {
+      // No expulsar la terminal móvil por una petición secundaria de sincronización de ícono
+      if (isMobileOrPwaContext() && url.includes('/catalogos/empresa')) {
+        return Promise.reject(error);
+      }
       forceRedirectToLogin('Tu sesión ha finalizado. Por favor inicia sesión nuevamente.');
       return new Promise(() => {});
     }

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AuthUser, PermisoAccion } from '@/types';
-import { AUTH_TOKEN_KEY, setSessionExpiredHandler } from '@/api/client';
+import { AUTH_TOKEN_KEY, isMobileOrPwaContext, setSessionExpiredHandler } from '@/api/client';
 import { authApi } from '@/api/auth.api';
 import { updateAppIcon } from '@/utils/pwaIcons';
 
@@ -72,8 +72,14 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           sessionExpiredMessage: message || null,
         });
-        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-          window.location.replace('/login');
+        if (typeof window !== 'undefined') {
+          if (isMobileOrPwaContext()) {
+            if (!window.location.pathname.startsWith('/movil') && !window.location.pathname.startsWith('/app')) {
+              window.location.replace('/movil');
+            }
+          } else if (window.location.pathname !== '/login') {
+            window.location.replace('/login');
+          }
         }
       },
 

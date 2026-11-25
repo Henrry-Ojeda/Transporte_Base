@@ -751,6 +751,44 @@ class SyncEngine {
         continue;
       }
 
+      // Blindaje: NO despachar/cerrar el ticket en la central si todavía quedan recolecciones pendientes de ese ticket
+      let tieneFincasPendientes = false;
+      try {
+        const pendDb = await dbLocal.getRecoleccionesPendientes(empresaCodigo);
+        if (
+          pendDb.some((r) => {
+            const rTicket = r.ticketId < 0 ? ticketsLocales.resolverId(r.ticketId) : Number(r.ticketId || 0);
+            return rTicket === Number(ticketId) && Number(r.litros) > 0;
+          })
+        ) {
+          tieneFincasPendientes = true;
+        }
+      } catch {}
+      if (!tieneFincasPendientes) {
+        try {
+          const rawCargas = localStorage.getItem('movil_cargas_local');
+          if (rawCargas) {
+            const listC = JSON.parse(rawCargas);
+            if (
+              Array.isArray(listC) &&
+              listC.some((c: any) => {
+                if (!c || c.synced || Number(c.litros) <= 0) return false;
+                const cOrig = Number(c.serverTicketId || 0);
+                const cTicket = cOrig < 0 ? ticketsLocales.resolverId(cOrig) : cOrig;
+                return cTicket === Number(ticketId);
+              })
+            ) {
+              tieneFincasPendientes = true;
+            }
+          }
+        } catch {}
+      }
+      if (tieneFincasPendientes) {
+        console.warn(`[SyncEngine] Posponiendo despacho del ticket #${ticketId}: aún tiene fincas pendientes por sincronizar.`);
+        restantes.push(d);
+        continue;
+      }
+
       try {
         const dto = {
           companiaId: Number(d.companiaId || 0),

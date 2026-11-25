@@ -6430,6 +6430,76 @@ export const AppMovilPage: React.FC = () => {
 
       // Intentar envío online si hay red y ticket creado en servidor
       if (!esOffline) {
+        // Blindaje anti-pérdida: antes de cerrar/despachar el ticket a Receptoría/Compañía,
+        // verificar si existen fincas pendientes de este ticket en IndexedDB o localStorage.
+        // Si hay pendientes, forzar sincronización primero y bloquear el despacho si alguna falla.
+        const obtenerFincasPendientesTicket = async (tId: number): Promise<Array<{ fincaId: number; nombre: string; litros: number }>> => {
+          const mapaPend = new Map<string, { fincaId: number; nombre: string; litros: number }>();
+          try {
+            const pendDb = await dbLocal.getRecoleccionesPendientes(dispositivo?.empresaCodigo);
+            for (const r of pendDb) {
+              const rTicket = r.ticketId < 0 ? ticketsLocales.resolverId(r.ticketId) : Number(r.ticketId || 0);
+              if (rTicket === tId && Number(r.litros) > 0) {
+                const key = `${Number(r.fincaId)}_${(r.tipoLeche || 'VACA').toUpperCase()}`;
+                mapaPend.set(key, {
+                  fincaId: Number(r.fincaId),
+                  nombre: r.fincaNombre || `Finca #${r.fincaId}`,
+                  litros: Number(r.litros),
+                });
+              }
+            }
+          } catch {}
+          try {
+            const rawCargas = localStorage.getItem('movil_cargas_local');
+            if (rawCargas) {
+              const list = JSON.parse(rawCargas);
+              if (Array.isArray(list)) {
+                for (const c of list) {
+                  if (!c || c.synced || Number(c.litros) <= 0) continue;
+                  const cOrig = Number(c.serverTicketId || 0);
+                  const cTicket = cOrig < 0 ? ticketsLocales.resolverId(cOrig) : cOrig;
+                  if (cTicket === tId) {
+                    const key = `${Number(c.fincaId)}_${(c.tipoLeche || 'VACA').toUpperCase()}`;
+                    if (!mapaPend.has(key)) {
+                      mapaPend.set(key, {
+                        fincaId: Number(c.fincaId),
+                        nombre: c.fincaNombre || `Finca #${c.fincaId}`,
+                        litros: Number(c.litros),
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          } catch {}
+          return Array.from(mapaPend.values());
+        };
+
+        let pendientesAntes = await obtenerFincasPendientesTicket(viajeActivo.id);
+        if (pendientesAntes.length > 0) {
+          toast.info(`Sincronizando ${pendientesAntes.length} finca(s) pendiente(s) antes de despachar...`);
+          await syncEngine.sincronizarTodo(dispositivo?.empresaCodigo, true, choferEfectivoId);
+          pendientesAntes = await obtenerFincasPendientesTicket(viajeActivo.id);
+
+          if (pendientesAntes.length > 0) {
+            const listaHtml = pendientesAntes
+              .map((p) => `<li><b>${p.nombre}</b> (${p.litros} L)</li>`)
+              .join('');
+            await Swal.fire({
+              icon: 'warning',
+              title: 'Faltan fincas por sincronizar',
+              html: `<div style="text-align:left;font-size:13px;line-height:1.5;">
+                <p>No se puede enviar el Ticket <b>#${viajeActivo.id}</b> a Receptoría/Compañía porque aún hay <b>${pendientesAntes.length} finca(s)</b> guardadas solo en tu teléfono:</p>
+                <ul style="margin:8px 0 8px 18px;padding:0;list-style:disc;">${listaHtml}</ul>
+                <p style="margin-top:6px;">Verifica tu conexión y presiona <b>Sincronizar</b> antes de despachar para evitar perder registros.</p>
+              </div>`,
+              confirmButtonText: 'Entendido',
+              confirmButtonColor: '#d97706',
+            });
+            return;
+          }
+        }
+
         try {
           const resp = await operacionesApi.enviarACompania(viajeActivo.id, {
             companiaId: Number(primeraFilaValida?.companiaId || 0),

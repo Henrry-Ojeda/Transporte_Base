@@ -2056,14 +2056,18 @@ export const LiquidacionesPage: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL REGISTRAR PAGO INDIVIDUAL (Image 2 Redesign) */}
+      {/* MODAL REGISTRAR PAGO INDIVIDUAL MEJORADO */}
       {modalPagar && fincaPago && (() => {
-        const productor = (fincaPago.propietarioNombre || (fincaPago as any).propietario || (fincaPago as any).Propietario || '').trim();
-        const brutoUSD = Number(fincaPago.totalBrutoUSD ?? (fincaPago as any).totalUSD ?? (fincaPago as any).TotalUSD ?? ((fincaPago.totalLitros || 0) * (fincaPago.precioLitroUSD || 0)));
+        const productor = (fincaPago.propietarioNombre || (fincaPago as any).propietario || (fincaPago as any).Propietario || 'Sin asignar').trim();
+        const totalLitros = Number(fincaPago.totalLitros || (fincaPago as any).TotalLitros || 0);
+        const brutoUSD = Number(fincaPago.totalBrutoUSD ?? (fincaPago as any).totalUSD ?? (fincaPago as any).TotalUSD ?? (totalLitros * (fincaPago.precioLitroUSD || 0)));
         const adelantoUSD = Number(fincaPago.totalAdelantosUSD ?? (fincaPago as any).TotalAdelantosUSD ?? 0);
         const netoUSD = Number(fincaPago.totalNetoUSD !== undefined && fincaPago.totalNetoUSD !== null ? fincaPago.totalNetoUSD : Math.max(0, brutoUSD - adelantoUSD));
         const tasa = Number(fincaPago.tasaBCV || (fincaPago as any).tasaBcv || (fincaPago as any).TasaBcv || cicloActivo?.tasaBCVCierre || (brutoUSD > 0 && (fincaPago as any).totalBrutoBs ? ((fincaPago as any).totalBrutoBs / brutoUSD) : 1));
         const netoBs = Number(fincaPago.totalNetoBs || (fincaPago as any).TotalNetoBs || (netoUSD * tasa));
+        const bancoNom = (fincaPago as any).bancoNombre || (fincaPago as any).BancoNombre || '';
+        const numCuenta = (fincaPago as any).numeroCuenta || (fincaPago as any).NumeroCuenta || '';
+        const cedula = (fincaPago as any).cedulaRIF || (fincaPago as any).CedulaRIF || '';
 
         return (
           <div
@@ -2074,52 +2078,62 @@ export const LiquidacionesPage: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: 'rgba(15, 23, 42, 0.65)',
-              backdropFilter: 'blur(4px)',
+              backgroundColor: 'rgba(15, 23, 42, 0.72)',
+              backdropFilter: 'blur(5px)',
               padding: '16px',
             }}
+            onClick={() => setModalPagar(false)}
           >
             <div
               className="content-card"
+              onClick={(e) => e.stopPropagation()}
               style={{
                 width: '100%',
-                maxWidth: '460px',
+                maxWidth: '520px',
                 padding: '0',
-                borderRadius: '16px',
+                borderRadius: '18px',
                 overflow: 'hidden',
-                background: '#ffffff',
+                background: 'var(--t-card, #ffffff)',
+                color: 'var(--t-text, #0f172a)',
                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
-                border: '1px solid #e2e8f0',
+                border: '1px solid var(--t-border, #e2e8f0)',
               }}
             >
-              {/* Header 1:1 Image 2 */}
+              {/* Header corporativo */}
               <div
                 style={{
-                  padding: '18px 22px',
-                  background: '#ffffff',
-                  borderBottom: '1px solid #f1f5f9',
+                  padding: '16px 22px',
+                  background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+                  color: '#ffffff',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <i className="fa-solid fa-money-bill-wave" style={{ color: '#059669', fontSize: '18px' }}></i>
-                  <h3 style={{ fontSize: '17px', fontWeight: 800, margin: 0, color: '#0f172a' }}>
-                    Registrar Pago de Liquidación
-                  </h3>
+                  <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(255,255,255,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+                    <i className="fa-solid fa-money-bill-wave"></i>
+                  </span>
+                  <div>
+                    <h3 style={{ fontSize: '16px', fontWeight: 800, margin: 0 }}>
+                      Registrar Pago de Liquidación
+                    </h3>
+                    <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.85)' }}>
+                      {cicloActivo?.codigo || 'Ciclo Actual'} • Tasa BCV: Bs. {tasa.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                    </div>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setModalPagar(false)}
                   style={{
-                    color: '#94a3b8',
-                    background: 'transparent',
+                    color: '#ffffff',
+                    background: 'rgba(255,255,255,0.18)',
                     border: 'none',
                     width: '32px',
                     height: '32px',
                     borderRadius: '8px',
-                    fontSize: '22px',
+                    fontSize: '18px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -2143,39 +2157,76 @@ export const LiquidacionesPage: React.FC = () => {
                   });
                 }}
               >
-                <div style={{ padding: '20px', background: '#ffffff' }}>
-                  {/* Tarjeta de Productor y Totales 1:1 Image 2 */}
+                <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Tarjeta Finca y Datos Bancarios */}
                   <div
                     style={{
-                      background: '#f8fafc',
-                      border: '1px solid #f1f5f9',
+                      background: 'var(--t-bg, #f8fafc)',
+                      border: '1px solid var(--t-border, #e2e8f0)',
                       borderRadius: '12px',
                       padding: '14px 16px',
-                      marginBottom: '16px',
                     }}
                   >
-                    <div style={{ fontWeight: 900, color: '#0f172a', fontSize: '16px' }}>
-                      {fincaPago.fincaNombre}
-                    </div>
-                    <div style={{ color: '#64748b', fontSize: '12.5px', marginTop: '2px' }}>
-                      Propietario: {productor}
-                    </div>
-
-                    <div style={{ borderTop: '1px solid #e2e8f0', margin: '12px 0' }} />
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '14px', fontWeight: 800, color: '#059669', fontFamily: 'monospace' }}>
-                        Total: ${netoUSD.toFixed(2)} USD
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                      <div>
+                        <div style={{ fontWeight: 900, fontSize: '16px' }}>
+                          {fincaPago.fincaNombre}
+                        </div>
+                        <div style={{ color: 'var(--t-text-muted, #64748b)', fontSize: '12.5px', marginTop: '2px' }}>
+                          <i className="fa-solid fa-user-tie mr-1"></i> {productor} {cedula ? `• ${cedula}` : ''}
+                        </div>
+                      </div>
+                      <span style={{ padding: '3px 9px', borderRadius: '999px', fontSize: '11.5px', fontWeight: 800, background: '#dbeafe', color: '#1d4ed8', whiteSpace: 'nowrap' }}>
+                        {totalLitros.toLocaleString()} Lts
                       </span>
-                      <span style={{ fontSize: '14px', fontWeight: 800, color: '#b45309', fontFamily: 'monospace' }}>
+                    </div>
+
+                    {(bancoNom || numCuenta) && (
+                      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--t-border, #cbd5e1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: '12px' }}>
+                          <span style={{ fontWeight: 700 }}><i className="fa-solid fa-building-columns mr-1 text-indigo-500"></i>{bancoNom || 'Banco'}:</span>{' '}
+                          <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{numCuenta || 'Sin cuenta'}</span>
+                        </div>
+                        {numCuenta && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(numCuenta);
+                              toast.success('Número de cuenta copiado');
+                            }}
+                            style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', border: '1px solid var(--t-border, #cbd5e1)', background: 'var(--t-card, #ffffff)', color: 'var(--t-text, #0f172a)', cursor: 'pointer' }}
+                          >
+                            <i className="fa-regular fa-copy mr-1"></i>Copiar
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Desglose Bruto / Adelanto / Neto */}
+                  <div style={{ display: 'grid', gridTemplateColumns: adelantoUSD > 0 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', gap: '10px' }}>
+                    <div style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid var(--t-border, #e2e8f0)', background: 'var(--t-bg, #f8fafc)' }}>
+                      <div style={{ fontSize: '10.5px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--t-text-muted, #64748b)' }}>Bruto USD</div>
+                      <div style={{ fontSize: '15px', fontWeight: 800, fontFamily: 'monospace', marginTop: '2px' }}>${brutoUSD.toFixed(2)}</div>
+                    </div>
+                    {adelantoUSD > 0 && (
+                      <div style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c' }}>
+                        <div style={{ fontSize: '10.5px', fontWeight: 700, textTransform: 'uppercase' }}>(-) Adelanto</div>
+                        <div style={{ fontSize: '15px', fontWeight: 800, fontFamily: 'monospace', marginTop: '2px' }}>-${adelantoUSD.toFixed(2)}</div>
+                      </div>
+                    )}
+                    <div style={{ padding: '10px 12px', borderRadius: '10px', border: '1px solid #a7f3d0', background: '#ecfdf5', color: '#065f46' }}>
+                      <div style={{ fontSize: '10.5px', fontWeight: 700, textTransform: 'uppercase' }}>Neto a Pagar</div>
+                      <div style={{ fontSize: '15px', fontWeight: 900, fontFamily: 'monospace', marginTop: '2px' }}>${netoUSD.toFixed(2)}</div>
+                      <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#b45309', fontFamily: 'monospace' }}>
                         Bs. {netoBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Input de Referencia Bancaria 1:1 Image 2 */}
+                  {/* Input de Referencia Bancaria */}
                   <div>
-                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '6px' }}>
                       Referencia Bancaria / Comprobante de Pago *
                     </label>
                     <input
@@ -2184,20 +2235,20 @@ export const LiquidacionesPage: React.FC = () => {
                       onChange={(e) => setReferenciaPago(e.target.value)}
                       className="form-input"
                       placeholder="Ej: REF-84920491"
-                      style={{ width: '100%', height: '42px', fontWeight: 700, fontSize: '13px', borderRadius: '8px', border: '1.5px solid #cbd5e1' }}
+                      style={{ width: '100%', height: '42px', fontWeight: 700, fontSize: '13.5px', borderRadius: '10px' }}
                       required
                       autoFocus
                     />
                   </div>
                 </div>
 
-                {/* Footer 1:1 Image 2 */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 20px', background: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
+                {/* Footer */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 22px', borderTop: '1px solid var(--t-border, #e2e8f0)', background: 'var(--t-bg, #f8fafc)' }}>
                   <button
                     type="button"
                     onClick={() => setModalPagar(false)}
                     className="btn btn-outline"
-                    style={{ height: '40px', padding: '0 20px', fontWeight: 700, borderRadius: '8px', border: '1px solid #cbd5e1', color: '#334155' }}
+                    style={{ height: '40px', padding: '0 20px', fontWeight: 700, borderRadius: '10px' }}
                   >
                     Cancelar
                   </button>
@@ -2209,11 +2260,12 @@ export const LiquidacionesPage: React.FC = () => {
                       height: '40px',
                       padding: '0 22px',
                       background: '#047857',
+                      borderColor: '#047857',
                       fontWeight: 800,
+                      borderRadius: '10px',
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '6px',
-                      borderRadius: '8px',
                       border: 'none',
                       color: '#ffffff',
                     }}

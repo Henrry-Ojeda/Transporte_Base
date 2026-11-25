@@ -626,10 +626,21 @@ export const DashboardPage: React.FC = () => {
       };
     }
 
-    const ultimosCiclos = (ciclos || []).slice(0, cantSemanasTendencia).reverse();
-    const labels = ultimosCiclos.map((c) => `Sem #${c.numeroSemana}`);
-    const recolectado = ultimosCiclos.map((c) => c.totalLitros || 0);
-    const entregado = ultimosCiclos.map((c) => (c as any).totalLitrosReceptoria || c.totalLitros || 0);
+    const hoyTime = Date.now();
+    const ultimosCiclos = [...(ciclos || [])]
+      .filter((c: any) => {
+        const est = String(c.estado || c.Estado || '').toUpperCase();
+        if (est === 'PROGRAMADO') return false;
+        const fIni = c.fechaInicio || c.FechaInicio;
+        if (fIni && new Date(fIni).getTime() > hoyTime) return false;
+        return Number(c.totalLitros || 0) > 0 || est === 'ABIERTO';
+      })
+      .sort((a: any, b: any) => new Date(b.fechaInicio || b.FechaInicio || 0).getTime() - new Date(a.fechaInicio || a.FechaInicio || 0).getTime())
+      .slice(0, cantSemanasTendencia)
+      .reverse();
+    const labels = ultimosCiclos.map((c: any) => c.codigo || `Sem #${c.numeroSemana || c.id}`);
+    const recolectado = ultimosCiclos.map((c: any) => Number(c.totalLitros || 0));
+    const entregado = ultimosCiclos.map((c: any) => Number(c.totalLitrosReceptoria || 0));
 
     return {
       labels: labels.length ? labels : ['Semana Activa'],

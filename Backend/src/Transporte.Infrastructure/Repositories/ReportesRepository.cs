@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
 using Dapper;
@@ -1250,16 +1250,16 @@ namespace Transporte.Infrastructure.Repositories
             using var connection = new SqlConnection(_connectionString);
             var res = new DashboardAvanzadoDto();
 
-            // 1. Tendencia N Semanas (Solo semanas abiertas o con datos operativos reales, ordenadas cronolÃ³gicamente ASC)
+            // 1. Tendencia N Semanas (Solo semanas pasadas/actuales con actividad real, ordenadas cronológicamente por FechaInicio ASC)
             var sqlSemanas = @"
                 WITH UltimosCiclos AS (
-                    SELECT TOP (@semanas) c.Id AS CicloId, c.Codigo AS Semana
+                    SELECT TOP (@semanas) c.Id AS CicloId, c.Codigo AS Semana, c.FechaInicio
                     FROM TB_CICLOS_OPERATIVOS c
-                    WHERE (c.Estado = 'ABIERTO'
-                           OR EXISTS (SELECT 1 FROM TB_RUTAS_RECOLECCION r WHERE r.CicloId = c.Id)
-                           OR EXISTS (SELECT 1 FROM TB_CONTROL_RUTAS cr WHERE cr.CicloId = c.Id)
-                           OR EXISTS (SELECT 1 FROM TB_CONTROL_COMPANIAS cc WHERE cc.CicloId = c.Id))
-                    ORDER BY c.Id DESC
+                    WHERE CAST(c.FechaInicio AS DATE) <= CAST(DATEADD(hour, -4, GETUTCDATE()) AS DATE)
+                      AND UPPER(ISNULL(c.Estado, '')) <> 'PROGRAMADO'
+                      AND (EXISTS (SELECT 1 FROM TB_RUTAS_RECOLECCION r WHERE r.CicloId = c.Id AND r.Litros > 0)
+                           OR EXISTS (SELECT 1 FROM TB_CONTROL_RUTAS cr WHERE cr.CicloId = c.Id AND cr.TotalLitrosFinca > 0))
+                    ORDER BY c.FechaInicio DESC, c.Id DESC
                 )
                 SELECT uc.CicloId, uc.Semana,
                     ISNULL((
@@ -1281,7 +1281,7 @@ namespace Transporte.Infrastructure.Repositories
                           AND (@usuarioId IS NULL OR cr.UsuarioId = @usuarioId)
                     ), 0) AS Entregado
                 FROM UltimosCiclos uc
-                ORDER BY uc.CicloId ASC";
+                ORDER BY uc.FechaInicio ASC, uc.CicloId ASC";
             res.TendenciaSemanas = (await connection.QueryAsync<TendenciaSemanaItemDto>(sqlSemanas, new { semanas, usuarioId })).ToList();
 
             // 2. DesempeÃ±o Conductores (en las N semanas)
@@ -1367,7 +1367,6 @@ namespace Transporte.Infrastructure.Repositories
                     SUM(sc.Litros) AS Litros
                 FROM SalidasCombined sc
                 INNER JOIN TB_COMPANIAS cp ON sc.CompaniaId = cp.Id
-                WHERE ISNULL(cp.EsPrincipal, 0) = 0
                 WHERE sc.CicloId IN (SELECT CicloId FROM UltimosCiclos)
                   AND ISNULL(cp.EsPrincipal, 0) = 0
                   AND UPPER(ISNULL(cp.Nombre, '')) NOT LIKE '%RECEPTORIA%'

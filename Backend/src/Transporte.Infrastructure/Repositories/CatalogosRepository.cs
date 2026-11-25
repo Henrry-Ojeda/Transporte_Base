@@ -1310,6 +1310,18 @@ namespace Transporte.Infrastructure.Repositories
 
             try
             {
+                var existenteId = await connection.QueryFirstOrDefaultAsync<int?>(
+                    @"SELECT TOP 1 Id FROM TB_PROPIETARIOS 
+                      WHERE UPPER(LTRIM(RTRIM(Nombre))) = UPPER(LTRIM(RTRIM(@Nombre)))
+                        AND ISNULL(IsDeleted, 0) = 0",
+                    new { dto.Nombre }, transaction);
+
+                if (existenteId.HasValue && existenteId.Value > 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Ya existe un propietario activo con el nombre '{dto.Nombre.Trim()}'. Edita ese propietario para agregarle más bancos o fincas.");
+                }
+
                 int? bancoPrincipal = dto.BancoId;
                 string? cuentaPrincipal = dto.NumeroCuenta;
 
@@ -1411,6 +1423,18 @@ namespace Transporte.Infrastructure.Repositories
 
             try
             {
+                var existenteId = await connection.QueryFirstOrDefaultAsync<int?>(
+                    @"SELECT TOP 1 Id FROM TB_PROPIETARIOS 
+                      WHERE UPPER(LTRIM(RTRIM(Nombre))) = UPPER(LTRIM(RTRIM(@Nombre)))
+                        AND ISNULL(IsDeleted, 0) = 0",
+                    new { dto.Nombre }, transaction);
+
+                if (existenteId.HasValue && existenteId.Value > 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Ya existe un propietario activo con el nombre '{dto.Nombre.Trim()}'. Edita ese propietario para agregarle más bancos o fincas.");
+                }
+
                 int? bancoPrincipal = dto.BancoId;
                 string? cuentaPrincipal = dto.NumeroCuenta;
 

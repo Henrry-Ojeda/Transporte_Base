@@ -1125,8 +1125,8 @@ namespace Transporte.Infrastructure.Repositories
                         new
                         {
                             UsuarioId = conductorEfectivo,
-                            Titulo = "ðŸš› Â¡Nueva Ruta Asignada!",
-                            Mensaje = $"Se te ha asignado la recolecciÃ³n para el {fecha:dd/MM/yyyy}. Rutas: {rutasStr}. Ticket #{nuevoId}.",
+                            Titulo = $"Nueva Ruta Asignada (Ticket #{nuevoId})",
+                            Mensaje = $"Se te asignó la recolección para el {fecha:dd/MM/yyyy}. Rutas: {rutasStr}. Ticket #{nuevoId}.",
                             FechaOperativa = fecha,
                             ReferenciaId = nuevoId
                         });
@@ -1556,8 +1556,8 @@ namespace Transporte.Infrastructure.Repositories
                         new
                         {
                             UsuarioId = destUserId,
-                            Titulo = $"ðŸ¥› Finca en Ticket #{ticketCodigo}",
-                            Mensaje = $"{choferNombre} agregÃ³ {nombreFinca} ({dto.Litros:N0} Lts) al Ticket #{ticketCodigo}.",
+                            Titulo = $"Finca en Ticket #{ticketCodigo}",
+                            Mensaje = $"{choferNombre} agregó {nombreFinca} ({dto.Litros:N0} Lts) al Ticket #{ticketCodigo}.",
                             FechaOperativa = fechaEfectiva,
                             ReferenciaId = dto.ControlRutaId
                         });
@@ -3630,7 +3630,7 @@ namespace Transporte.Infrastructure.Repositories
                 {
                     await connection.ExecuteAsync(@"
                         INSERT INTO TB_NOTIFICACIONES_MOVIL (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
-                        VALUES (@conductorId, 'TICKET_ASIGNADO', 'ðŸŽ« Nuevo Ticket Creado (Excel)', @msg, @fechaGrupo, @ticketId, 0, GETDATE())",
+                        VALUES (@conductorId, 'TICKET_ASIGNADO', 'Nuevo Ticket Creado (Excel)', @msg, @fechaGrupo, @ticketId, 0, GETDATE())",
                         new
                         {
                             conductorId,

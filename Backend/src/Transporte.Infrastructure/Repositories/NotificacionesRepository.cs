@@ -82,6 +82,28 @@ namespace Transporte.Infrastructure.Repositories
             catch { /* Tolerante */ }
         }
 
+        private static string RepararMojibake(string? texto)
+        {
+            if (string.IsNullOrEmpty(texto)) return string.Empty;
+            var res = texto
+                .Replace("ðŸ¥› ", "").Replace("ðŸ¥›", "")
+                .Replace("ðŸš› ", "").Replace("ðŸš›", "")
+                .Replace("ðŸŽ« ", "").Replace("ðŸŽ«", "")
+                .Replace("ðŸ”„ ", "").Replace("ðŸ”„", "")
+                .Replace("ðŸ ­ ", "").Replace("ðŸ ­", "")
+                .Replace("Â¡", "¡")
+                .Replace("agregÃ³", "agregó")
+                .Replace("recolecciÃ³n", "recolección")
+                .Replace("informaciÃ³n", "información")
+                .Replace("CompaÃ±Ã­a", "Compañía")
+                .Replace("compaÃ±Ã­a", "compañía")
+                .Replace("Ã¡", "á").Replace("Ã©", "é").Replace("Ã­", "í").Replace("Ã³", "ó").Replace("Ãº", "ú")
+                .Replace("Ã±", "ñ").Replace("Ã\u0081", "Á").Replace("Ã‰", "É").Replace("Ã\u008d", "Í")
+                .Replace("Ã“", "Ó").Replace("Ãš", "Ú").Replace("Ã‘", "Ñ")
+                .Trim();
+            return res;
+        }
+
         public async Task<IEnumerable<NotificacionMovilDto>> ObtenerMisNotificacionesAsync(int usuarioId, int limite = 30)
         {
             using var connection = CreateConnection();
@@ -93,7 +115,13 @@ namespace Transporte.Infrastructure.Repositories
                 WHERE UsuarioId = @usuarioId
                 ORDER BY CreatedAt DESC, Id DESC";
 
-            return await connection.QueryAsync<NotificacionMovilDto>(sql, new { usuarioId, limite });
+            var lista = (await connection.QueryAsync<NotificacionMovilDto>(sql, new { usuarioId, limite })).ToList();
+            foreach (var item in lista)
+            {
+                item.Titulo = RepararMojibake(item.Titulo);
+                item.Mensaje = RepararMojibake(item.Mensaje);
+            }
+            return lista;
         }
 
         public async Task<long> CrearNotificacionAsync(CrearNotificacionMovilDto dto)

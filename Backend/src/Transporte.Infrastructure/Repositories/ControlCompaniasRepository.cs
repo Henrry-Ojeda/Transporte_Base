@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
 using Dapper;
@@ -264,7 +264,7 @@ namespace Transporte.Infrastructure.Repositories
                 "SELECT TOP 1 Id FROM TB_CICLOS_OPERATIVOS WHERE Estado = 'ABIERTO' AND @fecha BETWEEN FechaInicio AND FechaFin ORDER BY Id DESC",
                 new { fecha });
 
-            // ValidaciÃ³n anti-duplicados para despachos a compaÃ±Ã­as (misma fecha, misma compaÃ±Ã­a y mismos litros despachados)
+            // ValidaciÃ³n anti-duplicados para despachos a compañías (misma fecha, misma compañía y mismos litros despachados)
             var existeDuplicadoCC = await connection.ExecuteScalarAsync<long?>(
                 @"SELECT TOP 1 Id 
                   FROM TB_CONTROL_COMPANIAS 
@@ -276,7 +276,7 @@ namespace Transporte.Infrastructure.Repositories
 
             if (existeDuplicadoCC.HasValue)
             {
-                throw new InvalidOperationException($"Ya existe el Ticket #{existeDuplicadoCC.Value} registrado el {fecha:dd/MM/yyyy} para esta compaÃ±Ã­a por {dto.LitrosDespachados:N0} Lts. Para modificar el conductor o datos, utiliza la opciÃ³n 'Editar' del ticket existente.");
+                throw new InvalidOperationException($"Ya existe el Ticket #{existeDuplicadoCC.Value} registrado el {fecha:dd/MM/yyyy} para esta compañía por {dto.LitrosDespachados:N0} Lts. Para modificar el conductor o datos, utiliza la opciÃ³n 'Editar' del ticket existente.");
             }
 
             var tipoLeche = string.IsNullOrWhiteSpace(dto.TipoLeche) ? "VACA" : dto.TipoLeche.Trim().ToUpper();
@@ -303,14 +303,14 @@ namespace Transporte.Infrastructure.Repositories
                 creadoPor
             });
 
-            // NotificaciÃ³n automÃ¡tica al chofer de salida a compaÃ±Ã­a
+            // NotificaciÃ³n automÃ¡tica al chofer de salida a compañía
             if (id > 0 && dto.UsuarioId > 0)
             {
                 try
                 {
                     var compNombre = await connection.ExecuteScalarAsync<string>(
                         "SELECT Nombre FROM TB_COMPANIAS WHERE Id = @companiaId",
-                        new { companiaId = dto.CompaniaId }) ?? "CompaÃ±Ã­a";
+                        new { companiaId = dto.CompaniaId }) ?? "compañía";
 
                     await connection.ExecuteAsync(@"
                         INSERT INTO TB_NOTIFICACIONES_MOVIL (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
@@ -318,8 +318,8 @@ namespace Transporte.Infrastructure.Repositories
                         new
                         {
                             UsuarioId = dto.UsuarioId,
-                            Titulo = "ðŸ­ Salida a CompaÃ±Ã­a Asignada",
-                            Mensaje = $"Tienes un traslado asignado a la compaÃ±Ã­a {compNombre} por {dto.LitrosDespachados:N0} Lts de leche {tipoLeche} para la fecha {fecha:dd/MM/yyyy}.",
+                            Titulo = "Salida a Compañía Asignada",
+                            Mensaje = $"Tienes un traslado asignado a la compañía {compNombre} por {dto.LitrosDespachados:N0} Lts de leche {tipoLeche} para la fecha {fecha:dd/MM/yyyy}.",
                             FechaOperativa = fecha,
                             ReferenciaId = id
                         });
@@ -503,7 +503,7 @@ namespace Transporte.Infrastructure.Repositories
                 WHERE Id = @id",
                 new { targetComp, recibidos, diferencia, porcentaje, tipoFinal, obsFinal, fotoReciboUrl = dto.FotoReciboUrl ?? dto.FotoReciboCompania, fotoExamenLeche = dto.FotoExamenLeche, fotoReciboCompania = dto.FotoReciboCompania ?? dto.FotoReciboUrl, modificadoPor, id });
 
-            var compDestino = await connection.ExecuteScalarAsync<string>("SELECT Nombre FROM TB_COMPANIAS WHERE Id = @companiaId", new { companiaId = targetComp }) ?? "CompaÃ±Ã­a";
+            var compDestino = await connection.ExecuteScalarAsync<string>("SELECT Nombre FROM TB_COMPANIAS WHERE Id = @companiaId", new { companiaId = targetComp }) ?? "compañía";
             var compDestinoUpper = compDestino.Trim().ToUpperInvariant();
             bool esDestinoReceptoria = compDestinoUpper.Contains("RECEPTORIA") || compDestinoUpper.Contains("RECEPTORÃA") || compDestinoUpper.Contains("PLANTA PRINCIPAL");
 
@@ -537,22 +537,22 @@ namespace Transporte.Infrastructure.Repositories
                 try
                 {
                     
-                    // 1. Entrada a CompaÃ±Ã­a / Quesera (Positivo) con vinculaciÃ³n a ControlRutaId si aplica
+                    // 1. Entrada a compañía / Quesera (Positivo) con vinculaciÃ³n a ControlRutaId si aplica
                     var entregaExistenteId = await connection.ExecuteScalarAsync<long?>(
                         @"SELECT TOP 1 Id FROM TB_ENTREGAS_COMPANIA 
                           WHERE ControlCompaniaId = @id
                             OR (ControlRutaId = @cRutaId AND @cRutaId IS NOT NULL AND ControlCompaniaId IS NULL AND CompaniaId = @targetComp)
                             OR (
-                                Observacion LIKE '%Control CompaÃ±Ã­as #' + CAST(@id AS VARCHAR) + '.%'
+                                Observacion LIKE '%Control compañías #' + CAST(@id AS VARCHAR) + '.%'
                                 OR Observacion LIKE '%Control Companias #' + CAST(@id AS VARCHAR) + '.%'
-                                OR Observacion LIKE '%Control CompaÃ±Ã­as #' + CAST(@id AS VARCHAR) + '%'
+                                OR Observacion LIKE '%Control compañías #' + CAST(@id AS VARCHAR) + '%'
                                 OR Observacion LIKE '%Control Companias #' + CAST(@id AS VARCHAR) + '%'
                                 OR Observacion LIKE 'Entrega #' + CAST(@id AS VARCHAR) + ' %'
                                 OR Observacion LIKE '%Orig #' + CAST(@id AS VARCHAR) + ')%'
                             )",
                         new { id, targetComp, cRutaId = (long?)control.ControlRutaId });
 
-                    var obsEntrega = $"Entrega validada desde Control CompaÃ±Ã­as #{id}. Falla: {diferencia:+0;-0;0} L. {tipoUnico}{dto.Observacion}".Trim();
+                    var obsEntrega = $"Entrega validada desde Control compañías #{id}. Falla: {diferencia:+0;-0;0} L. {tipoUnico}{dto.Observacion}".Trim();
 
                     if (entregaExistenteId.HasValue)
                     {
@@ -706,9 +706,9 @@ namespace Transporte.Infrastructure.Repositories
                 {
                     int cicloId = (int)control.CicloId;
                     var tipoUnico = !string.IsNullOrWhiteSpace(tipoLeche) ? $"[{tipoLeche}] " : "";
-                    var obsEntrega = $"Entrega validada desde Control CompaÃ±Ã­as #{id}. Falla: {diferencia:+0;-0;0} L. {tipoUnico}{observacion}".Trim();
+                    var obsEntrega = $"Entrega validada desde Control compañías #{id}. Falla: {diferencia:+0;-0;0} L. {tipoUnico}{observacion}".Trim();
 
-                    // Lo entregado a la compaÃ±Ã­a son los litros recibidos por la planta (o despachados si aÃºn no hay recepciÃ³n)
+                    // Lo entregado a la compañía son los litros recibidos por la planta (o despachados si aÃºn no hay recepciÃ³n)
                     int litrosEntrega = (recibidos.HasValue && recibidos.Value > 0) ? recibidos.Value : despachados;
 
                     var entregaExistenteId = await connection.ExecuteScalarAsync<int?>(
@@ -716,7 +716,7 @@ namespace Transporte.Infrastructure.Repositories
                           WHERE ControlCompaniaId = @id
                              OR (ControlRutaId = @cRutaId AND @cRutaId IS NOT NULL AND ControlCompaniaId IS NULL)
                              OR (
-                                 Observacion LIKE '%Control CompaÃ±Ã­as #' + CAST(@id AS VARCHAR) + '%'
+                                 Observacion LIKE '%Control compañías #' + CAST(@id AS VARCHAR) + '%'
                                  OR Observacion LIKE '%Control Companias #' + CAST(@id AS VARCHAR) + '%'
                                  OR Observacion LIKE 'Entrega #' + CAST(@id AS VARCHAR) + ' %'
                                  OR Observacion LIKE '%Orig #' + CAST(@id AS VARCHAR) + ')%'
@@ -815,7 +815,7 @@ namespace Transporte.Infrastructure.Repositories
                 await connection.ExecuteAsync(@"
                     DELETE FROM TB_ENTREGAS_COMPANIA 
                     WHERE ControlCompaniaId = @id
-                       OR Observacion LIKE '%Control CompaÃ±Ã­as #' + CAST(@id AS VARCHAR) + '%'
+                       OR Observacion LIKE '%Control compañías #' + CAST(@id AS VARCHAR) + '%'
                        OR Observacion LIKE '%Control Companias #' + CAST(@id AS VARCHAR) + '%'
                        OR (CompaniaId = @companiaId AND UsuarioId = @choferId AND CAST(Fecha AS DATE) = CAST(@fecha AS DATE))",
                     new { id, companiaId, choferId, fecha });
@@ -861,7 +861,7 @@ namespace Transporte.Infrastructure.Repositories
                     cr.Id AS ControlRutaId,
                     cc.Id AS ControlCompaniaId,
                     cc.CompaniaId AS CompaniaId,
-                    ISNULL(comp.Nombre, CASE WHEN cc.CompaniaId IS NOT NULL THEN 'CompaÃ±Ã­a #' + CAST(cc.CompaniaId AS VARCHAR) ELSE 'Sin Asignar' END) AS CompaniaNombre,
+                    ISNULL(comp.Nombre, CASE WHEN cc.CompaniaId IS NOT NULL THEN 'compañía #' + CAST(cc.CompaniaId AS VARCHAR) ELSE 'Sin Asignar' END) AS CompaniaNombre,
                     CASE WHEN ISNULL(comp.EsPrincipal, 0) = 1 OR UPPER(comp.Nombre) LIKE '%RECEPTORIA%' THEN 1 ELSE 0 END AS EsTanqueReceptoria,
                     (
                         SELECT STRING_AGG(c_sal.Nombre + ' (' + CAST(cc_sal.LitrosDespachados AS VARCHAR) + ' L)', ', ')
@@ -900,7 +900,7 @@ namespace Transporte.Infrastructure.Repositories
 
                 UNION ALL
 
-                -- Entregas directas de BÃºfala a compaÃ±Ã­as registradas en TB_ENTREGAS_COMPANIA
+                -- Entregas directas de BÃºfala a compañías registradas en TB_ENTREGAS_COMPANIA
                 SELECT 
                     e.Id,
                     e.Fecha,
@@ -918,7 +918,7 @@ namespace Transporte.Infrastructure.Repositories
                     e.ControlRutaId AS ControlRutaId,
                     e.ControlCompaniaId AS ControlCompaniaId,
                     e.CompaniaId AS CompaniaId,
-                    ISNULL(comp.Nombre, 'CompaÃ±Ã­a #' + CAST(e.CompaniaId AS VARCHAR)) AS CompaniaNombre,
+                    ISNULL(comp.Nombre, 'compañía #' + CAST(e.CompaniaId AS VARCHAR)) AS CompaniaNombre,
                     0 AS EsTanqueReceptoria,
                     comp.Nombre + ' (' + CAST(e.Litros AS VARCHAR) + ' L)' AS DestinosFinales,
                     e.Litros AS LitrosDespachadosCompania,
@@ -1033,3 +1033,4 @@ namespace Transporte.Infrastructure.Repositories
     // INTERFACE & IMPLEMENTATION: INotificacionesRepository
     // =========================================================================
 }
+

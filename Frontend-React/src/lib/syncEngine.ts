@@ -41,9 +41,191 @@ class SyncEngine {
   private syncTimer: any = null;
   private retryTimer: any = null;
   private ultimaSincronizacion: string | null = null;
+  private envioDirectoEnCurso = new Set<string>();
 
   constructor() {
     this.iniciarListeners();
+  }
+
+  /** Evita race condition: mientras handleGuardarCarga envía en línea, SyncEngine omite esa misma finca. */
+  marcarEnvioDirectoActivo(ticketId: number, fincaId: number, tipoLeche: string | undefined, activo: boolean) {
+    const key = `${Number(ticketId)}_${Number(fincaId)}_${(tipoLeche || 'VACA').toUpperCase()}`;
+    if (activo) {
+      this.envioDirectoEnCurso.add(key);
+    } else {
+      this.envioDirectoEnCurso.delete(key);
+    }
+  }
+
+  /** Detecta errores HTTP permanentes (ticket cerrado, inexistente, otro chofer o fecha inválida) para cortar bucles infinitos. */
+  private esErrorPermanenteTicket(err: any): boolean {
+    const status = Number(err?.response?.status || 0);
+    if (status === 404 || status === 403) return true;
+    if (status === 400) {
+      const msg = String(err?.response?.data?.message || err?.message || '').toLowerCase();
+      return (
+        msg.includes('estado abierto') ||
+        msg.includes('no existe') ||
+        msg.includes('otro chofer') ||
+        msg.includes('no coincide') ||
+        msg.includes('cerrado') ||
+        msg.includes('finalizado') ||
+        msg.includes('recepcionado')
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Purga automática de memoria del teléfono (>24 horas):
+   * elimina registros sincronizados y pendientes vencidos tanto en IndexedDB como en localStorage
+   * para mantener la memoria ligera y sin data vieja.
+   */
+  async purgarMemoriaLocal24h(): Promise<number> {
+    const TTL_MS = 24 * 60 * 60 * 1000;
+    const ahora = Date.now();
+    let totalEliminados = 0;
+
+    try {
+      totalEliminados += ticketsLocales.purgarExpirados24h();
+    } catch {}
+    try {
+      totalEliminados += await dbLocal.purgarExpirados24h();
+    } catch {}
+
+    if (typeof window === 'undefined') return totalEliminados;
+
+    // 1. Purgar movil_cargas_local (>24h, tanto sincronizadas como vencidas)
+    try {
+      const rawCargas = localStorage.getItem('movil_cargas_local');
+      if (rawCargas) {
+        const list = JSON.parse(rawCargas);
+        if (Array.isArray(list)) {
+          const vigentes = list.filter((c: any) => {
+            if (!c) return false;
+            const refStr = c.fechaSync || c.creadoEn || (c.fecha ? `${String(c.fecha).split('T')[0]}T23:59:59` : '');
+            let refMs = refStr ? Date.parse(refStr) : NaN;
+            if (isNaN(refMs) && typeof c.localId === 'string') {
+              const m = c.localId.match(/local_(\d{10,13})/);
+              if (m) refMs = Number(m[1]);
+            }
+            if (isNaN(refMs)) return true;
+            return ahora - refMs <= TTL_MS;
+          });
+          if (vigentes.length !== list.length) {
+            totalEliminados += list.length - vigentes.length;
+            localStorage.setItem('movil_cargas_local', JSON.stringify(vigentes));
+            window.dispatchEvent(new CustomEvent('transporte_cargas_actualizadas', { detail: vigentes }));
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Purgar movil_despachos_locales_pendientes (>24h)
+    try {
+      const rawDesp = localStorage.getItem('movil_despachos_locales_pendientes');
+      if (rawDesp) {
+        const list = JSON.parse(rawDesp);
+        if (Array.isArray(list)) {
+          const vigentes = list.filter((d: any) => {
+            const refMs = d?.fecha ? Date.parse(String(d.fecha)) : NaN;
+            if (isNaN(refMs)) return true;
+            return ahora - refMs <= TTL_MS;
+          });
+          if (vigentes.length !== list.length) {
+            totalEliminados += list.length - vigentes.length;
+            if (vigentes.length > 0) {
+              localStorage.setItem('movil_despachos_locales_pendientes', JSON.stringify(vigentes));
+            } else {
+              localStorage.removeItem('movil_despachos_locales_pendientes');
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // 3. Purgar cachés de paradas/verificación de tickets viejos (>24h)
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (k.startsWith('movil_paradas_ticket_ts_')) {
+          const ts = Number(localStorage.getItem(k) || 0);
+          if (ts > 0 && ahora - ts > TTL_MS) {
+            const tId = k.replace('movil_paradas_ticket_ts_', '');
+            keysToRemove.push(k, `movil_paradas_ticket_${tId}`, `movil_fincas_verificar_${tId}`);
+          }
+        }
+      }
+      for (const k of keysToRemove) {
+        localStorage.removeItem(k);
+        totalEliminados++;
+      }
+    } catch {}
+
+    return totalEliminados;
+  }
+
+  /**
+   * Migración de limpieza única al actualizar la app (v2026-11-25):
+   * verifica si el teléfono tiene fincas/registros no sincronizados atascados en memoria
+   * y los elimina para arrancar limpio, además de purgar data >24h.
+   */
+  async ejecutarLimpiezaActualizacionSiAplica(): Promise<number> {
+    if (typeof window === 'undefined') return 0;
+    const MIGRATION_KEY = 'movil_limpieza_unsynced_v2026_11_25';
+    let eliminados = 0;
+
+    try {
+      if (!localStorage.getItem(MIGRATION_KEY)) {
+        // 1. Eliminar recolecciones no sincronizadas en IndexedDB
+        eliminados += await dbLocal.limpiarRecoleccionesPendientes().catch(() => 0);
+
+        // 2. Eliminar cargas no sincronizadas en movil_cargas_local
+        try {
+          const rawCargas = localStorage.getItem('movil_cargas_local');
+          if (rawCargas) {
+            const list = JSON.parse(rawCargas);
+            if (Array.isArray(list)) {
+              const soloSincronizadas = list.filter((c: any) => c && c.synced === true);
+              if (soloSincronizadas.length !== list.length) {
+                eliminados += list.length - soloSincronizadas.length;
+                localStorage.setItem('movil_cargas_local', JSON.stringify(soloSincronizadas));
+                window.dispatchEvent(new CustomEvent('transporte_cargas_actualizadas', { detail: soloSincronizadas }));
+              }
+            }
+          }
+        } catch {}
+
+        // 3. Limpiar tickets locales y despachos pendientes atascados
+        try {
+          const pendTickets = ticketsLocales.listarPendientes();
+          if (pendTickets.length > 0) {
+            eliminados += pendTickets.length;
+            localStorage.removeItem('movil_tickets_locales_pendientes');
+          }
+          if (localStorage.getItem('movil_despachos_locales_pendientes')) {
+            localStorage.removeItem('movil_despachos_locales_pendientes');
+            eliminados++;
+          }
+        } catch {}
+
+        localStorage.setItem(MIGRATION_KEY, new Date().toISOString());
+
+        if (eliminados > 0) {
+          movilAuditLog.registrar({
+            tipo: 'SYNC_OK',
+            detalle: `Limpieza automática de actualización: ${eliminados} registro(s) no sincronizados eliminados de la memoria del teléfono.`,
+          });
+        }
+      }
+    } catch {}
+
+    // Ejecutar siempre purga regular >24h al abrir la app
+    eliminados += await this.purgarMemoriaLocal24h().catch(() => 0);
+    this.emitirEstado();
+    return eliminados;
   }
 
   private iniciarListeners() {
@@ -175,6 +357,9 @@ class SyncEngine {
       let ticketsSubidos = 0;
 
       try {
+        // -2. Purga automática de registros/tickets con más de 24 horas en memoria local
+        await this.purgarMemoriaLocal24h().catch(() => 0);
+
         // -1. Eliminar en la central los tickets que el usuario borró en modo offline
         const ticketsEliminados = await this.sincronizarEliminacionesTickets();
 
@@ -426,6 +611,10 @@ class SyncEngine {
         }
 
         if (ticketId && ticketId > 0) {
+          const claveVuelo = `${ticketId}_${Number(carga.fincaId)}_${(carga.tipoLeche || 'VACA').toUpperCase()}`;
+          if (this.envioDirectoEnCurso.has(claveVuelo)) {
+            continue;
+          }
           const obsLimpia = (carga.observaciones || '').trim();
           const payloadEnvio = {
             choferId: choferId || undefined,
@@ -469,16 +658,28 @@ class SyncEngine {
           });
         }
       } catch (err: any) {
-        huboFalloRed = true;
-        console.error(`[SyncEngine] Error subiendo recolección #${carga.idLocal}:`, err);
-        await dbLocal.marcarRecoleccionError(carga.idLocal, err?.message || 'Error al conectar con servidor').catch(() => {});
-        movilAuditLog.registrar({
-          tipo: 'SYNC_ERROR',
-          ticketId: carga.ticketId,
-          fincaId: Number(carga.fincaId),
-          litros: Number(carga.litros),
-          detalle: `Error subiendo IndexedDB (idLocal=${carga.idLocal}): ${err?.response?.data?.message || err?.message || 'Error de red'}`,
-        });
+        if (this.esErrorPermanenteTicket(err)) {
+          console.warn(`[SyncEngine] Descartando recolección #${carga.idLocal} por rechazo permanente del servidor:`, err?.response?.data?.message || err?.message);
+          await dbLocal.eliminarRecoleccion(carga.idLocal).catch(() => {});
+          movilAuditLog.registrar({
+            tipo: 'SYNC_ERROR',
+            ticketId: carga.ticketId,
+            fincaId: Number(carga.fincaId),
+            litros: Number(carga.litros),
+            detalle: `Descartada de cola local (ticket cerrado/inválido): ${err?.response?.data?.message || err?.message}`,
+          });
+        } else {
+          huboFalloRed = true;
+          console.error(`[SyncEngine] Error subiendo recolección #${carga.idLocal}:`, err);
+          await dbLocal.marcarRecoleccionError(carga.idLocal, err?.message || 'Error al conectar con servidor').catch(() => {});
+          movilAuditLog.registrar({
+            tipo: 'SYNC_ERROR',
+            ticketId: carga.ticketId,
+            fincaId: Number(carga.fincaId),
+            litros: Number(carga.litros),
+            detalle: `Error subiendo IndexedDB (idLocal=${carga.idLocal}): ${err?.response?.data?.message || err?.message || 'Error de red'}`,
+          });
+        }
       }
     }
 
@@ -515,6 +716,9 @@ class SyncEngine {
 
               if (fId > 0 && Number(c.litros) > 0) {
                 if (tReal > 0) {
+                  if (this.envioDirectoEnCurso.has(claveYa)) {
+                    continue;
+                  }
                   try {
                     const obsLimpia = (c.observacion || '').trim();
                     let fotoComprobante = c.fotoRecibo && c.fotoRecibo !== '[EN_INDEXEDDB]' ? c.fotoRecibo : undefined;
@@ -570,16 +774,33 @@ class SyncEngine {
                       });
                     }
                   } catch (errCarga: any) {
-                    huboFalloRed = true;
-                    console.warn(`[SyncEngine] Pendiente reintento de carga local finca #${fId} en ticket #${tReal}:`, errCarga);
-                    movilAuditLog.registrar({
-                      tipo: 'SYNC_ERROR',
-                      ticketId: tReal,
-                      fincaId: fId,
-                      fincaNombre: c.fincaNombre,
-                      litros: Number(c.litros),
-                      detalle: `Fallo reintento carga local: ${errCarga?.response?.data?.message || errCarga?.message || 'Error de red'}`,
-                    });
+                    if (this.esErrorPermanenteTicket(errCarga)) {
+                      console.warn(`[SyncEngine] Descartando carga local finca #${fId} en ticket #${tReal} por rechazo permanente:`, errCarga?.response?.data?.message || errCarga?.message);
+                      listaCargas[i] = null;
+                      if (c.dbLocalId) {
+                        await dbLocal.eliminarRecoleccion(Number(c.dbLocalId)).catch(() => {});
+                      }
+                      huboCambiosCargas = true;
+                      movilAuditLog.registrar({
+                        tipo: 'SYNC_ERROR',
+                        ticketId: tReal,
+                        fincaId: fId,
+                        fincaNombre: c.fincaNombre,
+                        litros: Number(c.litros),
+                        detalle: `Descartada carga local (ticket cerrado/inválido): ${errCarga?.response?.data?.message || errCarga?.message}`,
+                      });
+                    } else {
+                      huboFalloRed = true;
+                      console.warn(`[SyncEngine] Pendiente reintento de carga local finca #${fId} en ticket #${tReal}:`, errCarga);
+                      movilAuditLog.registrar({
+                        tipo: 'SYNC_ERROR',
+                        ticketId: tReal,
+                        fincaId: fId,
+                        fincaNombre: c.fincaNombre,
+                        litros: Number(c.litros),
+                        detalle: `Fallo reintento carga local: ${errCarga?.response?.data?.message || errCarga?.message || 'Error de red'}`,
+                      });
+                    }
                   }
                 }
               } else if (tOrig < 0 && tReal <= 0) {
@@ -588,10 +809,11 @@ class SyncEngine {
             }
 
             if (huboCambiosCargas) {
+              const listaLimpia = listaCargas.filter(Boolean);
               try {
-                localStorage.setItem('movil_cargas_local', JSON.stringify(listaCargas));
+                localStorage.setItem('movil_cargas_local', JSON.stringify(listaLimpia));
               } catch {}
-              window.dispatchEvent(new CustomEvent('transporte_cargas_actualizadas', { detail: listaCargas }));
+              window.dispatchEvent(new CustomEvent('transporte_cargas_actualizadas', { detail: listaLimpia }));
             }
           }
         }

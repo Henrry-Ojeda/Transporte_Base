@@ -825,11 +825,11 @@ namespace Transporte.Infrastructure.Repositories
                     {
                         await connection.ExecuteAsync(@"
                             INSERT INTO TB_NOTIFICACIONES_MOVIL (UsuarioId, Tipo, Titulo, Mensaje, FechaOperativa, ReferenciaId, Leido, CreatedAt)
-                            VALUES (@chofId, 'RECOLECCION_RESETEADA', 'ðŸ”„ Parada Marcada como Pendiente', @msg, GETDATE(), @tId, 0, GETDATE())",
+                            VALUES (@chofId, 'RECOLECCION_RESETEADA', 'Parada Marcada como Pendiente', @msg, GETDATE(), @tId, 0, GETDATE())",
                             new { 
                                 chofId, 
                                 tId, 
-                                msg = $"La informaciÃ³n de \"{fincaNom}\" fue limpiada y colocada como NO RECOGIDA para tu recorrido en el Ticket #{tId}." 
+                                msg = $"La información de \"{fincaNom}\" fue limpiada y colocada como NO RECOGIDA para tu recorrido en el Ticket #{tId}." 
                             });
                     }
                     catch { /* Tolerante */ }

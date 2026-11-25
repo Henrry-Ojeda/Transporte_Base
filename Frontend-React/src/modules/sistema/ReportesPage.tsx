@@ -152,10 +152,10 @@ export const ReportesPage: React.FC = () => {
   // Contenedor principal para captura unificada / impresión
   const contenedorRef = useRef<HTMLDivElement>(null);
 
-  // Queries de Catálogos
+  // Queries de Catálogos (solo fincas activas para no mostrar registros inactivos sin movimiento)
   const { data: fincas = [] } = useQuery({
     queryKey: ['catalogos-fincas-reportes'],
-    queryFn: () => catalogosApi.getFincas(false),
+    queryFn: () => catalogosApi.getFincas(true),
     staleTime: 1000 * 60 * 10,
   });
 

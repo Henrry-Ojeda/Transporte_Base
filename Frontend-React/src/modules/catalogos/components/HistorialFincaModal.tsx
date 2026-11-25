@@ -43,13 +43,11 @@ export const HistorialFincaModal: React.FC<HistorialFincaModalProps> = ({ finca,
     const totalLitros = historial.reduce((acc, r) => acc + Number(r.litrosRecogidos || 0), 0);
     const conExamen = historial.filter((r) => r.examenId != null);
     const grasas = conExamen.map((r) => r.grasaPct).filter((v): v is number => v != null);
-    const sngs = conExamen.map((r) => r.sngPct).filter((v): v is number => v != null);
     const alertas = conExamen.filter((r) => r.fueraDeRango).length;
     return {
       registros: historial.length,
       totalLitros,
       promGrasa: grasas.length ? (grasas.reduce((a, b) => a + b, 0) / grasas.length).toFixed(2) : '—',
-      promSng: sngs.length ? (sngs.reduce((a, b) => a + b, 0) / sngs.length).toFixed(2) : '—',
       alertas,
     };
   }, [historial]);
@@ -62,16 +60,16 @@ export const HistorialFincaModal: React.FC<HistorialFincaModalProps> = ({ finca,
     maxKey: keyof ParametroCalidadLecheDto,
     suffix = ''
   ) => {
-    if (val == null) return <span className="opacity-35">—</span>;
+    if (val == null) return <span style={{ color: 'var(--t-text-muted)' }}>—</span>;
     const ev = evaluarValorContraParametro(val, parametroPrincipal, minKey, maxKey);
-    const cls =
+    const style: React.CSSProperties =
       ev.estado === 'alerta'
-        ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-200 font-extrabold'
+        ? { background: '#fee2e2', color: '#b91c1c', fontWeight: 800, padding: '2px 6px', borderRadius: '6px', fontSize: '12px' }
         : ev.estado === 'ok'
-          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 font-semibold'
-          : 'font-medium';
+          ? { background: '#dcfce7', color: '#15803d', fontWeight: 700, padding: '2px 6px', borderRadius: '6px', fontSize: '12px' }
+          : { fontWeight: 600, fontSize: '12px' };
     return (
-      <span className={`px-1.5 py-0.5 rounded text-xs ${cls}`} title={ev.rangoTexto ? `Rango: ${ev.rangoTexto}` : undefined}>
+      <span style={style} title={ev.rangoTexto ? `Rango: ${ev.rangoTexto}` : undefined}>
         {Number(val).toFixed(2)}{suffix}
       </span>
     );
@@ -82,9 +80,9 @@ export const HistorialFincaModal: React.FC<HistorialFincaModalProps> = ({ finca,
       header: 'Fecha',
       accessorKey: 'fecha',
       cell: (r) => (
-        <div className="text-xs">
-          <div className="font-bold">{r.fecha ? r.fecha.substring(0, 10) : '—'}</div>
-          {r.horaPrueba && <div className="opacity-60">{r.horaPrueba}</div>}
+        <div style={{ fontSize: '12px' }}>
+          <div style={{ fontWeight: 700 }}>{r.fecha ? r.fecha.substring(0, 10) : '—'}</div>
+          {r.horaPrueba && <div style={{ fontSize: '11px', opacity: 0.65 }}>{r.horaPrueba}</div>}
         </div>
       ),
     },
@@ -93,20 +91,22 @@ export const HistorialFincaModal: React.FC<HistorialFincaModalProps> = ({ finca,
       accessorKey: 'controlRutaId',
       cell: (r) =>
         r.controlRutaId ? (
-          <span className="px-2 py-0.5 rounded-lg text-xs font-extrabold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200">
+          <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 800, background: '#e0e7ff', color: '#3730a3' }}>
             #{r.controlRutaId}
           </span>
         ) : (
-          <span className="text-xs opacity-50">Directo</span>
+          <span style={{ fontSize: '12px', opacity: 0.6 }}>Directo</span>
         ),
     },
     {
       header: 'Litros',
       accessorKey: 'litrosRecogidos',
       cell: (r) => (
-        <div className="text-xs font-extrabold">
+        <div style={{ fontSize: '12px', fontWeight: 800 }}>
           {Number(r.litrosRecogidos || 0).toLocaleString()} L
-          <div className="text-[10px] opacity-65 font-normal">{r.tipoLeche}{r.esAcida ? ' • ÁCIDA' : ''}</div>
+          <div style={{ fontSize: '10.5px', opacity: 0.7, fontWeight: 500 }}>
+            {r.tipoLeche}{r.esAcida ? ' • ÁCIDA' : ''}
+          </div>
         </div>
       ),
     },
@@ -114,9 +114,11 @@ export const HistorialFincaModal: React.FC<HistorialFincaModalProps> = ({ finca,
       header: 'Chofer / Camión',
       accessorKey: 'nombreChofer',
       cell: (r) => (
-        <div className="text-xs">
-          <div className="font-semibold truncate max-w-[140px]">{r.nombreChofer || '—'}</div>
-          {r.camionPlaca && <div className="text-[10px] opacity-65">{r.camionPlaca}</div>}
+        <div style={{ fontSize: '12px' }}>
+          <div style={{ fontWeight: 600, maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {r.nombreChofer || '—'}
+          </div>
+          {r.camionPlaca && <div style={{ fontSize: '10.5px', opacity: 0.7 }}>{r.camionPlaca}</div>}
         </div>
       ),
     },
@@ -125,10 +127,10 @@ export const HistorialFincaModal: React.FC<HistorialFincaModalProps> = ({ finca,
       accessorKey: 'nivelPrueba',
       cell: (r) => {
         if (r.nivelPrueba === 'FINCA') {
-          return <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Individual Finca</span>;
+          return <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '10.5px', fontWeight: 800, background: '#fef3c7', color: '#92400e' }}>Individual Finca</span>;
         }
         if (r.nivelPrueba === 'TICKET') {
-          return <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200">Del Ticket</span>;
+          return <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '10.5px', fontWeight: 800, background: '#cffafe', color: '#155e75' }}>Del Ticket</span>;
         }
         return (
           <button
@@ -148,7 +150,16 @@ export const HistorialFincaModal: React.FC<HistorialFincaModalProps> = ({ finca,
               });
               setModalNuevoExamen(true);
             }}
-            className="px-2 py-0.5 rounded-lg text-[10px] font-bold border border-indigo-400 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+            style={{
+              padding: '3px 8px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 700,
+              border: '1px solid #6366f1',
+              background: 'transparent',
+              color: '#4f46e5',
+              cursor: 'pointer',
+            }}
           >
             + Examen
           </button>
@@ -166,12 +177,13 @@ export const HistorialFincaModal: React.FC<HistorialFincaModalProps> = ({ finca,
       header: 'Evidencias',
       accessorKey: 'imagenExamen',
       cell: (r) => (
-        <div className="flex items-center gap-1">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           {r.imagenExamen && (
             <button
               type="button"
               onClick={() => setLightbox({ src: r.imagenExamen!, title: `Examen ${finca.nombre} (${r.fecha.substring(0, 10)})` })}
-              className="px-2 py-1 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-200"
+              style={{ padding: '4px 7px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: '#e0e7ff', color: '#3730a3', border: 'none', cursor: 'pointer' }}
+              title="Ver foto examen"
             >
               <i className="fa-solid fa-flask"></i>
             </button>
@@ -180,94 +192,189 @@ export const HistorialFincaModal: React.FC<HistorialFincaModalProps> = ({ finca,
             <button
               type="button"
               onClick={() => setLightbox({ src: r.imagenRecibo!, title: `Recibo ${finca.nombre} (${r.fecha.substring(0, 10)})` })}
-              className="px-2 py-1 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200"
+              style={{ padding: '4px 7px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, background: '#dcfce7', color: '#15803d', border: 'none', cursor: 'pointer' }}
+              title="Ver foto recibo"
             >
               <i className="fa-solid fa-receipt"></i>
             </button>
           )}
-          {!r.imagenExamen && !r.imagenRecibo && <span className="opacity-35 text-xs">—</span>}
+          {!r.imagenExamen && !r.imagenRecibo && <span style={{ opacity: 0.4, fontSize: '12px' }}>—</span>}
         </div>
       ),
     },
   ];
 
   return (
-    <div className="fixed inset-0 z-[9980] bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-3 overflow-y-auto">
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9980,
+        background: 'rgba(15, 23, 42, 0.72)',
+        backdropFilter: 'blur(5px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+      }}
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-6xl rounded-2xl shadow-2xl border overflow-hidden my-4"
-        style={{ background: 'var(--t-card)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: '1120px',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          borderRadius: '18px',
+          overflow: 'hidden',
+          background: 'var(--t-card, #ffffff)',
+          color: 'var(--t-text, #0f172a)',
+          border: '1px solid var(--t-border, #e2e8f0)',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+        }}
       >
         {/* Header */}
-        <div className="px-5 py-4 bg-gradient-to-r from-indigo-600 to-emerald-600 text-white flex flex-wrap items-center justify-between gap-2">
+        <div
+          style={{
+            padding: '16px 22px',
+            background: 'linear-gradient(135deg, #3730a3 0%, #0f766e 100%)',
+            color: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            flexShrink: 0,
+          }}
+        >
           <div>
-            <h3 className="text-lg font-extrabold flex items-center gap-2">
+            <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <i className="fa-solid fa-clock-rotate-left"></i>
               Historial Integral y Calidad — {finca.nombre}
             </h3>
-            <p className="text-xs text-indigo-100">
+            <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'rgba(255,255,255,0.85)' }}>
               Tickets, litros recogidos, chofer, camión, pruebas Lactoscan S50 e imágenes de recibos y exámenes.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
               type="button"
               onClick={() => {
                 setExamenDefaults({ nivelPrueba: 'FINCA', fincaId: finca.id, fincaNombre: finca.nombre });
                 setModalNuevoExamen(true);
               }}
-              className="px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-white text-indigo-700 hover:bg-indigo-50 shadow"
+              style={{
+                padding: '7px 14px',
+                borderRadius: '10px',
+                fontSize: '12.5px',
+                fontWeight: 800,
+                background: '#ffffff',
+                color: '#1e3a8a',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+              }}
             >
-              <i className="fa-solid fa-flask-vial mr-1.5"></i>+ Registrar Examen
+              <i className="fa-solid fa-flask-vial"></i>+ Registrar Examen
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-lg bg-white/15 hover:bg-white/25 flex items-center justify-center"
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '10px',
+                background: 'rgba(255,255,255,0.18)',
+                color: '#ffffff',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '15px',
+              }}
+              aria-label="Cerrar"
             >
               <i className="fa-solid fa-xmark"></i>
             </button>
           </div>
         </div>
 
-        <div className="p-5 space-y-4 max-h-[82vh] overflow-y-auto">
-          {/* KPIs + Filtro fechas */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
-            <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--t-border)' }}>
-              <div className="text-[10px] font-bold uppercase opacity-65">Recolecciones</div>
-              <div className="text-xl font-extrabold">{kpis.registros}</div>
+        {/* Body */}
+        <div
+          style={{
+            padding: '18px 22px',
+            overflowY: 'auto',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            background: 'var(--t-bg, #f8fafc)',
+          }}
+        >
+          {/* Fila KPIs + Filtro fechas bien alineados */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: '12px',
+            }}
+          >
+            <div style={{ background: 'var(--t-card, #ffffff)', border: '1px solid var(--t-border, #e2e8f0)', borderRadius: '12px', padding: '12px 14px' }}>
+              <div style={{ fontSize: '10.5px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--t-text-muted, #64748b)' }}>
+                Recolecciones
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 900, marginTop: '4px' }}>{kpis.registros}</div>
             </div>
-            <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--t-border)' }}>
-              <div className="text-[10px] font-bold uppercase opacity-65">Litros Totales</div>
-              <div className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
+            <div style={{ background: 'var(--t-card, #ffffff)', border: '1px solid var(--t-border, #e2e8f0)', borderRadius: '12px', padding: '12px 14px' }}>
+              <div style={{ fontSize: '10.5px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--t-text-muted, #64748b)' }}>
+                Litros Totales
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 900, marginTop: '4px', color: '#059669' }}>
                 {kpis.totalLitros.toLocaleString()} L
               </div>
             </div>
-            <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--t-border)' }}>
-              <div className="text-[10px] font-bold uppercase opacity-65">Prom. Grasa</div>
-              <div className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400">{kpis.promGrasa}%</div>
+            <div style={{ background: 'var(--t-card, #ffffff)', border: '1px solid var(--t-border, #e2e8f0)', borderRadius: '12px', padding: '12px 14px' }}>
+              <div style={{ fontSize: '10.5px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--t-text-muted, #64748b)' }}>
+                Prom. Grasa
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 900, marginTop: '4px', color: '#4f46e5' }}>{kpis.promGrasa}%</div>
             </div>
-            <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--t-border)' }}>
-              <div className="text-[10px] font-bold uppercase opacity-65">Alertas Rango</div>
-              <div className="text-xl font-extrabold text-rose-600 dark:text-rose-400">{kpis.alertas}</div>
+            <div style={{ background: 'var(--t-card, #ffffff)', border: '1px solid var(--t-border, #e2e8f0)', borderRadius: '12px', padding: '12px 14px' }}>
+              <div style={{ fontSize: '10.5px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--t-text-muted, #64748b)' }}>
+                Alertas Rango
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 900, marginTop: '4px', color: kpis.alertas > 0 ? '#dc2626' : '#64748b' }}>
+                {kpis.alertas}
+              </div>
             </div>
-            <div>
-              <label className="block text-[10px] font-bold uppercase opacity-65 mb-1">Desde</label>
+            <div style={{ background: 'var(--t-card, #ffffff)', border: '1px solid var(--t-border, #e2e8f0)', borderRadius: '12px', padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <label style={{ fontSize: '10.5px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--t-text-muted, #64748b)', marginBottom: '4px' }}>
+                Desde
+              </label>
               <input
                 type="date"
                 value={fechaInicio}
                 onChange={(e) => setFechaInicio(e.target.value)}
-                className="w-full px-2.5 py-1.5 rounded-lg border text-xs"
-                style={{ background: 'var(--t-input-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}
+                className="form-input"
+                style={{ width: '100%', height: '34px', fontSize: '12px' }}
               />
             </div>
-            <div>
-              <label className="block text-[10px] font-bold uppercase opacity-65 mb-1">Hasta</label>
+            <div style={{ background: 'var(--t-card, #ffffff)', border: '1px solid var(--t-border, #e2e8f0)', borderRadius: '12px', padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <label style={{ fontSize: '10.5px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--t-text-muted, #64748b)', marginBottom: '4px' }}>
+                Hasta
+              </label>
               <input
                 type="date"
                 value={fechaFin}
                 onChange={(e) => setFechaFin(e.target.value)}
-                className="w-full px-2.5 py-1.5 rounded-lg border text-xs"
-                style={{ background: 'var(--t-input-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}
+                className="form-input"
+                style={{ width: '100%', height: '34px', fontSize: '12px' }}
               />
             </div>
           </div>
@@ -302,4 +409,3 @@ export const HistorialFincaModal: React.FC<HistorialFincaModalProps> = ({ finca,
     </div>
   );
 };
-

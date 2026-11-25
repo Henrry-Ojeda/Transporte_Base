@@ -39,18 +39,26 @@ export const updateAppIcon = (logoUrl?: string, appTitle: string = 'Rutas de Lec
     appleIcon.href = cleanLogoUrl;
 
     // 3. Manifest Dinámico PWA para teléfonos Android / Chrome ("Instalar Aplicación")
+    // Usar URLs absolutas en start_url y scope porque un manifest servido desde blob: rechaza rutas relativas
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const absIconUrl = cleanLogoUrl.startsWith('http') || cleanLogoUrl.startsWith('data:')
+      ? cleanLogoUrl
+      : `${origin}${cleanLogoUrl.startsWith('/') ? '' : '/'}${cleanLogoUrl}`;
+
     const dynamicManifest = {
+      id: '/movil',
       name: appTitle,
       short_name: appTitle,
       description: 'Sistema de Gestión y Liquidación de Leche',
-      start_url: '/movil',
+      start_url: `${origin}/movil`,
+      scope: `${origin}/`,
       display: 'standalone',
       background_color: '#0f172a',
       theme_color: '#0f172a',
       orientation: 'portrait',
       icons: [
         {
-          src: cleanLogoUrl,
+          src: absIconUrl,
           sizes: '192x192 512x512',
           type: cleanLogoUrl.startsWith('data:image/svg') || cleanLogoUrl.endsWith('.svg')
             ? 'image/svg+xml'

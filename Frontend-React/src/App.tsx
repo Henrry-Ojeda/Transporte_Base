@@ -147,12 +147,18 @@ const HomeRedirect: React.FC = () => {
     }
   }
 
+  const isStandalonePwa = typeof window !== 'undefined' && (
+    window.matchMedia?.('(display-mode: standalone)').matches ||
+    (window.navigator as any)?.standalone === true
+  );
+
   const isMobileDevice = typeof window !== 'undefined' && (
     window.innerWidth <= 768 ||
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
   );
 
-  if (rol === 'CHOFER') {
+  // Si se abre como PWA instalada en teléfono o es un chofer/conductor, siempre abrir la vista Móvil
+  if (isStandalonePwa || rol.includes('CHOFER') || rol.includes('CONDUCTOR')) {
     return <Navigate to="/movil" replace />;
   }
   if (!isAuthenticated) {

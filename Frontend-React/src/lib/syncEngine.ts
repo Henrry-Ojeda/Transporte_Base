@@ -41,6 +41,194 @@ class SyncEngine {
   private syncTimer: any = null;
   private retryTimer: any = null;
   private ultimaSincronizacion: string | null = null;
+  private enviosDirectosEnCurso = new Set<string>();
+
+  /** Evita que SyncEngine envíe en paralelo la misma finca mientras AppMovilPage la sube online. */
+  marcarEnvioDirectoActivo(ticketId: number, fincaId: number, tipoLeche: string, activo: boolean) {
+    const key = `${Number(ticketId)}_${Number(fincaId)}_${(tipoLeche || 'VACA').toUpperCase()}`;
+    if (activo) {
+      this.enviosDirectosEnCurso.add(key);
+    } else {
+      this.enviosDirectosEnCurso.delete(key);
+    }
+  }
+
+  private estaEnvioDirectoEnCurso(ticketId: number, fincaId: number, tipoLeche?: string): boolean {
+    const key = `${Number(ticketId)}_${Number(fincaId)}_${(tipoLeche || 'VACA').toUpperCase()}`;
+    return this.enviosDirectosEnCurso.has(key);
+  }
+
+  private esRechazoPermanente400(err: any): boolean {
+    const status = err?.response?.status;
+    if (status !== 400 && status !== 404) return false;
+    const msg = String(err?.response?.data?.message || err?.message || '').toLowerCase();
+    return (
+      msg.includes('no está en estado abierto') ||
+      msg.includes('no esta en estado abierto') ||
+      msg.includes('ya no está abierto') ||
+      msg.includes('ya no esta abierto') ||
+      msg.includes('no existe') ||
+      msg.includes('otro chofer') ||
+      msg.includes('no coincide') ||
+      msg.includes('cerrado') ||
+      msg.includes('recepcionado') ||
+      msg.includes('finalizado')
+    );
+  }
+
+  /**
+   * Purga automática de memoria local (>24h): elimina tickets y fincas sincronizadas o antiguas
+   * tanto de IndexedDB como de localStorage para no acumular data vieja en el teléfono.
+   */
+  async purgarMemoriaLocal24h(): Promise<number> {
+    const TTL_MS = 24 * 60 * 60 * 1000;
+    const ahora = Date.now();
+    let totalEliminados = 0;
+
+    try {
+      totalEliminados += ticketsLocales.purgarExpirados24h();
+    } catch {}
+    try {
+      totalEliminados += await dbLocal.purgarExpirados24h();
+    } catch {}
+
+    if (typeof window === 'undefined') return totalEliminados;
+
+    // 1. Purgar movil_cargas_local (> 24h, tanto sincronizadas como antiguas)
+    try {
+      const raw = localStorage.getItem('movil_cargas_local');
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          const vigentes = list.filter((c: any) => {
+            if (!c) return false;
+            const idTsMatch = typeof c.localId === 'string' ? c.localId.match(/^local_(\d{13})/) : null;
+            let refMs = idTsMatch ? Number(idTsMatch[1]) : NaN;
+            if (isNaN(refMs)) {
+              const refStr = c.fechaSync || c.updatedAt || (c.fecha ? `${String(c.fecha).split('T')[0]}T23:59:59` : '');
+              refMs = refStr ? Date.parse(refStr) : NaN;
+            }
+            if (isNaN(refMs)) return true;
+            return ahora - refMs <= TTL_MS;
+          });
+          if (vigentes.length !== list.length) {
+            totalEliminados += list.length - vigentes.length;
+            localStorage.setItem('movil_cargas_local', JSON.stringify(vigentes));
+            window.dispatchEvent(new CustomEvent('transporte_cargas_actualizadas', { detail: vigentes }));
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Purgar despachos pendientes antiguos (> 24h)
+    try {
+      const rawDesp = localStorage.getItem('movil_despachos_locales_pendientes');
+      if (rawDesp) {
+        const listD = JSON.parse(rawDesp);
+        if (Array.isArray(listD)) {
+          const vigentesD = listD.filter((d: any) => {
+            const refMs = d?.fecha ? Date.parse(String(d.fecha)) : NaN;
+            return isNaN(refMs) || ahora - refMs <= TTL_MS;
+          });
+          if (vigentesD.length !== listD.length) {
+            totalEliminados += listD.length - vigentesD.length;
+            if (vigentesD.length > 0) {
+              localStorage.setItem('movil_despachos_locales_pendientes', JSON.stringify(vigentesD));
+            } else {
+              localStorage.removeItem('movil_despachos_locales_pendientes');
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // 3. Purgar cachés de paradas/verificación de tickets con más de 24h
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (k.startsWith('movil_paradas_ticket_ts_')) {
+          const ts = Number(localStorage.getItem(k) || 0);
+          if (ts > 0 && ahora - ts > TTL_MS) {
+            const ticketIdSuffix = k.replace('movil_paradas_ticket_ts_', '');
+            keysToRemove.push(k, `movil_paradas_ticket_${ticketIdSuffix}`, `movil_fincas_verificar_${ticketIdSuffix}`);
+          }
+        }
+      }
+      for (const k of keysToRemove) {
+        if (localStorage.getItem(k) !== null) {
+          localStorage.removeItem(k);
+          totalEliminados++;
+        }
+      }
+    } catch {}
+
+    return totalEliminados;
+  }
+
+  /**
+   * Migración única por dispositivo (actualización v2026-11-25):
+   * Verifica si el teléfono tenía fincas registradas no sincronizadas (data sucia/atascada)
+   * y limpia esa data de la memoria del teléfono, además de purgar registros >24h.
+   */
+  async ejecutarLimpiezaActualizacionSiAplica(): Promise<number> {
+    if (typeof window === 'undefined') return 0;
+    const FLAG_KEY = 'movil_cleanup_unsynced_v2026_11_25';
+    let eliminados = 0;
+
+    try {
+      if (!localStorage.getItem(FLAG_KEY)) {
+        // 1. Limpiar recolecciones no sincronizadas en IndexedDB
+        eliminados += await dbLocal.limpiarRecoleccionesPendientes().catch(() => 0);
+
+        // 2. Limpiar fincas no sincronizadas en movil_cargas_local
+        try {
+          const raw = localStorage.getItem('movil_cargas_local');
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              const soloSynced = list.filter((c: any) => c && c.synced);
+              if (soloSynced.length !== list.length) {
+                eliminados += list.length - soloSynced.length;
+                localStorage.setItem('movil_cargas_local', JSON.stringify(soloSynced));
+                window.dispatchEvent(new CustomEvent('transporte_cargas_actualizadas', { detail: soloSynced }));
+              }
+            }
+          }
+        } catch {}
+
+        // 3. Limpiar tickets locales y despachos pendientes atascados
+        try {
+          const rawT = localStorage.getItem('movil_tickets_locales_pendientes');
+          if (rawT) {
+            const parsedT = JSON.parse(rawT);
+            if (Array.isArray(parsedT) && parsedT.length > 0) eliminados += parsedT.length;
+            localStorage.removeItem('movil_tickets_locales_pendientes');
+          }
+          const rawD = localStorage.getItem('movil_despachos_locales_pendientes');
+          if (rawD) {
+            const parsedD = JSON.parse(rawD);
+            if (Array.isArray(parsedD) && parsedD.length > 0) eliminados += parsedD.length;
+            localStorage.removeItem('movil_despachos_locales_pendientes');
+          }
+        } catch {}
+
+        localStorage.setItem(FLAG_KEY, new Date().toISOString());
+        if (eliminados > 0) {
+          movilAuditLog.registrar({
+            tipo: 'SYNC_OK',
+            detalle: `Limpieza automática de actualización: eliminados ${eliminados} registro(s) no sincronizados de la memoria del teléfono`,
+          });
+        }
+      }
+    } catch {}
+
+    // Siempre purgar cualquier ticket/registro sincronizado o viejo con más de 24 horas
+    eliminados += await this.purgarMemoriaLocal24h();
+    this.emitirEstado();
+    return eliminados;
+  }
   private envioDirectoEnCurso = new Set<string>();
 
   constructor() {
@@ -361,6 +549,9 @@ class SyncEngine {
         await this.purgarMemoriaLocal24h().catch(() => 0);
 
         // -1. Eliminar en la central los tickets que el usuario borró en modo offline
+        // -2. Purga automática de memoria local (>24h)
+        await this.purgarMemoriaLocal24h();
+
         const ticketsEliminados = await this.sincronizarEliminacionesTickets();
 
         // 0. Crear en la central los tickets/turnos iniciados sin conexión (antes que sus cargas)

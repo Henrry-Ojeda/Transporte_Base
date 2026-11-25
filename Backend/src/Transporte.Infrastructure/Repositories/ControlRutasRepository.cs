@@ -1294,9 +1294,54 @@ namespace Transporte.Infrastructure.Repositories
             };
         }
 
+        /// <summary>
+        /// Red de seguridad autocurativa: si un ticket tiene la misma finca registrada más de una vez
+        /// con los mismos litros y el mismo tipo de leche, elimina los duplicados conservando el registro
+        /// más completo (con foto/evidencia y el Id más reciente) y recalcula TotalLitrosFinca.
+        /// </summary>
+        private async Task<int> LimpiarDuplicadosExactosTicketAsync(
+            SqlConnection connection,
+            long controlRutaId,
+            int? usuarioId = null,
+            SqlTransaction? transaction = null)
+        {
+            var sqlDedup = @"
+                ;WITH Duplicados AS (
+                    SELECT
+                        Id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY FincaId, UPPER(ISNULL(TipoLeche, 'VACA')), Litros
+                            ORDER BY
+                                CASE WHEN LEN(ISNULL(FotoComprobante, '')) > 0 THEN 0 ELSE 1 END ASC,
+                                CASE WHEN LEN(ISNULL(FotosEvidenciaJson, '')) > 2 THEN 0 ELSE 1 END ASC,
+                                Id DESC
+                        ) AS rn
+                    FROM TB_RUTAS_RECOLECCION
+                    WHERE ControlRutaId = @controlRutaId
+                      AND ISNULL(Litros, 0) > 0
+                )
+                DELETE FROM TB_RUTAS_RECOLECCION
+                WHERE Id IN (SELECT Id FROM Duplicados WHERE rn > 1);";
+
+            int eliminados = await connection.ExecuteAsync(sqlDedup, new { controlRutaId }, transaction: transaction);
+            if (eliminados > 0)
+            {
+                await connection.ExecuteAsync(@"
+                    UPDATE TB_CONTROL_RUTAS
+                    SET TotalLitrosFinca = (SELECT ISNULL(SUM(Litros), 0) FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @controlRutaId),
+                        ModifiedAt = GETDATE(),
+                        ModifiedBy = ISNULL(@usuarioId, ModifiedBy)
+                    WHERE Id = @controlRutaId;",
+                    new { controlRutaId, usuarioId },
+                    transaction: transaction);
+            }
+            return eliminados;
+        }
+
         public async Task<long> AgregarFincaAViajeAsync(AgregarFincaViajeDto dto, int usuarioId, string rol)
         {
             using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
             await EnsureTableNotificacionesExistsAsync(connection);
             var viaje = await connection.QueryFirstOrDefaultAsync<dynamic>(
                 "SELECT * FROM TB_CONTROL_RUTAS WHERE Id = @ControlRutaId", new { dto.ControlRutaId });
@@ -1347,17 +1392,6 @@ namespace Transporte.Infrastructure.Repositories
 
             int efectivoChoferId = (int?)viaje.UsuarioId ?? usuarioId;
 
-            // UnificaciÃ³n Anti-Duplicados por (Ticket + Finca + TipoLeche):
-            // Si la parada estÃ¡ en 0 litros (planificada) o ya existe con el MISMO TipoLeche (VACA/BUFALA), se actualiza;
-            // si es de distinto TipoLeche (ej. ya tiene BUFALA y se agrega VACA), se inserta un registro separado en el mismo ticket.
-            var paradaExistenteId = await connection.ExecuteScalarAsync<long?>(@"
-                SELECT TOP 1 Id FROM TB_RUTAS_RECOLECCION 
-                WHERE ControlRutaId = @controlRutaId AND FincaId = @fincaId
-                  AND (Litros = 0 OR Litros IS NULL OR UPPER(ISNULL(TipoLeche, 'VACA')) = @tipoLeche)
-                ORDER BY CASE WHEN Litros = 0 OR Litros IS NULL THEN 0 ELSE 1 END ASC, Id DESC", 
-                new { controlRutaId = dto.ControlRutaId, fincaId = dto.FincaId, tipoLeche = tipoLecheEfectivo });
-
-            long nuevaRutaId;
             DateTime createdAtEfectivo = DateTime.UtcNow.AddHours(-4);
             if (!string.IsNullOrWhiteSpace(dto.Hora))
             {
@@ -1380,93 +1414,121 @@ namespace Transporte.Infrastructure.Repositories
                 if (sigCiclo > 0) cicloLiquidacionEfectivo = sigCiclo;
             }
 
-            if (paradaExistenteId.HasValue)
+            // Bloqueo transaccional por (Ticket + Finca + TipoLeche) para impedir duplicados por race condition
+            long nuevaRutaId;
+            using (var tx = connection.BeginTransaction())
             {
-                var sqlUpdateRuta = @"
-                    UPDATE TB_RUTAS_RECOLECCION
-                    SET Litros = @litros,
-                        EsAcida = @esAcida,
-                        TipoLeche = @tipoLeche,
-                        EsDiferido = @esDiferido,
-                        CicloLiquidacionId = @cicloLiquidacionId,
-                        LitrosOriginales = CASE WHEN @esDiferido = 1 THEN @litros ELSE LitrosOriginales END,
-                        PrecioLitroUSDAplicado = @precioAplicado,
-                        TasaDolarBsAplicada = @tasaActual,
-                        Observacion = @observacion,
-                        FotoComprobante = ISNULL(@fotoComprobante, FotoComprobante),
-                        FotosEvidenciaJson = ISNULL(@fotosEvidenciaJson, FotosEvidenciaJson),
-                        CreatedAt = CASE WHEN CreatedAt IS NULL OR ISNULL(Litros, 0) = 0 OR CAST(CreatedAt AS DATE) != CAST(@fechaEfectiva AS DATE) THEN @createdAtEfectivo ELSE CreatedAt END,
-                        ModifiedAt = @createdAtEfectivo,
+                var lockResource = $"TICKET_FINCA_{dto.ControlRutaId}_{dto.FincaId}_{tipoLecheEfectivo}";
+                await connection.ExecuteAsync(
+                    "EXEC sp_getapplock @Resource = @lockResource, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;",
+                    new { lockResource },
+                    transaction: tx);
+
+                // Unificación Anti-Duplicados por (Ticket + Finca + TipoLeche):
+                // Si la parada está en 0 litros (planificada) o ya existe con el MISMO TipoLeche (VACA/BUFALA), se actualiza;
+                // si es de distinto TipoLeche (ej. ya tiene BUFALA y se agrega VACA), se inserta un registro separado en el mismo ticket.
+                var paradaExistenteId = await connection.ExecuteScalarAsync<long?>(@"
+                    SELECT TOP 1 Id FROM TB_RUTAS_RECOLECCION WITH (UPDLOCK, HOLDLOCK)
+                    WHERE ControlRutaId = @controlRutaId AND FincaId = @fincaId
+                      AND (Litros = 0 OR Litros IS NULL OR UPPER(ISNULL(TipoLeche, 'VACA')) = @tipoLeche)
+                    ORDER BY CASE WHEN Litros = 0 OR Litros IS NULL THEN 0 ELSE 1 END ASC, Id DESC",
+                    new { controlRutaId = dto.ControlRutaId, fincaId = dto.FincaId, tipoLeche = tipoLecheEfectivo },
+                    transaction: tx);
+
+                if (paradaExistenteId.HasValue)
+                {
+                    var sqlUpdateRuta = @"
+                        UPDATE TB_RUTAS_RECOLECCION
+                        SET Litros = @litros,
+                            EsAcida = @esAcida,
+                            TipoLeche = @tipoLeche,
+                            EsDiferido = @esDiferido,
+                            CicloLiquidacionId = @cicloLiquidacionId,
+                            LitrosOriginales = CASE WHEN @esDiferido = 1 THEN @litros ELSE LitrosOriginales END,
+                            PrecioLitroUSDAplicado = @precioAplicado,
+                            TasaDolarBsAplicada = @tasaActual,
+                            Observacion = @observacion,
+                            FotoComprobante = ISNULL(@fotoComprobante, FotoComprobante),
+                            FotosEvidenciaJson = ISNULL(@fotosEvidenciaJson, FotosEvidenciaJson),
+                            CreatedAt = CASE WHEN CreatedAt IS NULL OR ISNULL(Litros, 0) = 0 OR CAST(CreatedAt AS DATE) != CAST(@fechaEfectiva AS DATE) THEN @createdAtEfectivo ELSE CreatedAt END,
+                            ModifiedAt = @createdAtEfectivo,
+                            ModifiedBy = @usuarioId
+                        WHERE Id = @paradaExistenteId;
+
+                        -- Limpieza preventiva de duplicados accidentales de la misma finca y MISMO tipo de leche en el ticket
+                        DELETE FROM TB_RUTAS_RECOLECCION 
+                        WHERE ControlRutaId = @controlRutaId 
+                          AND FincaId = @fincaId 
+                          AND UPPER(ISNULL(TipoLeche, 'VACA')) = @tipoLeche
+                          AND Id != @paradaExistenteId;";
+
+                    await connection.ExecuteAsync(sqlUpdateRuta, new
+                    {
+                        litros = dto.Litros,
+                        esAcida = dto.EsAcida,
+                        tipoLeche = tipoLecheEfectivo,
+                        esDiferido = esDiferidoEfectivo,
+                        cicloLiquidacionId = cicloLiquidacionEfectivo,
+                        precioAplicado,
+                        tasaActual,
+                        observacion = dto.Observacion,
+                        fotoComprobante = dto.FotoComprobante,
+                        fotosEvidenciaJson = dto.FotosEvidenciaJson,
+                        usuarioId,
+                        controlRutaId = dto.ControlRutaId,
+                        fincaId = dto.FincaId,
+                        paradaExistenteId = paradaExistenteId.Value,
+                        fechaEfectiva,
+                        createdAtEfectivo
+                    }, transaction: tx);
+                    nuevaRutaId = paradaExistenteId.Value;
+                }
+                else
+                {
+                    var sqlInsertRuta = @"
+                        INSERT INTO TB_RUTAS_RECOLECCION
+                        (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, CicloLiquidacionId, LitrosOriginales, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, FotosEvidenciaJson, ControlRutaId, CreatedAt, CreatedBy, ModifiedAt, ModifiedBy)
+                        VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, @cicloLiquidacionId, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @fotosEvidenciaJson, @controlRutaId, @createdAtEfectivo, @usuarioId, @createdAtEfectivo, @usuarioId);
+                        SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
+
+                    nuevaRutaId = await connection.ExecuteScalarAsync<long>(sqlInsertRuta, new
+                    {
+                        cicloId = efectivoCicloId.Value,
+                        fecha = fechaEfectiva,
+                        fincaId = dto.FincaId,
+                        choferId = efectivoChoferId,
+                        litros = dto.Litros,
+                        esAcida = dto.EsAcida,
+                        tipoLeche = tipoLecheEfectivo,
+                        esDiferido = esDiferidoEfectivo,
+                        cicloLiquidacionId = cicloLiquidacionEfectivo,
+                        precioAplicado,
+                        tasaActual,
+                        uuidLocal = Guid.NewGuid().ToString(),
+                        observacion = dto.Observacion,
+                        fotoComprobante = dto.FotoComprobante,
+                        fotosEvidenciaJson = dto.FotosEvidenciaJson,
+                        controlRutaId = dto.ControlRutaId,
+                        createdAtEfectivo,
+                        usuarioId
+                    }, transaction: tx);
+                }
+
+                // Red de seguridad autocurativa: eliminar duplicados exactos (Finca + Litros + TipoLeche)
+                await LimpiarDuplicadosExactosTicketAsync(connection, dto.ControlRutaId, usuarioId, tx);
+
+                // Actualizar total litros finca en el viaje
+                await connection.ExecuteAsync(@"
+                    UPDATE TB_CONTROL_RUTAS
+                    SET TotalLitrosFinca = (SELECT ISNULL(SUM(Litros), 0) FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @controlRutaId),
+                        ModifiedAt = GETDATE(),
                         ModifiedBy = @usuarioId
-                    WHERE Id = @paradaExistenteId;
+                    WHERE Id = @controlRutaId",
+                    new { dto.ControlRutaId, usuarioId },
+                    transaction: tx);
 
-                    -- Limpieza preventiva de duplicados accidentales de la misma finca y MISMO tipo de leche en el ticket
-                    DELETE FROM TB_RUTAS_RECOLECCION 
-                    WHERE ControlRutaId = @controlRutaId 
-                      AND FincaId = @fincaId 
-                      AND UPPER(ISNULL(TipoLeche, 'VACA')) = @tipoLeche
-                      AND Id != @paradaExistenteId;";
-
-                await connection.ExecuteAsync(sqlUpdateRuta, new
-                {
-                    litros = dto.Litros,
-                    esAcida = dto.EsAcida,
-                    tipoLeche = tipoLecheEfectivo,
-                    esDiferido = esDiferidoEfectivo,
-                    cicloLiquidacionId = cicloLiquidacionEfectivo,
-                    precioAplicado,
-                    tasaActual,
-                    observacion = dto.Observacion,
-                    fotoComprobante = dto.FotoComprobante,
-                    fotosEvidenciaJson = dto.FotosEvidenciaJson,
-                    usuarioId,
-                    controlRutaId = dto.ControlRutaId,
-                    fincaId = dto.FincaId,
-                    paradaExistenteId = paradaExistenteId.Value,
-                    fechaEfectiva,
-                    createdAtEfectivo
-                });
-                nuevaRutaId = paradaExistenteId.Value;
+                tx.Commit();
             }
-            else
-            {
-                var sqlInsertRuta = @"
-                    INSERT INTO TB_RUTAS_RECOLECCION
-                    (CicloId, Fecha, FincaId, UsuarioId, Litros, EsAcida, TipoLeche, EsDiferido, CicloLiquidacionId, LitrosOriginales, PrecioLitroUSDAplicado, TasaDolarBsAplicada, UuidLocal, Observacion, FotoComprobante, FotosEvidenciaJson, ControlRutaId, CreatedAt, CreatedBy, ModifiedAt, ModifiedBy)
-                    VALUES (@cicloId, @fecha, @fincaId, @choferId, @litros, @esAcida, @tipoLeche, @esDiferido, @cicloLiquidacionId, CASE WHEN @esDiferido = 1 THEN @litros ELSE NULL END, @precioAplicado, @tasaActual, @uuidLocal, @observacion, @fotoComprobante, @fotosEvidenciaJson, @controlRutaId, @createdAtEfectivo, @usuarioId, @createdAtEfectivo, @usuarioId);
-                    SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
-
-                nuevaRutaId = await connection.ExecuteScalarAsync<long>(sqlInsertRuta, new
-                {
-                    cicloId = efectivoCicloId.Value,
-                    fecha = fechaEfectiva,
-                    fincaId = dto.FincaId,
-                    choferId = efectivoChoferId,
-                    litros = dto.Litros,
-                    esAcida = dto.EsAcida,
-                    tipoLeche = tipoLecheEfectivo,
-                    esDiferido = esDiferidoEfectivo,
-                    cicloLiquidacionId = cicloLiquidacionEfectivo,
-                    precioAplicado,
-                    tasaActual,
-                    uuidLocal = Guid.NewGuid().ToString(),
-                    observacion = dto.Observacion,
-                    fotoComprobante = dto.FotoComprobante,
-                    fotosEvidenciaJson = dto.FotosEvidenciaJson,
-                    controlRutaId = dto.ControlRutaId,
-                    createdAtEfectivo,
-                    usuarioId
-                });
-            }
-
-            // Actualizar total litros finca en el viaje
-            await connection.ExecuteAsync(@"
-                UPDATE TB_CONTROL_RUTAS
-                SET TotalLitrosFinca = (SELECT ISNULL(SUM(Litros), 0) FROM TB_RUTAS_RECOLECCION WHERE ControlRutaId = @controlRutaId),
-                    ModifiedAt = GETDATE(),
-                    ModifiedBy = @usuarioId
-                WHERE Id = @controlRutaId",
-                new { dto.ControlRutaId, usuarioId });
 
             // Privacidad GPS: solo registrar coordenadas si el ticket estÃ¡ ABIERTO (ProcesoActualId = 1)
             if (dto.Latitud.HasValue && dto.Longitud.HasValue && (int)viaje.ProcesoActualId == 1)
@@ -2351,7 +2413,11 @@ namespace Transporte.Infrastructure.Repositories
             }
             var cicloId = (int?)viaje.CicloId;
             var fecha = (DateTime)viaje.Fecha;
-            int totalLitrosFinca = (int)(viaje.TotalLitrosFinca ?? 0);
+            // Autolimpieza de duplicados exactos (Finca + Litros + TipoLeche) antes de despachar
+            int dupLimpiados = await LimpiarDuplicadosExactosTicketAsync(connection, controlRutaId, usuarioId);
+            int totalLitrosFinca = dupLimpiados > 0
+                ? await connection.ExecuteScalarAsync<int>("SELECT ISNULL(TotalLitrosFinca, 0) FROM TB_CONTROL_RUTAS WHERE Id = @controlRutaId", new { controlRutaId })
+                : (int)(viaje.TotalLitrosFinca ?? 0);
 
             var insertSql = @"
                 INSERT INTO TB_CONTROL_COMPANIAS 

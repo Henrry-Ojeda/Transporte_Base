@@ -802,18 +802,17 @@ class LocalDatabase {
     };
   }
 
-  /** Purga automáticamente registros y cachés de IndexedDB con más de 24 horas de antigüedad. */
+  /** Purga automáticamente registros y cachés de IndexedDB con más de 24 horas de antigüedad (sincronizados y pendientes). */
   async purgarExpirados24h(): Promise<number> {
     const TTL_MS = 24 * 60 * 60 * 1000;
     const ahora = Date.now();
     const db = await this.openDB();
     const stores = [
       'recolecciones',
-      'viajeCache',
-      'viajesChoferCache',
-      'combustibles',
+      'viajes_cache',
+      'combustible',
       'averias',
-      'descargasReceptoria',
+      'receptoria_descargas',
       'notificaciones',
     ];
     let eliminados = 0;
@@ -832,7 +831,14 @@ class LocalDatabase {
               return;
             }
             const val: any = cursor.value;
-            const refStr = val?.creadoEn || val?.updatedAt || val?.fecha || val?.fechaEvento || '';
+            const refStr =
+              val?.fechaSync ||
+              val?.fechaRegistro ||
+              val?.creadoEn ||
+              val?.updatedAt ||
+              val?.fecha ||
+              val?.fechaEvento ||
+              '';
             const refMs = refStr ? Date.parse(String(refStr)) : NaN;
             if (!isNaN(refMs) && ahora - refMs > TTL_MS) {
               cursor.delete();

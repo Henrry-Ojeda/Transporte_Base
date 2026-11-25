@@ -2922,6 +2922,9 @@ export const AppMovilPage: React.FC = () => {
 
   // Listener de eventos del SyncEngine (IndexedDB + movil_cargas_local)
   useEffect(() => {
+    // Limpieza única de actualización (fincas no sincronizadas viejas) + purga automática >24h
+    syncEngine.ejecutarLimpiezaActualizacionSiAplica().catch(() => {});
+
     const handleSyncComplete = (e: any) => {
       const detail = e.detail;
       if (detail && detail.totalSubidos > 0) {
@@ -6088,6 +6091,7 @@ export const AppMovilPage: React.FC = () => {
       // =========================================================================
       let sincronizadoOnline = false;
       if (isOnline && navigator.onLine && ticketIdEfectivo > 0) {
+        syncEngine.marcarEnvioDirectoActivo(ticketIdEfectivo, Number(formCarga.fincaId), formCarga.tipoLeche, true);
         try {
           const obsLimpia = (formCarga.observacion || '').trim();
           await operacionesApi.agregarFincaViaje(ticketIdEfectivo, {
@@ -6111,7 +6115,7 @@ export const AppMovilPage: React.FC = () => {
 
           // Marcar como sincronizado en localStorage, IndexedDB y UI
           setCargas((prev) => {
-            const upd = prev.map((c) => (c.localId === localIdRef ? { ...c, synced: true } : c));
+            const upd = prev.map((c) => (c.localId === localIdRef ? { ...c, synced: true, fechaSync: new Date().toISOString() } : c));
             guardarCargasLocalSeguro(upd);
             return upd;
           });
@@ -6140,6 +6144,8 @@ export const AppMovilPage: React.FC = () => {
             detalle: `Fallo envío directo online (respaldado en teléfono): ${errMsg}`,
           });
           toast.warning(`Guardado en el teléfono. Pendiente de sincronizar: ${errMsg}`);
+        } finally {
+          syncEngine.marcarEnvioDirectoActivo(ticketIdEfectivo, Number(formCarga.fincaId), formCarga.tipoLeche, false);
         }
       }
 

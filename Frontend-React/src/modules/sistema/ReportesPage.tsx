@@ -379,9 +379,19 @@ export const ReportesPage: React.FC = () => {
           clonedDoc.querySelectorAll('.no-capture').forEach((n) => {
             (n as HTMLElement).style.display = 'none';
           });
+          clonedEl.style.alignSelf = 'start';
           clonedEl.style.height = 'auto';
           clonedEl.style.minHeight = '0';
-          clonedEl.style.paddingBottom = '8px';
+          clonedEl.style.marginBottom = '0';
+          clonedEl.style.paddingBottom = '0';
+          clonedEl.querySelectorAll('.report-card-demarcada').forEach((card) => {
+            const c = card as HTMLElement;
+            c.style.alignSelf = 'start';
+            c.style.height = 'auto';
+            c.style.minHeight = '0';
+            c.style.marginBottom = '0';
+            c.style.paddingBottom = '0';
+          });
         },
       });
 
@@ -1306,7 +1316,7 @@ const RenderReporteDiarios: React.FC<{
   ];
 
   return (
-    <div className="report-grid-cards">
+    <div className="report-grid-cards" style={{ alignItems: 'start' }}>
       {tablas.map((t, idx) => {
         const cardRef = React.createRef<HTMLDivElement>();
         return (
@@ -1404,7 +1414,7 @@ const RenderReporteReceptorias: React.FC<{
   }
 
   return (
-    <div className="report-grid-cards">
+    <div className="report-grid-cards" style={{ alignItems: 'start' }}>
       {lista.map((comp: any, idx: number) => {
         const cardRef = React.createRef<HTMLDivElement>();
         const detalle = comp.detalle || [];
@@ -1838,6 +1848,7 @@ const RenderReporteFincas: React.FC<{
           display: 'grid',
           gridTemplateColumns: tieneDosTablas ? 'repeat(auto-fit, minmax(420px, 1fr))' : 'minmax(320px, 640px)',
           justifyContent: tieneDosTablas ? 'stretch' : 'center',
+          alignItems: 'start',
           gap: '20px',
         }}
       >
@@ -2456,7 +2467,7 @@ const RenderReporteChoferes: React.FC<{
   }
 
   return (
-    <div className="report-grid-cards">
+    <div className="report-grid-cards" style={{ alignItems: 'start' }}>
       {choferesList.map((ch: any, idx: number) => {
         const cardRef = React.createRef<HTMLDivElement>();
         const detalle = ch.detalle || [];

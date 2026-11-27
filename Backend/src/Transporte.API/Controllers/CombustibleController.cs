@@ -60,6 +60,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("compra")]
+        [RequirePermission("COMBUSTIBLE_CREAR")]
         public async Task<IActionResult> RegistrarCompra([FromBody] RegistrarCompraCombustibleDto dto)
         {
             if (dto == null || dto.Litros <= 0)
@@ -80,6 +81,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("despacho")]
+        [RequirePermission("COMBUSTIBLE_CREAR")]
         public async Task<IActionResult> RegistrarDespacho([FromBody] RegistrarDespachoCombustibleDto dto)
         {
             if (dto == null || dto.Litros <= 0)
@@ -116,6 +118,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("ajuste")]
+        [RequirePermission("COMBUSTIBLE_EDITAR")]
         public async Task<IActionResult> AjustarStock([FromBody] AjustarStockDto dto)
         {
             if (dto == null || dto.NuevoStock < 0)

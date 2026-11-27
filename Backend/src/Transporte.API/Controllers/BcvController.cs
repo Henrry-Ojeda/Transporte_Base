@@ -54,7 +54,7 @@ namespace Transporte.API.Controllers
         [HttpPost]
         [HttpPost("registrar")]
         [HttpPost("guardar")]
-        [RequirePermission("HISTORIAL_BCV_VER", "CONFIGURACION_VER")]
+        [RequirePermission("HISTORIAL_BCV_CREAR", "CONFIGURACION_EDITAR")]
         public async Task<IActionResult> GuardarTasa([FromBody] RegistrarBcvDto dto)
         {
             if (dto.TasaDolarBs <= 0)
@@ -76,7 +76,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("{id}")]
-        [RequirePermission("HISTORIAL_BCV_VER", "CONFIGURACION_VER")]
+        [RequirePermission("HISTORIAL_BCV_EDITAR", "CONFIGURACION_EDITAR")]
         public async Task<IActionResult> EditarTasa([FromRoute] int id, [FromBody] EditarBcvDto dto)
         {
             if (dto.TasaDolarBs.HasValue && dto.TasaDolarBs.Value <= 0)
@@ -99,7 +99,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("{id}")]
-        [RequirePermission("HISTORIAL_BCV_VER", "CONFIGURACION_VER")]
+        [RequirePermission("HISTORIAL_BCV_ELIMINAR", "CONFIGURACION_ELIMINAR")]
         public async Task<IActionResult> EliminarTasa([FromRoute] int id)
         {
             try

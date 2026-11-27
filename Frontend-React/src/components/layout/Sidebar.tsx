@@ -31,7 +31,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       ...grp,
       visibleItems: grp.items.filter(isItemVisible),
     })).filter((grp) => grp.visibleItems.length > 0);
-  }, [canAccessTab, hasTenantModule]);
+  }, [canAccessTab, hasTenantModule, user]);
 
   const isGroupActive = (grp: NavGroupDef) => {
     return grp.items.some((it) => {

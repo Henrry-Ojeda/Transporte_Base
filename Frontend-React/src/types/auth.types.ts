@@ -3,7 +3,7 @@ export interface LoginDto {
   password: string;
 }
 
-export type PermisoAccion = 'VER' | 'EDITAR' | 'AGREGAR' | 'ELIMINAR';
+export type PermisoAccion = 'VER' | 'CREAR' | 'AGREGAR' | 'EDITAR' | 'ELIMINAR';
 
 export interface AuthUser {
   id: number;

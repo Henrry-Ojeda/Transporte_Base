@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Security;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 using Transporte.Infrastructure.Services;
@@ -28,6 +29,7 @@ namespace Transporte.API.Controllers
 
         [HttpGet]
         [HttpGet("hoy")]
+        [RequirePermission("RUTAS_VER", "CONTROL_RUTAS_VER", "ENTREGAS_VER", "REPORTES_VER")]
         public async Task<IActionResult> ObtenerRutasHoy(
             [FromQuery] DateTime? fecha = null,
             [FromQuery] DateTime? fechaInicio = null,
@@ -42,6 +44,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost]
+        [RequirePermission("RUTAS_CREAR")]
         public async Task<IActionResult> RegistrarRuta([FromBody] RegistrarRutaDto dto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -58,6 +61,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("masivo")]
+        [RequirePermission("RUTAS_CREAR")]
         public async Task<IActionResult> RegistrarRutasMasivo([FromBody] RegistrarRutasMasivoDto dto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -74,6 +78,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("ocr-imagen")]
+        [RequirePermission("RUTAS_CREAR")]
         [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("ai-ocr-strict")]
         public async Task<IActionResult> ProcesarImagenOcr([FromBody] ProcesarImagenPayloadDto payload)
         {
@@ -96,6 +101,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("{id}")]
+        [RequirePermission("RUTAS_EDITAR")]
         public async Task<IActionResult> ModificarRuta([FromRoute] int id, [FromBody] EditarRutaDto dto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -117,6 +123,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("{id}")]
+        [RequirePermission("RUTAS_ELIMINAR")]
         public async Task<IActionResult> EliminarRuta([FromRoute] int id)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -142,6 +149,7 @@ namespace Transporte.API.Controllers
         /// dejándola asignada en el ticket como PENDIENTE (No Recogida).
         /// </summary>
         [HttpPost("{id:long}/limpiar-recoleccion")]
+        [RequirePermission("RUTAS_EDITAR", "CONTROL_RUTAS_EDITAR")]
         public async Task<IActionResult> LimpiarRecoleccion([FromRoute] long id)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -169,6 +177,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("{id}/diferir-litros")]
+        [RequirePermission("RUTAS_EDITAR")]
         public async Task<IActionResult> DiferirLitros([FromRoute] long id, [FromBody] DiferirLitrosDto dto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -186,6 +195,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("{id}/revertir-diferimiento")]
+        [RequirePermission("RUTAS_EDITAR")]
         public async Task<IActionResult> RevertirDiferimiento([FromRoute] long id)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);

@@ -1,11 +1,27 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { ChatAssistantWidget } from '../common/ChatAssistantWidget';
+import { useAuthStore } from '@/stores/authStore';
 
 export const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const refreshPermissions = useAuthStore((s) => s.refreshPermissions);
+  const lastSyncRef = useRef<number>(0);
+
+  // Sincronizar permisos en vivo desde /api/auth/me al montar y al volver a la pestaña (throttle 20s)
+  useEffect(() => {
+    const sync = () => {
+      const now = Date.now();
+      if (now - lastSyncRef.current < 20_000) return;
+      lastSyncRef.current = now;
+      refreshPermissions();
+    };
+    sync();
+    window.addEventListener('focus', sync);
+    return () => window.removeEventListener('focus', sync);
+  }, [refreshPermissions]);
 
   return (
     <div

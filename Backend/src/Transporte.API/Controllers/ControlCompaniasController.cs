@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Security;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 
@@ -124,6 +125,7 @@ namespace Transporte.API.Controllers
         /// Registra un nuevo despacho / ticket de salida hacia una compañía (Estado 'EN VIA').
         /// </summary>
         [HttpPost]
+        [RequirePermission("ENTREGAS_CREAR")]
         public async Task<IActionResult> CrearDespacho([FromBody] CrearControlCompaniaDto dto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -155,6 +157,7 @@ namespace Transporte.API.Controllers
         /// Pasa el estado a 'DESPACHO'.
         /// </summary>
         [HttpPost("{id:long}/validar-entrega")]
+        [RequirePermission("ENTREGAS_CREAR", "ENTREGAS_EDITAR")]
         public async Task<IActionResult> ValidarEntrega([FromRoute] long id, [FromBody] ValidarEntregaCompaniaDto dto)
         {
             int userId = 1;
@@ -210,9 +213,9 @@ namespace Transporte.API.Controllers
         }
 
         /// <summary>
-        /// Edita un ticket de despacho a compañía (Solo Administrador).
+        /// Edita un ticket de despacho a compañía (RBAC dinámico ENTREGAS_EDITAR).
         /// </summary>
-        [Authorize(Roles = "ADMIN,SUPERADMIN")]
+        [RequirePermission("ENTREGAS_EDITAR")]
         [HttpPut("{id:long}")]
         public async Task<IActionResult> EditarDespacho([FromRoute] long id, [FromBody] EditarControlCompaniaDto dto)
         {
@@ -231,9 +234,9 @@ namespace Transporte.API.Controllers
         }
 
         /// <summary>
-        /// Elimina un ticket de despacho (Solo Administrador).
+        /// Elimina un ticket de despacho (RBAC dinámico ENTREGAS_ELIMINAR).
         /// </summary>
-        [Authorize(Roles = "ADMIN,SUPERADMIN")]
+        [RequirePermission("ENTREGAS_ELIMINAR")]
         [HttpDelete("{id:long}")]
         public async Task<IActionResult> EliminarDespacho([FromRoute] long id)
         {

@@ -14,6 +14,7 @@ import Swal from 'sweetalert2';
 import { confirmDialog } from '@/lib/sweetalert';
 import * as XLSX from 'xlsx';
 import { useAuthStore } from '@/stores/authStore';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import type { ControlRutaDto, FincaDto, CamionDto, CompaniaDto, DespachoCompaniaDto, PlanificacionRutaChoferDto } from '@/types';
 import { PlanificacionRutasChoferesPage } from './PlanificacionRutasChoferesPage';
 import { getTimestampParada, formatFechaHoraParada } from '@/utils/timelapseUtils';
@@ -57,6 +58,8 @@ export const RecoleccionRutasPage: React.FC = () => {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const hasBufala = useAuthStore((state) => state.hasTenantModule('MOD_LECHE_BUFALA'));
+  const hasPlanificacion = useAuthStore((state) => state.hasActionPermission('RUTAS_PLANIFICACION', 'VER'));
+  const { canCreate: canCreateRutas, canEdit: canEditRutas, canDelete: canDeleteRutas } = useModulePermissions('RUTAS');
   const rol = user?.rol?.toUpperCase() || '';
   const esAdminOSup = ['ADMIN', 'ADMINISTRADOR', 'SUPERVISOR', 'GERENTE', 'SUPERADMIN', 'SUPER_ADMIN'].includes(rol) || rol.includes('ADMIN');
   const esChofer = rol === 'CHOFER';
@@ -2993,7 +2996,7 @@ export const RecoleccionRutasPage: React.FC = () => {
     {
       header: 'ACCIONES',
       cell: (row) => {
-        const puedeEditar = esAdminOSup || row.puedeModificar !== false;
+        const puedeEditar = canEditRutas && (esAdminOSup || row.puedeModificar !== false);
         const esDiferido = Boolean(row.esDiferido);
 
         return (
@@ -3023,27 +3026,29 @@ export const RecoleccionRutasPage: React.FC = () => {
             )}
 
             {esDiferido ? (
-              <button
-                type="button"
-                onClick={() => handleRevertirDiferir(row)}
-                className="btn btn-xs btn-outline"
-                style={{
-                  padding: '4px 8px',
-                  fontSize: '11px',
-                  borderColor: '#fca5a5',
-                  color: '#dc2626',
-                  background: '#fef2f2',
-                  fontWeight: 800,
-                  borderRadius: '6px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  cursor: 'pointer',
-                }}
-                title="Revertir diferimiento y reintegrar a la recolección original"
-              >
-                <i className="fa-solid fa-rotate-left"></i> Revertir
-              </button>
+              puedeEditar && (
+                <button
+                  type="button"
+                  onClick={() => handleRevertirDiferir(row)}
+                  className="btn btn-xs btn-outline"
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    borderColor: '#fca5a5',
+                    color: '#dc2626',
+                    background: '#fef2f2',
+                    fontWeight: 800,
+                    borderRadius: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                  }}
+                  title="Revertir diferimiento y reintegrar a la recolección original"
+                >
+                  <i className="fa-solid fa-rotate-left"></i> Revertir
+                </button>
+              )
             ) : (
               puedeEditar && row.litros > 0 && (
                 <button
@@ -3070,7 +3075,7 @@ export const RecoleccionRutasPage: React.FC = () => {
               )
             )}
 
-            {esAdminOSup && row.litros > 0 && (
+            {canEditRutas && esAdminOSup && row.litros > 0 && (
               <button
                 type="button"
                 onClick={async () => {
@@ -3114,7 +3119,7 @@ export const RecoleccionRutasPage: React.FC = () => {
               </button>
             )}
 
-            {esAdminOSup && (
+            {canDeleteRutas && (
               <button
                 type="button"
                 onClick={async () => {
@@ -3229,48 +3234,52 @@ export const RecoleccionRutasPage: React.FC = () => {
               </button>
             </>
           )}
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setModoVista('planificacion')}
-            style={{
-              fontWeight: 800,
-              fontSize: '13px',
-              padding: '9px 18px',
-              borderRadius: '9px',
-              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-              border: 'none',
-              boxShadow: '0 4px 12px rgba(37,99,235,0.3)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              color: '#ffffff',
-              cursor: 'pointer',
-            }}
-          >
-            <i className="fa-solid fa-calendar-check"></i> Planificar Flota (15 Días)
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={abrirModalIniciarViaje}
-            style={{
-              fontWeight: 700,
-              fontSize: '12.5px',
-              padding: '8px 14px',
-              borderRadius: '9px',
-              background: '#ffffff',
-              border: '1.5px solid #cbd5e1',
-              color: '#334155',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-            }}
-            title="Iniciar ticket rápido de recolección sin planificación previa"
-          >
-            <i className="fa-solid fa-bolt" style={{ color: '#f59e0b' }}></i> Viaje Rápido
-          </button>
+          {hasPlanificacion && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setModoVista('planificacion')}
+              style={{
+                fontWeight: 800,
+                fontSize: '13px',
+                padding: '9px 18px',
+                borderRadius: '9px',
+                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                border: 'none',
+                boxShadow: '0 4px 12px rgba(37,99,235,0.3)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                color: '#ffffff',
+                cursor: 'pointer',
+              }}
+            >
+              <i className="fa-solid fa-calendar-check"></i> Planificar Flota (15 Días)
+            </button>
+          )}
+          {canCreateRutas && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={abrirModalIniciarViaje}
+              style={{
+                fontWeight: 700,
+                fontSize: '12.5px',
+                padding: '8px 14px',
+                borderRadius: '9px',
+                background: '#ffffff',
+                border: '1.5px solid #cbd5e1',
+                color: '#334155',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+              }}
+              title="Iniciar ticket rápido de recolección sin planificación previa"
+            >
+              <i className="fa-solid fa-bolt" style={{ color: '#f59e0b' }}></i> Viaje Rápido
+            </button>
+          )}
         </div>
       </div>
 
@@ -3726,20 +3735,22 @@ export const RecoleccionRutasPage: React.FC = () => {
               <p style={{ color: '#64748b', fontSize: '13px', margin: '0 0 16px 0' }}>
                 Inicia un nuevo viaje de recolección para comenzar a registrar cargas en fincas.
               </p>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={abrirModalIniciarViaje}
-                style={{
-                  fontWeight: 700,
-                  background: 'linear-gradient(135deg, #10b981, #059669)',
-                  border: 'none',
-                  padding: '8px 18px',
-                  borderRadius: '8px',
-                }}
-              >
-                <i className="fa-solid fa-plus-circle"></i> Iniciar Nuevo Viaje / Ticket
-              </button>
+              {canCreateRutas && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={abrirModalIniciarViaje}
+                  style={{
+                    fontWeight: 700,
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    border: 'none',
+                    padding: '8px 18px',
+                    borderRadius: '8px',
+                  }}
+                >
+                  <i className="fa-solid fa-plus-circle"></i> Iniciar Nuevo Viaje / Ticket
+                </button>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -3811,7 +3822,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                   item.estado === 'PENDIENTE'
                 );
                 const esAbiertoReal = !esFinalizado && !estaEnReceptoriaOCompania && (item.estado === 'ABIERTO' || item.procesoActualId === 1 || item.procesoActualId == null);
-                const puedeEditarTicket = (esAdminOSup || esMiTicket) && esAbiertoReal;
+                const puedeEditarTicket = (canCreateRutas || canEditRutas) && (esAdminOSup || esMiTicket) && esAbiertoReal;
 
                 const camionMatch = camiones.find((c) => c.id === item.camionId || c.placa === item.camionPlaca);
                 const capacidadCisterna = camionMatch?.capacidadLitros || item.capacidadCamionLitros || 10000;
@@ -4592,11 +4603,12 @@ export const RecoleccionRutasPage: React.FC = () => {
                                     )}
 
                                     {/* BOTONES DE EDICIÓN Y ELIMINACIÓN CON BLINDAJE */}
-                                    {puedeEditarTicket && (
+                                    {(canEditRutas || canDeleteRutas) && puedeEditarTicket && (
                                       <div style={{ display: 'flex', gap: '4px' }}>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
+                                        {canEditRutas && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
                                             setViajeActivo(item);
                                             const fMatchEdit = fincas.find((fx) => Number(fx.id) === Number(f.fincaId || f.FincaId));
                                             const permisosEdit = getPermisosTipoLecheFinca(fMatchEdit);
@@ -4627,10 +4639,11 @@ export const RecoleccionRutasPage: React.FC = () => {
                                           }}
                                           className="btn btn-xs btn-outline"
                                           style={{ padding: '3px 6px', borderColor: '#bfdbfe', color: '#1d4ed8' }}
-                                          title="Editar litros de esta finca"
-                                        >
-                                          <i className="fa-solid fa-pen-to-square"></i>
-                                        </button>
+                                            title="Editar litros de esta finca"
+                                          >
+                                            <i className="fa-solid fa-pen-to-square"></i>
+                                          </button>
+                                        )}
 
                                         {fLitros > 0 ? (
                                           <>
@@ -4683,7 +4696,7 @@ export const RecoleccionRutasPage: React.FC = () => {
                                             </button>
                                           </>
                                         ) : (
-                                          (esAdminOSup || !tieneRutaLogistica) && (
+                                          canDeleteRutas && (esAdminOSup || !tieneRutaLogistica) && (
                                             <button
                                               type="button"
                                               onClick={async () => {

@@ -13,7 +13,7 @@ namespace Transporte.API.Controllers
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
-    [RequirePermission("USUARIOS_VER")]
+    [RequirePermission("USUARIOS_SEGURIDAD_VER", "USUARIOS_VER")]
     public class UsuariosController : ControllerBase
     {
         private readonly IUsuariosRepository _usuariosRepository;
@@ -91,6 +91,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost]
+        [RequirePermission("USUARIOS_SEGURIDAD_CREAR", "USUARIOS_CREAR")]
         public async Task<IActionResult> CrearUsuario([FromBody] CrearUsuarioDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Username))
@@ -119,6 +120,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("{id}")]
+        [RequirePermission("USUARIOS_SEGURIDAD_EDITAR", "USUARIOS_EDITAR")]
         public async Task<IActionResult> ActualizarUsuario([FromRoute] int id, [FromBody] EditarUsuarioDto dto)
         {
             var target = await _usuariosRepository.ObtenerUsuarioPorIdAsync(id);
@@ -182,6 +184,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("{id}")]
+        [RequirePermission("USUARIOS_SEGURIDAD_ELIMINAR", "USUARIOS_ELIMINAR")]
         public async Task<IActionResult> EliminarUsuario([FromRoute] int id)
         {
             var target = await _usuariosRepository.ObtenerUsuarioPorIdAsync(id);

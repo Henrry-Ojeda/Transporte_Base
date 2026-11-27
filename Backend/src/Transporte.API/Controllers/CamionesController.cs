@@ -43,7 +43,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost]
-        [RequirePermission("CAMIONES_VER", "HISTORIAL_CAMIONES_VER")]
+        [RequirePermission("CAMIONES_CREAR", "HISTORIAL_CAMIONES_CREAR")]
         public async Task<IActionResult> CrearCamion([FromBody] CrearCamionDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Placa))
@@ -61,7 +61,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("{id}")]
-        [RequirePermission("CAMIONES_VER", "HISTORIAL_CAMIONES_VER")]
+        [RequirePermission("CAMIONES_EDITAR", "HISTORIAL_CAMIONES_EDITAR")]
         public async Task<IActionResult> ActualizarCamion([FromRoute] int id, [FromBody] EditarCamionDto dto)
         {
             var ok = await _usuariosRepository.ActualizarCamionAsync(id, dto);
@@ -70,7 +70,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("{id}/estado")]
-        [RequirePermission("CAMIONES_VER", "HISTORIAL_CAMIONES_VER")]
+        [RequirePermission("CAMIONES_EDITAR", "HISTORIAL_CAMIONES_EDITAR")]
         public async Task<IActionResult> ActualizarEstadoCamion([FromRoute] int id, [FromBody] ActualizarEstadoCamionDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Estado))
@@ -82,7 +82,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("{id}")]
-        [RequirePermission("CAMIONES_VER", "HISTORIAL_CAMIONES_VER")]
+        [RequirePermission("CAMIONES_ELIMINAR", "HISTORIAL_CAMIONES_ELIMINAR")]
         public async Task<IActionResult> EliminarCamion([FromRoute] int id)
         {
             var ok = await _usuariosRepository.EliminarCamionAsync(id);

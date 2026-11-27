@@ -17,6 +17,7 @@ interface AuthState {
   updateUser: (partial: Partial<AuthUser>) => void;
   clearExpiredMessage: () => void;
   syncModulosTenant: () => Promise<{ updated: boolean; prevMods: string[]; newMods: string[] }>;
+  refreshPermissions: () => Promise<void>;
 
   // Verificaciones RBAC y Feature Flags SaaS
   isAdmin: () => boolean;
@@ -134,13 +135,57 @@ export const useAuthStore = create<AuthState>()(
         const { user, isAdmin } = get();
         if (!user) return false;
         if (isAdmin()) return true;
-        const permisos = user.permisos || [];
-        return permisos.includes(codigo.toUpperCase());
+        const permisos = (user.permisos || []).map((p) => String(p).toUpperCase());
+        return permisos.includes('ADMIN_TOTAL') || permisos.includes(codigo.toUpperCase());
       },
 
       hasActionPermission: (modulo: string, accion: PermisoAccion) => {
-        const codigo = `${modulo.toUpperCase()}_${accion.toUpperCase()}`;
-        return get().hasPermission(codigo);
+        const { hasPermission } = get();
+        const mod = modulo.trim().toUpperCase();
+        const acc = accion.trim().toUpperCase();
+        // Compatibilidad CALIDAD_LECHE -> CALIDAD_*
+        const prefijos = mod === 'CALIDAD_LECHE' ? ['CALIDAD_LECHE', 'CALIDAD'] : [mod];
+        const acciones = acc === 'CREAR' || acc === 'AGREGAR' ? ['CREAR', 'AGREGAR'] : [acc];
+        for (const p of prefijos) {
+          for (const a of acciones) {
+            if (hasPermission(`${p}_${a}`)) return true;
+          }
+        }
+        return false;
+      },
+
+      refreshPermissions: async () => {
+        try {
+          const { token, user } = get();
+          if (!token || !user) return;
+          const profile = await authApi.getMe();
+          if (profile && Array.isArray(profile.permisos)) {
+            const nextPerms = profile.permisos.map((p: string) => String(p).toUpperCase());
+            const prevPerms = (user.permisos || []).map((p: string) => String(p).toUpperCase());
+            const changed =
+              nextPerms.length !== prevPerms.length ||
+              nextPerms.some((p: string) => !prevPerms.includes(p)) ||
+              (profile.rol && profile.rol !== user.rol);
+            if (changed) {
+              set((state) => ({
+                user: state.user
+                  ? {
+                      ...state.user,
+                      rol: profile.rol || state.user.rol,
+                      esSuperAdmin: typeof profile.esSuperAdmin === 'boolean' ? profile.esSuperAdmin : state.user.esSuperAdmin,
+                      permisoCrearViaje: typeof profile.permisoCrearViaje === 'boolean' ? profile.permisoCrearViaje : state.user.permisoCrearViaje,
+                      permisos: nextPerms,
+                      modulosHabilitados: Array.isArray(profile.modulosHabilitados)
+                        ? profile.modulosHabilitados.map((m: string) => String(m).toUpperCase())
+                        : state.user.modulosHabilitados,
+                    }
+                  : null,
+              }));
+            }
+          }
+        } catch {
+          // Silencioso si no hay red; 401/403 lo maneja el interceptor global
+        }
       },
 
       syncModulosTenant: async () => {
@@ -214,68 +259,68 @@ export const useAuthStore = create<AuthState>()(
         const tabPermissionMap: Record<string, string[]> = {
           'dashboard': ['DASHBOARD_VER'],
           'rutas': ['RUTAS_VER'],
-          'viajes': ['CONTROL_RUTAS_VER', 'RUTAS_VER'],
-          'control-rutas': ['CONTROL_RUTAS_VER', 'RUTAS_VER'],
-          'mapa-rutas': ['RUTAS_PLANIFICACION_VER', 'RUTAS_VER'],
+          'viajes': ['CONTROL_RUTAS_VER'],
+          'control-rutas': ['CONTROL_RUTAS_VER'],
+          'mapa-rutas': ['MAPA_RUTAS_VER', 'RUTAS_PLANIFICACION_VER'],
           'entregas': ['ENTREGAS_VER'],
           'receptoria': ['ENTREGAS_VER'],
-          'calidad-leche': ['CALIDAD_VER', 'ENTREGAS_VER'],
+          'calidad-leche': ['CALIDAD_VER', 'CALIDAD_LECHE_VER'],
           'balance': ['BALANCE_LECHE_VER'],
-          'control-tanques': ['BALANCE_LECHE_VER', 'ENTREGAS_VER'],
+          'control-tanques': ['BALANCE_LECHE_VER'],
           'bufala': ['TRAZABILIDAD_BUFALA_VER'],
-          'planificacion-rutas': ['RUTAS_PLANIFICACION_VER', 'RUTAS_VER'],
-          'rutas-planificacion': ['RUTAS_PLANIFICACION_VER', 'RUTAS_VER'],
-          'planificacion-rutas-choferes': ['RUTAS_PLANIFICACION_VER', 'RUTAS_VER'],
-          'evolucion-fincas': ['RUTAS_PLANIFICACION_VER', 'RUTAS_VER'],
+          'planificacion-rutas': ['RUTAS_PLANIFICACION_VER'],
+          'rutas-planificacion': ['RUTAS_PLANIFICACION_VER'],
+          'planificacion-rutas-choferes': ['RUTAS_PLANIFICACION_VER'],
+          'evolucion-fincas': ['RUTAS_PLANIFICACION_VER'],
 
           // Catálogos
           'fincas': ['FINCAS_VER'],
           'propietarios': ['PROPIETARIOS_VER'],
           'conductores': ['CONDUCTORES_VER'],
-          'camiones': ['CAMIONES_VER', 'CONDUCTORES_VER'],
+          'camiones': ['CAMIONES_VER'],
           'companias': ['COMPANIAS_VER'],
           'bancos': ['BANCOS_VER'],
           'empresa': ['EMPRESA_VER'],
 
           // Flota & Mantenimiento
-          'combustible': ['COMBUSTIBLE_VER', 'CAMIONES_VER'],
-          'mantenimiento': ['HISTORIAL_CAMIONES_VER', 'CAMIONES_VER'],
-          'historial-camiones': ['HISTORIAL_CAMIONES_VER', 'CAMIONES_VER'],
-          'repuestos': ['REPUESTOS_VER', 'CAMIONES_VER'],
+          'combustible': ['COMBUSTIBLE_VER'],
+          'mantenimiento': ['HISTORIAL_CAMIONES_VER'],
+          'historial-camiones': ['HISTORIAL_CAMIONES_VER'],
+          'repuestos': ['REPUESTOS_VER'],
 
           // Finanzas & Liquidación
           'semanas': ['CICLOS_VER'],
           'liquidacion': ['LIQUIDACIONES_VER'],
           'liquidaciones': ['LIQUIDACIONES_VER'],
-          'pagos-personal': ['PAGOS_PERSONAL_VER', 'LIQUIDACIONES_VER'],
-          'pagos-usuarios': ['PAGOS_PERSONAL_VER', 'LIQUIDACIONES_VER'],
-          'historial-pagos': ['LIQUIDACIONES_VER', 'PAGOS_PERSONAL_VER'],
-          'administracion': ['LIQUIDACIONES_VER', 'EMPRESA_VER'],
+          'pagos-personal': ['PAGOS_PERSONAL_VER'],
+          'pagos-usuarios': ['PAGOS_PERSONAL_VER'],
+          'historial-pagos': ['HISTORIAL_PAGOS_VER', 'PAGOS_PERSONAL_VER'],
+          'administracion': ['ADMINISTRACION_VER'],
 
           // Adelantos
-          'adelantos': ['ADELANTOS_VER', 'ADELANTOS_FINCAS_VER'],
-          'adelantos-fincas': ['ADELANTOS_FINCAS_VER', 'ADELANTOS_VER'],
-          'adelantos-personal': ['ADELANTOS_PERSONAL_VER', 'ADELANTOS_VER'],
-          'adelantos-usuarios': ['ADELANTOS_PERSONAL_VER', 'ADELANTOS_VER'],
-          'abonos-companias': ['ABONOS_COMPANIAS_VER', 'ADELANTOS_VER'],
-          'adelantos-receptoria': ['ADELANTOS_VER', 'ENTREGAS_VER'],
-          'abonos': ['ADELANTOS_VER'],
-          'historial-adelantos': ['ADELANTOS_VER'],
+          'adelantos': ['ADELANTOS_FINCAS_VER', 'ADELANTOS_PERSONAL_VER', 'ADELANTOS_RECEPTORIA_VER'],
+          'adelantos-fincas': ['ADELANTOS_FINCAS_VER'],
+          'adelantos-personal': ['ADELANTOS_PERSONAL_VER'],
+          'adelantos-usuarios': ['ADELANTOS_PERSONAL_VER'],
+          'abonos-companias': ['ABONOS_COMPANIAS_VER'],
+          'adelantos-receptoria': ['ADELANTOS_RECEPTORIA_VER'],
+          'abonos': ['ABONOS_VER'],
+          'historial-adelantos': ['HISTORIAL_ADELANTOS_VER'],
 
           // Gestión de Data
-          'data': ['EMPRESA_VER', 'FINCAS_VER', 'PROPIETARIOS_VER'],
-          'gestion-data': ['EMPRESA_VER', 'FINCAS_VER', 'PROPIETARIOS_VER'],
+          'data': ['EMPRESA_VER', 'CONFIGURACION_VER'],
+          'gestion-data': ['EMPRESA_VER', 'CONFIGURACION_VER'],
 
           // Reportes
           'reportes': ['REPORTES_VER'],
           'historial-bcv': ['HISTORIAL_BCV_VER'],
 
           // Seguridad y Sistema
-          'usuarios': ['USUARIOS_VER', 'USUARIOS_SEGURIDAD_VER'],
+          'usuarios': ['USUARIOS_SEGURIDAD_VER', 'USUARIOS_VER'],
           'permisos': ['PERMISOS_VER'],
           'configuracion': ['CONFIGURACION_VER'],
           'configuracion-sistema': ['CONFIGURACION_VER'],
-          'configuracion-sesion': ['CONFIGURACION_VER'],
+          'configuracion-sesion': ['SESION_VER', 'CONFIGURACION_VER'],
         };
 
         const requiredPerms = tabPermissionMap[tabId.toLowerCase()];

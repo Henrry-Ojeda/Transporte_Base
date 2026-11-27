@@ -61,6 +61,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost]
+        [RequirePermission("REPUESTOS_CREAR")]
         public async Task<IActionResult> Crear([FromBody] GuardarRepuestoDto dto)
         {
             if (dto == null || string.IsNullOrWhiteSpace(dto.Nombre))
@@ -80,6 +81,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("{id}")]
+        [RequirePermission("REPUESTOS_EDITAR")]
         public async Task<IActionResult> Actualizar(int id, [FromBody] GuardarRepuestoDto dto)
         {
             if (dto == null || string.IsNullOrWhiteSpace(dto.Nombre))
@@ -100,6 +102,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("{id}")]
+        [RequirePermission("REPUESTOS_ELIMINAR")]
         public async Task<IActionResult> Eliminar(int id)
         {
             try

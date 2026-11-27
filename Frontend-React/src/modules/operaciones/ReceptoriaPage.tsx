@@ -6,6 +6,7 @@ import { catalogosApi } from '@/api/catalogos.api';
 import { sistemaApi } from '@/api/sistema.api';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/authStore';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { SemaforoToleranciaBadge } from '@/components/common/SemaforoToleranciaBadge';
 import { CamionSelect, ChoferSelect, CompaniaSelect, TipoLecheSelect } from '@/components/selectors';
@@ -19,6 +20,7 @@ import { comprimirImagenArchivo } from '@/api/examenesLeche.api';
 export const ReceptoriaPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { canCreate: canCreateEntregas, canEdit: canEditEntregas, canDelete: canDeleteEntregas } = useModulePermissions('ENTREGAS');
   const hasBufala = useAuthStore((state) => state.hasTenantModule('MOD_LECHE_BUFALA'));
   const hasCalidadLeche = useAuthStore((state) => state.hasTenantModule('MOD_CALIDAD_LECHE'));
   const hoyStr = new Date().toISOString().split('T')[0];
@@ -1587,61 +1589,65 @@ export const ReceptoriaPage: React.FC = () => {
 
           {/* Botones de Acción */}
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              onClick={() => setModalNuevoDespacho(true)}
-              style={{
-                height: '36px',
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #9333ea, #7e22ce)',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '0 16px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: '0 2px 8px rgba(147,51,234,0.3)',
-                cursor: 'pointer',
-              }}
-            >
-              <i className="fa-solid fa-plus-circle"></i> Nuevo Ticket Salida / ENVÍO
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              onClick={() => {
-                setEditandoEntradaTerceroId(null);
-                setFormEntradaTercero({
-                  fecha: filtroFecha || hoyStr,
-                  fincaId: 0,
-                  crearFincaNueva: false,
-                  nuevaFincaNombre: '',
-                  nuevaFincaPropietario: '',
-                  nuevaFincaPrecioLitro: '',
-                  tipoLeche: 'VACA',
-                  litros: '',
-                  observacion: '',
-                });
-                setModalEntradaTercero(true);
-              }}
-              style={{
-                height: '36px',
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '0 16px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: '0 2px 8px rgba(79,70,229,0.3)',
-                cursor: 'pointer',
-              }}
-            >
-              <i className="fa-solid fa-plus-circle"></i> Nuevo Ticket Entrada (Tercero)
-            </button>
+            {canCreateEntregas && (
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => setModalNuevoDespacho(true)}
+                style={{
+                  height: '36px',
+                  fontWeight: 700,
+                  background: 'linear-gradient(135deg, #9333ea, #7e22ce)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0 16px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 8px rgba(147,51,234,0.3)',
+                  cursor: 'pointer',
+                }}
+              >
+                <i className="fa-solid fa-plus-circle"></i> Nuevo Ticket Salida / ENVÍO
+              </button>
+            )}
+            {canCreateEntregas && (
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => {
+                  setEditandoEntradaTerceroId(null);
+                  setFormEntradaTercero({
+                    fecha: filtroFecha || hoyStr,
+                    fincaId: 0,
+                    crearFincaNueva: false,
+                    nuevaFincaNombre: '',
+                    nuevaFincaPropietario: '',
+                    nuevaFincaPrecioLitro: '',
+                    tipoLeche: 'VACA',
+                    litros: '',
+                    observacion: '',
+                  });
+                  setModalEntradaTercero(true);
+                }}
+                style={{
+                  height: '36px',
+                  fontWeight: 700,
+                  background: 'linear-gradient(135deg, #4f46e5, #3730a3)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0 16px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 8px rgba(79,70,229,0.3)',
+                  cursor: 'pointer',
+                }}
+              >
+                <i className="fa-solid fa-plus-circle"></i> Nuevo Ticket Entrada (Tercero)
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-sm btn-outline"
@@ -2069,7 +2075,7 @@ export const ReceptoriaPage: React.FC = () => {
                                 gap: '6px',
                               }}
                             >
-                              {!String(c.observacion || '').includes('[ENTRADA TERCERO]') && (
+                              {canEditEntregas && !String(c.observacion || '').includes('[ENTRADA TERCERO]') && (
                                 <button
                                   type="button"
                                   className="btn btn-sm"
@@ -2095,33 +2101,35 @@ export const ReceptoriaPage: React.FC = () => {
                                 </button>
                               )}
 
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-primary"
-                                onClick={() => abrirModalVerificarViaje(c)}
-                                style={{
-                                  fontSize: '11px',
-                                  fontWeight: 800,
-                                  padding: '6px 8px',
-                                  background: 'linear-gradient(135deg, #0284c7, #0369a1)',
-                                  border: 'none',
-                                  color: '#ffffff',
-                                  borderRadius: '6px',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '5px',
-                                  boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)',
-                                  cursor: 'pointer',
-                                }}
-                                title="Verificar litros y Descargar en Silos o Recargar y Despachar a Compañía"
-                              >
-                                <i className="fa-solid fa-arrow-down-to-bracket"></i>
-                                {ticketsFincasValidadas.has(c.id) ? 'Recibir Carga' : 'Confirmar en Silos'}
-                              </button>
+                              {(canCreateEntregas || canEditEntregas) && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-primary"
+                                  onClick={() => abrirModalVerificarViaje(c)}
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    padding: '6px 8px',
+                                    background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                                    border: 'none',
+                                    color: '#ffffff',
+                                    borderRadius: '6px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '5px',
+                                    boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Verificar litros y Descargar en Silos o Recargar y Despachar a Compañía"
+                                >
+                                  <i className="fa-solid fa-arrow-down-to-bracket"></i>
+                                  {ticketsFincasValidadas.has(c.id) ? 'Recibir Carga' : 'Confirmar en Silos'}
+                                </button>
+                              )}
                             </div>
 
-                            {String(c.observacion || '').includes('[ENTRADA TERCERO]') && (
+                            {canEditEntregas && String(c.observacion || '').includes('[ENTRADA TERCERO]') && (
                               <button
                                 type="button"
                                 className="btn btn-sm"
@@ -2162,7 +2170,7 @@ export const ReceptoriaPage: React.FC = () => {
                               </button>
                             )}
 
-                            {!String(c.observacion || '').includes('[ENTRADA TERCERO]') && (
+                            {canEditEntregas && !String(c.observacion || '').includes('[ENTRADA TERCERO]') && (
                               <button
                                 type="button"
                                 className="btn btn-sm"
@@ -2471,77 +2479,81 @@ export const ReceptoriaPage: React.FC = () => {
                           </button>
                         )}
 
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          onClick={() => {
-                            setDespachoAEditar({
-                              id: d.id,
-                              fecha: d.fecha ? String(d.fecha).split('T')[0] : hoyStr,
-                              litrosDespachados: despachados,
-                              tipoLeche: d.tipoLeche || 'VACA',
-                              observacion: d.observacion || '',
-                            });
-                            setModalEditarDespacho(true);
-                          }}
-                          style={{
-                            width: '100%',
-                            fontWeight: 700,
-                            fontSize: '11.5px',
-                            background: '#eff6ff',
-                            border: '1px solid #bfdbfe',
-                            color: '#1d4ed8',
-                            padding: '7px',
-                            borderRadius: '6px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            cursor: 'pointer',
-                          }}
-                          title="Editar fecha, litros o detalles antes de que el chofer confirme"
-                        >
-                          <i className="fa-solid fa-pen-to-square"></i> Editar Ticket
-                        </button>
+                        {canEditEntregas && (
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => {
+                              setDespachoAEditar({
+                                id: d.id,
+                                fecha: d.fecha ? String(d.fecha).split('T')[0] : hoyStr,
+                                litrosDespachados: despachados,
+                                tipoLeche: d.tipoLeche || 'VACA',
+                                observacion: d.observacion || '',
+                              });
+                              setModalEditarDespacho(true);
+                            }}
+                            style={{
+                              width: '100%',
+                              fontWeight: 700,
+                              fontSize: '11.5px',
+                              background: '#eff6ff',
+                              border: '1px solid #bfdbfe',
+                              color: '#1d4ed8',
+                              padding: '7px',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                            }}
+                            title="Editar fecha, litros o detalles antes de que el chofer confirme"
+                          >
+                            <i className="fa-solid fa-pen-to-square"></i> Editar Ticket
+                          </button>
+                        )}
 
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          onClick={() => {
-                            setDespachoSeleccionado(d);
-                            setLitrosConfirmadosInput(Number(d.litrosDespachados || (d as any).LitrosDespachados || 0));
-                            setObsConfirmacionInput('');
-                            if (
-                              d.controlRutaId &&
-                              !ticketsFincasValidadas.has(Number(d.controlRutaId)) &&
-                              (fincasCatalogo || []).some((fc: any) => Number(fc.companiaId) === Number(d.companiaId))
-                            ) {
-                              abrirModalValidarFincasDesdeDespacho(d);
-                            } else {
-                              setModalConfirmar(true);
-                            }
-                          }}
-                          style={{
-                            width: '100%',
-                            fontWeight: 700,
-                            fontSize: '11.5px',
-                            background: '#f8fafc',
-                            border: '1px solid #cbd5e1',
-                            color: '#334155',
-                            padding: '7px',
-                            borderRadius: '6px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            cursor: 'pointer',
-                          }}
-                          title="Validar manualmente en caso de contingencia"
-                        >
-                          <i className="fa-solid fa-clipboard-check text-emerald-600"></i> Validar Manualmente (Soporte Admin)
-                        </button>
+                        {(canCreateEntregas || canEditEntregas) && (
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => {
+                              setDespachoSeleccionado(d);
+                              setLitrosConfirmadosInput(Number(d.litrosDespachados || (d as any).LitrosDespachados || 0));
+                              setObsConfirmacionInput('');
+                              if (
+                                d.controlRutaId &&
+                                !ticketsFincasValidadas.has(Number(d.controlRutaId)) &&
+                                (fincasCatalogo || []).some((fc: any) => Number(fc.companiaId) === Number(d.companiaId))
+                              ) {
+                                abrirModalValidarFincasDesdeDespacho(d);
+                              } else {
+                                setModalConfirmar(true);
+                              }
+                            }}
+                            style={{
+                              width: '100%',
+                              fontWeight: 700,
+                              fontSize: '11.5px',
+                              background: '#f8fafc',
+                              border: '1px solid #cbd5e1',
+                              color: '#334155',
+                              padding: '7px',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                            }}
+                            title="Validar manualmente en caso de contingencia"
+                          >
+                            <i className="fa-solid fa-clipboard-check text-emerald-600"></i> Validar Manualmente (Soporte Admin)
+                          </button>
+                        )}
 
-                        {d.controlRutaId && (
+                        {canDeleteEntregas && d.controlRutaId && (
                           <button
                             type="button"
                             className="btn btn-sm"
@@ -3378,19 +3390,21 @@ export const ReceptoriaPage: React.FC = () => {
                               </button>
                             );
                           })()}
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline"
-                            onClick={async () => {
-                              if (await confirmDeleteOrDeactivate('Eliminar el registro de entrega', `#${e.id}`)) {
-                                eliminarEntregaMutation.mutate(e.id);
-                              }
-                            }}
-                            title="Eliminar entrega"
-                            style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px', color: '#ef4444', borderColor: '#fca5a5', background: '#fff' }}
-                          >
-                            <i className="fa-solid fa-trash-can" style={{ fontSize: '11px' }}></i>
-                          </button>
+                          {canDeleteEntregas && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline"
+                              onClick={async () => {
+                                if (await confirmDeleteOrDeactivate('Eliminar el registro de entrega', `#${e.id}`)) {
+                                  eliminarEntregaMutation.mutate(e.id);
+                                }
+                              }}
+                              title="Eliminar entrega"
+                              style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px', color: '#ef4444', borderColor: '#fca5a5', background: '#fff' }}
+                            >
+                              <i className="fa-solid fa-trash-can" style={{ fontSize: '11px' }}></i>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

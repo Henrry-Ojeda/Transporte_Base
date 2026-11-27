@@ -1,14 +1,14 @@
-# PLAN.md — Transporte Base (ERP / SaaS Transporte de Leche & Queseras)
+# PLAN.md — TrazaLac Base (ERP / SaaS Gestión y Trazabilidad Láctea)
 
-- **Ruta:** `C:\Users\Usuario\source\repos\Transporte_Base`
-- **Propósito:** Producto `TRANSPORTE` multiempresa (clientes actuales en PROD: Vergel & Carrillo y Campo Verde). Evolución progresiva hacia SaaS comercial sin interrumpir producción.
+- **Ruta:** `C:\Users\Usuario\source\repos\TrazaLac_Base` (antes `Transporte_Base`)
+- **Propósito:** Plataforma **TrazaLac** multiempresa (clientes actuales en PROD: Vergel & Carrillo y Campo Verde). Identidad oficial: **TrazaLac** + Ícono **Variante 3C (Carbono, Esmeralda & Dorado)**.
 - **Reglas Permanentes:** Ver [AGENTS.md](AGENTS.md) — Reglas Maestras #1–#7 (incluyendo **CERO HARDCODEO**, `<DataTable />`, `<SearchableSelect />`, `develop -> qa -> main`, no alterar lógica de `Relación Compañías` ni `Relación Chofer`).
 - **Infraestructura Clave:**
-  - **VPS Backend PROD:** `root@84.247.178.194` (`/opt/sql_server`, contenedores `sql_instancia` y `api_transporte` en `127.0.0.1:8080`, variable `SAAS_MASTER_CONNECTION`).
+  - **VPS Backend PROD:** `root@84.247.178.194` (`/opt/sql_server`, contenedores `sql_instancia` y `api_transporte` ejecutando `TrazaLac.API.dll` en `127.0.0.1:8080`, variable `SAAS_MASTER_CONNECTION`).
   - **Respaldos Automáticos PROD:** Cron diario en VPS (`/opt/sql_server/backup_databases.sh`, 3:00 AM VET, retención 14 días, descubre dinámicamente todas las BDs) + descarga portable en laptop (`Scripts/Backups/Descargar-Backups-PROD.ps1` + `Instalar-Tarea-Backup.ps1` + `backup-config.example.json`).
   - **Frontend PROD (Vercel):** Raíz del repo (`npx vercel --prod --yes`) + alias hijos: `transporte-vergel-carrillo.vercel.app`, `lacteos-campoverde.vercel.app`, `transporte-base.vercel.app`.
-  - **App Móvil Nativa Futura:** `C:\Users\Usuario\source\repos\Transporte_App_Movil` (Expo/React Native + `expo-sqlite`) para implementación futura de choferes.
-  - **Local QA:** Frontend `:3000` (`Frontend-React`), Backend `:5188` (`Backend/src/Transporte.API`).
+  - **App Móvil Nativa:** `C:\Users\Usuario\source\repos\TrazaLac_App_Movil` (`com.trazalac.app`, `v1.6.1`, Expo/React Native + `expo-sqlite`, Diseño **Opción F — Carbono Fleet Pro**).
+  - **Local QA:** Frontend `:3000` (`Frontend-React`), Backend `:5188` (`Backend/src/TrazaLac.API`).
 
 ## Estado Actual (Desplegado en PROD — P0 a P4 Completados)
 - ✅ **P0-B1..B4 + Bloque 1 (Seguridad y Cero Hardcodeo):** Secretos removidos de `appsettings.json`, `TenantService.cs`, `AuthController.cs`, `Program.cs`, `SqlConnectionFactory.cs`, `CatalogosRepository.cs` y `ImportacionDataController.cs` (`SECRET_HITS: 0`), CORS configurable, cero hardcodes de clientes (`vergel`, `campoverde`, `5028`), códigos `MOD_*` alineados, y `[...slug].ts` eliminado de `Transporte_SaaS_Manager`.
@@ -24,6 +24,12 @@
 - ✅ **Operación y App Móvil:** Reorganización de `ReceptoriaPage.tsx` (Entradas / Salidas / Control Diario), fix de bucle de login chofer (`403` + `movil_device_info`), timeout 120s + fallback 1-a-1 en `syncEngine.ts`, permisos de tipo de leche por finca (`getPermisosTipoLecheFinca`), parámetro `BALANCE_INCLUIR_DIFERIDOS`, y APK nativo `Transporte_App_Movil` (`v1.0.8`).
 - ✅ **Módulo SaaS Calidad de Leche (`MOD_CALIDAD_LECHE`, Lactoscan S50) y Recibos en Receptoría:** Migración `24_ExamenesCalidadLecheYRecibos.sql` (`TB_PARAMETROS_CALIDAD_LECHE` con índice único filtrado `EsPrincipal = 1` + `TB_EXAMENES_LECHE` con 12 campos Lactoscan S50 + fotos en `TB_CONTROL_RUTAS` y `TB_CONTROL_COMPANIAS`), `ExamenesLecheController.cs` + OCR IA Gemini (`POST /api/examenes-leche/ocr-lactoscan`), `CalidadLechePage.tsx` (`/calidad-leche` con Historial + CRUD Parámetros), captura opcional Ticket/Finca en `ReceptoriaPage.tsx`, `HistorialFincaModal.tsx` en `FincasPage.tsx`, y pestaña `Calidad y Recibos` en `ViajesTicketsPage.tsx` (26/26 tests xUnit).
 - ✅ **Endurecimiento Seguridad API, RBAC Dinámico & Taller Web:** `RequirePermissionAttribute` valida `u.Activo = 1`; `AuthController.VincularDispositivo` carga permisos 100% dinámicos + auto-upgrade a BCrypt; `[RequirePermission]` en `ControlRutasController`, `NotificacionesController` y `MantenimientoCamionesController`; Rate Limiting `ai-ocr-strict` (10 req/min) en OCR Gemini, Swagger restringido en PROD, headers HTTP de seguridad y caché `TenantService` a 30s; `PermisosPage.tsx` + `PermisosController.cs` + `UsuariosController.cs` conectados 100% dinámicos a `GET /api/permisos/matriz` y `POST /api/permisos/matriz/toggle` con CRUD de Roles habilitado para `ADMIN`/`SUPERADMIN` (manteniendo privilegio exclusivo de `SUPERADMIN` para gestionar/otorgar `SUPERADMIN`); `MantenimientoPage.tsx` con 4 pestañas (`Tareas del Mecánico`, `Tareas Completadas`, `Bitácora General`, `Alertas Preventivas`) y modal `"Notificar Tarea al Mecánico"`. APK `Transporte_App_Movil` actualizado a `v1.5.0`.
+
+- ✅ **Rebranding Integral `Transporte` ➔ `TrazaLac` + Ícono 3C (Desplegado en PROD):**
+  - **App Móvil (`TrazaLac_App_Movil` `v1.6.1`):** paquete `com.trazalac.app`, nombre `TrazaLac`, Ícono 3C, SQLite `trazalac_local.db`, Diseño **Opción F — Carbono Fleet Pro**, RBAC estricto (`hasActionPermission`), APK compilado (`BUILD SUCCESSFUL`).
+  - **Frontend Web (`trazalac-web`):** `index.html`, `manifest.json`, `pwaIcons.ts`, `sw.js`, Ícono 3C (`favicon.png`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`), preservando branding dinámico por tenant (`Campo Verde`, `Vergel & Carrillo`), desplegado en Vercel PROD + 3 alias.
+  - **Backend C# (`TrazaLac.sln`):** solución y 5 proyectos renombrados (`TrazaLac.Core`, `TrazaLac.Infrastructure`, `TrazaLac.API`, `TrazaLac.Migrador2026`, `TrazaLac.Tests`), 26/26 pruebas xUnit superadas, JWT compatible con sesiones activas (`TrazaLacAPI` + `TransporteAPI`), desplegado en VPS PROD (`HTTP 200` en `Campo Verde` y `Vergel & Carrillo`).
+  - **RBAC Dinámico + Sync SaaS (`SaasModulePermissionMap.cs`):** `VER`/`CREAR`/`EDITAR`/`ELIMINAR` aplicados en 16 páginas web + controladores Backend; módulo base `Mi Perfil & Sesión` siempre visible; filtros hardcodeados eliminados en Dashboard.
 
 ## Roadmap Futuro (Siguiente Fase)
 - [ ] **P4-M1 / P4-M2:** Mejoras futuras del APK nativo (cola offline avanzada / sincronización incremental).

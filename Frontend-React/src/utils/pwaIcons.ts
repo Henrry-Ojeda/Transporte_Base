@@ -1,18 +1,22 @@
 /**
  * Utilidad para sincronizar el logo de la empresa como icono de la aplicación (PWA, Favicon y Apple Touch Icon)
  */
-export const updateAppIcon = (logoUrl?: string, appTitle: string = 'Rutas de Leche') => {
+export const updateAppIcon = (logoUrl?: string, appTitle: string = 'TrazaLac') => {
   if (typeof document === 'undefined') return;
 
-  // Si la empresa no tiene logo propio en BD, forzamos /favicon.svg con cache-buster por tenant
+  // Si la empresa no tiene logo propio en BD, forzamos /icon-192.png (TrazaLac 3C) con cache-buster por tenant
   // para evitar que el navegador conserve el favicon cacheado de otro cliente en el mismo host (ej. localhost)
   const cleanLogoUrl =
     logoUrl && logoUrl.trim()
       ? logoUrl.trim()
-      : `/favicon.svg?t=${encodeURIComponent(appTitle || 'default')}`;
+      : `/icon-192.png?t=${encodeURIComponent(appTitle || 'default')}`;
 
   if (appTitle && appTitle.trim()) {
-    document.title = `${appTitle.trim()} — Sistema de Transporte`;
+    const titleClean = appTitle.trim();
+    document.title =
+      titleClean.toLowerCase() === 'trazalac'
+        ? 'TrazaLac — Gestión y Trazabilidad Láctea'
+        : `${titleClean} — TrazaLac`;
   }
 
   try {
@@ -49,12 +53,12 @@ export const updateAppIcon = (logoUrl?: string, appTitle: string = 'Rutas de Lec
       id: '/movil',
       name: appTitle,
       short_name: appTitle,
-      description: 'Sistema de Gestión y Liquidación de Leche',
+      description: 'Sistema de Gestión y Trazabilidad Láctea',
       start_url: `${origin}/movil`,
       scope: `${origin}/`,
       display: 'standalone',
-      background_color: '#0f172a',
-      theme_color: '#0f172a',
+      background_color: '#090d16',
+      theme_color: '#090d16',
       orientation: 'portrait',
       icons: [
         {

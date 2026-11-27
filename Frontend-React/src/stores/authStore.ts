@@ -192,7 +192,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const res = await authApi.getTenantInfo();
           if (res) {
-            updateAppIcon(res.logoUrl, res.nombre || res.codigo || 'Sistema de Transporte');
+            updateAppIcon(res.logoUrl, res.nombre || res.codigo || 'TrazaLac');
           }
           if (res && Array.isArray(res.modulos)) {
             const currentMods = get().user?.modulosHabilitados || [];

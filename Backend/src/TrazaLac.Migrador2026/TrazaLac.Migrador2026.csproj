@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Migrador2026</AssemblyName>
+    <RootNamespace>TrazaLac.Migrador2026</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.35" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TrazaLac.Core\TrazaLac.Core.csproj" />
+  </ItemGroup>
+
+</Project>

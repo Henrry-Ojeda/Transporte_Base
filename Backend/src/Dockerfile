@@ -6,8 +6,8 @@ WORKDIR /src
 COPY . .
 
 # Restaurar y compilar desde el proyecto principal
-RUN dotnet restore "Transporte.API/Transporte.API.csproj"
-RUN dotnet publish "Transporte.API/Transporte.API.csproj" -c Release -o /app/publish
+RUN dotnet restore "TrazaLac.API/TrazaLac.API.csproj"
+RUN dotnet publish "TrazaLac.API/TrazaLac.API.csproj" -c Release -o /app/publish
 
 # Etapa de producción
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
@@ -16,4 +16,4 @@ COPY --from=build /app/publish .
 
 # Expone el puerto
 EXPOSE 8080
-ENTRYPOINT ["dotnet", "Transporte.API.dll"]
+ENTRYPOINT ["dotnet", "TrazaLac.API.dll"]

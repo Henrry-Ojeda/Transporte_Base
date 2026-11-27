@@ -1,0 +1,48 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C086E234-3835-44CC-A818-7640F3F22DEB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrazaLac.Core", "src\TrazaLac.Core\TrazaLac.Core.csproj", "{553FA791-15A3-4942-AAB8-8FE0A72B7B20}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrazaLac.Infrastructure", "src\TrazaLac.Infrastructure\TrazaLac.Infrastructure.csproj", "{1EB46131-E9F3-4224-9381-4A8F05A85A63}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrazaLac.API", "src\TrazaLac.API\TrazaLac.API.csproj", "{F9EB2EAA-D450-475E-A638-24650E71C474}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrazaLac.Migrador2026", "src\TrazaLac.Migrador2026\TrazaLac.Migrador2026.csproj", "{A87B11C3-92E4-47FA-B955-C11938E7E9A1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{553FA791-15A3-4942-AAB8-8FE0A72B7B20}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{553FA791-15A3-4942-AAB8-8FE0A72B7B20}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{553FA791-15A3-4942-AAB8-8FE0A72B7B20}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{553FA791-15A3-4942-AAB8-8FE0A72B7B20}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1EB46131-E9F3-4224-9381-4A8F05A85A63}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1EB46131-E9F3-4224-9381-4A8F05A85A63}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1EB46131-E9F3-4224-9381-4A8F05A85A63}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1EB46131-E9F3-4224-9381-4A8F05A85A63}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F9EB2EAA-D450-475E-A638-24650E71C474}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F9EB2EAA-D450-475E-A638-24650E71C474}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F9EB2EAA-D450-475E-A638-24650E71C474}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F9EB2EAA-D450-475E-A638-24650E71C474}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A87B11C3-92E4-47FA-B955-C11938E7E9A1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A87B11C3-92E4-47FA-B955-C11938E7E9A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A87B11C3-92E4-47FA-B955-C11938E7E9A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A87B11C3-92E4-47FA-B955-C11938E7E9A1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{553FA791-15A3-4942-AAB8-8FE0A72B7B20} = {C086E234-3835-44CC-A818-7640F3F22DEB}
+		{1EB46131-E9F3-4224-9381-4A8F05A85A63} = {C086E234-3835-44CC-A818-7640F3F22DEB}
+		{F9EB2EAA-D450-475E-A638-24650E71C474} = {C086E234-3835-44CC-A818-7640F3F22DEB}
+		{A87B11C3-92E4-47FA-B955-C11938E7E9A1} = {C086E234-3835-44CC-A818-7640F3F22DEB}
+	EndGlobalSection
+EndGlobal

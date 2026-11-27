@@ -74,7 +74,9 @@ const staticAssets = [
   '/login',
   '/index.html',
   '/manifest.json',
-  '/favicon.svg',
+  '/favicon.png',
+  '/icon-192.png',
+  '/apple-touch-icon.png',
   ...assetFiles,
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
 ];
@@ -85,7 +87,7 @@ const buildStamp = Date.now().toString(36);
 
 swContent = swContent.replace(
   /const CACHE_NAME = '[^']+';/,
-  `const CACHE_NAME = 'rutas-movil-${version}-${buildStamp}';`
+  `const CACHE_NAME = 'trazalac-movil-${version}-${buildStamp}';`
 );
 
 const assetsArrayString = JSON.stringify(staticAssets, null, 2);
@@ -98,10 +100,12 @@ swContent = swContent.replace(
 fs.writeFileSync(swDistPath, swContent, 'utf-8');
 fs.writeFileSync(swSourcePath, swContent, 'utf-8');
 
-// 6. Si existe Backend/src/Transporte.API/wwwroot, copiar allí también
-const backendWwwrootSw = path.resolve(rootDir, '../Backend/src/Transporte.API/wwwroot/sw.js');
-if (fs.existsSync(path.dirname(backendWwwrootSw))) {
-  fs.writeFileSync(backendWwwrootSw, swContent, 'utf-8');
+// 6. Si existe Backend/src/(TrazaLac|Transporte).API/wwwroot, copiar allí también
+for (const apiDir of ['TrazaLac.API', 'Transporte.API']) {
+  const backendWwwrootSw = path.resolve(rootDir, `../Backend/src/${apiDir}/wwwroot/sw.js`);
+  if (fs.existsSync(path.dirname(backendWwwrootSw))) {
+    fs.writeFileSync(backendWwwrootSw, swContent, 'utf-8');
+  }
 }
 
 console.log(`[SW-Inject] ¡sw.js actualizado exitosamente con ${staticAssets.length} activos para offline en ${version}!`);

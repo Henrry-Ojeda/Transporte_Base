@@ -41,9 +41,10 @@ namespace Transporte.API.Controllers
 
             var rol = (User.FindFirstValue(ClaimTypes.Role) ?? "CHOFER").ToUpper();
 
-            // Si es chofer y no es administrativo/supervisor, solo ve sus despachos asignados a menos que filtre
-            bool esAdminOReceptor = rol == "ADMIN" || rol == "SUPERADMIN" || rol == "SUPERVISOR" || rol == "RECEPTOR" || rol == "FINANZAS";
-            int? filtroChofer = esAdminOReceptor ? usuarioId : userId;
+            // Solo los choferes/conductores se filtran a sus propios despachos;
+            // cualquier otro rol con permiso ENTREGAS_VER / DASHBOARD_VER ve todos los despachos de la empresa.
+            bool esSoloChofer = rol == "CHOFER" || rol == "CONDUCTOR";
+            int? filtroChofer = esSoloChofer ? userId : usuarioId;
 
             try
             {

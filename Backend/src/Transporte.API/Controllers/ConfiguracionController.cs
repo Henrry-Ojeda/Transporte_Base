@@ -215,22 +215,7 @@ namespace Transporte.API.Controllers
         public async Task<IActionResult> ObtenerWidgetsDashboard([FromQuery] bool soloActivos = true)
         {
             var todosWidgets = await _configRepo.ObtenerWidgetsDashboardAsync(soloActivos: soloActivos);
-            var rol = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? "";
-            var permisosUsuario = User.Claims
-                .Where(c => c.Type == "permiso")
-                .Select(c => c.Value)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            var esAdmin = rol.Contains("ADMIN", StringComparison.OrdinalIgnoreCase);
-
-            var widgetsPermitidos = todosWidgets.Where(w =>
-            {
-                if (esAdmin) return true;
-                if (string.IsNullOrWhiteSpace(w.PermisoRequerido)) return true;
-                return permisosUsuario.Contains(w.PermisoRequerido);
-            }).ToList();
-
-            return Ok(widgetsPermitidos);
+            return Ok(todosWidgets);
         }
 
         [HttpPut("widgets/{id}/toggle")]

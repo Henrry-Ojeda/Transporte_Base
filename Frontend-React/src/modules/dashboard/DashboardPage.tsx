@@ -6,6 +6,7 @@ import { catalogosApi } from '@/api/catalogos.api';
 import { esReceptoriaPrincipal } from '@/utils/procesoViaje';
 import { finanzasApi } from '@/api/finanzas.api';
 import { sistemaApi } from '@/api/sistema.api';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import {
   Chart as ChartJS,
@@ -82,6 +83,7 @@ const formatearFechaCorta = (f?: string) => {
 };
 
 export const DashboardPage: React.FC = () => {
+  const { canCreate: canCreateRutas } = useModulePermissions('RUTAS');
   const hoyStr = new Date().toISOString().split('T')[0];
 
   const [modoDashboard, setModoDashboard] = useState<'dia' | 'semana'>('dia');
@@ -676,9 +678,11 @@ export const DashboardPage: React.FC = () => {
           </p>
         </div>
         <div className="view-actions">
-          <Link to="/rutas" className="btn btn-primary" id="btnNuevaRutaQuick">
-            <i className="fa-solid fa-plus"></i> Registrar Recolección
-          </Link>
+          {canCreateRutas && (
+            <Link to="/rutas" className="btn btn-primary" id="btnNuevaRutaQuick">
+              <i className="fa-solid fa-plus"></i> Registrar Recolección
+            </Link>
+          )}
         </div>
       </div>
 

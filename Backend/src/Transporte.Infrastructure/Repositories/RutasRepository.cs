@@ -38,9 +38,10 @@ namespace Transporte.Infrastructure.Repositories
             string whereFilter;
             object param;
 
-            bool esAdminOSup = rol.Contains("ADMIN", StringComparison.OrdinalIgnoreCase) 
-                            || rol.Equals("SUPERVISOR", StringComparison.OrdinalIgnoreCase)
-                            || rol.Equals("GERENTE", StringComparison.OrdinalIgnoreCase);
+            // Solo los roles operativos de conducción (CHOFER/CONDUCTOR) se filtran a sus propios registros;
+            // cualquier otro rol con permiso RUTAS_VER / DASHBOARD_VER (ej. RECEPTORIA, OPERADOR, etc.) ve toda la operación.
+            bool esSoloChofer = rol.Equals("CHOFER", StringComparison.OrdinalIgnoreCase)
+                             || rol.Equals("CONDUCTOR", StringComparison.OrdinalIgnoreCase);
 
             if (cicloId.HasValue && cicloId.Value > 0)
             {
@@ -100,7 +101,7 @@ namespace Transporte.Infrastructure.Repositories
                 INNER JOIN TB_USUARIOS u ON r.UsuarioId = u.Id
                 LEFT JOIN TB_CONTROL_RUTAS cr ON r.ControlRutaId = cr.Id
                 WHERE {whereFilter}
-                " + (!esAdminOSup ? " AND r.UsuarioId = @usuarioId " : "") + @"
+                " + (esSoloChofer ? " AND r.UsuarioId = @usuarioId " : "") + @"
                 ORDER BY r.Fecha ASC, ISNULL(r.ControlRutaId, 0) ASC, r.Id ASC";
 
             return await connection.QueryAsync<RutaItemDto>(sql, param);

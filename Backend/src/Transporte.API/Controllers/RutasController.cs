@@ -29,7 +29,7 @@ namespace Transporte.API.Controllers
 
         [HttpGet]
         [HttpGet("hoy")]
-        [RequirePermission("RUTAS_VER", "CONTROL_RUTAS_VER", "ENTREGAS_VER", "REPORTES_VER")]
+        [RequirePermission("RUTAS_VER", "DASHBOARD_VER", "CONTROL_RUTAS_VER", "ENTREGAS_VER", "REPORTES_VER")]
         public async Task<IActionResult> ObtenerRutasHoy(
             [FromQuery] DateTime? fecha = null,
             [FromQuery] DateTime? fechaInicio = null,

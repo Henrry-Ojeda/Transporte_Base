@@ -117,6 +117,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
     groupIconClass: 'icon-sis',
     color: '#64748b',
     items: [
+      { name: 'Mi Perfil & Sesión', href: '/mi-cuenta', tabId: 'perfil', icon: 'fa-solid fa-circle-user', color: '#0284c7' },
       { name: 'Usuarios & Roles', href: '/usuarios', tabId: 'usuarios', icon: 'fa-solid fa-user-gear' },
       { name: 'Módulos & Permisos', href: '/permisos', tabId: 'permisos', icon: 'fa-solid fa-shield-halved', color: '#38bdf8' },
       { name: 'Datos de Empresa', href: '/empresa', tabId: 'empresa', icon: 'fa-solid fa-building-flag', color: '#38bdf8' },

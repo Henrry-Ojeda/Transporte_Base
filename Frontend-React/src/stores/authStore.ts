@@ -320,13 +320,17 @@ export const useAuthStore = create<AuthState>()(
           'permisos': ['PERMISOS_VER'],
           'configuracion': ['CONFIGURACION_VER'],
           'configuracion-sistema': ['CONFIGURACION_VER'],
-          'configuracion-sesion': ['SESION_VER', 'CONFIGURACION_VER'],
         };
 
-        const requiredPerms = tabPermissionMap[tabId.toLowerCase()];
+        // Módulo fijo BASE para cualquier usuario autenticado (Perfil, Clave, Foto, Datos Bancarios y Tiempo de Sesión)
+        const tabLower = tabId.toLowerCase();
+        if (['perfil', 'mi-cuenta', 'datos-bancarios', 'configuracion-sesion', 'tiempo-sesion'].includes(tabLower)) {
+          return true;
+        }
+
+        const requiredPerms = tabPermissionMap[tabLower];
         if (!requiredPerms || requiredPerms.length === 0) {
-          // Perfil personal accesible para usuarios autenticados; cualquier otra ruta no registrada es fail-closed
-          return ['perfil', 'mi-cuenta', 'configuracion-sesion'].includes(tabId.toLowerCase());
+          return false;
         }
         return requiredPerms.some((perm) => hasPermission(perm));
       },

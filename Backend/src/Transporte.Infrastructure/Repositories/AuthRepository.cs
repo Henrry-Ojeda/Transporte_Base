@@ -5,6 +5,8 @@ using Dapper;
 using Microsoft.Extensions.Configuration;
 using Transporte.Core.DTOs;
 using Transporte.Core.Entities;
+using Transporte.Core.Interfaces;
+using Transporte.Core.Security;
 
 namespace Transporte.Infrastructure.Repositories
 {
@@ -18,8 +20,10 @@ namespace Transporte.Infrastructure.Repositories
     public class AuthRepository : IAuthRepository
     {
         private readonly string _connectionString;
-        public AuthRepository(IConfiguration configuration, Transporte.Core.Interfaces.ITenantService? tenantService = null)
+        private readonly ITenantService? _tenantService;
+        public AuthRepository(IConfiguration configuration, ITenantService? tenantService = null)
         {
+            _tenantService = tenantService;
             _connectionString = tenantService?.GetConnectionString() 
                 ?? configuration.GetConnectionString("DefaultConnection") 
                 ?? configuration.GetConnectionString("BD_TRANSPORTE") 
@@ -48,33 +52,36 @@ namespace Transporte.Infrastructure.Repositories
             var user = await ObtenerPorIdAsync(usuarioId);
             if (user == null) return Enumerable.Empty<string>();
 
-            if (user.Rol == "ADMIN" || user.Rol == "SUPERADMIN")
+            var rolUpper = (user.Rol ?? string.Empty).Trim().ToUpperInvariant();
+            if (rolUpper == "ADMIN" || rolUpper == "SUPERADMIN" || rolUpper == "SUPER_ADMIN")
             {
                 return new[] { "DASHBOARD", "RUTAS_ALL", "MERMAS", "SEMANAS", "LIQUIDACION", "CATALOGOS", "BCV" };
             }
 
             using var connection = new SqlConnection(_connectionString);
             var sqlPermisos = @"
-                SELECT DISTINCT p.Codigo
+                SELECT DISTINCT p.Codigo AS PermisoCodigo, m.Codigo AS ModuloCodigo
                 FROM TB_USUARIOS u
                 INNER JOIN TB_ROL_PERMISOS rp ON (u.RolId = rp.RolId OR (u.RolId IS NULL AND rp.RolId = (SELECT TOP 1 Id FROM TB_ROLES WHERE Codigo = u.Rol)))
                 INNER JOIN TB_PERMISOS p ON rp.PermisoId = p.Id
-                WHERE u.Id = @usuarioId AND rp.Concedido = 1 AND p.Activo = 1";
+                INNER JOIN TB_MODULOS m ON p.ModuloId = m.Id
+                WHERE u.Id = @usuarioId
+                  AND u.Activo = 1
+                  AND rp.Concedido = 1
+                  AND p.Activo = 1
+                  AND m.Activo = 1";
 
-            var permisosDb = (await connection.QueryAsync<string>(sqlPermisos, new { usuarioId })).ToList();
-            if (string.Equals(user.Rol, "SUPERVISOR", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!permisosDb.Contains("DASHBOARD")) permisosDb.Add("DASHBOARD");
-                if (!permisosDb.Contains("RUTAS_ALL")) permisosDb.Add("RUTAS_ALL");
-                if (!permisosDb.Contains("MERMAS")) permisosDb.Add("MERMAS");
-                if (!permisosDb.Contains("CATALOGOS")) permisosDb.Add("CATALOGOS");
-            }
-            else if (permisosDb.Count == 0)
-            {
-                permisosDb.AddRange(new[] { "RUTAS_OWN", "DASHBOARD" });
-            }
+            var filas = await connection.QueryAsync<(string PermisoCodigo, string ModuloCodigo)>(sqlPermisos, new { usuarioId });
+            var modulosSaasActivos = _tenantService?.GetModulosActivos();
 
-            return permisosDb;
+            // Si un módulo NO está habilitado en SaaS_Manager, sus permisos quedan vacíos para roles no-admin
+            var permisosSincronizados = filas
+                .Where(f => SaasModulePermissionMap.IsModuloRbacHabilitado(f.ModuloCodigo, modulosSaasActivos))
+                .Select(f => f.PermisoCodigo)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return permisosSincronizados;
         }
     }
 

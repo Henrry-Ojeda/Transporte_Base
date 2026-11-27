@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Transporte.Core.DTOs;
+using Transporte.Core.Interfaces;
+using Transporte.Core.Security;
 using Transporte.Infrastructure.Repositories;
 using Transporte.API.Security;
 
@@ -13,14 +16,16 @@ namespace Transporte.API.Controllers
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
-    [RequirePermission("PERMISOS_VER", "USUARIOS_VER")]
+    [RequirePermission("PERMISOS_VER", "USUARIOS_VER", "USUARIOS_SEGURIDAD_VER")]
     public class PermisosController : ControllerBase
     {
         private readonly IPermisosRepository _permisosRepo;
+        private readonly ITenantService _tenantService;
 
-        public PermisosController(IPermisosRepository permisosRepo)
+        public PermisosController(IPermisosRepository permisosRepo, ITenantService tenantService)
         {
             _permisosRepo = permisosRepo;
+            _tenantService = tenantService;
         }
 
         // ====================================================================
@@ -151,14 +156,52 @@ namespace Transporte.API.Controllers
         public async Task<IActionResult> ObtenerMatrizCompleta()
         {
             var matriz = await _permisosRepo.ObtenerMatrizCompletaAsync();
-            return Ok(matriz);
+            var modulosSaasActivos = _tenantService.GetModulosActivos();
+
+            // Sincronizar Matriz RBAC con los módulos habilitados en SaaS_Manager:
+            // Si un módulo no está habilitado para el tenant, se excluye y sus permisos quedan vacíos para roles operativos.
+            var modulosHabilitados = matriz.Modulos
+                .Where(m => SaasModulePermissionMap.IsModuloRbacHabilitado(m.Codigo, modulosSaasActivos))
+                .ToList();
+            var modulosIdsValidos = new HashSet<int>(modulosHabilitados.Select(m => m.Id));
+
+            var permisosHabilitados = matriz.Permisos
+                .Where(p => modulosIdsValidos.Contains(p.ModuloId))
+                .ToList();
+            var permisosIdsValidos = new HashSet<int>(permisosHabilitados.Select(p => p.Id));
+
+            var matrizPorRolSincronizada = matriz.MatrizPorRol.Select(mr =>
+            {
+                var codRol = (mr.RolCodigo ?? string.Empty).Trim().ToUpperInvariant();
+                var esAdminOSuper = codRol == "ADMIN" || codRol == "SUPERADMIN" || codRol == "SUPER_ADMIN";
+                return new MatrizRolDto
+                {
+                    RolId = mr.RolId,
+                    RolCodigo = mr.RolCodigo,
+                    RolNombre = mr.RolNombre,
+                    RolDescripcion = mr.RolDescripcion,
+                    PermisosAsignadosIds = esAdminOSuper
+                        ? permisosHabilitados.Select(p => p.Id).ToList()
+                        : mr.PermisosAsignadosIds.Where(id => permisosIdsValidos.Contains(id)).ToList()
+                };
+            }).ToList();
+
+            return Ok(new MatrizSeguridadCompletaDto
+            {
+                Roles = matriz.Roles,
+                Modulos = modulosHabilitados,
+                Permisos = permisosHabilitados,
+                MatrizPorRol = matrizPorRolSincronizada
+            });
         }
 
         [HttpGet("rol/{rolId}")]
         public async Task<IActionResult> ObtenerPermisosPorRol([FromRoute] int rolId)
         {
             var permisos = await _permisosRepo.ObtenerPermisosPorRolAsync(rolId);
-            return Ok(permisos);
+            var modulosSaasActivos = _tenantService.GetModulosActivos();
+            var filtrados = permisos.Where(p => SaasModulePermissionMap.IsModuloRbacHabilitado(p.ModuloCodigo, modulosSaasActivos));
+            return Ok(filtrados);
         }
 
         [HttpPost("matriz/guardar-rol")]
@@ -167,7 +210,16 @@ namespace Transporte.API.Controllers
             if (dto.RolId <= 0)
                 return BadRequest(new { message = "Debe especificar un Rol válido." });
 
-            await _permisosRepo.GuardarRolPermisosAsync(dto.RolId, dto.PermisosIds ?? new List<int>());
+            // Filtrar permisos que pertenezcan solo a módulos habilitados en SaaS_Manager
+            var modulosSaasActivos = _tenantService.GetModulosActivos();
+            var todosPermisos = await _permisosRepo.ObtenerPermisosAsync(soloActivos: true);
+            var idsPermitidos = new HashSet<int>(
+                todosPermisos
+                    .Where(p => SaasModulePermissionMap.IsModuloRbacHabilitado(p.ModuloCodigo, modulosSaasActivos))
+                    .Select(p => p.Id));
+
+            var limpios = (dto.PermisosIds ?? new List<int>()).Where(id => idsPermitidos.Contains(id)).ToList();
+            await _permisosRepo.GuardarRolPermisosAsync(dto.RolId, limpios);
             return Ok(new { message = "Matriz de permisos del rol actualizada exitosamente." });
         }
 
@@ -176,6 +228,19 @@ namespace Transporte.API.Controllers
         {
             if (dto.RolId <= 0 || dto.PermisoId <= 0)
                 return BadRequest(new { message = "RolId y PermisoId son requeridos." });
+
+            if (dto.Concedido)
+            {
+                var permiso = await _permisosRepo.ObtenerPermisoPorIdAsync(dto.PermisoId);
+                if (permiso == null)
+                    return NotFound(new { message = "Permiso no encontrado." });
+
+                var modulosSaasActivos = _tenantService.GetModulosActivos();
+                if (!SaasModulePermissionMap.IsModuloRbacHabilitado(permiso.ModuloCodigo, modulosSaasActivos))
+                {
+                    return BadRequest(new { message = $"El módulo '{permiso.ModuloNombre}' no está habilitado para esta empresa en SaaS Manager." });
+                }
+            }
 
             await _permisosRepo.ToggleRolPermisoAsync(dto.RolId, dto.PermisoId, dto.Concedido);
             return Ok(new { message = "Permiso actualizado para el rol seleccionado." });

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Data.SqlClient;
 using Transporte.Core.Interfaces;
+using Transporte.Core.Security;
 
 namespace Transporte.API.Security
 {
@@ -65,24 +66,31 @@ namespace Transporte.API.Security
             {
                 using var connection = new SqlConnection(connStr);
                 const string sql = @"
-                    SELECT COUNT(1)
+                    SELECT p.Codigo AS PermisoCodigo, m.Codigo AS ModuloCodigo
                     FROM TB_USUARIOS u
                     INNER JOIN TB_ROL_PERMISOS rp
                         ON (u.RolId = rp.RolId OR (u.RolId IS NULL AND rp.RolId = (SELECT TOP 1 Id FROM TB_ROLES WHERE Codigo = u.Rol)))
                     INNER JOIN TB_PERMISOS p ON rp.PermisoId = p.Id
+                    INNER JOIN TB_MODULOS m ON p.ModuloId = m.Id
                     WHERE u.Id = @usuarioId
                       AND u.Activo = 1
                       AND rp.Concedido = 1
                       AND p.Activo = 1
+                      AND m.Activo = 1
                       AND (p.Codigo = 'ADMIN_TOTAL' OR p.Codigo IN @permisos)";
 
-                var count = await connection.ExecuteScalarAsync<int>(sql, new { usuarioId, permisos = _permisos });
-                if (count <= 0)
+                var coincidencias = await connection.QueryAsync<(string PermisoCodigo, string ModuloCodigo)>(sql, new { usuarioId, permisos = _permisos });
+                var modulosSaasActivos = tenantService?.GetModulosActivos();
+                var autorizado = coincidencias.Any(c =>
+                    string.Equals(c.PermisoCodigo, "ADMIN_TOTAL", StringComparison.OrdinalIgnoreCase) ||
+                    SaasModulePermissionMap.IsModuloRbacHabilitado(c.ModuloCodigo, modulosSaasActivos));
+
+                if (!autorizado)
                 {
                     context.Result = new ObjectResult(new
                     {
                         error = "PERMISO_DENEGADO",
-                        message = $"No tiene permisos suficientes para acceder a este recurso ({string.Join(", ", _permisos)})."
+                        message = $"No tiene permisos suficientes o el módulo no está habilitado para esta empresa ({string.Join(", ", _permisos)})."
                     }) { StatusCode = 403 };
                 }
             }

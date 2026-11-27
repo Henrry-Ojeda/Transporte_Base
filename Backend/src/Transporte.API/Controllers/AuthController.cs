@@ -12,6 +12,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using Transporte.Core.DTOs;
+using Transporte.Core.Security;
 using Transporte.Infrastructure.Repositories;
 
 namespace Transporte.API.Controllers
@@ -378,18 +379,23 @@ namespace Transporte.API.Controllers
                 logoUrl = await tenantDb.QueryFirstOrDefaultAsync<string?>(
                     "SELECT TOP 1 LogoUrl FROM TB_EMPRESA_CONFIG");
 
-                // Leer permisos 100% dinámicos desde TB_ROL_PERMISOS / TB_PERMISOS del tenant (Cero Hardcodeo)
+                // Leer permisos 100% dinámicos desde TB_ROL_PERMISOS / TB_PERMISOS sincronizados con módulos SaaS_Manager
                 try
                 {
-                    var pRows = await tenantDb.QueryAsync<string>(@"
-                        SELECT DISTINCT p.Codigo
+                    var pRows = await tenantDb.QueryAsync<(string PermisoCodigo, string ModuloCodigo)>(@"
+                        SELECT DISTINCT p.Codigo AS PermisoCodigo, m.Codigo AS ModuloCodigo
                         FROM TB_USUARIOS u
                         INNER JOIN TB_ROL_PERMISOS rp
                             ON (u.RolId = rp.RolId OR (u.RolId IS NULL AND rp.RolId = (SELECT TOP 1 Id FROM TB_ROLES WHERE Codigo = u.Rol)))
                         INNER JOIN TB_PERMISOS p ON rp.PermisoId = p.Id
-                        WHERE u.Id = @usuarioId AND rp.Concedido = 1 AND p.Activo = 1",
+                        INNER JOIN TB_MODULOS m ON p.ModuloId = m.Id
+                        WHERE u.Id = @usuarioId AND rp.Concedido = 1 AND p.Activo = 1 AND m.Activo = 1",
                         new { usuarioId });
-                    permisosDb = pRows.ToList();
+                    permisosDb = pRows
+                        .Where(r => SaasModulePermissionMap.IsModuloRbacHabilitado(r.ModuloCodigo, modulosTenant))
+                        .Select(r => r.PermisoCodigo)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
                 }
                 catch { /* fallback tolerante si el tenant aún no tiene TB_ROL_PERMISOS */ }
             }

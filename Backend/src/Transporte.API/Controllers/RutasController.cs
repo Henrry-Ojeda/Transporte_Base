@@ -74,6 +74,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("ocr-imagen")]
+        [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("ai-ocr-strict")]
         public async Task<IActionResult> ProcesarImagenOcr([FromBody] ProcesarImagenPayloadDto payload)
         {
             try

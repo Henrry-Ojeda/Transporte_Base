@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Security;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 
@@ -355,6 +356,7 @@ namespace Transporte.API.Controllers
         /// En Receptoría se pesan los litros reales y se decide si la leche se queda o si se recarga y despacha a planta.
         /// </summary>
         [HttpPost("{id:long}/recibir-receptoria")]
+        [RequirePermission("ENTREGAS_CREAR", "ENTREGAS_EDITAR", "CONTROL_RUTAS_EDITAR")]
         public async Task<IActionResult> RecibirEnReceptoria([FromRoute] long id, [FromBody] RecibirEnReceptoriaDto dto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -511,6 +513,7 @@ namespace Transporte.API.Controllers
         /// El Administrador realiza el cuadre final y cierre contable del viaje.
         /// </summary>
         [HttpPost("{id:long}/finalizar")]
+        [RequirePermission("CONTROL_RUTAS_EDITAR", "ENTREGAS_EDITAR", "RUTAS_EDITAR")]
         public async Task<IActionResult> FinalizarViaje([FromRoute] long id, [FromBody] FinalizarViajeDto dto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -531,6 +534,7 @@ namespace Transporte.API.Controllers
         /// Revierte el proceso de un viaje/ticket a un estado anterior (ej. En Ruta) registrando el motivo en auditoría.
         /// </summary>
         [HttpPost("{id:long}/revertir-proceso")]
+        [RequirePermission("CONTROL_RUTAS_EDITAR", "RUTAS_EDITAR")]
         public async Task<IActionResult> RevertirProceso([FromRoute] long id, [FromBody] RevertirProcesoViajeDto? dto = null)
         {
             int userId = 1;
@@ -574,6 +578,7 @@ namespace Transporte.API.Controllers
         /// Edita una finca de un viaje con registro obligatorio en la bitácora de auditoría.
         /// </summary>
         [HttpPut("{id:long}/fincas/{rutaId:long}/editar-auditado")]
+        [RequirePermission("CONTROL_RUTAS_EDITAR", "RUTAS_EDITAR")]
         public async Task<IActionResult> EditarFincaAuditado(
             [FromRoute] long id,
             [FromRoute] long rutaId,
@@ -602,6 +607,7 @@ namespace Transporte.API.Controllers
         /// Elimina una finca de un viaje con registro obligatorio en la bitácora de auditoría.
         /// </summary>
         [HttpDelete("{id:long}/fincas/{rutaId:long}/eliminar-auditado")]
+        [RequirePermission("CONTROL_RUTAS_EDITAR", "RUTAS_EDITAR")]
         public async Task<IActionResult> EliminarFincaAuditado(
             [FromRoute] long id,
             [FromRoute] long rutaId,
@@ -670,6 +676,7 @@ namespace Transporte.API.Controllers
         /// Edita una entrega de un viaje con registro obligatorio en la bitácora de auditoría.
         /// </summary>
         [HttpPut("{id:long}/entregas/{entregaId:long}/editar-auditado")]
+        [RequirePermission("CONTROL_RUTAS_EDITAR", "ENTREGAS_EDITAR")]
         public async Task<IActionResult> EditarEntregaAuditado(
             [FromRoute] long id,
             [FromRoute] long entregaId,
@@ -708,6 +715,7 @@ namespace Transporte.API.Controllers
         /// Obtiene la bitácora global de auditoría de todas las modificaciones del sistema (Solo SUPERADMIN y ADMIN).
         /// </summary>
         [HttpGet("logs-auditoria-global")]
+        [RequirePermission("CONTROL_RUTAS_VER", "REPORTES_VER", "USUARIOS_VER")]
         public async Task<IActionResult> ObtenerLogsAuditoriaGlobal(
             [FromQuery] DateTime? fechaDesde,
             [FromQuery] DateTime? fechaHasta,
@@ -730,6 +738,7 @@ namespace Transporte.API.Controllers
         /// Verifica fincas, choferes, litros, fechas y detección de duplicados ya existentes.
         /// </summary>
         [HttpPost("validar-carga-masiva-excel")]
+        [RequirePermission("CONTROL_RUTAS_EDITAR", "RUTAS_EDITAR")]
         public async Task<IActionResult> ValidarCargaMasivaExcel([FromBody] ValidarCargaMasivaExcelRequestDto dto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -751,6 +760,7 @@ namespace Transporte.API.Controllers
         /// Los tickets se crean en estado ABIERTO para que el SuperAdmin los revise y finalice.
         /// </summary>
         [HttpPost("ejecutar-carga-masiva-excel")]
+        [RequirePermission("CONTROL_RUTAS_EDITAR", "RUTAS_EDITAR")]
         public async Task<IActionResult> EjecutarCargaMasivaExcel([FromBody] EjecutarCargaMasivaExcelRequestDto dto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);

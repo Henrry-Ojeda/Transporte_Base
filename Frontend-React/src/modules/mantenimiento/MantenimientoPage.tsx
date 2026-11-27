@@ -17,7 +17,15 @@ import type {
 export const MantenimientoPage: React.FC = () => {
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'mantenimientos' | 'incidentes' | 'alertas'>('mantenimientos');
+  const [activeTab, setActiveTab] = useState<'tareas_mecanico' | 'tareas_completadas' | 'mantenimientos' | 'alertas'>('tareas_mecanico');
+  const [modalNuevaTarea, setModalNuevaTarea] = useState(false);
+  const [formNuevaTarea, setFormNuevaTarea] = useState({
+    camionId: '',
+    urgencia: 'ALTA',
+    titulo: '',
+    descripcion: '',
+    odometroKm: '',
+  });
   const [filtroCamion, setFiltroCamion] = useState<string>('');
   const [filtroTipo, setFiltroTipo] = useState<string>('');
   const [filtroEstado, setFiltroEstado] = useState<string>('');
@@ -92,6 +100,23 @@ export const MantenimientoPage: React.FC = () => {
     { value: 'PENDIENTE', label: 'Pendiente / Reportado' },
     { value: 'REPORTADO_CHOFER', label: 'Reportado por Chofer' },
   ];
+
+  // Mutación: Crear Nueva Tarea / Notificar al Mecánico (Admin -> Taller)
+  const mutationReportarTarea = useMutation({
+    mutationFn: (dto: { camionId: number; titulo: string; descripcion: string; urgencia: string; odometroKm?: number }) =>
+      mantenimientoApi.reportarIncidente(dto),
+    onSuccess: (data) => {
+      toast.success(data?.message || 'Tarea enviada al mecánico / taller exitosamente');
+      setModalNuevaTarea(false);
+      setFormNuevaTarea({ camionId: '', urgencia: 'ALTA', titulo: '', descripcion: '', odometroKm: '' });
+      queryClient.invalidateQueries({ queryKey: ['mantenimientos-incidentes'] });
+      queryClient.invalidateQueries({ queryKey: ['mantenimientos'] });
+      queryClient.invalidateQueries({ queryKey: ['camiones-mant'] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Error al notificar la tarea al mecánico');
+    },
+  });
 
   // Mutación: Cambiar Estado de Incidente (Taller <-> Chofer)
   const mutationCambiarEstadoIncidente = useMutation({
@@ -631,6 +656,100 @@ export const MantenimientoPage: React.FC = () => {
     },
   ];
 
+  const urgenciaPeso = (u?: string) => {
+    const up = (u || 'MEDIA').toUpperCase();
+    if (up === 'CRITICA') return 4;
+    if (up === 'ALTA') return 3;
+    if (up === 'MEDIA') return 2;
+    return 1;
+  };
+
+  const tareasPendientesMecanico = useMemo(
+    () =>
+      [...incidentes]
+        .filter((i) => {
+          const est = (i.estado || '').toUpperCase();
+          return est !== 'RESUELTO' && est !== 'COMPLETADO';
+        })
+        .sort((a, b) => urgenciaPeso(b.urgencia) - urgenciaPeso(a.urgencia)),
+    [incidentes]
+  );
+
+  const tareasCompletadasMecanico = useMemo(
+    () =>
+      incidentes.filter((i) => {
+        const est = (i.estado || '').toUpperCase();
+        return est === 'RESUELTO' || est === 'COMPLETADO';
+      }),
+    [incidentes]
+  );
+
+  const columnsCompletadas: ColumnDef<MantenimientoCamionDto>[] = [
+    {
+      header: 'FECHA',
+      accessorKey: 'fechaEvento',
+      sortable: true,
+      width: '110px',
+      cell: (row) => (
+        <strong style={{ color: '#0f172a', fontSize: '12.5px' }}>
+          {row.fechaEvento ? row.fechaEvento.split('T')[0] : '-'}
+        </strong>
+      ),
+    },
+    {
+      header: 'CAMIÓN',
+      accessorKey: 'camionPlaca',
+      sortable: true,
+      width: '150px',
+      cell: (row) => (
+        <div>
+          <div style={{ fontWeight: 800, color: '#0f172a', fontFamily: 'monospace' }}>
+            {row.camionPlaca || `Camión #${row.camionId}`}
+          </div>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>{row.choferNombre || 'Flota'}</span>
+        </div>
+      ),
+    },
+    {
+      header: 'TAREA & SOLUCIÓN APLICADA',
+      accessorKey: 'titulo',
+      cell: (row) => (
+        <div>
+          <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '13px' }}>{row.titulo}</div>
+          {row.descripcion && (
+            <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '2px' }}>{row.descripcion}</div>
+          )}
+          <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700, marginTop: '4px' }}>
+            <i className="fa-solid fa-circle-check" style={{ marginRight: '5px' }}></i>
+            Solución: {row.solucionAplicada || 'Reparación completada'}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'MECÁNICO / TALLER',
+      accessorKey: 'tallerOMecanico',
+      sortable: true,
+      width: '150px',
+      cell: (row) => (
+        <span style={{ fontWeight: 700, color: '#334155', fontSize: '12.5px' }}>
+          {row.tallerOMecanico || 'Taller Interno'}
+        </span>
+      ),
+    },
+    {
+      header: 'COSTO (USD)',
+      accessorKey: 'costoTotalUSD',
+      sortable: true,
+      width: '110px',
+      cell: (row) => (
+        <strong style={{ color: '#0f172a', fontSize: '13px' }}>
+          ${Number(row.costoTotalUSD || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </strong>
+      ),
+    },
+  ];
+
   return (
     <section id="tab-historial-camiones" className="tab-content" style={{ display: 'block' }}>
       {/* CABECERA VISTA */}
@@ -655,6 +774,14 @@ export const MantenimientoPage: React.FC = () => {
             style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
           >
             <i className="fa-solid fa-arrows-rotate"></i> Actualizar
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => setModalNuevaTarea(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', borderColor: '#dc2626', color: '#dc2626', fontWeight: 700 }}
+          >
+            <i className="fa-solid fa-bell"></i> Notificar Tarea al Mecánico
           </button>
           <button
             type="button"
@@ -720,6 +847,63 @@ export const MantenimientoPage: React.FC = () => {
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '2px solid #e2e8f0', paddingBottom: '2px', flexWrap: 'wrap' }}>
         <button
           type="button"
+          onClick={() => setActiveTab('tareas_mecanico')}
+          style={{
+            border: 'none',
+            borderBottom: activeTab === 'tareas_mecanico' ? '3px solid #dc2626' : 'none',
+            background: 'transparent',
+            fontWeight: 800,
+            fontSize: '13.5px',
+            color: activeTab === 'tareas_mecanico' ? '#dc2626' : '#64748b',
+            padding: '8px 16px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <i className="fa-solid fa-wrench" style={{ color: '#dc2626' }}></i>
+          Tareas del Mecánico ({tareasPendientesMecanico.length})
+          {tareasPendientesMecanico.length > 0 && (
+            <span
+              style={{
+                background: '#fef2f2',
+                color: '#dc2626',
+                border: '1px solid #fecaca',
+                padding: '1px 6px',
+                borderRadius: '10px',
+                fontSize: '10.5px',
+                fontWeight: 900,
+              }}
+            >
+              {tareasPendientesMecanico.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('tareas_completadas')}
+          style={{
+            border: 'none',
+            borderBottom: activeTab === 'tareas_completadas' ? '3px solid #059669' : 'none',
+            background: 'transparent',
+            fontWeight: 800,
+            fontSize: '13.5px',
+            color: activeTab === 'tareas_completadas' ? '#059669' : '#64748b',
+            padding: '8px 16px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <i className="fa-solid fa-circle-check" style={{ color: '#059669' }}></i>
+          Tareas Completadas ({tareasCompletadasMecanico.length})
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('mantenimientos')}
           style={{
             border: 'none',
@@ -735,43 +919,7 @@ export const MantenimientoPage: React.FC = () => {
             gap: '8px',
           }}
         >
-          <i className="fa-solid fa-clipboard-list"></i> Bitácora de Servicios y Reparaciones ({mantenimientos.length})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('incidentes')}
-          style={{
-            border: 'none',
-            borderBottom: activeTab === 'incidentes' ? '3px solid #0284c7' : 'none',
-            background: 'transparent',
-            fontWeight: 800,
-            fontSize: '13.5px',
-            color: activeTab === 'incidentes' ? '#0284c7' : '#64748b',
-            padding: '8px 16px',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}
-        >
-          <i className="fa-solid fa-list-check" style={{ color: '#0284c7' }}></i>
-          Tareas de Taller & Averías ({incidentes.length})
-          {incidentes.filter((i) => i.estado !== 'RESUELTO').length > 0 && (
-            <span
-              style={{
-                background: '#fef2f2',
-                color: '#dc2626',
-                border: '1px solid #fecaca',
-                padding: '1px 6px',
-                borderRadius: '10px',
-                fontSize: '10.5px',
-                fontWeight: 900,
-              }}
-            >
-              {incidentes.filter((i) => i.estado !== 'RESUELTO').length}
-            </span>
-          )}
+          <i className="fa-solid fa-clipboard-list"></i> Bitácora General ({mantenimientos.length})
         </button>
 
         <button
@@ -779,11 +927,11 @@ export const MantenimientoPage: React.FC = () => {
           onClick={() => setActiveTab('alertas')}
           style={{
             border: 'none',
-            borderBottom: activeTab === 'alertas' ? '3px solid #2563eb' : 'none',
+            borderBottom: activeTab === 'alertas' ? '3px solid #f59e0b' : 'none',
             background: 'transparent',
             fontWeight: 800,
             fontSize: '13.5px',
-            color: activeTab === 'alertas' ? '#2563eb' : '#64748b',
+            color: activeTab === 'alertas' ? '#d97706' : '#64748b',
             padding: '8px 16px',
             cursor: 'pointer',
             display: 'inline-flex',
@@ -791,11 +939,27 @@ export const MantenimientoPage: React.FC = () => {
             gap: '8px',
           }}
         >
-          <i className="fa-solid fa-triangle-exclamation" style={{ color: '#f59e0b' }}></i> Semáforo de Alertas Preventivas ({alertas.length})
+          <i className="fa-solid fa-triangle-exclamation" style={{ color: '#f59e0b' }}></i> Alertas Preventivas ({alertas.length})
         </button>
       </div>
 
-      {activeTab === 'mantenimientos' ? (
+      {activeTab === 'tareas_mecanico' ? (
+        <DataTable
+          data={tareasPendientesMecanico}
+          columns={columnsIncidentes}
+          isLoading={loadingIncidentes}
+          searchPlaceholder="Buscar tarea pendiente del mecánico por camión, chofer o avería..."
+          exportFileName="tareas_pendientes_mecanico"
+        />
+      ) : activeTab === 'tareas_completadas' ? (
+        <DataTable
+          data={tareasCompletadasMecanico}
+          columns={columnsCompletadas}
+          isLoading={loadingIncidentes}
+          searchPlaceholder="Buscar tarea completada por camión, mecánico o solución aplicada..."
+          exportFileName="historial_tareas_completadas_taller"
+        />
+      ) : activeTab === 'mantenimientos' ? (
         /* TABLA PRINCIPAL DE MANTENIMIENTOS */
         <DataTable
           data={mantenimientos}
@@ -844,15 +1008,6 @@ export const MantenimientoPage: React.FC = () => {
               </div>
             </div>
           }
-        />
-      ) : activeTab === 'incidentes' ? (
-        /* TABLA DE INCIDENTES Y TAREAS DE TALLER (DataTable - Regla Maestra 2) */
-        <DataTable
-          data={incidentes}
-          columns={columnsIncidentes}
-          isLoading={loadingIncidentes}
-          searchPlaceholder="Buscar avería por camión, chofer, título o descripción..."
-          exportFileName="tareas_taller_incidentes"
         />
       ) : (
         /* PANEL DE ALERTAS PREVENTIVAS POR CAMIÓN */
@@ -1179,6 +1334,109 @@ export const MantenimientoPage: React.FC = () => {
                 >
                   <i className="fa-solid fa-floppy-disk"></i>
                   {mutationGuardar.isPending ? 'Guardando...' : modoEdicionId ? 'Actualizar' : 'Guardar Mantenimiento'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL NOTIFICAR NUEVA TAREA / AVERÍA AL MECÁNICO (ADMIN -> TALLER) */}
+      {modalNuevaTarea && (
+        <div className="modal-backdrop" onClick={() => setModalNuevaTarea(false)}>
+          <div className="modal-content" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <i className="fa-solid fa-bell" style={{ color: '#dc2626', marginRight: '8px' }}></i>
+                Notificar Tarea / Avería al Mecánico
+              </h3>
+              <button type="button" className="btn-close" onClick={() => setModalNuevaTarea(false)}>
+                ×
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!formNuevaTarea.camionId || !formNuevaTarea.titulo.trim()) {
+                  toast.error('Selecciona un camión e ingresa el título de la tarea.');
+                  return;
+                }
+                mutationReportarTarea.mutate({
+                  camionId: Number(formNuevaTarea.camionId),
+                  titulo: formNuevaTarea.titulo.trim(),
+                  descripcion: formNuevaTarea.descripcion.trim() || formNuevaTarea.titulo.trim(),
+                  urgencia: formNuevaTarea.urgencia,
+                  odometroKm: formNuevaTarea.odometroKm ? Number(formNuevaTarea.odometroKm) : undefined,
+                });
+              }}
+            >
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label className="form-label">Camión / Unidad *</label>
+                  <SearchableSelect
+                    options={camionOptions}
+                    value={formNuevaTarea.camionId}
+                    onChange={(val) => setFormNuevaTarea((p) => ({ ...p, camionId: String(val || '') }))}
+                    placeholder="Buscar placa o chofer..."
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label className="form-label">Urgencia *</label>
+                    <SearchableSelect
+                      options={[
+                        { value: 'CRITICA', label: 'CRÍTICA (Urgente)' },
+                        { value: 'ALTA', label: 'ALTA' },
+                        { value: 'MEDIA', label: 'MEDIA' },
+                        { value: 'BAJA', label: 'BAJA' },
+                      ]}
+                      value={formNuevaTarea.urgencia}
+                      onChange={(val) => setFormNuevaTarea((p) => ({ ...p, urgencia: String(val || 'ALTA') }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Odómetro actual (Km)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={formNuevaTarea.odometroKm}
+                      onChange={(e) => setFormNuevaTarea((p) => ({ ...p, odometroKm: e.target.value }))}
+                      placeholder="Opcional"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label">Título de la Tarea / Avería *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={formNuevaTarea.titulo}
+                    onChange={(e) => setFormNuevaTarea((p) => ({ ...p, titulo: e.target.value }))}
+                    placeholder="Ej: Revisión de frenos delanteros / Fuga de gasoil"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Detalle / Instrucciones para el Mecánico</label>
+                  <textarea
+                    className="form-input"
+                    rows={3}
+                    value={formNuevaTarea.descripcion}
+                    onChange={(e) => setFormNuevaTarea((p) => ({ ...p, descripcion: e.target.value }))}
+                    placeholder="Describe el problema, prioridad o repuestos a revisar..."
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setModalNuevaTarea(false)}>
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ background: '#dc2626', borderColor: '#dc2626' }}
+                  disabled={mutationReportarTarea.isPending}
+                >
+                  {mutationReportarTarea.isPending ? 'Enviando...' : 'Enviar al Mecánico'}
                 </button>
               </div>
             </form>

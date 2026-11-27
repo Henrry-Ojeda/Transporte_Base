@@ -14,7 +14,7 @@ namespace Transporte.API.Controllers
     [Route("api/mantenimiento-camiones")]
     [Authorize]
     [RequireTenantModule("MOD_MANTENIMIENTO")]
-    [RequirePermission("HISTORIAL_CAMIONES_VER", "CAMIONES_VER")]
+    [RequirePermission("HISTORIAL_CAMIONES_VER", "CAMIONES_VER", "RUTAS_CAPTURAR", "RUTAS_VER")]
     public class MantenimientoCamionesController : ControllerBase
     {
         private readonly IMantenimientoCamionesRepository _repo;
@@ -32,6 +32,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpGet]
+        [RequirePermission("HISTORIAL_CAMIONES_VER", "CAMIONES_VER")]
         public async Task<IActionResult> ObtenerMantenimientos([FromQuery] int? camionId, [FromQuery] string? tipoEvento, [FromQuery] string? estado)
         {
             try
@@ -46,6 +47,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpGet("alertas")]
+        [RequirePermission("HISTORIAL_CAMIONES_VER", "CAMIONES_VER")]
         public async Task<IActionResult> ObtenerAlertas()
         {
             try
@@ -75,6 +77,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost]
+        [RequirePermission("HISTORIAL_CAMIONES_VER", "CAMIONES_VER")]
         public async Task<IActionResult> Crear([FromBody] CrearMantenimientoCamionDto dto)
         {
             if (dto == null || dto.CamionId <= 0 || string.IsNullOrWhiteSpace(dto.Titulo))
@@ -95,6 +98,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("{id}")]
+        [RequirePermission("HISTORIAL_CAMIONES_VER", "CAMIONES_VER")]
         public async Task<IActionResult> Actualizar(int id, [FromBody] CrearMantenimientoCamionDto dto)
         {
             if (dto == null || dto.CamionId <= 0 || string.IsNullOrWhiteSpace(dto.Titulo))
@@ -116,6 +120,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("{id}")]
+        [RequirePermission("HISTORIAL_CAMIONES_VER", "CAMIONES_VER")]
         public async Task<IActionResult> Eliminar(int id)
         {
             try
@@ -176,7 +181,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("incidentes/{id}/estado")]
-        [Authorize(Roles = "TALLER,ADMIN,SUPERADMIN,SUPER_ADMIN,ADMINISTRADOR,SUPERVISOR")]
+        [RequirePermission("HISTORIAL_CAMIONES_VER", "CAMIONES_VER")]
         public async Task<IActionResult> ActualizarEstadoIncidente([FromRoute] int id, [FromBody] ActualizarEstadoIncidenteDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Estado))

@@ -60,6 +60,45 @@ export interface GuardarUsuarioDto {
   camionId?: number;
 }
 
+export interface ModuloRbacDto {
+  id: number;
+  codigo: string;
+  nombre: string;
+  icono?: string;
+  orden: number;
+  activo: boolean;
+  totalPermisos?: number;
+}
+
+export interface PermisoRbacDto {
+  id: number;
+  moduloId: number;
+  moduloCodigo: string;
+  moduloNombre: string;
+  moduloIcono?: string;
+  codigo: string;
+  nombre: string;
+  accion: string;
+  descripcion?: string;
+  activo: boolean;
+  totalRolesAsignados?: number;
+}
+
+export interface MatrizRolDto {
+  rolId: number;
+  rolCodigo: string;
+  rolNombre: string;
+  rolDescripcion?: string;
+  permisosAsignadosIds: number[];
+}
+
+export interface MatrizSeguridadCompletaDto {
+  roles: RolDto[];
+  modulos: ModuloRbacDto[];
+  permisos: PermisoRbacDto[];
+  matrizPorRol: MatrizRolDto[];
+}
+
 export interface PermisoModuloDto {
   id?: number;
   rol: string;

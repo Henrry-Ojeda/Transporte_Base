@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Security;
 using Transporte.Core.DTOs;
 using Transporte.Infrastructure.Repositories;
 
@@ -64,6 +65,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("enviar")]
+        [RequirePermission("CONTROL_RUTAS_EDITAR", "RUTAS_EDITAR", "USUARIOS_VER")]
         public async Task<IActionResult> EnviarNotificacion([FromBody] CrearNotificacionMovilDto dto)
         {
             if (dto.UsuarioId <= 0 || string.IsNullOrWhiteSpace(dto.Titulo))
@@ -101,6 +103,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("probar-push-diferido")]
+        [RequirePermission("CONTROL_RUTAS_EDITAR", "RUTAS_EDITAR", "USUARIOS_VER")]
         public async Task<IActionResult> ProbarPushDiferido([FromQuery] int segundos = 5, [FromQuery] int? usuarioId = null)
         {
             var userId = GetCurrentUserId();

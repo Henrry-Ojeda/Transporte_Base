@@ -3,7 +3,7 @@ import { catalogosApi } from './catalogos.api';
 import type {
   UsuarioDto,
   GuardarUsuarioDto,
-  PermisoModuloDto,
+  MatrizSeguridadCompletaDto,
   RolDto,
 } from '@/types';
 
@@ -83,14 +83,25 @@ export const sistemaApi = {
     return res.data;
   },
 
-  // PERMISOS & ROLES RBAC
-  getMatrizPermisos: async (): Promise<PermisoModuloDto[]> => {
-    const res = await apiClient.get<PermisoModuloDto[]>('/permisos/matriz');
-    return Array.isArray(res.data) ? res.data : [];
+  // PERMISOS & ROLES RBAC (100% DINÁMICOS CONTRA TB_MODULOS / TB_PERMISOS / TB_ROL_PERMISOS)
+  getMatrizPermisos: async (): Promise<MatrizSeguridadCompletaDto> => {
+    const res = await apiClient.get<MatrizSeguridadCompletaDto>('/permisos/matriz');
+    const data = res.data;
+    return {
+      roles: Array.isArray(data?.roles) ? data.roles : [],
+      modulos: Array.isArray(data?.modulos) ? data.modulos : [],
+      permisos: Array.isArray(data?.permisos) ? data.permisos : [],
+      matrizPorRol: Array.isArray(data?.matrizPorRol) ? data.matrizPorRol : [],
+    };
   },
 
-  actualizarPermisoRol: async (rol: string, moduloCodigo: string, acciones: { puedeVer: boolean; puedeEditar: boolean; puedeAgregar: boolean; puedeEliminar: boolean }): Promise<{ success: boolean; message: string }> => {
-    const res = await apiClient.put('/permisos/rol-modulo', { rol, moduloCodigo, ...acciones });
+  toggleRolPermiso: async (rolId: number, permisoId: number, concedido: boolean): Promise<{ message: string }> => {
+    const res = await apiClient.post('/permisos/matriz/toggle', { rolId, permisoId, concedido });
+    return res.data;
+  },
+
+  guardarRolPermisos: async (rolId: number, permisosIds: number[]): Promise<{ message: string }> => {
+    const res = await apiClient.post('/permisos/matriz/guardar-rol', { rolId, permisosIds });
     return res.data;
   },
 

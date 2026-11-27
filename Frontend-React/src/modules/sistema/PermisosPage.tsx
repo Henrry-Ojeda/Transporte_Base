@@ -1,24 +1,40 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import { sistemaApi } from '@/api/sistema.api';
 import { useAuthStore } from '@/stores/authStore';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
-import type { PermisoModuloDto, RolDto, CrearRolDto } from '@/types';
+import type {
+  MatrizSeguridadCompletaDto,
+  PermisoRbacDto,
+  RolDto,
+  CrearRolDto,
+} from '@/types';
+
+const ACCIONES_ESTANDAR = {
+  VER: ['VER'],
+  CREAR: ['CREAR', 'AGREGAR'],
+  EDITAR: ['EDITAR'],
+  ELIMINAR: ['ELIMINAR'],
+};
+
+const esAccionEnGrupo = (accion: string, grupo: string[]) =>
+  grupo.includes(String(accion || '').trim().toUpperCase());
 
 export const PermisosPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const { isSuperAdmin, isAdmin, isAppHijo } = useAuthStore();
+  const { isSuperAdmin, isAdmin } = useAuthStore();
   const esSuperAdmin = isSuperAdmin();
   const esAdmin = isAdmin();
-  const esHijo = isAppHijo();
+  const puedeGestionarRoles = esAdmin || esSuperAdmin;
 
   // Pestaña activa: 'matriz' | 'roles' | 'metricas'
   const [tabActiva, setTabActiva] = useState<'matriz' | 'roles' | 'metricas'>('matriz');
 
-  // Rol activo para la matriz de permisos
-  const [rolActivo, setRolActivo] = useState<string>('OPERADOR');
+  // Rol activo seleccionado por ID (100% dinámico desde BD)
+  const [rolActivoId, setRolActivoId] = useState<number | null>(null);
+  const [busquedaModulo, setBusquedaModulo] = useState<string>('');
 
   // Estados modal Rol (Crear / Editar)
   const [modalRolAbierto, setModalRolAbierto] = useState(false);
@@ -30,14 +46,18 @@ export const PermisosPage: React.FC = () => {
     activo: true,
   });
 
-  // Query: Roles del sistema
+  // Query: Roles del sistema (TB_ROLES)
   const { data: roles = [], isLoading: cargandoRoles, refetch: refetchRoles } = useQuery<RolDto[]>({
     queryKey: ['roles-sistema'],
-    queryFn: () => sistemaApi.getRoles(),
+    queryFn: () => sistemaApi.getRoles(false),
   });
 
-  // Query: Matriz de permisos
-  const { data: permisos = [], isLoading: cargandoPermisos, refetch: refetchPermisos } = useQuery<PermisoModuloDto[]>({
+  // Query: Matriz completa RBAC (TB_ROLES + TB_MODULOS + TB_PERMISOS + TB_ROL_PERMISOS)
+  const {
+    data: matrizData,
+    isLoading: cargandoMatriz,
+    refetch: refetchPermisos,
+  } = useQuery<MatrizSeguridadCompletaDto>({
     queryKey: ['permisos-matriz'],
     queryFn: () => sistemaApi.getMatrizPermisos(),
   });
@@ -48,6 +68,91 @@ export const PermisosPage: React.FC = () => {
     queryFn: () => sistemaApi.getWidgetsDashboard(false),
     enabled: esAdmin,
   });
+
+  // Roles visibles (solo un SUPERADMIN real ve el rol SUPERADMIN; para ADMIN queda oculto)
+  const rolesDisponibles = useMemo(() => {
+    const base = roles.length > 0 ? roles : matrizData?.roles || [];
+    if (!esSuperAdmin) {
+      return base.filter((r) => {
+        const cod = String(r.codigo || '').toUpperCase();
+        return cod !== 'SUPERADMIN' && cod !== 'SUPER_ADMIN';
+      });
+    }
+    return base;
+  }, [roles, matrizData?.roles, esSuperAdmin]);
+
+  // Auto-seleccionar un rol editable cuando cargan los roles
+  useEffect(() => {
+    if (rolesDisponibles.length === 0) return;
+    const existeActual = rolesDisponibles.some((r) => r.id === rolActivoId);
+    if (!existeActual) {
+      const primerEditable = rolesDisponibles.find(
+        (r) => !['ADMIN', 'SUPERADMIN', 'SUPER_ADMIN'].includes(String(r.codigo || '').toUpperCase())
+      );
+      setRolActivoId((primerEditable || rolesDisponibles[0]).id);
+    }
+  }, [rolesDisponibles, rolActivoId]);
+
+  const rolSeleccionado = useMemo(
+    () => rolesDisponibles.find((r) => r.id === rolActivoId) || null,
+    [rolesDisponibles, rolActivoId]
+  );
+
+  const esRolPrivilegiado = useMemo(() => {
+    const cod = String(rolSeleccionado?.codigo || '').toUpperCase();
+    return cod === 'ADMIN' || cod === 'SUPERADMIN' || cod === 'SUPER_ADMIN';
+  }, [rolSeleccionado]);
+
+  // Set de IDs de permisos concedidos al rol seleccionado
+  const permisosConcedidosSet = useMemo(() => {
+    if (!rolSeleccionado || !matrizData?.matrizPorRol) return new Set<number>();
+    const entrada = matrizData.matrizPorRol.find((m) => m.rolId === rolSeleccionado.id);
+    return new Set<number>(entrada?.permisosAsignadosIds || []);
+  }, [rolSeleccionado, matrizData?.matrizPorRol]);
+
+  // Agrupar permisos por módulo (100% desde TB_MODULOS y TB_PERMISOS)
+  const modulosConPermisos = useMemo(() => {
+    const modulos = matrizData?.modulos || [];
+    const permisos = matrizData?.permisos || [];
+    const termino = busquedaModulo.trim().toLowerCase();
+
+    return modulos
+      .map((mod) => {
+        const permsMod = permisos.filter((p) => p.moduloId === mod.id);
+        const permVer = permsMod.find((p) => esAccionEnGrupo(p.accion, ACCIONES_ESTANDAR.VER));
+        const permCrear = permsMod.find((p) => esAccionEnGrupo(p.accion, ACCIONES_ESTANDAR.CREAR));
+        const permEditar = permsMod.find((p) => esAccionEnGrupo(p.accion, ACCIONES_ESTANDAR.EDITAR));
+        const permEliminar = permsMod.find((p) => esAccionEnGrupo(p.accion, ACCIONES_ESTANDAR.ELIMINAR));
+        const usadosIds = new Set(
+          [permVer?.id, permCrear?.id, permEditar?.id, permEliminar?.id].filter(Boolean) as number[]
+        );
+        const otrasAcciones = permsMod.filter((p) => !usadosIds.has(p.id));
+
+        return {
+          modulo: mod,
+          todosPermisos: permsMod,
+          permVer,
+          permCrear,
+          permEditar,
+          permEliminar,
+          otrasAcciones,
+        };
+      })
+      .filter((item) => {
+        if (item.todosPermisos.length === 0) return false;
+        if (!termino) return true;
+        return (
+          item.modulo.nombre.toLowerCase().includes(termino) ||
+          item.modulo.codigo.toLowerCase().includes(termino) ||
+          item.todosPermisos.some(
+            (p) =>
+              p.nombre.toLowerCase().includes(termino) ||
+              p.codigo.toLowerCase().includes(termino) ||
+              p.accion.toLowerCase().includes(termino)
+          )
+        );
+      });
+  }, [matrizData?.modulos, matrizData?.permisos, busquedaModulo]);
 
   const toggleWidgetMutation = useMutation({
     mutationFn: ({ id, activo }: { id: number; activo: boolean }) =>
@@ -62,25 +167,74 @@ export const PermisosPage: React.FC = () => {
     },
   });
 
-  // Mutación: Actualizar un permiso específico en la matriz
+  // Mutación: Toggle de un permiso atómico real (POST /api/permisos/matriz/toggle) con actualización optimista
   const toggleMutation = useMutation({
     mutationFn: ({
-      rol,
-      modulo,
-      acciones,
+      rolId,
+      permisoId,
+      concedido,
     }: {
-      rol: string;
-      modulo: string;
-      acciones: { puedeVer: boolean; puedeEditar: boolean; puedeAgregar: boolean; puedeEliminar: boolean };
-    }) => sistemaApi.actualizarPermisoRol(rol, modulo, acciones),
-    onSuccess: () => {
-      toast.success('Permiso actualizado correctamente');
+      rolId: number;
+      permisoId: number;
+      concedido: boolean;
+    }) => sistemaApi.toggleRolPermiso(rolId, permisoId, concedido),
+    onMutate: async ({ rolId, permisoId, concedido }) => {
+      await queryClient.cancelQueries({ queryKey: ['permisos-matriz'] });
+      const prev = queryClient.getQueryData<MatrizSeguridadCompletaDto>(['permisos-matriz']);
+      if (prev) {
+        const nextMatriz = prev.matrizPorRol.map((m) => {
+          if (m.rolId !== rolId) return m;
+          const set = new Set(m.permisosAsignadosIds);
+          if (concedido) set.add(permisoId);
+          else set.delete(permisoId);
+          return { ...m, permisosAsignadosIds: Array.from(set) };
+        });
+        queryClient.setQueryData<MatrizSeguridadCompletaDto>(['permisos-matriz'], {
+          ...prev,
+          matrizPorRol: nextMatriz,
+        });
+      }
+      return { prev };
+    },
+    onSuccess: (res) => {
+      toast.success(res?.message || 'Permiso actualizado correctamente');
+    },
+    onError: (err: any, _vars, ctx) => {
+      if (ctx?.prev) {
+        queryClient.setQueryData(['permisos-matriz'], ctx.prev);
+      }
+      toast.error(err.response?.data?.message || 'Error al actualizar permiso');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['permisos-matriz'] });
+    },
+  });
+
+  // Mutación: Guardar bloque de permisos para un rol (ej. Todo/Nada por módulo)
+  const guardarBloqueMutation = useMutation({
+    mutationFn: ({ rolId, permisosIds }: { rolId: number; permisosIds: number[] }) =>
+      sistemaApi.guardarRolPermisos(rolId, permisosIds),
+    onSuccess: (res) => {
+      toast.success(res?.message || 'Permisos del módulo actualizados');
       queryClient.invalidateQueries({ queryKey: ['permisos-matriz'] });
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message || 'Error al actualizar permiso');
+      toast.error(err.response?.data?.message || 'Error al actualizar permisos del módulo');
     },
   });
+
+  const handleToggleModuloCompleto = (permisosDelModulo: PermisoRbacDto[], activarTodos: boolean) => {
+    if (!rolSeleccionado || esRolPrivilegiado) return;
+    const nextSet = new Set<number>(permisosConcedidosSet);
+    permisosDelModulo.forEach((p) => {
+      if (activarTodos) nextSet.add(p.id);
+      else nextSet.delete(p.id);
+    });
+    guardarBloqueMutation.mutate({
+      rolId: rolSeleccionado.id,
+      permisosIds: Array.from(nextSet),
+    });
+  };
 
   // Mutación: Guardar Rol (Crear / Editar)
   const guardarRolMutation = useMutation({
@@ -93,6 +247,7 @@ export const PermisosPage: React.FC = () => {
     onSuccess: () => {
       toast.success(rolEditarId ? 'Rol actualizado exitosamente' : 'Nuevo rol registrado exitosamente');
       queryClient.invalidateQueries({ queryKey: ['roles-sistema'] });
+      queryClient.invalidateQueries({ queryKey: ['permisos-matriz'] });
       cerrarModalRol();
     },
     onError: (err: any) => {
@@ -106,6 +261,7 @@ export const PermisosPage: React.FC = () => {
     onSuccess: () => {
       toast.success('Rol eliminado exitosamente');
       queryClient.invalidateQueries({ queryKey: ['roles-sistema'] });
+      queryClient.invalidateQueries({ queryKey: ['permisos-matriz'] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.message || 'Error al eliminar rol');
@@ -141,7 +297,7 @@ export const PermisosPage: React.FC = () => {
   };
 
   const handleEliminarRol = (rol: RolDto) => {
-    const rolesCore = ['ADMIN', 'SUPERADMIN', 'CHOFER', 'TALLER'];
+    const rolesCore = ['ADMIN', 'SUPERADMIN', 'SUPER_ADMIN', 'CHOFER'];
     if (rolesCore.includes(rol.codigo.toUpperCase())) {
       Swal.fire({
         icon: 'warning',
@@ -162,7 +318,7 @@ export const PermisosPage: React.FC = () => {
 
     Swal.fire({
       title: `¿Eliminar rol ${rol.nombre}?`,
-      text: 'Esta acción no se puede deshacer.',
+      text: 'Esta acción eliminará también sus permisos asignados y no se puede deshacer.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#ef4444',
@@ -188,27 +344,42 @@ export const PermisosPage: React.FC = () => {
     });
   };
 
-  // Módulos estándar para la matriz
-  const modulosEstandar = [
-    { codigo: 'DASHBOARD', nombre: 'Dashboard Principal', icono: 'fa-chart-pie' },
-    { codigo: 'RUTAS', nombre: 'Recolección en Ruta & Tickets', icono: 'fa-truck' },
-    { codigo: 'RECEPTORIA', nombre: 'Entregas & Receptoría', icono: 'fa-building-wheat' },
-    { codigo: 'BALANCE', nombre: 'Balance Volumétrico & Merma', icono: 'fa-scale-balanced' },
-    { codigo: 'FINCAS', nombre: 'Catálogo de Fincas', icono: 'fa-cow' },
-    { codigo: 'PROPIETARIOS', nombre: 'Catálogo de Propietarios', icono: 'fa-user-tie' },
-    { codigo: 'COMPANIAS', nombre: 'Compañías & Queseras', icono: 'fa-industry' },
-    { codigo: 'CAMIONES', nombre: 'Flota de Camiones', icono: 'fa-truck-front' },
-    { codigo: 'CONDUCTORES', nombre: 'Conductores & Choferes', icono: 'fa-id-card' },
-    { codigo: 'COMBUSTIBLE', nombre: 'Gestión de Combustible', icono: 'fa-gas-pump' },
-    { codigo: 'MANTENIMIENTO', nombre: 'Mantenimiento & Taller', icono: 'fa-wrench' },
-    { codigo: 'REPUESTOS', nombre: 'Inventario de Repuestos', icono: 'fa-gears' },
-    { codigo: 'LIQUIDACION', nombre: 'Liquidación & Semanas', icono: 'fa-file-invoice-dollar' },
-    { codigo: 'ADELANTOS', nombre: 'Adelantos & Amortizaciones', icono: 'fa-hand-holding-dollar' },
-    { codigo: 'PAGOS', nombre: 'Nómina & Pagos Personal', icono: 'fa-money-check-dollar' },
-    { codigo: 'REPORTES', nombre: 'Reportes Ejecutivos', icono: 'fa-chart-line' },
-    { codigo: 'DATA', nombre: 'Gestión de Data Masiva', icono: 'fa-database' },
-    { codigo: 'USUARIOS', nombre: 'Usuarios & Seguridad', icono: 'fa-shield-halved' },
-  ];
+  // Helper para renderizar checkbox de una acción estándar
+  const renderCheckboxAccion = (permiso?: PermisoRbacDto) => {
+    if (!permiso) {
+      return (
+        <span style={{ color: '#cbd5e1', fontSize: '13px', fontWeight: 700 }} title="Acción no definida para este módulo">
+          —
+        </span>
+      );
+    }
+
+    const checked = esRolPrivilegiado || permisosConcedidosSet.has(permiso.id);
+    const disabled = esRolPrivilegiado || !rolSeleccionado;
+
+    return (
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        title={`${permiso.nombre} (${permiso.codigo})`}
+        onChange={(e) => {
+          if (!rolSeleccionado) return;
+          toggleMutation.mutate({
+            rolId: rolSeleccionado.id,
+            permisoId: permiso.id,
+            concedido: e.target.checked,
+          });
+        }}
+        style={{
+          width: '18px',
+          height: '18px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          accentColor: '#2563eb',
+        }}
+      />
+    );
+  };
 
   // Columnas de la tabla de Roles (DataTable - Regla Maestra 2)
   const columnsRoles: ColumnDef<RolDto>[] = [
@@ -245,10 +416,6 @@ export const PermisosPage: React.FC = () => {
                 ? 'fa-crown text-amber-500'
                 : row.codigo === 'ADMIN'
                 ? 'fa-user-shield text-blue-600'
-                : row.codigo === 'TALLER'
-                ? 'fa-wrench text-orange-500'
-                : row.codigo === 'CHOFER'
-                ? 'fa-truck text-emerald-600'
                 : 'fa-user-gear text-slate-500'
             }`}
           ></i>
@@ -319,9 +486,31 @@ export const PermisosPage: React.FC = () => {
     {
       header: 'ACCIONES',
       cell: (row) => {
-        const esCore = ['SUPERADMIN', 'ADMIN'].includes(row.codigo.toUpperCase());
+        const esCore = ['SUPERADMIN', 'SUPER_ADMIN', 'ADMIN', 'CHOFER'].includes(row.codigo.toUpperCase());
         return (
           <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setRolActivoId(row.id);
+                setTabActiva('matriz');
+              }}
+              className="btn btn-outline"
+              title="Configurar permisos de este rol"
+              style={{
+                padding: '4px 10px',
+                height: '30px',
+                fontSize: '12px',
+                fontWeight: 700,
+                color: '#0284c7',
+                borderColor: '#bae6fd',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+              }}
+            >
+              <i className="fa-solid fa-key"></i> Permisos
+            </button>
             <button
               type="button"
               onClick={() => abrirModalEditarRol(row)}
@@ -362,10 +551,6 @@ export const PermisosPage: React.FC = () => {
     },
   ];
 
-  // Lista de roles filtrados (en app hijos nunca se expone SUPERADMIN)
-  const rolesDisponibles = esHijo ? roles.filter((r) => r.codigo !== 'SUPERADMIN') : roles;
-  const listaRolesPills = rolesDisponibles.length > 0 ? rolesDisponibles.map((r) => r.codigo.toUpperCase()) : ['ADMIN', 'OPERADOR', 'CHOFER', 'TALLER'];
-
   return (
     <div style={{ paddingBottom: '40px' }}>
       {/* VISTA HEADER 1:1 */}
@@ -376,12 +561,12 @@ export const PermisosPage: React.FC = () => {
             Seguridad, Permisos & Perfiles
           </h1>
           <p className="view-subtitle">
-            Control de accesos por rol y administración de perfiles de usuario del sistema
+            Control dinámico de roles y matriz de permisos por módulo desde base de datos
           </p>
         </div>
 
         <div className="view-actions" style={{ display: 'flex', gap: '10px' }}>
-          {tabActiva === 'roles' && esSuperAdmin && (
+          {puedeGestionarRoles && (
             <button
               type="button"
               className="btn btn-primary"
@@ -415,8 +600,8 @@ export const PermisosPage: React.FC = () => {
         </div>
       </div>
 
-      {/* PESTAÑAS PRINCIPALES: MATRIZ vs GESTIÓN DE ROLES */}
-      <div style={{ display: 'flex', gap: '12px', borderBottom: '1.5px solid #e2e8f0', marginBottom: '20px' }}>
+      {/* PESTAÑAS PRINCIPALES: MATRIZ vs GESTIÓN DE ROLES vs MÉTRICAS */}
+      <div style={{ display: 'flex', gap: '12px', borderBottom: '1.5px solid #e2e8f0', marginBottom: '20px', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={() => setTabActiva('matriz')}
@@ -438,7 +623,7 @@ export const PermisosPage: React.FC = () => {
           <i className="fa-solid fa-table-cells"></i> Matriz de Permisos
         </button>
 
-        {esSuperAdmin && (
+        {puedeGestionarRoles && (
           <button
             type="button"
             onClick={() => setTabActiva('roles')}
@@ -457,19 +642,18 @@ export const PermisosPage: React.FC = () => {
               transition: 'all 0.2s',
             }}
           >
-            <i className="fa-solid fa-users-gear text-amber-500"></i> Gestión de Roles
+            <i className="fa-solid fa-users-gear text-blue-600"></i> Gestión de Roles
             <span
               style={{
-                fontSize: '10px',
-                fontWeight: 900,
-                color: '#b45309',
-                background: '#fef3c7',
-                padding: '2px 6px',
-                borderRadius: '6px',
-                border: '1px solid #fde68a',
+                fontSize: '11px',
+                fontWeight: 800,
+                color: '#1e40af',
+                background: '#dbeafe',
+                padding: '1px 7px',
+                borderRadius: '999px',
               }}
             >
-              SUPERADMIN
+              {rolesDisponibles.length}
             </span>
           </button>
         )}
@@ -501,174 +685,240 @@ export const PermisosPage: React.FC = () => {
       {/* CONTENIDO 1: MATRIZ DE PERMISOS */}
       {tabActiva === 'matriz' && (
         <>
-          {/* SELECTOR DE ROL (PILLS DINÁMICOS) */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-            {listaRolesPills.map((rol) => (
-              <button
-                key={rol}
-                type="button"
-                onClick={() => setRolActivo(rol)}
+          {/* SELECTOR DE ROL (PILLS 100% DINÁMICOS DESDE TB_ROLES) */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {rolesDisponibles.map((rol) => {
+                const activo = rolSeleccionado?.id === rol.id;
+                const cod = String(rol.codigo || '').toUpperCase();
+                return (
+                  <button
+                    key={rol.id}
+                    type="button"
+                    onClick={() => setRolActivoId(rol.id)}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '20px',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      border: activo ? 'none' : '1.5px solid #cbd5e1',
+                      background: activo ? 'linear-gradient(135deg, #0284c7, #2563eb)' : '#ffffff',
+                      color: activo ? '#ffffff' : '#475569',
+                      boxShadow: activo ? '0 4px 12px rgba(37,99,235,0.3)' : 'none',
+                      transition: 'all 0.2s',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <i
+                      className={`fa-solid ${
+                        cod === 'SUPERADMIN'
+                          ? 'fa-crown'
+                          : cod === 'ADMIN'
+                          ? 'fa-user-shield'
+                          : 'fa-user-gear'
+                      }`}
+                    ></i>
+                    {rol.nombre || rol.codigo}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ position: 'relative', minWidth: '240px' }}>
+              <i
+                className="fa-solid fa-magnifying-glass"
                 style={{
-                  padding: '8px 18px',
-                  borderRadius: '20px',
-                  fontWeight: 800,
-                  fontSize: '12.5px',
-                  cursor: 'pointer',
-                  border: rolActivo === rol ? 'none' : '1.5px solid #cbd5e1',
-                  background: rolActivo === rol ? 'linear-gradient(135deg, #0284c7, #2563eb)' : '#ffffff',
-                  color: rolActivo === rol ? '#ffffff' : '#475569',
-                  boxShadow: rolActivo === rol ? '0 4px 12px rgba(37,99,235,0.3)' : 'none',
-                  transition: 'all 0.2s',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
+                  position: 'absolute',
+                  left: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#94a3b8',
+                  fontSize: '13px',
                 }}
-              >
-                <i
-                  className={`fa-solid ${
-                    rol === 'SUPERADMIN'
-                      ? 'fa-crown'
-                      : rol === 'ADMIN'
-                      ? 'fa-user-shield'
-                      : rol === 'TALLER'
-                      ? 'fa-wrench'
-                      : rol === 'CHOFER'
-                      ? 'fa-truck'
-                      : 'fa-user-gear'
-                  }`}
-                ></i>
-                Rol: {rol}
-              </button>
-            ))}
+              ></i>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Filtrar módulo o permiso..."
+                value={busquedaModulo}
+                onChange={(e) => setBusquedaModulo(e.target.value)}
+                style={{ width: '100%', height: '38px', paddingLeft: '34px', fontSize: '13px' }}
+              />
+            </div>
           </div>
 
-          {/* TABLA MATRIZ */}
-          <div className="content-card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="modern-table">
-                <thead>
-                  <tr>
-                    <th>Módulo del Sistema</th>
-                    <th style={{ textAlign: 'center', width: '130px' }}>Puede Ver</th>
-                    <th style={{ textAlign: 'center', width: '130px' }}>Puede Crear</th>
-                    <th style={{ textAlign: 'center', width: '130px' }}>Puede Editar</th>
-                    <th style={{ textAlign: 'center', width: '130px' }}>Puede Eliminar</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {modulosEstandar.map((m) => {
-                    const perm = permisos.find((p) => p.rol === rolActivo && p.moduloCodigo === m.codigo) || {
-                      puedeVer: rolActivo === 'ADMIN' || rolActivo === 'SUPERADMIN' || rolActivo === 'OPERADOR',
-                      puedeAgregar: rolActivo === 'ADMIN' || rolActivo === 'SUPERADMIN' || (rolActivo === 'OPERADOR' && m.codigo !== 'USUARIOS'),
-                      puedeEditar: rolActivo === 'ADMIN' || rolActivo === 'SUPERADMIN',
-                      puedeEliminar: rolActivo === 'ADMIN' || rolActivo === 'SUPERADMIN',
-                    };
-
-                    const disabled = rolActivo === 'ADMIN' || rolActivo === 'SUPERADMIN';
-
-                    return (
-                      <tr key={m.codigo}>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div
-                              style={{
-                                width: '32px',
-                                height: '32px',
-                                borderRadius: '8px',
-                                background: '#eff6ff',
-                                color: '#2563eb',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '13px',
-                              }}
-                            >
-                              <i className={`fa-solid ${m.icono}`}></i>
-                            </div>
-                            <div>
-                              <div style={{ fontWeight: 800, color: '#0f172a' }}>{m.nombre}</div>
-                              <div style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>
-                                COD: {m.codigo}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td style={{ textAlign: 'center' }}>
-                          <input
-                            type="checkbox"
-                            checked={perm.puedeVer}
-                            disabled={disabled}
-                            onChange={(e) =>
-                              toggleMutation.mutate({
-                                rol: rolActivo,
-                                modulo: m.codigo,
-                                acciones: { ...perm, puedeVer: e.target.checked },
-                              })
-                            }
-                            style={{ width: '18px', height: '18px', cursor: disabled ? 'not-allowed' : 'pointer' }}
-                          />
-                        </td>
-
-                        <td style={{ textAlign: 'center' }}>
-                          <input
-                            type="checkbox"
-                            checked={perm.puedeAgregar}
-                            disabled={disabled}
-                            onChange={(e) =>
-                              toggleMutation.mutate({
-                                rol: rolActivo,
-                                modulo: m.codigo,
-                                acciones: { ...perm, puedeAgregar: e.target.checked },
-                              })
-                            }
-                            style={{ width: '18px', height: '18px', cursor: disabled ? 'not-allowed' : 'pointer' }}
-                          />
-                        </td>
-
-                        <td style={{ textAlign: 'center' }}>
-                          <input
-                            type="checkbox"
-                            checked={perm.puedeEditar}
-                            disabled={disabled}
-                            onChange={(e) =>
-                              toggleMutation.mutate({
-                                rol: rolActivo,
-                                modulo: m.codigo,
-                                acciones: { ...perm, puedeEditar: e.target.checked },
-                              })
-                            }
-                            style={{ width: '18px', height: '18px', cursor: disabled ? 'not-allowed' : 'pointer' }}
-                          />
-                        </td>
-
-                        <td style={{ textAlign: 'center' }}>
-                          <input
-                            type="checkbox"
-                            checked={perm.puedeEliminar}
-                            disabled={disabled}
-                            onChange={(e) =>
-                              toggleMutation.mutate({
-                                rol: rolActivo,
-                                modulo: m.codigo,
-                                acciones: { ...perm, puedeEliminar: e.target.checked },
-                              })
-                            }
-                            style={{ width: '18px', height: '18px', cursor: disabled ? 'not-allowed' : 'pointer' }}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {esRolPrivilegiado && rolSeleccionado && (
+            <div
+              style={{
+                marginBottom: '16px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                color: '#1e40af',
+                fontSize: '13px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+              }}
+            >
+              <i className="fa-solid fa-circle-info"></i>
+              <span>
+                El rol <strong>{rolSeleccionado.nombre} ({rolSeleccionado.codigo})</strong> tiene acceso administrativo completo por defecto. Seleccione otro rol para personalizar permisos.
+              </span>
             </div>
+          )}
+
+          {/* TABLA MATRIZ DINÁMICA */}
+          <div className="content-card" style={{ padding: 0, overflow: 'hidden' }}>
+            {cargandoMatriz || cargandoRoles ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                <i className="fa-solid fa-spinner fa-spin mr-2"></i> Cargando matriz de seguridad desde base de datos...
+              </div>
+            ) : modulosConPermisos.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                No se encontraron módulos o permisos coincidentes.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="modern-table">
+                  <thead>
+                    <tr>
+                      <th>Módulo del Sistema</th>
+                      <th style={{ textAlign: 'center', width: '95px' }}>Puede Ver</th>
+                      <th style={{ textAlign: 'center', width: '105px' }}>Puede Crear</th>
+                      <th style={{ textAlign: 'center', width: '105px' }}>Puede Editar</th>
+                      <th style={{ textAlign: 'center', width: '115px' }}>Puede Eliminar</th>
+                      <th style={{ minWidth: '210px' }}>Otras Acciones</th>
+                      <th style={{ textAlign: 'center', width: '110px' }}>Módulo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modulosConPermisos.map(
+                      ({ modulo, todosPermisos, permVer, permCrear, permEditar, permEliminar, otrasAcciones }) => {
+                        const todosMarcados =
+                          esRolPrivilegiado ||
+                          (todosPermisos.length > 0 && todosPermisos.every((p) => permisosConcedidosSet.has(p.id)));
+
+                        return (
+                          <tr key={modulo.id}>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div
+                                  style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    borderRadius: '8px',
+                                    background: '#eff6ff',
+                                    color: '#2563eb',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '13px',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <i className={`fa-solid ${modulo.icono || 'fa-cube'}`}></i>
+                                </div>
+                                <div>
+                                  <div style={{ fontWeight: 800, color: '#0f172a' }}>{modulo.nombre}</div>
+                                  <div style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>
+                                    COD: {modulo.codigo}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td style={{ textAlign: 'center' }}>{renderCheckboxAccion(permVer)}</td>
+                            <td style={{ textAlign: 'center' }}>{renderCheckboxAccion(permCrear)}</td>
+                            <td style={{ textAlign: 'center' }}>{renderCheckboxAccion(permEditar)}</td>
+                            <td style={{ textAlign: 'center' }}>{renderCheckboxAccion(permEliminar)}</td>
+
+                            <td>
+                              {otrasAcciones.length === 0 ? (
+                                <span style={{ color: '#cbd5e1', fontSize: '12px' }}>—</span>
+                              ) : (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                  {otrasAcciones.map((p) => {
+                                    const activo = esRolPrivilegiado || permisosConcedidosSet.has(p.id);
+                                    return (
+                                      <label
+                                        key={p.id}
+                                        title={`${p.nombre} (${p.codigo})`}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '5px',
+                                          padding: '3px 8px',
+                                          borderRadius: '8px',
+                                          fontSize: '11.5px',
+                                          fontWeight: 700,
+                                          cursor: esRolPrivilegiado ? 'not-allowed' : 'pointer',
+                                          background: activo ? '#dbeafe' : '#f1f5f9',
+                                          color: activo ? '#1d4ed8' : '#475569',
+                                          border: activo ? '1px solid #93c5fd' : '1px solid #e2e8f0',
+                                        }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={activo}
+                                          disabled={esRolPrivilegiado || !rolSeleccionado}
+                                          onChange={(e) => {
+                                            if (!rolSeleccionado) return;
+                                            toggleMutation.mutate({
+                                              rolId: rolSeleccionado.id,
+                                              permisoId: p.id,
+                                              concedido: e.target.checked,
+                                            });
+                                          }}
+                                          style={{ width: '13px', height: '13px', accentColor: '#2563eb' }}
+                                        />
+                                        <span>{p.nombre || p.accion}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </td>
+
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                disabled={esRolPrivilegiado || guardarBloqueMutation.isPending}
+                                onClick={() => handleToggleModuloCompleto(todosPermisos, !todosMarcados)}
+                                className="btn btn-outline"
+                                style={{
+                                  padding: '3px 9px',
+                                  height: '28px',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  color: todosMarcados ? '#dc2626' : '#059669',
+                                  borderColor: todosMarcados ? '#fecaca' : '#a7f3d0',
+                                  opacity: esRolPrivilegiado ? 0.45 : 1,
+                                  cursor: esRolPrivilegiado ? 'not-allowed' : 'pointer',
+                                }}
+                              >
+                                {todosMarcados ? 'Quitar todo' : 'Marcar todo'}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </>
       )}
 
       {/* CONTENIDO 2: GESTIÓN DE ROLES CRUD (DataTable - Regla Maestra 2) */}
-      {tabActiva === 'roles' && esSuperAdmin && (
+      {tabActiva === 'roles' && puedeGestionarRoles && (
         <div>
           <DataTable
             data={rolesDisponibles}
@@ -801,7 +1051,7 @@ export const PermisosPage: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL CREAR / EDITAR ROL (SOLO SUPERADMIN) */}
+      {/* MODAL CREAR / EDITAR ROL */}
       {modalRolAbierto && (
         <div
           style={{
@@ -858,7 +1108,7 @@ export const PermisosPage: React.FC = () => {
                     {rolEditarId ? 'Editar Perfil / Rol' : 'Crear Nuevo Rol'}
                   </h3>
                   <p style={{ margin: 0, fontSize: '11.5px', color: '#64748b' }}>
-                    Gestión de roles y permisos globales
+                    Gestión dinámica de roles y perfiles de acceso
                   </p>
                 </div>
               </div>
@@ -888,9 +1138,9 @@ export const PermisosPage: React.FC = () => {
                 <input
                   type="text"
                   value={formRol.codigo}
-                  disabled={Boolean(rolEditarId)} // Código inmutable tras creación para integridad
+                  disabled={Boolean(rolEditarId)}
                   onChange={(e) => setFormRol({ ...formRol, codigo: e.target.value.toUpperCase().replace(/\s+/g, '_') })}
-                  placeholder="Ej: AUDITOR, TALLER, SUPERVISOR_ZONA"
+                  placeholder="Ej: MECANICO, AUDITOR, SUPERVISOR_ZONA"
                   className="form-input"
                   style={{
                     width: '100%',

@@ -85,6 +85,19 @@ namespace Transporte.API.Controllers
                 else
                 {
                     passwordValida = (!string.IsNullOrEmpty(dto.Password) && dto.Password == user.PasswordHash);
+                    if (passwordValida)
+                    {
+                        // Auto-upgrade silencioso de contraseña legacy en texto plano a BCrypt
+                        try
+                        {
+                            var upgradedHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+                            using var upgradeDb = new SqlConnection(_tenantService.GetConnectionString());
+                            await upgradeDb.ExecuteAsync(
+                                "UPDATE TB_USUARIOS SET PasswordHash = @hash WHERE Id = @id",
+                                new { hash = upgradedHash, id = user.Id });
+                        }
+                        catch { /* no bloquear login si falla actualización */ }
+                    }
                 }
             }
             catch
@@ -350,6 +363,57 @@ namespace Transporte.API.Controllers
                 modulosTenant = mods.ToList();
             }
 
+            bool permisoCrear = false;
+            bool usuarioActivo = true;
+            string? logoUrl = null;
+            List<string> permisosDb = new();
+            if (!string.IsNullOrWhiteSpace(tenantConnStr))
+            {
+                using var tenantDb = new Microsoft.Data.SqlClient.SqlConnection(tenantConnStr);
+                var uEstado = await tenantDb.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT Activo, PermisoCrearViaje FROM TB_USUARIOS WHERE Id = @usuarioId",
+                    new { usuarioId });
+                usuarioActivo = uEstado != null && (bool)(uEstado.Activo ?? false);
+                permisoCrear = uEstado != null && (bool)(uEstado.PermisoCrearViaje ?? false);
+                logoUrl = await tenantDb.QueryFirstOrDefaultAsync<string?>(
+                    "SELECT TOP 1 LogoUrl FROM TB_EMPRESA_CONFIG");
+
+                // Leer permisos 100% dinámicos desde TB_ROL_PERMISOS / TB_PERMISOS del tenant (Cero Hardcodeo)
+                try
+                {
+                    var pRows = await tenantDb.QueryAsync<string>(@"
+                        SELECT DISTINCT p.Codigo
+                        FROM TB_USUARIOS u
+                        INNER JOIN TB_ROL_PERMISOS rp
+                            ON (u.RolId = rp.RolId OR (u.RolId IS NULL AND rp.RolId = (SELECT TOP 1 Id FROM TB_ROLES WHERE Codigo = u.Rol)))
+                        INNER JOIN TB_PERMISOS p ON rp.PermisoId = p.Id
+                        WHERE u.Id = @usuarioId AND rp.Concedido = 1 AND p.Activo = 1",
+                        new { usuarioId });
+                    permisosDb = pRows.ToList();
+                }
+                catch { /* fallback tolerante si el tenant aún no tiene TB_ROL_PERMISOS */ }
+            }
+            else
+            {
+                var usuarioDb = await _usuariosRepository.ObtenerUsuarioPorIdAsync(usuarioId);
+                usuarioActivo = usuarioDb != null && usuarioDb.Activo;
+                permisoCrear = usuarioDb?.PermisoCrearViaje ?? false;
+                var empresaCfg = await _catalogosRepository.ObtenerEmpresaConfigAsync();
+                logoUrl = empresaCfg?.LogoUrl;
+                permisosDb = (await _authRepository.ObtenerPermisosUsuarioAsync(usuarioId)).ToList();
+            }
+
+            if (!usuarioActivo)
+            {
+                return StatusCode(403, new { message = "No tienes permisos para acceder. Tu usuario está inactivo.", usuarioInactivo = true });
+            }
+
+            var permisos = permisosDb.Count > 0
+                ? permisosDb.ToArray()
+                : (rol == "ADMIN" || rol == "SUPERADMIN"
+                    ? new[] { "ADMIN_TOTAL", "DASHBOARD", "RUTAS_ALL", "MERMAS", "SEMANAS", "LIQUIDACION", "CATALOGOS", "BCV" }
+                    : new[] { "RUTAS_CAPTURAR", "RUTAS_VER" });
+
             // Generar JWT firmado
             var tokenHandler = new JwtSecurityTokenHandler();
             var secretKey = _config["Jwt:SecretKey"] ?? _config["Jwt:Key"] ?? Environment.GetEnvironmentVariable("JWT_SECRET_KEY");
@@ -372,10 +436,6 @@ namespace Transporte.API.Controllers
                 new Claim("dispositivo_movil", "true")
             };
 
-            var permisos = rol == "ADMIN" || rol == "SUPERADMIN"
-                ? new[] { "DASHBOARD", "RUTAS_ALL", "MERMAS", "SEMANAS", "LIQUIDACION", "CATALOGOS", "BCV" }
-                : (rol == "CHOFER" ? new[] { "RUTAS_CAPTURAR", "RUTAS_VER" } : new[] { "RUTAS_VER" });
-
             foreach (var perm in permisos)
             {
                 claims.Add(new Claim("permiso", perm));
@@ -392,34 +452,6 @@ namespace Transporte.API.Controllers
 
             var token = tokenHandler.CreateToken(tokenDescriptor);
             var tokenString = tokenHandler.WriteToken(token);
-
-            bool permisoCrear = false;
-            bool usuarioActivo = true;
-            string? logoUrl = null;
-            if (!string.IsNullOrWhiteSpace(tenantConnStr))
-            {
-                using var tenantDb = new Microsoft.Data.SqlClient.SqlConnection(tenantConnStr);
-                var uEstado = await tenantDb.QueryFirstOrDefaultAsync<dynamic>(
-                    "SELECT Activo, PermisoCrearViaje FROM TB_USUARIOS WHERE Id = @usuarioId",
-                    new { usuarioId });
-                usuarioActivo = uEstado != null && (bool)(uEstado.Activo ?? false);
-                permisoCrear = uEstado != null && (bool)(uEstado.PermisoCrearViaje ?? false);
-                logoUrl = await tenantDb.QueryFirstOrDefaultAsync<string?>(
-                    "SELECT TOP 1 LogoUrl FROM TB_EMPRESA_CONFIG");
-            }
-            else
-            {
-                var usuarioDb = await _usuariosRepository.ObtenerUsuarioPorIdAsync(usuarioId);
-                usuarioActivo = usuarioDb != null && usuarioDb.Activo;
-                permisoCrear = usuarioDb?.PermisoCrearViaje ?? false;
-                var empresaCfg = await _catalogosRepository.ObtenerEmpresaConfigAsync();
-                logoUrl = empresaCfg?.LogoUrl;
-            }
-
-            if (!usuarioActivo)
-            {
-                return StatusCode(403, new { message = "No tienes permisos para acceder. Tu usuario está inactivo.", usuarioInactivo = true });
-            }
 
             // Marcar código como usado solo cuando toda la consulta fue exitosa
             await db.ExecuteAsync(@"

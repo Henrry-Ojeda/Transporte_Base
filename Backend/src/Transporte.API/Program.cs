@@ -203,6 +203,23 @@ builder.Services.AddRateLimiter(options =>
                 AutoReplenishment = true
             });
     });
+
+    options.AddPolicy("ai-ocr-strict", httpContext =>
+    {
+        var userKey = httpContext.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown";
+
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: $"ocr:{userKey}",
+            factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
 });
 
 // 5. Swagger
@@ -315,12 +332,25 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+// Cabeceras básicas de seguridad HTTP
+app.Use(async (context, next) =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "API Transporte v1");
-    c.RoutePrefix = "swagger"; // Swagger en /swagger
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    await next();
 });
+
+// Swagger solo en Development o cuando Swagger:Enabled=true explícitamente
+if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Swagger:Enabled"))
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "API Transporte v1");
+        c.RoutePrefix = "swagger";
+    });
+}
 
 app.UseCors("AllowAll");
 app.UseRateLimiter();

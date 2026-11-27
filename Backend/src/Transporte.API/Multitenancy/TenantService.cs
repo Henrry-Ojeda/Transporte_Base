@@ -32,7 +32,7 @@ namespace Transporte.API.Multitenancy
         private readonly ILogger<TenantService> _logger;
 
         private static readonly ConcurrentDictionary<string, (TenantInfo info, DateTime cachedAt)> _tenantCache = new();
-        private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(30);
 
         public static void InvalidateCache() => _tenantCache.Clear();
 

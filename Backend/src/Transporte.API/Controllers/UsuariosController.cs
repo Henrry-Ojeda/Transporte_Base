@@ -43,9 +43,9 @@ namespace Transporte.API.Controllers
         public async Task<IActionResult> ObtenerUsuarios([FromQuery] string? rol = null, [FromQuery] bool soloActivos = false)
         {
             var usuarios = await _usuariosRepository.ObtenerUsuariosAsync(rol, soloActivos);
-            if (IsAppHijo())
+            if (!IsCallerSuperAdmin())
             {
-                // En apps hijas los usuarios con rol SUPERADMIN se muestran visualmente como ADMIN
+                // Para usuarios no-SuperAdmin, cualquier SUPERADMIN se muestra visualmente como ADMIN
                 foreach (var u in usuarios)
                 {
                     if (u.Rol != null && u.Rol.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase))
@@ -63,7 +63,7 @@ namespace Transporte.API.Controllers
         {
             var usuario = await _usuariosRepository.ObtenerUsuarioPorIdAsync(id);
             if (usuario == null) return NotFound(new { message = "Usuario no encontrado." });
-            if (IsAppHijo() && usuario.Rol != null && usuario.Rol.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase))
+            if (!IsCallerSuperAdmin() && usuario.Rol != null && usuario.Rol.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase))
             {
                 usuario.Rol = "ADMIN";
                 usuario.RolNombre = "Administrador General";
@@ -75,9 +75,9 @@ namespace Transporte.API.Controllers
         public async Task<IActionResult> ObtenerRoles()
         {
             var roles = await _usuariosRepository.ObtenerRolesAsync();
-            if (IsAppHijo() || !IsCallerSuperAdmin())
+            if (!IsCallerSuperAdmin())
             {
-                // En app hijas o cuando no es SuperAdmin, el rol SUPERADMIN no se visualiza ni se asigna
+                // Solo un SUPERADMIN puede ver y otorgar el rol SUPERADMIN
                 roles = roles.Where(r => !r.Codigo.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase));
             }
             return Ok(roles);
@@ -99,16 +99,10 @@ namespace Transporte.API.Controllers
             if (string.IsNullOrWhiteSpace(dto.NombreCompleto))
                 return BadRequest(new { message = "El nombre completo es obligatorio." });
 
-            // En apps hijas nunca se puede crear un usuario con el rol SUPERADMIN
-            if (IsAppHijo() && dto.Rol?.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                return BadRequest(new { message = "En las empresas cliente (apps hijas) no se puede crear el rol SUPERADMIN. El rol máximo es ADMIN." });
-            }
-
-            // Solo el SuperAdmin puede asignar el rol SUPERADMIN
+            // Solo un SuperAdmin real puede crear o asignar usuarios con el rol SUPERADMIN
             if (dto.Rol?.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase) == true && !IsCallerSuperAdmin())
             {
-                return StatusCode(403, new { message = "Acceso denegado: El rol Administrador no tiene autorización para crear ni asignar usuarios con el rol SuperAdmin." });
+                return StatusCode(403, new { message = "Acceso denegado: Solo un SuperAdmin puede crear ni asignar usuarios con el rol SuperAdmin." });
             }
 
             try
@@ -130,19 +124,13 @@ namespace Transporte.API.Controllers
             var target = await _usuariosRepository.ObtenerUsuarioPorIdAsync(id);
             if (target == null) return NotFound(new { message = "Usuario no encontrado." });
 
-            // En apps hijas nunca se puede asignar el rol SUPERADMIN
-            if (IsAppHijo() && dto.Rol?.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                return BadRequest(new { message = "En las empresas cliente (apps hijas) no se puede asignar el rol SUPERADMIN. El rol asignable es ADMIN." });
-            }
-
             // El Administrador no puede editar al SuperAdmin
             if (target.Rol?.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase) == true && !IsCallerSuperAdmin())
             {
                 return StatusCode(403, new { message = "Acceso denegado: Solo el SuperAdmin puede modificar datos del usuario SuperAdmin principal." });
             }
 
-            // El Administrador no puede elevar a un usuario al rol SUPERADMIN
+            // Solo un SuperAdmin puede otorgar o asignar el rol SUPERADMIN
             if (dto.Rol?.Equals("SUPERADMIN", StringComparison.OrdinalIgnoreCase) == true && !IsCallerSuperAdmin())
             {
                 return StatusCode(403, new { message = "Acceso denegado: El rol Administrador no tiene autorización para asignar el rol SuperAdmin." });

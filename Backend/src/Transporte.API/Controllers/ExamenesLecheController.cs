@@ -110,6 +110,7 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("ocr-lactoscan")]
+        [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("ai-ocr-strict")]
         [RequirePermission("CALIDAD_CREAR", "ENTREGAS_CREAR", "ENTREGAS_EDITAR")]
         public async Task<IActionResult> LeerTicketLactoscan([FromBody] OcrLactoscanRequestDto dto)
         {

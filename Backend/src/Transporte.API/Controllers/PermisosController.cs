@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -180,8 +181,14 @@ namespace Transporte.API.Controllers
             return Ok(new { message = "Permiso actualizado para el rol seleccionado." });
         }
         // ====================================================================
-        // ROLES (CRUD SUPERADMIN)
+        // ROLES (CRUD DINÁMICO RBAC - ADMIN / SUPERADMIN / PERMISOS_EDITAR)
         // ====================================================================
+        private bool EsSuperAdminActual()
+        {
+            var rol = (User?.FindFirstValue(ClaimTypes.Role) ?? string.Empty).Trim().ToUpperInvariant();
+            return rol == "SUPERADMIN" || rol == "SUPER_ADMIN";
+        }
+
         [HttpGet("roles")]
         public async Task<IActionResult> ObtenerRoles([FromQuery] bool soloActivos = false)
         {
@@ -198,11 +205,15 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPost("roles")]
-        [Authorize(Roles = "SUPERADMIN")]
+        [RequirePermission("PERMISOS_EDITAR", "USUARIOS_EDITAR", "PERMISOS_VER")]
         public async Task<IActionResult> CrearRol([FromBody] CrearRolDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Codigo) || string.IsNullOrWhiteSpace(dto.Nombre))
                 return BadRequest(new { message = "Código y Nombre del rol son obligatorios." });
+
+            var codUpper = dto.Codigo.Trim().ToUpperInvariant();
+            if ((codUpper == "SUPERADMIN" || codUpper == "SUPER_ADMIN") && !EsSuperAdminActual())
+                return Forbid();
 
             try
             {
@@ -216,11 +227,19 @@ namespace Transporte.API.Controllers
         }
 
         [HttpPut("roles/{id}")]
-        [Authorize(Roles = "SUPERADMIN")]
+        [RequirePermission("PERMISOS_EDITAR", "USUARIOS_EDITAR", "PERMISOS_VER")]
         public async Task<IActionResult> ActualizarRol([FromRoute] int id, [FromBody] CrearRolDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Codigo) || string.IsNullOrWhiteSpace(dto.Nombre))
                 return BadRequest(new { message = "Código y Nombre del rol son obligatorios." });
+
+            var existente = await _permisosRepo.ObtenerRolPorIdAsync(id);
+            if (existente == null) return NotFound(new { message = "Rol no encontrado." });
+
+            var codExistente = (existente.Codigo ?? string.Empty).Trim().ToUpperInvariant();
+            var codNuevo = dto.Codigo.Trim().ToUpperInvariant();
+            if ((codExistente == "SUPERADMIN" || codExistente == "SUPER_ADMIN" || codNuevo == "SUPERADMIN" || codNuevo == "SUPER_ADMIN") && !EsSuperAdminActual())
+                return Forbid();
 
             try
             {
@@ -235,9 +254,16 @@ namespace Transporte.API.Controllers
         }
 
         [HttpDelete("roles/{id}")]
-        [Authorize(Roles = "SUPERADMIN")]
+        [RequirePermission("PERMISOS_EDITAR", "USUARIOS_EDITAR", "PERMISOS_VER")]
         public async Task<IActionResult> EliminarRol([FromRoute] int id)
         {
+            var existente = await _permisosRepo.ObtenerRolPorIdAsync(id);
+            if (existente == null) return NotFound(new { message = "Rol no encontrado." });
+
+            var codExistente = (existente.Codigo ?? string.Empty).Trim().ToUpperInvariant();
+            if ((codExistente == "SUPERADMIN" || codExistente == "SUPER_ADMIN") && !EsSuperAdminActual())
+                return Forbid();
+
             try
             {
                 var ok = await _permisosRepo.EliminarRolAsync(id);

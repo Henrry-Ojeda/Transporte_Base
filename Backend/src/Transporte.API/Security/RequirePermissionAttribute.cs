@@ -71,6 +71,7 @@ namespace Transporte.API.Security
                         ON (u.RolId = rp.RolId OR (u.RolId IS NULL AND rp.RolId = (SELECT TOP 1 Id FROM TB_ROLES WHERE Codigo = u.Rol)))
                     INNER JOIN TB_PERMISOS p ON rp.PermisoId = p.Id
                     WHERE u.Id = @usuarioId
+                      AND u.Activo = 1
                       AND rp.Concedido = 1
                       AND p.Activo = 1
                       AND (p.Codigo = 'ADMIN_TOTAL' OR p.Codigo IN @permisos)";

@@ -6,6 +6,7 @@ import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect, type SelectOption } from '@/components/common/SearchableSelect';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import Swal from 'sweetalert2';
 import type {
   MantenimientoCamionDto,
@@ -16,6 +17,7 @@ import type {
 
 export const MantenimientoPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { canCreate, canEdit, canDelete } = useModulePermissions('HISTORIAL_CAMIONES');
 
   const [activeTab, setActiveTab] = useState<'tareas_mecanico' | 'tareas_completadas' | 'mantenimientos' | 'alertas'>('tareas_mecanico');
   const [modalNuevaTarea, setModalNuevaTarea] = useState(false);
@@ -350,28 +352,32 @@ export const MantenimientoPage: React.FC = () => {
       width: '90px',
       cell: (row) => (
         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline"
-            onClick={() => abrirModalEditar(row)}
-            title="Editar servicio"
-            style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px' }}
-          >
-            <i className="fa-solid fa-pen-to-square" style={{ fontSize: '11px' }}></i>
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline"
-            onClick={async () => {
-              if (await confirmDeleteOrDeactivate('Eliminar registro de mantenimiento', `#${row.id}`)) {
-                mutationEliminar.mutate(row.id);
-              }
-            }}
-            title="Eliminar"
-            style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px', color: '#ef4444', borderColor: '#fca5a5' }}
-          >
-            <i className="fa-solid fa-trash-can" style={{ fontSize: '11px' }}></i>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={() => abrirModalEditar(row)}
+              title="Editar servicio"
+              style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px' }}
+            >
+              <i className="fa-solid fa-pen-to-square" style={{ fontSize: '11px' }}></i>
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={async () => {
+                if (await confirmDeleteOrDeactivate('Eliminar registro de mantenimiento', `#${row.id}`)) {
+                  mutationEliminar.mutate(row.id);
+                }
+              }}
+              title="Eliminar"
+              style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px', color: '#ef4444', borderColor: '#fca5a5' }}
+            >
+              <i className="fa-solid fa-trash-can" style={{ fontSize: '11px' }}></i>
+            </button>
+          )}
         </div>
       ),
     },
@@ -775,22 +781,26 @@ export const MantenimientoPage: React.FC = () => {
           >
             <i className="fa-solid fa-arrows-rotate"></i> Actualizar
           </button>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => setModalNuevaTarea(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', borderColor: '#dc2626', color: '#dc2626', fontWeight: 700 }}
-          >
-            <i className="fa-solid fa-bell"></i> Notificar Tarea al Mecánico
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={abrirModalCrear}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#2563eb', borderColor: '#2563eb' }}
-          >
-            <i className="fa-solid fa-plus"></i> Registrar Mantenimiento
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => setModalNuevaTarea(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', borderColor: '#dc2626', color: '#dc2626', fontWeight: 700 }}
+            >
+              <i className="fa-solid fa-bell"></i> Notificar Tarea al Mecánico
+            </button>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={abrirModalCrear}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#2563eb', borderColor: '#2563eb' }}
+            >
+              <i className="fa-solid fa-plus"></i> Registrar Mantenimiento
+            </button>
+          )}
         </div>
       </div>
 

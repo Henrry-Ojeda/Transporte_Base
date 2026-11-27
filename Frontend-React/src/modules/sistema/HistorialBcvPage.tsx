@@ -4,9 +4,11 @@ import { toast } from 'sonner';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import { bcvApi, type BcvHistoricoDto } from '@/api/bcv.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 
 export const HistorialBcvPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { canCreate, canEdit, canDelete } = useModulePermissions('HISTORIAL_BCV');
 
   const [modalNuevo, setModalNuevo] = useState(false);
   const [modalEditar, setModalEditar] = useState(false);
@@ -147,64 +149,68 @@ export const HistorialBcvPage: React.FC = () => {
         const fechaStr = row.fecha ? String(row.fecha).split('T')[0] : '';
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-            <button
-              type="button"
-              onClick={() => {
-                setItemEditar(row);
-                setFormEditar({
-                  fecha: fechaStr,
-                  tasa: val,
-                  fuente: row.fuente || 'BANCO CENTRAL DE VENEZUELA (BCV)',
-                  observacion: row.observacion || '',
-                });
-                setModalEditar(true);
-              }}
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                border: '1px solid #cbd5e1',
-                background: '#f8fafc',
-                color: '#2563eb',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-              title="Editar Tasa BCV"
-            >
-              <i className="fa-solid fa-pen-to-square" style={{ fontSize: '13px' }}></i>
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                if (!id) return;
-                const confirmacion = await confirmDeleteOrDeactivate(
-                  'Eliminar Tasa BCV',
-                  `¿Está seguro de eliminar el registro de tasa del ${row.fecha ? new Date(row.fecha).toLocaleDateString('es-VE') : ''} (${val.toFixed(4)} Bs.)?`
-                );
-                if (confirmacion) {
-                  eliminarMutation.mutate(id);
-                }
-              }}
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                border: '1px solid #fecaca',
-                background: '#fef2f2',
-                color: '#ef4444',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-              title="Eliminar Tasa BCV"
-            >
-              <i className="fa-solid fa-trash-can" style={{ fontSize: '13px' }}></i>
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  setItemEditar(row);
+                  setFormEditar({
+                    fecha: fechaStr,
+                    tasa: val,
+                    fuente: row.fuente || 'BANCO CENTRAL DE VENEZUELA (BCV)',
+                    observacion: row.observacion || '',
+                  });
+                  setModalEditar(true);
+                }}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#2563eb',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                title="Editar Tasa BCV"
+              >
+                <i className="fa-solid fa-pen-to-square" style={{ fontSize: '13px' }}></i>
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!id) return;
+                  const confirmacion = await confirmDeleteOrDeactivate(
+                    'Eliminar Tasa BCV',
+                    `¿Está seguro de eliminar el registro de tasa del ${row.fecha ? new Date(row.fecha).toLocaleDateString('es-VE') : ''} (${val.toFixed(4)} Bs.)?`
+                  );
+                  if (confirmacion) {
+                    eliminarMutation.mutate(id);
+                  }
+                }}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  border: '1px solid #fecaca',
+                  background: '#fef2f2',
+                  color: '#ef4444',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                title="Eliminar Tasa BCV"
+              >
+                <i className="fa-solid fa-trash-can" style={{ fontSize: '13px' }}></i>
+              </button>
+            )}
           </div>
         );
       },
@@ -235,39 +241,43 @@ export const HistorialBcvPage: React.FC = () => {
         </div>
 
         <div className="view-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => sincronizarMutation.mutate()}
-            disabled={sincronizarMutation.isPending}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontWeight: 700,
-              padding: '9px 16px',
-            }}
-          >
-            <i className={`fa-solid fa-arrows-rotate ${sincronizarMutation.isPending ? 'fa-spin' : ''}`}></i>
-            Sincronizar en Vivo (DolarAPI)
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setModalNuevo(true)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontWeight: 700,
-              padding: '9px 18px',
-              background: 'linear-gradient(135deg, #0284c7, #2563eb)',
-              border: 'none',
-              boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
-            }}
-          >
-            <i className="fa-solid fa-plus"></i> Registrar Nueva Tasa
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => sincronizarMutation.mutate()}
+              disabled={sincronizarMutation.isPending}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: 700,
+                padding: '9px 16px',
+              }}
+            >
+              <i className={`fa-solid fa-arrows-rotate ${sincronizarMutation.isPending ? 'fa-spin' : ''}`}></i>
+              Sincronizar en Vivo (DolarAPI)
+            </button>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setModalNuevo(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: 700,
+                padding: '9px 18px',
+                background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                border: 'none',
+                boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
+              }}
+            >
+              <i className="fa-solid fa-plus"></i> Registrar Nueva Tasa
+            </button>
+          )}
         </div>
       </div>
 

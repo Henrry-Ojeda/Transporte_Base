@@ -6,6 +6,7 @@ import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import { CamionSelect } from '@/components/selectors';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import type {
   CombustibleHistorialDto,
   RegistrarDespachoCombustibleDto,
@@ -15,6 +16,7 @@ import type {
 
 export const CombustiblePage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { canCreate, canEdit, canDelete } = useModulePermissions('COMBUSTIBLE');
 
   const [filtroTipo, setFiltroTipo] = useState<string>('');
   const [filtroCombustible, setFiltroCombustible] = useState<string>('');
@@ -316,19 +318,21 @@ export const CombustiblePage: React.FC = () => {
       width: '80px',
       cell: (row) => (
         <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline"
-            onClick={async () => {
-              if (await confirmDeleteOrDeactivate('Revertir y eliminar movimiento', `${row.tipoCombustible} (${row.litros} L)`)) {
-                mutationEliminarMovimiento.mutate(row.id);
-              }
-            }}
-            title="Revertir y eliminar movimiento"
-            style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px', color: '#ef4444', borderColor: '#fca5a5' }}
-          >
-            <i className="fa-solid fa-trash-can" style={{ fontSize: '11px' }}></i>
-          </button>
+          {canDelete && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={async () => {
+                if (await confirmDeleteOrDeactivate('Revertir y eliminar movimiento', `${row.tipoCombustible} (${row.litros} L)`)) {
+                  mutationEliminarMovimiento.mutate(row.id);
+                }
+              }}
+              title="Revertir y eliminar movimiento"
+              style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px', color: '#ef4444', borderColor: '#fca5a5' }}
+            >
+              <i className="fa-solid fa-trash-can" style={{ fontSize: '11px' }}></i>
+            </button>
+          )}
         </div>
       ),
     },
@@ -353,44 +357,50 @@ export const CombustiblePage: React.FC = () => {
           </p>
         </div>
         <div className="view-actions" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => abrirModalAjuste('GASOIL')}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}
-          >
-            <i className="fa-solid fa-sliders"></i> Ajustar Tanque
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setModalCompra(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: '#059669',
-              borderColor: '#059669',
-              fontWeight: 700,
-            }}
-          >
-            <i className="fa-solid fa-cart-plus"></i> Registrar Compra / Ingreso
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setModalDespacho(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: '#0284c7',
-              borderColor: '#0284c7',
-              fontWeight: 700,
-            }}
-          >
-            <i className="fa-solid fa-truck-droplet"></i> Despachar a Camión
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => abrirModalAjuste('GASOIL')}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}
+            >
+              <i className="fa-solid fa-sliders"></i> Ajustar Tanque
+            </button>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setModalCompra(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#059669',
+                borderColor: '#059669',
+                fontWeight: 700,
+              }}
+            >
+              <i className="fa-solid fa-cart-plus"></i> Registrar Compra / Ingreso
+            </button>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setModalDespacho(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#0284c7',
+                borderColor: '#0284c7',
+                fontWeight: 700,
+              }}
+            >
+              <i className="fa-solid fa-truck-droplet"></i> Despachar a Camión
+            </button>
+          )}
         </div>
       </div>
 

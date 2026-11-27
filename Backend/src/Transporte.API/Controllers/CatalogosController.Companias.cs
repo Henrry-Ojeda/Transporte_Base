@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Security;
 using Transporte.Core.DTOs;
 
 namespace Transporte.API.Controllers
@@ -30,6 +31,7 @@ namespace Transporte.API.Controllers
 
         [HttpPost("companias")]
         [Authorize]
+        [RequirePermission("COMPANIAS_CREAR")]
         public async Task<IActionResult> CrearCompania([FromBody] CrearCompaniaDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Nombre))
@@ -41,6 +43,7 @@ namespace Transporte.API.Controllers
 
         [HttpPut("companias/{id}")]
         [Authorize]
+        [RequirePermission("COMPANIAS_EDITAR")]
         public async Task<IActionResult> ActualizarCompania([FromRoute] int id, [FromBody] EditarCompaniaDto dto)
         {
             var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -54,6 +57,7 @@ namespace Transporte.API.Controllers
 
         [HttpPut("companias/{id}/precio")]
         [Authorize]
+        [RequirePermission("COMPANIAS_EDITAR")]
         public async Task<IActionResult> ActualizarPrecioCompania([FromRoute] int id, [FromBody] ActualizarPrecioCompaniaDto dto)
         {
             if (dto.NuevoPrecioUSD <= 0)
@@ -70,6 +74,7 @@ namespace Transporte.API.Controllers
 
         [HttpDelete("companias/{id}")]
         [Authorize]
+        [RequirePermission("COMPANIAS_ELIMINAR")]
         public async Task<IActionResult> EliminarCompania([FromRoute] int id)
         {
             var ok = await _catalogosRepository.EliminarCompaniaAsync(id);
@@ -90,6 +95,7 @@ namespace Transporte.API.Controllers
 
         [HttpPost("companias/abonos")]
         [HttpPost("/api/companias/abonos")]
+        [RequirePermission("ABONOS_COMPANIAS_CREAR")]
         public async Task<IActionResult> CrearAbonoCompania([FromBody] GuardarAbonoCompaniaDto dto)
         {
             if (dto.CompaniaId <= 0)
@@ -107,6 +113,7 @@ namespace Transporte.API.Controllers
 
         [HttpDelete("companias/abonos/{id:int}")]
         [HttpDelete("/api/companias/abonos/{id:int}")]
+        [RequirePermission("ABONOS_COMPANIAS_ELIMINAR")]
         public async Task<IActionResult> EliminarAbonoCompania([FromRoute] int id)
         {
             var ok = await _catalogosRepository.EliminarAbonoCompaniaAsync(id);
@@ -168,6 +175,7 @@ namespace Transporte.API.Controllers
 
         [HttpPost("bancos")]
         [Authorize]
+        [RequirePermission("BANCOS_CREAR")]
         public async Task<IActionResult> CrearBanco([FromBody] CrearBancoDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Nombre))
@@ -179,6 +187,7 @@ namespace Transporte.API.Controllers
 
         [HttpPut("bancos/{id}")]
         [Authorize]
+        [RequirePermission("BANCOS_EDITAR")]
         public async Task<IActionResult> ActualizarBanco([FromRoute] int id, [FromBody] EditarBancoDto dto)
         {
             var ok = await _catalogosRepository.ActualizarBancoAsync(id, dto);
@@ -188,6 +197,7 @@ namespace Transporte.API.Controllers
 
         [HttpDelete("bancos/{id}")]
         [Authorize]
+        [RequirePermission("BANCOS_ELIMINAR")]
         public async Task<IActionResult> EliminarBanco([FromRoute] int id)
         {
             var ok = await _catalogosRepository.EliminarBancoAsync(id);

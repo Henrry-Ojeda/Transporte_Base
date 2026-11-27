@@ -6,10 +6,12 @@ import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { ChoferSelect } from '@/components/selectors';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import type { CamionDto, GuardarCamionDto, ChoferDto } from '@/types';
 
 export const CamionesPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { canCreate, canEdit, canDelete } = useModulePermissions('CAMIONES');
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modoEdicionId, setModoEdicionId] = useState<number | null>(null);
@@ -234,28 +236,32 @@ export const CamionesPage: React.FC = () => {
       className: 'text-right',
       cell: (row) => (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-          <button
-            type="button"
-            onClick={() => abrirModalEditar(row)}
-            className="btn btn-sm btn-outline"
-            style={{ height: '30px', padding: '0 8px', fontSize: '12px' }}
-            title="Editar Camión"
-          >
-            <i className="fa-solid fa-pen-to-square"></i>
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              if (await confirmDeleteOrDeactivate('Desactivar el vehículo', row.placa)) {
-                eliminarMutation.mutate(row.id);
-              }
-            }}
-            className="btn btn-sm btn-outline"
-            style={{ height: '30px', padding: '0 8px', fontSize: '12px', color: '#dc2626', borderColor: '#fecaca' }}
-            title="Desactivar"
-          >
-            <i className="fa-solid fa-trash-can"></i>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => abrirModalEditar(row)}
+              className="btn btn-sm btn-outline"
+              style={{ height: '30px', padding: '0 8px', fontSize: '12px' }}
+              title="Editar Camión"
+            >
+              <i className="fa-solid fa-pen-to-square"></i>
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (await confirmDeleteOrDeactivate('Desactivar el vehículo', row.placa)) {
+                  eliminarMutation.mutate(row.id);
+                }
+              }}
+              className="btn btn-sm btn-outline"
+              style={{ height: '30px', padding: '0 8px', fontSize: '12px', color: '#dc2626', borderColor: '#fecaca' }}
+              title="Desactivar"
+            >
+              <i className="fa-solid fa-trash-can"></i>
+            </button>
+          )}
         </div>
       ),
     },
@@ -276,24 +282,26 @@ export const CamionesPage: React.FC = () => {
         </div>
 
         <div className="view-actions">
-          <button
-            type="button"
-            onClick={abrirModalCrear}
-            className="btn btn-primary"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontWeight: 700,
-              padding: '9px 18px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #0284c7, #2563eb)',
-              border: 'none',
-              boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
-            }}
-          >
-            <i className="fa-solid fa-plus"></i> + Nuevo Camión
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              onClick={abrirModalCrear}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: 700,
+                padding: '9px 18px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                border: 'none',
+                boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
+              }}
+            >
+              <i className="fa-solid fa-plus"></i> + Nuevo Camión
+            </button>
+          )}
         </div>
       </div>
 

@@ -62,6 +62,10 @@ const emptyParametro = (): GuardarParametroCalidadLecheDto => ({
 export const CalidadLechePage: React.FC = () => {
   const queryClient = useQueryClient();
   const hasBufala = useAuthStore((s) => s.hasTenantModule('MOD_LECHE_BUFALA'));
+  const hasActionPermission = useAuthStore((s) => s.hasActionPermission);
+  const canCreate = hasActionPermission('CALIDAD_LECHE', 'CREAR');
+  const canEdit = hasActionPermission('CALIDAD_LECHE', 'EDITAR');
+  const canDelete = hasActionPermission('CALIDAD_LECHE', 'ELIMINAR');
 
   const [activeTab, setActiveTab] = useState<'examenes' | 'parametros'>('examenes');
 
@@ -340,31 +344,35 @@ export const CalidadLechePage: React.FC = () => {
       accessorKey: 'id',
       cell: (r) => (
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setExamenEditar(r);
-              setModalExamenOpen(true);
-            }}
-            className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50"
-            title="Editar examen"
-          >
-            <i className="fa-solid fa-pen-to-square"></i>
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              const ok = await confirmDeleteOrDeactivate(
-                `¿Eliminar el examen #${r.id}?`,
-                'Esta acción anulará el registro del historial.'
-              );
-              if (ok) eliminarExamenMutation.mutate(r.id);
-            }}
-            className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50"
-            title="Eliminar examen"
-          >
-            <i className="fa-solid fa-trash"></i>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                setExamenEditar(r);
+                setModalExamenOpen(true);
+              }}
+              className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50"
+              title="Editar examen"
+            >
+              <i className="fa-solid fa-pen-to-square"></i>
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={async () => {
+                const ok = await confirmDeleteOrDeactivate(
+                  `¿Eliminar el examen #${r.id}?`,
+                  'Esta acción anulará el registro del historial.'
+                );
+                if (ok) eliminarExamenMutation.mutate(r.id);
+              }}
+              className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50"
+              title="Eliminar examen"
+            >
+              <i className="fa-solid fa-trash"></i>
+            </button>
+          )}
         </div>
       ),
     },
@@ -465,28 +473,32 @@ export const CalidadLechePage: React.FC = () => {
       accessorKey: 'id',
       cell: (p) => (
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => abrirEditarParam(p)}
-            className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50"
-            title="Editar parámetros"
-          >
-            <i className="fa-solid fa-pen-to-square"></i>
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              const ok = await confirmDeleteOrDeactivate(
-                `¿Eliminar el perfil "${p.nombre}"?`,
-                'No afectará exámenes históricos ya guardados.'
-              );
-              if (ok) eliminarParamMutation.mutate(p.id);
-            }}
-            className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50"
-            title="Eliminar perfil"
-          >
-            <i className="fa-solid fa-trash"></i>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => abrirEditarParam(p)}
+              className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50"
+              title="Editar parámetros"
+            >
+              <i className="fa-solid fa-pen-to-square"></i>
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={async () => {
+                const ok = await confirmDeleteOrDeactivate(
+                  `¿Eliminar el perfil "${p.nombre}"?`,
+                  'No afectará exámenes históricos ya guardados.'
+                );
+                if (ok) eliminarParamMutation.mutate(p.id);
+              }}
+              className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50"
+              title="Eliminar perfil"
+            >
+              <i className="fa-solid fa-trash"></i>
+            </button>
+          )}
         </div>
       ),
     },
@@ -509,7 +521,7 @@ export const CalidadLechePage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {activeTab === 'examenes' ? (
+          {canCreate && (activeTab === 'examenes' ? (
             <button
               type="button"
               onClick={() => {
@@ -528,7 +540,7 @@ export const CalidadLechePage: React.FC = () => {
             >
               <i className="fa-solid fa-plus"></i> Nuevo Perfil de Parámetros
             </button>
-          )}
+          ))}
         </div>
       </div>
 

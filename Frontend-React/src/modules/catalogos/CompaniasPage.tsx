@@ -4,10 +4,12 @@ import { toast } from 'sonner';
 import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import type { CompaniaDto, GuardarCompaniaDto } from '@/types';
 
 export const CompaniasPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { canCreate, canEdit, canDelete } = useModulePermissions('COMPANIAS');
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalPrecio, setModalPrecio] = useState(false);
@@ -227,37 +229,43 @@ export const CompaniasPage: React.FC = () => {
       className: 'text-right',
       cell: (row) => (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-          <button
-            type="button"
-            onClick={() => abrirModalCambiarPrecio(row)}
-            className="btn btn-sm btn-outline"
-            style={{ height: '30px', padding: '0 8px', fontSize: '12px', color: '#059669', borderColor: '#a7f3d0' }}
-            title="Cambiar Precio $/Lt"
-          >
-            <i className="fa-solid fa-hand-holding-dollar"></i>
-          </button>
-          <button
-            type="button"
-            onClick={() => abrirModalEditar(row)}
-            className="btn btn-sm btn-outline"
-            style={{ height: '30px', padding: '0 8px', fontSize: '12px' }}
-            title="Editar Compañía"
-          >
-            <i className="fa-solid fa-pen-to-square"></i>
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              if (await confirmDeleteOrDeactivate('Desactivar la compañía', row.nombre)) {
-                eliminarMutation.mutate(row.id);
-              }
-            }}
-            className="btn btn-sm btn-outline"
-            style={{ height: '30px', padding: '0 8px', fontSize: '12px', color: '#dc2626', borderColor: '#fecaca' }}
-            title="Desactivar"
-          >
-            <i className="fa-solid fa-trash-can"></i>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => abrirModalCambiarPrecio(row)}
+              className="btn btn-sm btn-outline"
+              style={{ height: '30px', padding: '0 8px', fontSize: '12px', color: '#059669', borderColor: '#a7f3d0' }}
+              title="Cambiar Precio $/Lt"
+            >
+              <i className="fa-solid fa-hand-holding-dollar"></i>
+            </button>
+          )}
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => abrirModalEditar(row)}
+              className="btn btn-sm btn-outline"
+              style={{ height: '30px', padding: '0 8px', fontSize: '12px' }}
+              title="Editar Compañía"
+            >
+              <i className="fa-solid fa-pen-to-square"></i>
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (await confirmDeleteOrDeactivate('Desactivar la compañía', row.nombre)) {
+                  eliminarMutation.mutate(row.id);
+                }
+              }}
+              className="btn btn-sm btn-outline"
+              style={{ height: '30px', padding: '0 8px', fontSize: '12px', color: '#dc2626', borderColor: '#fecaca' }}
+              title="Desactivar"
+            >
+              <i className="fa-solid fa-trash-can"></i>
+            </button>
+          )}
         </div>
       ),
     },
@@ -278,24 +286,26 @@ export const CompaniasPage: React.FC = () => {
         </div>
 
         <div className="view-actions">
-          <button
-            type="button"
-            onClick={abrirModalCrear}
-            className="btn btn-primary"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontWeight: 700,
-              padding: '9px 18px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #059669, #047857)',
-              border: 'none',
-              boxShadow: '0 4px 12px rgba(5,150,105,0.25)',
-            }}
-          >
-            <i className="fa-solid fa-building-circle-arrow-right"></i> + Nueva Compañía
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              onClick={abrirModalCrear}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: 700,
+                padding: '9px 18px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #059669, #047857)',
+                border: 'none',
+                boxShadow: '0 4px 12px rgba(5,150,105,0.25)',
+              }}
+            >
+              <i className="fa-solid fa-building-circle-arrow-right"></i> + Nueva Compañía
+            </button>
+          )}
         </div>
       </div>
 

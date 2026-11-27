@@ -4,10 +4,12 @@ import { toast } from 'sonner';
 import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import type { BancoDto } from '@/types';
 
 export const BancosPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { canCreate, canEdit, canDelete } = useModulePermissions('BANCOS');
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modoEdicionId, setModoEdicionId] = useState<number | null>(null);
@@ -118,28 +120,32 @@ export const BancosPage: React.FC = () => {
       className: 'text-right',
       cell: (row) => (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-          <button
-            type="button"
-            onClick={() => abrirModalEditar(row)}
-            className="btn btn-sm btn-outline"
-            style={{ height: '30px', padding: '0 8px', fontSize: '12px' }}
-            title="Editar Banco"
-          >
-            <i className="fa-solid fa-pen-to-square"></i>
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              if (await confirmDeleteOrDeactivate('Eliminar la entidad bancaria', row.nombre)) {
-                eliminarMutation.mutate(row.id);
-              }
-            }}
-            className="btn btn-sm btn-outline"
-            style={{ height: '30px', padding: '0 8px', fontSize: '12px', color: '#dc2626', borderColor: '#fecaca' }}
-            title="Eliminar"
-          >
-            <i className="fa-solid fa-trash-can"></i>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => abrirModalEditar(row)}
+              className="btn btn-sm btn-outline"
+              style={{ height: '30px', padding: '0 8px', fontSize: '12px' }}
+              title="Editar Banco"
+            >
+              <i className="fa-solid fa-pen-to-square"></i>
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (await confirmDeleteOrDeactivate('Eliminar la entidad bancaria', row.nombre)) {
+                  eliminarMutation.mutate(row.id);
+                }
+              }}
+              className="btn btn-sm btn-outline"
+              style={{ height: '30px', padding: '0 8px', fontSize: '12px', color: '#dc2626', borderColor: '#fecaca' }}
+              title="Eliminar"
+            >
+              <i className="fa-solid fa-trash-can"></i>
+            </button>
+          )}
         </div>
       ),
     },
@@ -160,24 +166,26 @@ export const BancosPage: React.FC = () => {
         </div>
 
         <div className="view-actions">
-          <button
-            type="button"
-            onClick={abrirModalCrear}
-            className="btn btn-primary"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontWeight: 700,
-              padding: '9px 18px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #0284c7, #2563eb)',
-              border: 'none',
-              boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
-            }}
-          >
-            <i className="fa-solid fa-building-columns"></i> + Nuevo Banco
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              onClick={abrirModalCrear}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: 700,
+                padding: '9px 18px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                border: 'none',
+                boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
+              }}
+            >
+              <i className="fa-solid fa-building-columns"></i> + Nuevo Banco
+            </button>
+          )}
         </div>
       </div>
 

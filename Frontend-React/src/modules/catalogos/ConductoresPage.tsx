@@ -3,10 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import type { ChoferDto, CamionDto } from '@/types';
 
 export const ConductoresPage: React.FC = () => {
   const navigate = useNavigate();
+  const { canCreate } = useModulePermissions('CONDUCTORES');
 
   // Modal informativo para Ficha Detallada
   const [modalFicha, setModalFicha] = useState(false);
@@ -425,25 +427,27 @@ export const ConductoresPage: React.FC = () => {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => navigate('/usuarios')}
-          style={{
-            background: '#ffffff',
-            border: '1.5px solid #0284c7',
-            color: '#0284c7',
-            padding: '6px 14px',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: 800,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-          }}
-        >
-          <i className="fa-solid fa-user-plus"></i> Registrar Usuario Chofer
-        </button>
+        {canCreate && (
+          <button
+            type="button"
+            onClick={() => navigate('/usuarios')}
+            style={{
+              background: '#ffffff',
+              border: '1.5px solid #0284c7',
+              color: '#0284c7',
+              padding: '6px 14px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <i className="fa-solid fa-user-plus"></i> Registrar Usuario Chofer
+          </button>
+        )}
       </div>
 
       {/* METRICAS DE FLOTA (KPI CARDS) */}

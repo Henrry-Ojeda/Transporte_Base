@@ -7,6 +7,7 @@ import { finanzasApi } from '@/api/finanzas.api';
 import { operacionesApi } from '@/api/operaciones.api';
 import { catalogosApi } from '@/api/catalogos.api';
 import { useAuthStore } from '@/stores/authStore';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import { esReceptoriaPrincipal } from '@/utils/procesoViaje';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
@@ -64,6 +65,7 @@ function getDefaultMartesALunes() {
 export const SemanasPage: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { canCreate, canEdit } = useModulePermissions('CICLOS');
 
   // Filtro por pastillas 1:1 con V2_3_11_26 (ACTIVA | PROGRAMADO | CERRADO | TODAS)
   const [filtroEstado, setFiltroEstado] = useState<'ACTIVA' | 'PROGRAMADO' | 'CERRADO' | 'TODAS'>('ACTIVA');
@@ -570,7 +572,7 @@ export const SemanasPage: React.FC = () => {
               </button>
             )}
 
-            {!esActiva && !esCerrada && (
+            {canEdit && !esActiva && !esCerrada && (
               <button
                 type="button"
                 className="btn btn-outline"
@@ -590,7 +592,7 @@ export const SemanasPage: React.FC = () => {
               </button>
             )}
 
-            {esActiva && (
+            {canEdit && esActiva && (
               <button
                 type="button"
                 className="btn btn-outline"
@@ -611,7 +613,7 @@ export const SemanasPage: React.FC = () => {
               </button>
             )}
 
-            {esCerrada && (
+            {canEdit && esCerrada && (
               <button
                 type="button"
                 className="btn btn-outline"
@@ -654,46 +656,52 @@ export const SemanasPage: React.FC = () => {
           </p>
         </div>
         <div className="view-actions" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-outline"
-            id="btnModalCrearSemana"
-            onClick={handleAbrirCrear}
-          >
-            <i className="fa-solid fa-plus"></i> Nueva Semana Manual
-          </button>
-          <button
-            type="button"
-            className="btn btn-gradient-purple"
-            id="btnModalGenerar52"
-            onClick={() => setModalGenerar52(true)}
-            style={{
-              background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-              color: '#ffffff',
-              border: 'none',
-              fontWeight: 700,
-              boxShadow: '0 4px 12px rgba(124, 58, 237, 0.3)',
-            }}
-          >
-            <i className="fa-solid fa-wand-magic-sparkles"></i> Generar 52 Semanas (Año Completo)
-          </button>
-          <button
-            type="button"
-            className="btn"
-            id="btnCompletar52"
-            onClick={handleCompletar52}
-            disabled={completar52Mutation.isPending}
-            style={{
-              background: 'linear-gradient(135deg, #0284c7, #0369a1)',
-              color: '#ffffff',
-              border: 'none',
-              fontWeight: 700,
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              id="btnModalCrearSemana"
+              onClick={handleAbrirCrear}
+            >
+              <i className="fa-solid fa-plus"></i> Nueva Semana Manual
+            </button>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-gradient-purple"
+              id="btnModalGenerar52"
+              onClick={() => setModalGenerar52(true)}
+              style={{
+                background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+                color: '#ffffff',
+                border: 'none',
+                fontWeight: 700,
+                boxShadow: '0 4px 12px rgba(124, 58, 237, 0.3)',
+              }}
+            >
+              <i className="fa-solid fa-wand-magic-sparkles"></i> Generar 52 Semanas (Año Completo)
+            </button>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              className="btn"
+              id="btnCompletar52"
+              onClick={handleCompletar52}
+              disabled={completar52Mutation.isPending}
+              style={{
+                background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                color: '#ffffff',
+                border: 'none',
+                fontWeight: 700,
               boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)',
             }}
           >
             <i className={completar52Mutation.isPending ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-calendar-check'}></i>{' '}
             {completar52Mutation.isPending ? 'Completando...' : 'Terminar las 52 Semanas'}
           </button>
+          )}
         </div>
       </div>
 

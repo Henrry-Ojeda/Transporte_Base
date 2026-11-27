@@ -7,6 +7,7 @@ import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import { useAuthStore } from '@/stores/authStore';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import type { UsuarioDto, GuardarUsuarioDto, CamionDto } from '@/types';
 
 export const UsuariosPage: React.FC = () => {
@@ -14,6 +15,7 @@ export const UsuariosPage: React.FC = () => {
   const isSuperAdmin = useAuthStore((state) => state.isSuperAdmin());
   const esHijo = useAuthStore((state) => state.isAppHijo());
   const currentUser = useAuthStore((state) => state.user);
+  const { canCreate, canEdit, canDelete } = useModulePermissions('USUARIOS_SEGURIDAD');
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modoEdicionId, setModoEdicionId] = useState<number | null>(null);
@@ -440,48 +442,54 @@ export const UsuariosPage: React.FC = () => {
 
         return (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-            <button
-              type="button"
-              onClick={() => abrirModalVinculacion(row)}
-              className="btn btn-sm btn-outline"
-              style={{
-                height: '30px',
-                padding: '0 8px',
-                color: '#059669',
-                borderColor: '#a7f3d0',
-                background: '#ecfdf5',
-              }}
-              title="Vincular Dispositivo Móvil (Generar Código de Acceso Chofer)"
-            >
-              <i className="fa-solid fa-mobile-screen-button"></i>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setUsuarioSeleccionado(row);
-                setNuevaPassModal('');
-                setConfirmarPassModal('');
-                setShowEyePass1(false);
-                setShowEyePass2(false);
-                setModalPassword(true);
-              }}
-              className="btn btn-sm btn-outline"
-              style={{ height: '30px', padding: '0 8px', color: '#f59e0b', borderColor: '#fde68a' }}
-              title="Cambiar Contraseña"
-            >
-              <i className="fa-solid fa-key"></i>
-            </button>
-            <button
-              type="button"
-              onClick={() => abrirModalEditar(row)}
-              className="btn btn-sm btn-outline"
-              style={{ height: '30px', padding: '0 8px', color: '#2563eb', borderColor: '#bfdbfe' }}
-              title="Editar Usuario"
-            >
-              <i className="fa-solid fa-pen-to-square"></i>
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => abrirModalVinculacion(row)}
+                className="btn btn-sm btn-outline"
+                style={{
+                  height: '30px',
+                  padding: '0 8px',
+                  color: '#059669',
+                  borderColor: '#a7f3d0',
+                  background: '#ecfdf5',
+                }}
+                title="Vincular Dispositivo Móvil (Generar Código de Acceso Chofer)"
+              >
+                <i className="fa-solid fa-mobile-screen-button"></i>
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUsuarioSeleccionado(row);
+                  setNuevaPassModal('');
+                  setConfirmarPassModal('');
+                  setShowEyePass1(false);
+                  setShowEyePass2(false);
+                  setModalPassword(true);
+                }}
+                className="btn btn-sm btn-outline"
+                style={{ height: '30px', padding: '0 8px', color: '#f59e0b', borderColor: '#fde68a' }}
+                title="Cambiar Contraseña"
+              >
+                <i className="fa-solid fa-key"></i>
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => abrirModalEditar(row)}
+                className="btn btn-sm btn-outline"
+                style={{ height: '30px', padding: '0 8px', color: '#2563eb', borderColor: '#bfdbfe' }}
+                title="Editar Usuario"
+              >
+                <i className="fa-solid fa-pen-to-square"></i>
+              </button>
+            )}
             {/* El usuario SuperAdmin nunca puede ser desactivado ni eliminado */}
-            {!esRowSuperAdmin && (
+            {canDelete && !esRowSuperAdmin && (
               <button
                 type="button"
                 onClick={async () => {
@@ -515,26 +523,28 @@ export const UsuariosPage: React.FC = () => {
             Administración de credenciales, roles y asignación operativa del personal
           </p>
         </div>
-        <button
-          type="button"
-          onClick={abrirModalCrear}
-          className="btn btn-primary"
-          style={{
-            background: 'linear-gradient(135deg, #0284c7, #2563eb)',
-            border: 'none',
-            color: '#ffffff',
-            fontWeight: 800,
-            padding: '8px 18px',
-            borderRadius: '8px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)',
-          }}
-        >
-          <i className="fa-solid fa-user-plus"></i>
-          Nuevo Usuario
-        </button>
+        {canCreate && (
+          <button
+            type="button"
+            onClick={abrirModalCrear}
+            className="btn btn-primary"
+            style={{
+              background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+              border: 'none',
+              color: '#ffffff',
+              fontWeight: 800,
+              padding: '8px 18px',
+              borderRadius: '8px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)',
+            }}
+          >
+            <i className="fa-solid fa-user-plus"></i>
+            Nuevo Usuario
+          </button>
+        )}
       </div>
 
       {/* Tabla Principal */}

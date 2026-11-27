@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Transporte.API.Security;
 using Transporte.Core.DTOs;
 
 namespace Transporte.API.Controllers
@@ -29,6 +30,7 @@ namespace Transporte.API.Controllers
 
         [HttpPost("fincas")]
         [Authorize]
+        [RequirePermission("FINCAS_CREAR")]
         public async Task<IActionResult> CrearFinca([FromBody] CrearFincaDto dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Nombre))
@@ -40,6 +42,7 @@ namespace Transporte.API.Controllers
 
         [HttpPut("fincas/{id}")]
         [Authorize]
+        [RequirePermission("FINCAS_EDITAR")]
         public async Task<IActionResult> ActualizarFinca([FromRoute] int id, [FromBody] EditarFincaDto dto)
         {
             int? userId = null;
@@ -58,6 +61,7 @@ namespace Transporte.API.Controllers
         [HttpPost("fincas/precios-masivo")]
         [HttpPost("fincas/actualizar-precios-masivo")]
         [Authorize]
+        [RequirePermission("FINCAS_EDITAR")]
         public async Task<IActionResult> ActualizarPreciosMasivo([FromBody] ActualizarPrecioMasivoDto dto)
         {
             if (dto.NuevoPrecioUSD <= 0)
@@ -84,6 +88,7 @@ namespace Transporte.API.Controllers
 
         [HttpDelete("fincas/{id}")]
         [Authorize]
+        [RequirePermission("FINCAS_ELIMINAR")]
         public async Task<IActionResult> EliminarFinca([FromRoute] int id)
         {
             var ok = await _catalogosRepository.EliminarFincaAsync(id);

@@ -6,6 +6,7 @@ import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect, type SelectOption } from '@/components/common/SearchableSelect';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import { CamionSelect } from '@/components/selectors';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import type {
   RepuestoDto,
   GuardarRepuestoDto,
@@ -15,6 +16,7 @@ import type {
 
 export const RepuestosPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { canCreate, canEdit, canDelete } = useModulePermissions('REPUESTOS');
 
   const [activeTab, setActiveTab] = useState<'catalogo' | 'movimientos'>('catalogo');
   const [filtroCategoria, setFiltroCategoria] = useState<string>('');
@@ -241,28 +243,32 @@ export const RepuestosPage: React.FC = () => {
       width: '90px',
       cell: (row) => (
         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline"
-            onClick={() => abrirModalEditarRepuesto(row)}
-            title="Editar repuesto"
-            style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px' }}
-          >
-            <i className="fa-solid fa-pen-to-square" style={{ fontSize: '11px' }}></i>
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline"
-            onClick={async () => {
-              if (await confirmDeleteOrDeactivate('Eliminar el repuesto', row.nombre)) {
-                mutationEliminarRepuesto.mutate(row.id);
-              }
-            }}
-            title="Eliminar"
-            style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px', color: '#ef4444', borderColor: '#fca5a5' }}
-          >
-            <i className="fa-solid fa-trash-can" style={{ fontSize: '11px' }}></i>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={() => abrirModalEditarRepuesto(row)}
+              title="Editar repuesto"
+              style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px' }}
+            >
+              <i className="fa-solid fa-pen-to-square" style={{ fontSize: '11px' }}></i>
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={async () => {
+                if (await confirmDeleteOrDeactivate('Eliminar el repuesto', row.nombre)) {
+                  mutationEliminarRepuesto.mutate(row.id);
+                }
+              }}
+              title="Eliminar"
+              style={{ height: '30px', width: '30px', padding: 0, borderRadius: '6px', color: '#ef4444', borderColor: '#fca5a5' }}
+            >
+              <i className="fa-solid fa-trash-can" style={{ fontSize: '11px' }}></i>
+            </button>
+          )}
         </div>
       ),
     },
@@ -372,30 +378,36 @@ export const RepuestosPage: React.FC = () => {
           </p>
         </div>
         <div className="view-actions" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => abrirModalMovimientoConTipo('SALIDA_MANTENIMIENTO')}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#dc2626', borderColor: '#fca5a5', background: '#fef2f2' }}
-          >
-            <i className="fa-solid fa-arrow-up-from-bracket"></i> Salida a Camión
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => abrirModalMovimientoConTipo('ENTRADA_COMPRA')}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', borderColor: '#86efac', background: '#f0fdf4' }}
-          >
-            <i className="fa-solid fa-cart-plus"></i> Entrada / Compra
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={abrirModalCrearRepuesto}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#10b981', borderColor: '#10b981' }}
-          >
-            <i className="fa-solid fa-plus"></i> Nuevo Repuesto
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => abrirModalMovimientoConTipo('SALIDA_MANTENIMIENTO')}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#dc2626', borderColor: '#fca5a5', background: '#fef2f2' }}
+            >
+              <i className="fa-solid fa-arrow-up-from-bracket"></i> Salida a Camión
+            </button>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => abrirModalMovimientoConTipo('ENTRADA_COMPRA')}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', borderColor: '#86efac', background: '#f0fdf4' }}
+            >
+              <i className="fa-solid fa-cart-plus"></i> Entrada / Compra
+            </button>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={abrirModalCrearRepuesto}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#10b981', borderColor: '#10b981' }}
+            >
+              <i className="fa-solid fa-plus"></i> Nuevo Repuesto
+            </button>
+          )}
         </div>
       </div>
 

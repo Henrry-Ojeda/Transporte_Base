@@ -5,6 +5,7 @@ import { catalogosApi } from '@/api/catalogos.api';
 import { DataTable, type ColumnDef } from '@/components/common/DataTable';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import type { PropietarioDto, CrearPropietarioDto, PropietarioCuentaBancariaDto, BancoDto, FincaDto } from '@/types';
 
 const DEFAULT_BANCOS: BancoDto[] = [
@@ -20,6 +21,7 @@ const DEFAULT_BANCOS: BancoDto[] = [
 
 export const PropietariosPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { canCreate, canEdit, canDelete } = useModulePermissions('PROPIETARIOS');
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalAsignarFincas, setModalAsignarFincas] = useState(false);
@@ -559,28 +561,32 @@ export const PropietariosPage: React.FC = () => {
         if (!row) return null;
         return (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-            <button
-              type="button"
-              onClick={() => abrirModalEditar(row)}
-              className="btn btn-sm btn-outline"
-              style={{ height: '30px', padding: '0 8px', color: '#2563eb', borderColor: '#bfdbfe' }}
-              title="Editar Propietario"
-            >
-              <i className="fa-solid fa-pen-to-square"></i>
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                if (await confirmDeleteOrDeactivate('Desactivar al propietario', row.nombreCompleto || row.nombre)) {
-                  eliminarMutation.mutate(row.id);
-                }
-              }}
-              className="btn btn-sm btn-outline"
-              style={{ height: '30px', padding: '0 8px', color: '#dc2626', borderColor: '#fecaca' }}
-              title="Desactivar"
-            >
-              <i className="fa-solid fa-trash-can"></i>
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => abrirModalEditar(row)}
+                className="btn btn-sm btn-outline"
+                style={{ height: '30px', padding: '0 8px', color: '#2563eb', borderColor: '#bfdbfe' }}
+                title="Editar Propietario"
+              >
+                <i className="fa-solid fa-pen-to-square"></i>
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (await confirmDeleteOrDeactivate('Desactivar al propietario', row.nombreCompleto || row.nombre)) {
+                    eliminarMutation.mutate(row.id);
+                  }
+                }}
+                className="btn btn-sm btn-outline"
+                style={{ height: '30px', padding: '0 8px', color: '#dc2626', borderColor: '#fecaca' }}
+                title="Desactivar"
+              >
+                <i className="fa-solid fa-trash-can"></i>
+              </button>
+            )}
           </div>
         );
       },
@@ -598,14 +604,16 @@ export const PropietariosPage: React.FC = () => {
           </p>
         </div>
         <div className="view-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={abrirModalCrear}
-            style={{ fontWeight: 700 }}
-          >
-            <i className="fa-solid fa-user-plus"></i> + Nuevo Propietario
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={abrirModalCrear}
+              style={{ fontWeight: 700 }}
+            >
+              <i className="fa-solid fa-user-plus"></i> + Nuevo Propietario
+            </button>
+          )}
         </div>
       </div>
 

@@ -7,12 +7,14 @@ import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { PropietarioSelect, CompaniaSelect } from '@/components/selectors';
 import { confirmDeleteOrDeactivate } from '@/lib/sweetalert';
 import { useAuthStore } from '@/stores/authStore';
+import { useModulePermissions } from '@/hooks/useModulePermissions';
 import { LeafletMapPicker } from '@/components/maps/LeafletMapPicker';
 import { HistorialFincaModal } from './components/HistorialFincaModal';
 import type { FincaDto, GuardarFincaDto, PropietarioDto } from '@/types';
 
 export const FincasPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { canCreate, canEdit, canDelete } = useModulePermissions('FINCAS');
   const hasBufala = useAuthStore((state) => state.hasTenantModule('MOD_LECHE_BUFALA'));
   const hasMapaRutas = useAuthStore((state) => state.hasTenantModule('MOD_MAPA_RUTAS'));
   const hasCalidadLeche = useAuthStore((state) => state.hasTenantModule('MOD_CALIDAD_LECHE'));
@@ -451,26 +453,30 @@ export const FincasPage: React.FC = () => {
               <i className="fa-solid fa-flask-vial" style={{ color: '#0891b2' }}></i>
             </button>
           )}
-          <button
-            onClick={() => abrirModalEditar(row)}
-            className="btn btn-sm btn-outline"
-            title="Editar Finca"
-            style={{ padding: '4px 8px' }}
-          >
-            <i className="fa-solid fa-pen-to-square" style={{ color: '#4f46e5' }}></i>
-          </button>
-          <button
-            onClick={async () => {
-              if (await confirmDeleteOrDeactivate('Desactivar la finca', row.nombre)) {
-                eliminarMutation.mutate(row.id);
-              }
-            }}
-            className="btn btn-sm btn-outline"
-            title="Desactivar Finca"
-            style={{ padding: '4px 8px' }}
-          >
-            <i className="fa-solid fa-trash-can" style={{ color: '#e11d48' }}></i>
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => abrirModalEditar(row)}
+              className="btn btn-sm btn-outline"
+              title="Editar Finca"
+              style={{ padding: '4px 8px' }}
+            >
+              <i className="fa-solid fa-pen-to-square" style={{ color: '#4f46e5' }}></i>
+            </button>
+          )}
+          {canDelete && (
+            <button
+              onClick={async () => {
+                if (await confirmDeleteOrDeactivate('Desactivar la finca', row.nombre)) {
+                  eliminarMutation.mutate(row.id);
+                }
+              }}
+              className="btn btn-sm btn-outline"
+              title="Desactivar Finca"
+              style={{ padding: '4px 8px' }}
+            >
+              <i className="fa-solid fa-trash-can" style={{ color: '#e11d48' }}></i>
+            </button>
+          )}
         </div>
       ),
     },
@@ -491,36 +497,40 @@ export const FincasPage: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            onClick={() => setModalPrecioMasivo(true)}
-            className="btn btn-secondary"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: '#ecfdf5',
-              color: '#059669',
-              border: '1.5px solid #a7f3d0',
-              fontWeight: 700,
-            }}
-          >
-            <i className="fa-solid fa-tags"></i>
-            Actualizar Precios en Lote
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => setModalPrecioMasivo(true)}
+              className="btn btn-secondary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#ecfdf5',
+                color: '#059669',
+                border: '1.5px solid #a7f3d0',
+                fontWeight: 700,
+              }}
+            >
+              <i className="fa-solid fa-tags"></i>
+              Actualizar Precios en Lote
+            </button>
+          )}
 
-          <button
-            onClick={abrirModalCrear}
-            className="btn btn-primary"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              boxShadow: '0 4px 14px rgba(79, 70, 229, 0.3)',
-            }}
-          >
-            <i className="fa-solid fa-plus"></i>
-            Nueva Finca
-          </button>
+          {canCreate && (
+            <button
+              onClick={abrirModalCrear}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 14px rgba(79, 70, 229, 0.3)',
+              }}
+            >
+              <i className="fa-solid fa-plus"></i>
+              Nueva Finca
+            </button>
+          )}
         </div>
       </div>
 
